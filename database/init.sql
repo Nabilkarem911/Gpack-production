@@ -18,6 +18,8 @@ CREATE SEQUENCE IF NOT EXISTS manufacturer_order_number_seq START WITH 2001 INCR
 CREATE SEQUENCE IF NOT EXISTS delivery_note_number_seq START WITH 3001 INCREMENT BY 1;
 CREATE SEQUENCE IF NOT EXISTS invoice_number_seq START WITH 4001 INCREMENT BY 1;
 CREATE SEQUENCE IF NOT EXISTS voucher_number_seq START WITH 5001 INCREMENT BY 1;
+CREATE SEQUENCE IF NOT EXISTS purchase_invoice_seq START WITH 6001 INCREMENT BY 1;
+CREATE SEQUENCE IF NOT EXISTS purchase_return_number_seq START WITH 7001 INCREMENT BY 1;
 
 -- =============================================================================
 -- TABLE: roles
@@ -435,6 +437,137 @@ CREATE TABLE IF NOT EXISTS invoice_expenses (
     amount DECIMAL(15,2) NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- =============================================================================
+-- TABLE: purchase_invoices
+-- Supplier purchase invoices linked to manufacturer orders.
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS purchase_invoices (
+    id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    supplier_id          UUID NOT NULL REFERENCES suppliers(id) ON DELETE RESTRICT,
+    manufacturer_order_id UUID REFERENCES manufacturer_orders(id) ON DELETE SET NULL,
+    invoice_number       INTEGER NOT NULL UNIQUE DEFAULT nextval('purchase_invoice_seq'),
+    invoice_date         DATE NOT NULL DEFAULT CURRENT_DATE,
+    due_date             DATE,
+    supplier_invoice_ref VARCHAR(100),
+    subtotal             DECIMAL(15,2) NOT NULL DEFAULT 0,
+    tax_rate             DECIMAL(5,4) DEFAULT 0.15,
+    tax_amount           DECIMAL(15,2) NOT NULL DEFAULT 0,
+    grand_total          DECIMAL(15,2) NOT NULL DEFAULT 0,
+    paid_amount          DECIMAL(15,2) NOT NULL DEFAULT 0,
+    status               VARCHAR(20) DEFAULT 'unpaid',
+    notes                TEXT,
+    created_by           UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at           TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at           TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_purchase_invoices_supplier_id ON purchase_invoices(supplier_id);
+CREATE INDEX IF NOT EXISTS idx_purchase_invoices_mo_id ON purchase_invoices(manufacturer_order_id);
+CREATE INDEX IF NOT EXISTS idx_purchase_invoices_status ON purchase_invoices(status);
+CREATE INDEX IF NOT EXISTS idx_purchase_invoices_invoice_date ON purchase_invoices(invoice_date);
+
+-- =============================================================================
+-- TABLE: purchase_invoice_items
+-- Line items for supplier purchase invoices.
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS purchase_invoice_items (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    purchase_invoice_id UUID NOT NULL REFERENCES purchase_invoices(id) ON DELETE CASCADE,
+    variant_id          UUID NOT NULL REFERENCES product_variants(id) ON DELETE RESTRICT,
+    quantity            DECIMAL(12,3) NOT NULL CHECK (quantity > 0),
+    unit_cost           DECIMAL(15,4) NOT NULL DEFAULT 0,
+    total_cost          DECIMAL(15,2) NOT NULL DEFAULT 0,
+    product_name        VARCHAR(255),
+    created_at          TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_pii_invoice_id ON purchase_invoice_items(purchase_invoice_id);
+CREATE INDEX IF NOT EXISTS idx_pii_variant_id ON purchase_invoice_items(variant_id);
+
+-- =============================================================================
+-- TABLE: purchase_returns
+-- Returns of goods back to suppliers.
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS purchase_returns (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    return_number       INTEGER NOT NULL UNIQUE DEFAULT nextval('purchase_return_number_seq'),
+    return_date         DATE NOT NULL DEFAULT CURRENT_DATE,
+    supplier_id         UUID NOT NULL REFERENCES suppliers(id) ON DELETE RESTRICT,
+    purchase_invoice_id UUID REFERENCES purchase_invoices(id) ON DELETE SET NULL,
+    total_amount        DECIMAL(15,2) NOT NULL DEFAULT 0,
+    status              VARCHAR(20) DEFAULT 'completed',
+    notes               TEXT,
+    created_by          UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at          TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_purchase_returns_supplier ON purchase_returns(supplier_id);
+CREATE INDEX IF NOT EXISTS idx_purchase_returns_status ON purchase_returns(status);
+CREATE INDEX IF NOT EXISTS idx_purchase_returns_date ON purchase_returns(return_date);
+
+-- =============================================================================
+-- TABLE: purchase_return_items
+-- Line items for supplier purchase returns.
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS purchase_return_items (
+    id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    purchase_return_id UUID NOT NULL REFERENCES purchase_returns(id) ON DELETE CASCADE,
+    variant_id         UUID NOT NULL REFERENCES product_variants(id) ON DELETE RESTRICT,
+    quantity           DECIMAL(12,3) NOT NULL CHECK (quantity > 0),
+    unit_cost          DECIMAL(15,4) NOT NULL DEFAULT 0,
+    line_total         DECIMAL(15,2) NOT NULL DEFAULT 0,
+    created_at         TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_pri_return_id ON purchase_return_items(purchase_return_id);
+CREATE INDEX IF NOT EXISTS idx_pri_variant_id ON purchase_return_items(variant_id);
+
+-- =============================================================================
+-- TABLE: receiving_vouchers
+-- Physical goods receiving records from suppliers/manufacturers.
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS receiving_vouchers (
+    id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    voucher_number        INTEGER NOT NULL UNIQUE,
+    receiving_date        DATE NOT NULL DEFAULT CURRENT_DATE,
+    supplier_id           UUID REFERENCES suppliers(id) ON DELETE SET NULL,
+    purchase_invoice_id   UUID REFERENCES purchase_invoices(id) ON DELETE SET NULL,
+    manufacturer_order_id UUID REFERENCES manufacturer_orders(id) ON DELETE SET NULL,
+    warehouse_id          UUID REFERENCES warehouses(id) ON DELETE RESTRICT,
+    total_amount          DECIMAL(15,2) NOT NULL DEFAULT 0,
+    status                VARCHAR(20) DEFAULT 'completed',
+    notes                 TEXT,
+    created_by            UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at            TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_rv_supplier ON receiving_vouchers(supplier_id);
+CREATE INDEX IF NOT EXISTS idx_rv_status ON receiving_vouchers(status);
+CREATE INDEX IF NOT EXISTS idx_rv_date ON receiving_vouchers(receiving_date);
+
+-- =============================================================================
+-- TABLE: receiving_voucher_items
+-- Line items for receiving vouchers.
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS receiving_voucher_items (
+    id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    receiving_voucher_id UUID NOT NULL REFERENCES receiving_vouchers(id) ON DELETE CASCADE,
+    variant_id           UUID NOT NULL REFERENCES product_variants(id) ON DELETE RESTRICT,
+    quantity             DECIMAL(12,3) NOT NULL CHECK (quantity > 0),
+    unit_cost            DECIMAL(15,4) NOT NULL DEFAULT 0,
+    line_total           DECIMAL(15,2) NOT NULL DEFAULT 0,
+    created_at           TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_rvi_voucher_id ON receiving_voucher_items(receiving_voucher_id);
+CREATE INDEX IF NOT EXISTS idx_rvi_variant_id ON receiving_voucher_items(variant_id);
 
 -- =============================================================================
 -- TABLE: accounts
