@@ -1,0 +1,145 @@
+<!-- =============================================================================
+     G.PACK 2.0 - Login View Fragment
+     Injected into #login-view by auth.js.
+     All wiring (form submit handler) is attached by auth.js after injection.
+============================================================================= -->
+<div class="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-brand-900 flex items-center justify-center p-4">
+
+    <!-- Background decorative elements -->
+    <div class="absolute inset-0 overflow-hidden pointer-events-none">
+        <div class="absolute -top-40 -right-40 w-96 h-96 bg-brand-600/20 rounded-full blur-3xl"></div>
+        <div class="absolute -bottom-40 -left-40 w-96 h-96 bg-brand-800/30 rounded-full blur-3xl"></div>
+    </div>
+
+    <div class="relative w-full max-w-md">
+
+        <!-- Logo / Brand -->
+        <div class="text-center mb-8">
+            <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-brand-600 shadow-lg shadow-brand-600/30 mb-4">
+                <i class="fa-solid fa-box-open text-white text-2xl"></i>
+            </div>
+            <h1 class="text-3xl font-extrabold text-white tracking-tight">G.PACK</h1>
+            <p class="text-slate-400 text-sm mt-1">نظام إدارة المستودعات والمبيعات 2.0</p>
+        </div>
+
+        <!-- Login Card -->
+        <div class="bg-white rounded-2xl shadow-2xl shadow-black/30 overflow-hidden">
+
+            <!-- Card Header -->
+            <div class="bg-gradient-to-r from-brand-600 to-brand-700 px-8 py-6">
+                <h2 class="text-xl font-bold text-white">تسجيل الدخول</h2>
+                <p class="text-brand-100 text-sm mt-1">أدخل بيانات حسابك للمتابعة</p>
+            </div>
+
+            <!-- Card Body -->
+            <div class="px-8 py-7">
+
+                <!-- Error Alert -->
+                <div id="login-error"
+                     class="hidden mb-5 flex items-start gap-3 bg-red-50 border border-red-200 text-red-700
+                            rounded-xl px-4 py-3 text-sm font-medium">
+                    <i class="fa-solid fa-circle-exclamation mt-0.5 flex-shrink-0"></i>
+                    <span></span>
+                </div>
+
+                <form id="login-form" novalidate class="space-y-5">
+
+                    <!-- Email Field -->
+                    <div>
+                        <label for="login-email" class="block text-sm font-semibold text-slate-700 mb-1.5">
+                            البريد الإلكتروني
+                        </label>
+                        <div class="relative">
+                            <span class="absolute inset-y-0 right-0 flex items-center pr-3.5 text-slate-400 pointer-events-none">
+                                <i class="fa-regular fa-envelope text-sm"></i>
+                            </span>
+                            <input
+                                type="email"
+                                id="login-email"
+                                name="email"
+                                autocomplete="email"
+                                placeholder="admin@gpack.com"
+                                class="w-full pr-10 pl-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                       text-slate-800 placeholder-slate-400 outline-none transition-all
+                                       focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 focus:bg-white"
+                                required
+                            />
+                        </div>
+                    </div>
+
+                    <!-- Password Field -->
+                    <div>
+                        <label for="login-password" class="block text-sm font-semibold text-slate-700 mb-1.5">
+                            كلمة المرور
+                        </label>
+                        <div class="relative">
+                            <span class="absolute inset-y-0 right-0 flex items-center pr-3.5 text-slate-400 pointer-events-none">
+                                <i class="fa-regular fa-lock text-sm"></i>
+                            </span>
+                            <input
+                                type="password"
+                                id="login-password"
+                                name="password"
+                                autocomplete="current-password"
+                                placeholder="••••••••"
+                                class="w-full pr-10 pl-12 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                       text-slate-800 placeholder-slate-400 outline-none transition-all
+                                       focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 focus:bg-white"
+                                required
+                            />
+                            <!-- Toggle password visibility -->
+                            <button type="button"
+                                    id="toggle-password"
+                                    class="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 hover:text-slate-600 transition-colors">
+                                <i class="fa-regular fa-eye text-sm"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Submit Button -->
+                    <button
+                        type="submit"
+                        id="login-submit-btn"
+                        class="w-full flex items-center justify-center gap-2 py-3.5 px-6 rounded-xl
+                               bg-brand-600 hover:bg-brand-700 active:scale-[0.99] text-white font-bold text-sm
+                               shadow-lg shadow-brand-600/25 transition-all duration-150 mt-2">
+                        <i class="fa-solid fa-right-to-bracket"></i>
+                        تسجيل الدخول
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <p class="text-center text-slate-500 text-xs mt-6">
+            جميع الحقوق محفوظة &copy; G.PACK ERP 2.0
+        </p>
+    </div>
+</div>
+
+<script>
+    // Toggle password visibility
+    (function () {
+        const toggleBtn = document.getElementById('toggle-password');
+        const passInput = document.getElementById('login-password');
+        if (!toggleBtn || !passInput) return;
+        toggleBtn.addEventListener('click', () => {
+            const isText = passInput.type === 'text';
+            passInput.type = isText ? 'password' : 'text';
+            const icon = toggleBtn.querySelector('i');
+            icon.classList.toggle('fa-eye',        isText);
+            icon.classList.toggle('fa-eye-slash', !isText);
+        });
+    })();
+
+    // Re-wire the error box so auth.js getElementById works correctly
+    const errorBox = document.getElementById('login-error');
+    if (errorBox) {
+        const span = errorBox.querySelector('span');
+        Object.defineProperty(errorBox, 'textContent', {
+            set(val) { if (span) span.textContent = val; },
+            get()    { return span ? span.textContent : ''; },
+            configurable: true,
+        });
+    }
+</script>

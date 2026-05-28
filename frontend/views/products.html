@@ -1,0 +1,675 @@
+<!-- =============================================================================
+     G.PACK 2.0 - Products View Fragment
+     Injected into #main-content by the SPA router.
+     Logic is handled by /js/views/products.js (loaded below).
+     SCHEMA RULE: Products & Variants are GENERAL — no client_id.
+============================================================================= -->
+
+<!-- Page Header -->
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+    <div>
+        <h1 class="text-2xl font-extrabold text-slate-800">إدارة المنتجات</h1>
+        <p class="text-slate-500 text-sm mt-0.5">كتالوج المنتجات العام والمقاسات (وحدات، أسعار)</p>
+    </div>
+    <button id="add-product-btn"
+            class="flex items-center gap-2 px-5 py-2.5 bg-brand-600 hover:bg-brand-700 active:scale-[0.98]
+                   text-white text-sm font-bold rounded-xl shadow-md shadow-brand-600/20 transition-all">
+        <i class="fa-solid fa-box-open"></i>
+        <span>إضافة منتج</span>
+    </button>
+</div>
+
+<!-- Search & Filter Bar -->
+<div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 mb-4">
+    <div class="flex flex-col sm:flex-row gap-3">
+        <div class="relative flex-1">
+            <span class="absolute inset-y-0 right-0 flex items-center pr-3.5 text-slate-400 pointer-events-none">
+                <i class="fa-solid fa-magnifying-glass text-sm"></i>
+            </span>
+            <input type="text"
+                   id="products-search"
+                   placeholder="بحث بالاسم أو SKU..."
+                   class="w-full pr-10 pl-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                          text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                          focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all" />
+        </div>
+        <select id="products-status-filter"
+                class="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700
+                       outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all
+                       appearance-none min-w-[140px]">
+            <option value="">جميع الحالات</option>
+            <option value="active">نشط</option>
+            <option value="inactive">غير نشط</option>
+        </select>
+    </div>
+</div>
+
+<!-- Products Table Card -->
+<div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+    <div class="overflow-x-auto">
+        <table class="w-full">
+            <thead>
+                <tr class="bg-slate-50 border-b border-slate-200">
+                    <th class="text-right py-3.5 px-4 text-xs font-bold text-slate-500 uppercase tracking-wide">المنتج</th>
+                    <th class="text-right py-3.5 px-4 text-xs font-bold text-slate-500 uppercase tracking-wide hidden sm:table-cell">الفئة</th>
+                    <th class="text-right py-3.5 px-4 text-xs font-bold text-slate-500 uppercase tracking-wide hidden md:table-cell">SKU</th>
+                    <th class="text-right py-3.5 px-4 text-xs font-bold text-slate-500 uppercase tracking-wide hidden md:table-cell">المقاسات</th>
+                    <th class="text-right py-3.5 px-4 text-xs font-bold text-slate-500 uppercase tracking-wide">الحالة</th>
+                    <th class="py-3.5 px-4"></th>
+                </tr>
+            </thead>
+            <tbody id="products-tbody">
+                <tr>
+                    <td colspan="6" class="py-10 text-center text-slate-400">
+                        <i class="fa-solid fa-circle-notch fa-spin text-2xl"></i>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Empty state -->
+    <div id="products-empty" class="hidden py-16 text-center text-slate-400">
+        <i class="fa-solid fa-boxes-stacked text-5xl mb-4 text-slate-200"></i>
+        <p class="text-base font-semibold text-slate-500">لا توجد منتجات حتى الآن</p>
+        <p class="text-sm mt-1">ابدأ بإضافة أول منتج في الكتالوج</p>
+    </div>
+</div>
+
+<!-- =============================================================================
+     ADD / EDIT PRODUCT MODAL
+     Modal body is a <div> (not <form>) — submit wired via onclick on button.
+     Visibility: style.display toggled by JS (avoids Tailwind flex/hidden conflict).
+============================================================================= -->
+<div id="product-modal"
+     style="display:none"
+     class="fixed inset-0 z-50 items-center justify-center p-4
+            bg-black/50 opacity-0 transition-opacity duration-200">
+
+    <div class="modal-panel bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto
+                transform scale-95 transition-transform duration-200">
+
+        <!-- Modal Header -->
+        <div class="flex items-center justify-between px-6 py-5 border-b border-slate-100">
+            <h2 id="product-modal-title" class="text-lg font-bold text-slate-800">إضافة منتج جديد</h2>
+            <button id="product-modal-close-btn"
+                    type="button"
+                    class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400
+                           hover:text-slate-700 hover:bg-slate-100 transition-colors">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <!-- Modal Body -->
+        <div id="product-form" class="px-6 py-5 space-y-6">
+
+            <!-- Error Alert -->
+            <div id="product-form-error"
+                 class="hidden flex items-center gap-2 bg-red-50 border border-red-200 text-red-700
+                        rounded-xl px-4 py-3 text-sm font-medium">
+                <i class="fa-solid fa-circle-exclamation flex-shrink-0"></i>
+                <span></span>
+            </div>
+
+            <!-- ── Section A: Base Product Info ── -->
+            <div>
+                <div class="flex items-center gap-2 mb-4">
+                    <div class="w-7 h-7 rounded-lg bg-brand-100 flex items-center justify-center flex-shrink-0">
+                        <i class="fa-solid fa-tag text-brand-600 text-xs"></i>
+                    </div>
+                    <h3 class="text-sm font-bold text-slate-700">معلومات المنتج الأساسية</h3>
+                </div>
+
+                <div class="space-y-4">
+                    <!-- Product Name -->
+                    <div>
+                        <label for="product-name" class="block text-sm font-semibold text-slate-700 mb-1.5">
+                            اسم المنتج <span class="text-red-500">*</span>
+                        </label>
+                        <input type="text" id="product-name" placeholder="مثال: كيس بلاستيك شفاف"
+                               class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                      text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                                      focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all" />
+                    </div>
+
+                    <!-- Category + SKU -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label for="product-category" class="block text-sm font-semibold text-slate-700 mb-1.5">
+                                الفئة
+                            </label>
+                            <div class="flex gap-2">
+                                <div class="relative flex-1">
+                                    <span class="absolute inset-y-0 right-0 flex items-center pr-3.5 text-slate-400 pointer-events-none">
+                                        <i class="fa-solid fa-layer-group text-sm"></i>
+                                    </span>
+                                    <select id="product-category"
+                                            class="w-full pr-10 pl-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                                   text-slate-800 outline-none focus:border-brand-500 focus:ring-2
+                                                   focus:ring-brand-500/20 focus:bg-white transition-all appearance-none">
+                                        <option value="">— بدون فئة —</option>
+                                    </select>
+                                </div>
+                                <button type="button" onclick="window.openCategoryModal()"
+                                        title="إضافة فئة جديدة"
+                                        class="flex-shrink-0 w-11 h-11 flex items-center justify-center rounded-xl
+                                               bg-slate-100 hover:bg-brand-50 text-brand-600 border border-slate-200
+                                               hover:border-brand-300 transition-all text-sm font-bold">
+                                    <i class="fa-solid fa-plus"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div>
+                            <label for="product-sku" class="block text-sm font-semibold text-slate-700 mb-1.5">
+                                رمز SKU (اختياري)
+                            </label>
+                            <input type="text" id="product-sku" placeholder="مثال: PKG-001"
+                                   class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                          text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                                          focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all" />
+                        </div>
+                    </div>
+
+                    <!-- Description -->
+                    <div>
+                        <label for="product-description" class="block text-sm font-semibold text-slate-700 mb-1.5">
+                            الوصف
+                        </label>
+                        <textarea id="product-description" rows="2" placeholder="وصف مختصر للمنتج..."
+                                  class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                         text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                                         focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all resize-none"></textarea>
+                    </div>
+
+                    <!-- Status -->
+                    <div class="w-full sm:w-1/2">
+                        <label for="product-status" class="block text-sm font-semibold text-slate-700 mb-1.5">
+                            الحالة
+                        </label>
+                        <select id="product-status"
+                                class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                       text-slate-800 outline-none focus:border-brand-500 focus:ring-2
+                                       focus:ring-brand-500/20 focus:bg-white transition-all appearance-none">
+                            <option value="active">نشط</option>
+                            <option value="inactive">غير نشط</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Divider -->
+            <div class="border-t border-slate-100"></div>
+
+            <!-- ── Section B: Initial Variant Info ── -->
+            <div id="variant-section">
+                <div class="flex items-center gap-2 mb-4">
+                    <div class="w-7 h-7 rounded-lg bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                        <i class="fa-solid fa-cubes text-emerald-600 text-xs"></i>
+                    </div>
+                    <h3 class="text-sm font-bold text-slate-700">المقاس الأول (مقاس / وحدة)</h3>
+                    <span class="text-xs text-slate-400 mr-auto">يمكن إضافة مقاسات أخرى لاحقاً</span>
+                </div>
+
+                <div class="space-y-4">
+                    <!-- Size Name + Unit -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label for="variant-size-name" class="block text-sm font-semibold text-slate-700 mb-1.5">
+                                اسم المقاس / الحجم <span class="text-red-500">*</span>
+                            </label>
+                            <input type="text" id="variant-size-name" placeholder="مثال: 1 كيلو، 500 جرام، L"
+                                   class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                          text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                                          focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all" />
+                        </div>
+                        <div>
+                            <label for="variant-unit" class="block text-sm font-semibold text-slate-700 mb-1.5">
+                                وحدة القياس
+                            </label>
+                            <div class="flex gap-2">
+                                <div class="relative flex-1">
+                                    <span class="absolute inset-y-0 right-0 flex items-center pr-3.5 text-slate-400 pointer-events-none">
+                                        <i class="fa-solid fa-ruler text-sm"></i>
+                                    </span>
+                                    <select id="variant-unit"
+                                            class="w-full pr-10 pl-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                                   text-slate-800 outline-none focus:border-brand-500 focus:ring-2
+                                                   focus:ring-brand-500/20 focus:bg-white transition-all appearance-none">
+                                        <option value="">— بدون وحدة —</option>
+                                    </select>
+                                </div>
+                                <button type="button" onclick="window.openUnitModal()"
+                                        title="إضافة وحدة جديدة"
+                                        class="flex-shrink-0 w-11 h-11 flex items-center justify-center rounded-xl
+                                               bg-slate-100 hover:bg-brand-50 text-brand-600 border border-slate-200
+                                               hover:border-brand-300 transition-all text-sm font-bold">
+                                    <i class="fa-solid fa-plus"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Variant SKU -->
+                    <div>
+                        <label for="variant-sku" class="block text-sm font-semibold text-slate-700 mb-1.5">
+                            SKU للمتغير (اختياري)
+                        </label>
+                        <input type="text" id="variant-sku" placeholder="مثال: PKG-001-500G"
+                               class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                      text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                                      focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all" />
+                    </div>
+
+                    <!-- Cost + Selling Price -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label for="variant-cost-price" class="block text-sm font-semibold text-slate-700 mb-1.5">
+                                سعر التكلفة (ر.س)
+                            </label>
+                            <input type="number" id="variant-cost-price" placeholder="0.00" min="0" step="0.01"
+                                   class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                          text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                                          focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all" />
+                        </div>
+                        <div>
+                            <label for="variant-selling-price" class="block text-sm font-semibold text-slate-700 mb-1.5">
+                                سعر البيع (ر.س)
+                            </label>
+                            <input type="number" id="variant-selling-price" placeholder="0.00" min="0" step="0.01"
+                                   class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                          text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                                          focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all" />
+                        </div>
+                    </div>
+
+                    <!-- Min Stock Level -->
+                    <div class="w-full sm:w-1/2">
+                        <label for="variant-min-stock" class="block text-sm font-semibold text-slate-700 mb-1.5">
+                            الحد الأدنى للمخزون
+                        </label>
+                        <input type="number" id="variant-min-stock" placeholder="0" min="0" step="1"
+                               class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                      text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                                      focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all" />
+                    </div>
+                </div>
+            </div>
+
+            <!-- Modal Footer — inside the div body -->
+            <div class="flex items-center justify-end gap-3 pt-2 border-t border-slate-100 mt-2">
+                <button id="product-modal-cancel-btn" type="button"
+                        class="px-5 py-2.5 text-sm font-semibold text-slate-600 bg-white border border-slate-200
+                               rounded-xl hover:bg-slate-100 transition-colors">
+                    إلغاء
+                </button>
+                <button id="product-modal-submit-btn" type="button"
+                        onclick="window.submitProductForm()"
+                        class="px-6 py-2.5 text-sm font-bold text-white bg-brand-600 hover:bg-brand-700
+                               rounded-xl shadow-md shadow-brand-600/20 transition-all active:scale-[0.98]">
+                    إضافة المنتج
+                </button>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<!-- =============================================================================
+     CATEGORY QUICK-ADD MODAL
+     z-60 so it renders ON TOP of the product modal (z-50).
+============================================================================= -->
+<div id="category-modal"
+     style="display:none; z-index:9999"
+     class="fixed inset-0 items-center justify-center p-4
+            bg-black/60 opacity-0 transition-opacity duration-200">
+
+    <div class="modal-panel bg-white rounded-2xl shadow-2xl w-full max-w-md
+                transform scale-95 transition-transform duration-200">
+
+        <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+            <div class="flex items-center gap-2">
+                <div class="w-7 h-7 rounded-lg bg-brand-100 flex items-center justify-center">
+                    <i class="fa-solid fa-layer-group text-brand-600 text-xs"></i>
+                </div>
+                <h2 class="text-base font-bold text-slate-800">إضافة فئة جديدة</h2>
+            </div>
+            <button id="category-modal-close-btn" type="button"
+                    class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400
+                           hover:text-slate-700 hover:bg-slate-100 transition-colors">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <div class="px-6 py-5 space-y-4">
+            <!-- Error -->
+            <div id="category-form-error"
+                 class="hidden flex items-center gap-2 bg-red-50 border border-red-200 text-red-700
+                        rounded-xl px-4 py-3 text-sm font-medium">
+                <i class="fa-solid fa-circle-exclamation flex-shrink-0"></i>
+                <span></span>
+            </div>
+
+            <!-- Name -->
+            <div>
+                <label for="category-name" class="block text-sm font-semibold text-slate-700 mb-1.5">
+                    اسم الفئة <span class="text-red-500">*</span>
+                </label>
+                <input type="text" id="category-name" placeholder="مثال: أكياس بلاستيك"
+                       class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                              text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                              focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all" />
+            </div>
+
+            <!-- Description -->
+            <div>
+                <label for="category-description" class="block text-sm font-semibold text-slate-700 mb-1.5">
+                    الوصف (اختياري)
+                </label>
+                <input type="text" id="category-description" placeholder="وصف مختصر..."
+                       class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                              text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                              focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all" />
+            </div>
+
+            <!-- Footer -->
+            <div class="flex items-center justify-end gap-3 pt-2 border-t border-slate-100">
+                <button id="category-modal-cancel-btn" type="button"
+                        class="px-5 py-2.5 text-sm font-semibold text-slate-600 bg-white border border-slate-200
+                               rounded-xl hover:bg-slate-100 transition-colors">
+                    إلغاء
+                </button>
+                <button type="button" onclick="window.submitCategoryForm()"
+                        id="category-modal-submit-btn"
+                        class="px-6 py-2.5 text-sm font-bold text-white bg-brand-600 hover:bg-brand-700
+                               rounded-xl shadow-md shadow-brand-600/20 transition-all active:scale-[0.98]">
+                    إضافة الفئة
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- =============================================================================
+     UNIT QUICK-ADD MODAL
+     z-60 so it renders ON TOP of the product modal (z-50).
+============================================================================= -->
+<div id="unit-modal"
+     style="display:none; z-index:9999"
+     class="fixed inset-0 items-center justify-center p-4
+            bg-black/60 opacity-0 transition-opacity duration-200">
+
+    <div class="modal-panel bg-white rounded-2xl shadow-2xl w-full max-w-md
+                transform scale-95 transition-transform duration-200">
+
+        <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+            <div class="flex items-center gap-2">
+                <div class="w-7 h-7 rounded-lg bg-emerald-100 flex items-center justify-center">
+                    <i class="fa-solid fa-ruler text-emerald-600 text-xs"></i>
+                </div>
+                <h2 class="text-base font-bold text-slate-800">إضافة وحدة قياس جديدة</h2>
+            </div>
+            <button id="unit-modal-close-btn" type="button"
+                    class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400
+                           hover:text-slate-700 hover:bg-slate-100 transition-colors">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <div class="px-6 py-5 space-y-4">
+            <!-- Error -->
+            <div id="unit-form-error"
+                 class="hidden flex items-center gap-2 bg-red-50 border border-red-200 text-red-700
+                        rounded-xl px-4 py-3 text-sm font-medium">
+                <i class="fa-solid fa-circle-exclamation flex-shrink-0"></i>
+                <span></span>
+            </div>
+
+            <!-- Name + Abbreviation -->
+            <div class="grid grid-cols-2 gap-4">
+                <div class="col-span-2 sm:col-span-1">
+                    <label for="unit-name" class="block text-sm font-semibold text-slate-700 mb-1.5">
+                        اسم الوحدة <span class="text-red-500">*</span>
+                    </label>
+                    <input type="text" id="unit-name" placeholder="مثال: كيلوجرام"
+                           class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                  text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                                  focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all" />
+                </div>
+                <div class="col-span-2 sm:col-span-1">
+                    <label for="unit-abbreviation" class="block text-sm font-semibold text-slate-700 mb-1.5">
+                        الاختصار
+                    </label>
+                    <input type="text" id="unit-abbreviation" placeholder="مثال: كجم"
+                           class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                  text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                                  focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all" />
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="flex items-center justify-end gap-3 pt-2 border-t border-slate-100">
+                <button id="unit-modal-cancel-btn" type="button"
+                        class="px-5 py-2.5 text-sm font-semibold text-slate-600 bg-white border border-slate-200
+                               rounded-xl hover:bg-slate-100 transition-colors">
+                    إلغاء
+                </button>
+                <button type="button" onclick="window.submitUnitForm()"
+                        id="unit-modal-submit-btn"
+                        class="px-6 py-2.5 text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700
+                               rounded-xl shadow-md shadow-emerald-600/20 transition-all active:scale-[0.98]">
+                    إضافة الوحدة
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- =============================================================================
+     VARIANTS MANAGEMENT MODAL
+     z-index:9999 — renders above the product modal.
+     Contains: Add/Edit variant form + variants table.
+============================================================================= -->
+<div id="variants-modal"
+     style="display:none; z-index:9999"
+     class="fixed inset-0 items-center justify-center p-4
+            bg-black/60 opacity-0 transition-opacity duration-200">
+
+    <div class="modal-panel bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh]
+                flex flex-col transform scale-95 transition-transform duration-200">
+
+        <!-- Header -->
+        <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100 flex-shrink-0">
+            <div class="flex items-center gap-2 min-w-0">
+                <div class="w-7 h-7 rounded-lg bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                    <i class="fa-solid fa-cubes text-emerald-600 text-xs"></i>
+                </div>
+                <h2 class="text-base font-bold text-slate-800 truncate">
+                    إدارة المقاسات:
+                    <span id="variants-modal-product-name" class="text-brand-600"></span>
+                </h2>
+            </div>
+            <button id="variants-modal-close-btn" type="button"
+                    class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400
+                           hover:text-slate-700 hover:bg-slate-100 transition-colors flex-shrink-0">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <!-- Scrollable body -->
+        <div class="overflow-y-auto flex-1 px-6 py-5 space-y-6">
+
+            <!-- ── Add / Edit Variant Form ── -->
+            <div>
+                <div class="flex items-center gap-2 mb-4">
+                    <div class="w-6 h-6 rounded-md bg-brand-100 flex items-center justify-center flex-shrink-0">
+                        <i class="fa-solid fa-plus text-brand-600 text-xs"></i>
+                    </div>
+                    <h3 id="variant-form-title" class="text-sm font-bold text-slate-700">إضافة متغير جديد</h3>
+                    <button id="variant-form-cancel-edit-btn" type="button"
+                            style="display:none"
+                            onclick="window.cancelVariantEdit()"
+                            class="mr-auto text-xs text-slate-400 hover:text-red-500 flex items-center gap-1 transition-colors">
+                        <i class="fa-solid fa-xmark"></i> إلغاء التعديل
+                    </button>
+                </div>
+
+                <!-- Form error -->
+                <div id="variant-form-error"
+                     class="hidden flex items-center gap-2 bg-red-50 border border-red-200
+                            text-red-700 rounded-xl px-4 py-3 text-sm font-medium mb-4">
+                    <i class="fa-solid fa-circle-exclamation flex-shrink-0"></i>
+                    <span></span>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <!-- Size / Name (required) -->
+                    <div>
+                        <label for="vf-size-name" class="block text-xs font-semibold text-slate-600 mb-1.5">
+                            الاسم / المقاس <span class="text-red-500">*</span>
+                        </label>
+                        <input type="text" id="vf-size-name" placeholder="مثال: 1 كيلو، 500 جرام"
+                               class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                      text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                                      focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all" />
+                    </div>
+                    <!-- Unit -->
+                    <div>
+                        <label for="vf-unit" class="block text-xs font-semibold text-slate-600 mb-1.5">وحدة القياس</label>
+                        <div class="relative">
+                            <span class="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 pointer-events-none">
+                                <i class="fa-solid fa-ruler text-xs"></i>
+                            </span>
+                            <select id="vf-unit"
+                                    class="w-full pr-8 pl-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                           text-slate-800 outline-none focus:border-brand-500 focus:ring-2
+                                           focus:ring-brand-500/20 focus:bg-white transition-all appearance-none">
+                                <option value="">— بدون وحدة —</option>
+                            </select>
+                        </div>
+                    </div>
+                    <!-- SKU -->
+                    <div>
+                        <label for="vf-sku" class="block text-xs font-semibold text-slate-600 mb-1.5">SKU (اختياري)</label>
+                        <input type="text" id="vf-sku" placeholder="مثال: PKG-001-1KG"
+                               class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                      text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                                      focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all" />
+                    </div>
+                    <!-- Barcode -->
+                    <div>
+                        <label for="vf-barcode" class="block text-xs font-semibold text-slate-600 mb-1.5">الباركود (اختياري)</label>
+                        <input type="text" id="vf-barcode" placeholder="مثال: 6281234567890"
+                               class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                      text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                                      focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all" />
+                    </div>
+                    <!-- Cost Price -->
+                    <div>
+                        <label for="vf-cost-price" class="block text-xs font-semibold text-slate-600 mb-1.5">سعر التكلفة (ر.س)</label>
+                        <input type="number" id="vf-cost-price" placeholder="0.00" min="0" step="0.01"
+                               class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                      text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                                      focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all" />
+                    </div>
+                    <!-- Selling Price -->
+                    <div>
+                        <label for="vf-selling-price" class="block text-xs font-semibold text-slate-600 mb-1.5">سعر البيع (ر.س)</label>
+                        <input type="number" id="vf-selling-price" placeholder="0.00" min="0" step="0.01"
+                               class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                      text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                                      focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all" />
+                    </div>
+                    <!-- Min Stock -->
+                    <div>
+                        <label for="vf-min-stock" class="block text-xs font-semibold text-slate-600 mb-1.5">الحد الأدنى للمخزون</label>
+                        <input type="number" id="vf-min-stock" placeholder="0" min="0" step="1"
+                               class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                      text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                                      focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all" />
+                    </div>
+                    <!-- Status -->
+                    <div>
+                        <label for="vf-status" class="block text-xs font-semibold text-slate-600 mb-1.5">الحالة</label>
+                        <select id="vf-status"
+                                class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                       text-slate-800 outline-none focus:border-brand-500 focus:ring-2
+                                       focus:ring-brand-500/20 focus:bg-white transition-all appearance-none">
+                            <option value="active">نشط</option>
+                            <option value="inactive">غير نشط</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Form submit button -->
+                <div class="flex justify-end mt-4">
+                    <button id="variant-form-submit-btn" type="button"
+                            onclick="window.submitVariantForm()"
+                            class="flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-white
+                                   bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-sm
+                                   transition-all active:scale-[0.98]">
+                        <i class="fa-solid fa-floppy-disk"></i>
+                        <span>إضافة المقاس</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="border-t border-slate-100"></div>
+
+            <!-- ── Existing Variants Table ── -->
+            <div>
+                <div class="flex items-center gap-2 mb-3">
+                    <div class="w-6 h-6 rounded-md bg-slate-100 flex items-center justify-center flex-shrink-0">
+                        <i class="fa-solid fa-list-ul text-slate-500 text-xs"></i>
+                    </div>
+                    <h3 class="text-sm font-bold text-slate-700">المقاسات الحالية</h3>
+                    <span id="variants-count-badge"
+                          class="mr-auto text-xs font-semibold bg-slate-100 text-slate-500 px-2.5 py-0.5 rounded-full">
+                        0 مقاس
+                    </span>
+                </div>
+
+                <div class="overflow-x-auto rounded-xl border border-slate-200">
+                    <table class="w-full">
+                        <thead>
+                            <tr class="bg-slate-50 border-b border-slate-200">
+                                <th class="text-right py-2.5 px-3 text-xs font-bold text-slate-500">الاسم / المقاس</th>
+                                <th class="text-right py-2.5 px-3 text-xs font-bold text-slate-500 hidden sm:table-cell">الوحدة</th>
+                                <th class="text-right py-2.5 px-3 text-xs font-bold text-slate-500 hidden md:table-cell">التكلفة</th>
+                                <th class="text-right py-2.5 px-3 text-xs font-bold text-slate-500 hidden md:table-cell">السعر</th>
+                                <th class="text-right py-2.5 px-3 text-xs font-bold text-slate-500 hidden lg:table-cell">الحد الأدنى</th>
+                                <th class="text-right py-2.5 px-3 text-xs font-bold text-slate-500">الحالة</th>
+                                <th class="py-2.5 px-3 w-20"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="variants-tbody">
+                            <tr>
+                                <td colspan="7" class="py-8 text-center text-slate-400">
+                                    <i class="fa-solid fa-circle-notch fa-spin"></i>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Empty state for variants -->
+                <div id="variants-empty" class="hidden py-8 text-center text-slate-400">
+                    <i class="fa-solid fa-cubes text-3xl mb-2 text-slate-200"></i>
+                    <p class="text-sm font-semibold text-slate-500">لا توجد متغيرات</p>
+                    <p class="text-xs mt-0.5">أضف أول متغير من النموذج أعلاه</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="flex items-center justify-end px-6 py-4 border-t border-slate-100 flex-shrink-0">
+            <button id="variants-modal-done-btn" type="button"
+                    class="px-6 py-2.5 text-sm font-bold text-white bg-brand-600 hover:bg-brand-700
+                           rounded-xl shadow-md transition-all active:scale-[0.98]">
+                تم
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Load the view controller -->
+<script src="/js/views/products.js?v=20260503"></script>

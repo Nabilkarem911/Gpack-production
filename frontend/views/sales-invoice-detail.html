@@ -1,0 +1,160 @@
+<!-- =============================================================================
+     G.PACK 2.0 — Sales Invoice Detail View
+     عرض تفاصيل فاتورة مبيعات
+============================================================================= -->
+
+<!-- Header -->
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+    <div class="flex items-center gap-3">
+        <button onclick="window.navigateTo('sales-invoices')"
+                class="w-9 h-9 flex items-center justify-center rounded-xl bg-white border border-slate-200
+                       text-slate-500 hover:text-brand-600 hover:border-brand-300 transition-colors shadow-sm">
+            <i class="fa-solid fa-arrow-right text-sm"></i>
+        </button>
+        <div>
+            <h1 class="text-2xl font-extrabold text-slate-800">تفاصيل الفاتورة</h1>
+            <p class="text-slate-400 text-sm mt-0.5" id="sid-header-info">جاري التحميل...</p>
+        </div>
+    </div>
+    <div class="flex items-center gap-2" id="sid-actions">
+        <!-- Actions injected by JS -->
+    </div>
+</div>
+
+<!-- ── Invoice Card ─────────────────────────────────────────────────────────── -->
+<div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden mb-5" id="sid-invoice-card">
+    <!-- Invoice Header -->
+    <div class="p-6 border-b border-slate-100 bg-slate-50/50">
+        <div class="flex flex-col md:flex-row md:items-start justify-between gap-4">
+            <!-- Left: Invoice Info -->
+            <div>
+                <div class="flex items-center gap-3 mb-2">
+                    <span class="text-3xl font-black text-brand-600" id="sid-invoice-number">#---</span>
+                    <span id="sid-status-badge" class="px-3 py-1 rounded-lg text-xs font-bold bg-slate-100 text-slate-600">---</span>
+                </div>
+                <div class="text-sm text-slate-500 space-y-1">
+                    <p><i class="fa-regular fa-calendar ml-1"></i> تاريخ الفاتورة: <span id="sid-invoice-date" class="font-semibold text-slate-700">---</span></p>
+                    <p><i class="fa-regular fa-clock ml-1"></i> تاريخ الاستحقاق: <span id="sid-due-date" class="font-semibold text-slate-700">---</span></p>
+                </div>
+            </div>
+            <!-- Right: Client Info -->
+            <div class="text-right">
+                <p class="text-xs text-slate-400 mb-1">العميل</p>
+                <p id="sid-client-name" class="text-lg font-bold text-slate-800 mb-1">---</p>
+                <p id="sid-client-phone" class="text-sm text-slate-500">---</p>
+                <p id="sid-client-city" class="text-sm text-slate-400">---</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Items Table -->
+    <div class="p-6">
+        <h3 class="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2">
+            <i class="fa-solid fa-box-open text-brand-500"></i> الأصناف
+        </h3>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="bg-slate-50 text-xs text-slate-500 border-b border-slate-100">
+                        <th class="py-3 px-4 text-right font-semibold">#</th>
+                        <th class="py-3 px-4 text-right font-semibold">المنتج</th>
+                        <th class="py-3 px-4 text-right font-semibold">المقاس</th>
+                        <th class="py-3 px-4 text-center font-semibold">الكمية</th>
+                        <th class="py-3 px-4 text-right font-semibold">السعر</th>
+                        <th class="py-3 px-4 text-right font-semibold">الخصم</th>
+                        <th class="py-3 px-4 text-right font-semibold">الإجمالي</th>
+                    </tr>
+                </thead>
+                <tbody id="sid-items-tbody">
+                    <!-- Items injected by JS -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Expenses (if any) -->
+    <div class="px-6 pb-6 hidden" id="sid-expenses-section">
+        <h3 class="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2">
+            <i class="fa-solid fa-receipt text-amber-500"></i> مصاريف إضافية
+        </h3>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="bg-amber-50 text-xs text-slate-500 border-b border-amber-100">
+                        <th class="py-2 px-4 text-right font-semibold">البيان</th>
+                        <th class="py-2 px-4 text-right font-semibold">المبلغ</th>
+                    </tr>
+                </thead>
+                <tbody id="sid-expenses-tbody">
+                    <!-- Expenses injected by JS -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Totals -->
+    <div class="p-6 bg-slate-50/50 border-t border-slate-100">
+        <div class="flex flex-col md:flex-row md:justify-end gap-4">
+            <div class="md:w-72 space-y-2">
+                <div class="flex justify-between text-sm">
+                    <span class="text-slate-500">المجموع الفرعي:</span>
+                    <span id="sid-subtotal" class="font-semibold text-slate-700">0.00</span>
+                </div>
+                <div class="flex justify-between text-sm">
+                    <span class="text-slate-500">الضريبة (<span id="sid-tax-rate">15</span>%):</span>
+                    <span id="sid-tax-amount" class="font-semibold text-slate-700">0.00</span>
+                </div>
+                <div class="flex justify-between text-lg font-bold border-t border-slate-200 pt-2 mt-2">
+                    <span class="text-slate-800">الإجمالي:</span>
+                    <span id="sid-grand-total" class="text-emerald-600">0.00</span>
+                </div>
+                <div class="flex justify-between text-sm pt-2">
+                    <span class="text-slate-500">المدفوع:</span>
+                    <span id="sid-paid-amount" class="font-semibold text-blue-600">0.00</span>
+                </div>
+                <div class="flex justify-between text-sm font-bold text-red-600" id="sid-remaining-row">
+                    <span>المتبقي:</span>
+                    <span id="sid-remaining">0.00</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Order Link (if linked) -->
+    <div class="px-6 py-4 bg-brand-50/50 border-t border-brand-100 hidden" id="sid-order-section">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <i class="fa-solid fa-link text-brand-500"></i>
+                <span class="text-sm text-slate-600">مرتبط بأمر التشغيل:</span>
+                <button onclick="window.sidViewOrder()" class="text-brand-600 font-bold hover:underline" id="sid-order-number">
+                    #---
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notes -->
+    <div class="px-6 py-4 border-t border-slate-100 hidden" id="sid-notes-section">
+        <p class="text-xs text-slate-400 mb-1">ملاحظات</p>
+        <p id="sid-notes" class="text-sm text-slate-600 bg-slate-50 p-3 rounded-lg">---</p>
+    </div>
+
+    <!-- Footer -->
+    <div class="px-6 py-3 bg-slate-50 border-t border-slate-100 text-xs text-slate-400 flex justify-between">
+        <span>تم الإنشاء بواسطة: <span id="sid-created-by" class="font-semibold">---</span></span>
+        <span id="sid-created-at">---</span>
+    </div>
+</div>
+
+<!-- ── Payment History (placeholder for future) ─────────────────────────────── -->
+<div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 hidden" id="sid-payments-section">
+    <h3 class="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2">
+        <i class="fa-solid fa-money-bill-wave text-emerald-500"></i> سجل المدفوعات
+    </h3>
+    <div class="text-center text-slate-400 py-8">
+        <i class="fa-solid fa-receipt text-3xl mb-2"></i>
+        <p class="text-sm">لا توجد مدفوعات مسجلة</p>
+    </div>
+</div>
+
+<script src="/js/views/sales-invoice-detail.js?v=20260512"></script>

@@ -1,0 +1,231 @@
+<!-- =============================================================================
+     G.PACK 2.0 - Chart of Accounts View
+     Logic: /js/views/chart-of-accounts.js
+============================================================================= -->
+
+<!-- Page Header -->
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+    <div>
+        <h1 class="text-2xl font-extrabold text-slate-800">الدليل المحاسبي</h1>
+        <p class="text-slate-400 text-sm mt-0.5">شجرة الحسابات وأرصدتها</p>
+    </div>
+    <div class="flex items-center gap-2">
+        <button id="coa-refresh-btn" onclick="window.coaRefresh()"
+                class="w-9 h-9 flex items-center justify-center rounded-xl bg-white border border-slate-200 text-slate-500 hover:text-brand-600 hover:border-brand-300 transition-colors shadow-sm">
+            <i class="fa-solid fa-rotate-right text-sm"></i>
+        </button>
+        <button onclick="window.coaOpenAdd()"
+                class="flex items-center gap-2 px-5 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold rounded-xl shadow-md transition-all active:scale-[0.98]">
+            <i class="fa-solid fa-plus"></i>
+            <span>إضافة حساب</span>
+        </button>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 mb-5">
+    <div class="flex flex-wrap items-center gap-3">
+        <!-- Search -->
+        <div class="relative flex-1 min-w-[200px]">
+            <i class="fa-solid fa-magnifying-glass absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none"></i>
+            <input id="coa-search" type="text" placeholder="بحث بالاسم أو الكود..."
+                   oninput="window.coaFilter()"
+                   class="w-full pr-9 pl-4 py-2 border border-slate-200 rounded-xl text-sm text-slate-700 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition-all" />
+        </div>
+        <!-- Type filter -->
+        <select id="coa-type-filter" onchange="window.coaFilter()"
+                class="px-3 py-2 border border-slate-200 rounded-xl text-sm text-slate-700 focus:border-brand-500 outline-none bg-white">
+            <option value="">كل الأنواع</option>
+            <option value="asset">أصول</option>
+            <option value="liability">خصوم</option>
+            <option value="equity">حقوق الملكية</option>
+            <option value="revenue">إيرادات</option>
+            <option value="expense">مصاريف</option>
+        </select>
+        <!-- Active filter -->
+        <select id="coa-active-filter" onchange="window.coaFilter()"
+                class="px-3 py-2 border border-slate-200 rounded-xl text-sm text-slate-700 focus:border-brand-500 outline-none bg-white">
+            <option value="">كل الحسابات</option>
+            <option value="true">نشط فقط</option>
+            <option value="false">موقوف فقط</option>
+        </select>
+    </div>
+</div>
+
+<!-- Stats Row -->
+<div id="coa-stats" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-5">
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 text-center">
+        <p class="text-2xl font-black text-blue-600" id="coa-stat-asset">—</p>
+        <p class="text-xs text-slate-400 mt-1">الأصول</p>
+    </div>
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 text-center">
+        <p class="text-2xl font-black text-red-500" id="coa-stat-liability">—</p>
+        <p class="text-xs text-slate-400 mt-1">الخصوم</p>
+    </div>
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 text-center">
+        <p class="text-2xl font-black text-purple-600" id="coa-stat-equity">—</p>
+        <p class="text-xs text-slate-400 mt-1">حقوق الملكية</p>
+    </div>
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 text-center">
+        <p class="text-2xl font-black text-emerald-600" id="coa-stat-revenue">—</p>
+        <p class="text-xs text-slate-400 mt-1">الإيرادات</p>
+    </div>
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 text-center">
+        <p class="text-2xl font-black text-amber-500" id="coa-stat-expense">—</p>
+        <p class="text-xs text-slate-400 mt-1">المصاريف</p>
+    </div>
+</div>
+
+<!-- Accounts Table -->
+<div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+    <!-- Loading -->
+    <div id="coa-loading" class="py-16 text-center">
+        <i class="fa-solid fa-circle-notch fa-spin text-2xl text-brand-400 mb-3"></i>
+        <p class="text-slate-400 text-sm">جاري تحميل الدليل المحاسبي...</p>
+    </div>
+    <!-- Table -->
+    <div id="coa-table-wrap" class="hidden overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="bg-slate-50 text-xs text-slate-500 border-b border-slate-100">
+                    <th class="py-3 px-4 text-right font-semibold">الكود</th>
+                    <th class="py-3 px-4 text-right font-semibold">اسم الحساب</th>
+                    <th class="py-3 px-4 text-right font-semibold hidden sm:table-cell">النوع</th>
+                    <th class="py-3 px-4 text-right font-semibold hidden md:table-cell">الحساب الأب</th>
+                    <th class="py-3 px-4 text-right font-semibold">إجمالي مدين</th>
+                    <th class="py-3 px-4 text-right font-semibold">إجمالي دائن</th>
+                    <th class="py-3 px-4 text-right font-semibold">الرصيد</th>
+                    <th class="py-3 px-4 text-right font-semibold hidden sm:table-cell">الحالة</th>
+                    <th class="py-3 px-4 text-center font-semibold">إجراءات</th>
+                </tr>
+            </thead>
+            <tbody id="coa-tbody"></tbody>
+        </table>
+    </div>
+    <!-- Empty -->
+    <div id="coa-empty" class="hidden py-16 text-center">
+        <i class="fa-solid fa-sitemap text-4xl text-slate-200 mb-3"></i>
+        <p class="text-slate-400 text-sm">لا توجد حسابات مطابقة</p>
+    </div>
+</div>
+
+<!-- ── Add / Edit Modal ─────────────────────────────────────────────────── -->
+<div id="coa-modal"
+     style="display:none"
+     class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 opacity-0 transition-opacity duration-200">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+        <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+            <h3 id="coa-modal-title" class="text-base font-bold text-slate-800">إضافة حساب جديد</h3>
+            <button onclick="window.coaCloseModal()"
+                    class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        <div class="p-6 space-y-4">
+            <input type="hidden" id="coa-modal-id" />
+
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1.5">كود الحساب <span class="text-red-500">*</span></label>
+                    <input id="coa-modal-code" type="text" placeholder="مثال: 1150"
+                           class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition-all" />
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1.5">نوع الحساب <span class="text-red-500">*</span></label>
+                    <select id="coa-modal-type"
+                            class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-brand-500 outline-none bg-white transition-all">
+                        <option value="">اختر النوع</option>
+                        <option value="asset">أصول</option>
+                        <option value="liability">خصوم</option>
+                        <option value="equity">حقوق الملكية</option>
+                        <option value="revenue">إيرادات</option>
+                        <option value="expense">مصاريف</option>
+                    </select>
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-xs font-bold text-slate-600 mb-1.5">اسم الحساب <span class="text-red-500">*</span></label>
+                <input id="coa-modal-name" type="text" placeholder="أدخل اسم الحساب..."
+                       class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition-all" />
+            </div>
+
+            <div>
+                <label class="block text-xs font-bold text-slate-600 mb-1.5">الحساب الأب <span class="text-slate-400 font-normal">(اختياري)</span></label>
+                <select id="coa-modal-parent"
+                        class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-brand-500 outline-none bg-white transition-all">
+                    <option value="">— بدون حساب أب —</option>
+                </select>
+            </div>
+
+            <div id="coa-modal-active-row" class="hidden items-center gap-3">
+                <label class="text-xs font-bold text-slate-600">حالة الحساب</label>
+                <label class="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" id="coa-modal-active" class="w-4 h-4 accent-brand-600" checked />
+                    <span class="text-sm text-slate-600">نشط</span>
+                </label>
+            </div>
+        </div>
+        <div class="flex gap-3 px-6 pb-6">
+            <button id="coa-modal-save-btn" onclick="window.coaSave()"
+                    class="flex-1 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold rounded-xl transition-all active:scale-[0.98]">
+                <i class="fa-solid fa-floppy-disk ml-1.5"></i> حفظ
+            </button>
+            <button onclick="window.coaCloseModal()"
+                    class="flex-1 py-2.5 border border-slate-200 text-slate-600 text-sm font-bold rounded-xl hover:bg-slate-50 transition-all">
+                إلغاء
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ── Account Detail / Ledger Modal ───────────────────────────────────── -->
+<div id="coa-detail-modal"
+     style="display:none"
+     class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 opacity-0 transition-opacity duration-200">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col">
+        <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100 flex-shrink-0">
+            <div>
+                <h3 id="coa-detail-title" class="text-base font-bold text-slate-800">دفتر الأستاذ</h3>
+                <p id="coa-detail-sub" class="text-xs text-slate-400 mt-0.5"></p>
+            </div>
+            <button onclick="window.coaCloseDetail()"
+                    class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        <!-- Balance summary -->
+        <div class="grid grid-cols-3 gap-4 px-6 py-4 bg-slate-50 border-b border-slate-100 flex-shrink-0">
+            <div class="text-center">
+                <p class="text-xs text-slate-400 mb-0.5">إجمالي المدين</p>
+                <p id="coa-detail-debit" class="text-lg font-black text-red-500 font-mono">—</p>
+            </div>
+            <div class="text-center">
+                <p class="text-xs text-slate-400 mb-0.5">إجمالي الدائن</p>
+                <p id="coa-detail-credit" class="text-lg font-black text-emerald-600 font-mono">—</p>
+            </div>
+            <div class="text-center">
+                <p class="text-xs text-slate-400 mb-0.5">صافي الرصيد</p>
+                <p id="coa-detail-balance" class="text-lg font-black text-slate-800 font-mono">—</p>
+            </div>
+        </div>
+        <!-- Lines table -->
+        <div class="flex-1 overflow-auto p-0">
+            <table class="w-full text-sm">
+                <thead class="sticky top-0">
+                    <tr class="bg-slate-50 text-xs text-slate-500 border-b border-slate-100">
+                        <th class="py-3 px-4 text-right font-semibold">رقم القيد</th>
+                        <th class="py-3 px-4 text-right font-semibold">التاريخ</th>
+                        <th class="py-3 px-4 text-right font-semibold">النوع</th>
+                        <th class="py-3 px-4 text-right font-semibold">البيان</th>
+                        <th class="py-3 px-4 text-right font-semibold">مدين</th>
+                        <th class="py-3 px-4 text-right font-semibold">دائن</th>
+                    </tr>
+                </thead>
+                <tbody id="coa-detail-tbody"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script src="/js/views/chart-of-accounts.js?v=20260517a"></script>

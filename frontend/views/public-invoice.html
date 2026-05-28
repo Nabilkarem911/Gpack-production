@@ -1,0 +1,153 @@
+<!-- =============================================================================
+     G.PACK 2.0 — Public Invoice View (No Login Required)
+     عرض فاتورة مبيعات للعميل بدون تسجيل دخول
+============================================================================= -->
+
+<div class="max-w-5xl mx-auto">
+    <!-- Header: Back to Statement -->
+    <div class="flex items-center justify-between mb-6">
+        <button onclick="_goBack()" 
+            class="inline-flex items-center gap-2 px-4 py-2 bg-white text-slate-700 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors">
+            <i class="fa-solid fa-arrow-right"></i>
+            <span>العودة لكشف الحساب</span>
+        </button>
+        <div class="flex items-center gap-2 text-slate-500 text-sm">
+            <i class="fa-solid fa-eye"></i>
+            <span>عرض فقط</span>
+        </div>
+    </div>
+
+    <!-- Loading State -->
+    <div id="pinv-loading" class="py-16 text-center">
+        <i class="fa-solid fa-circle-notch fa-spin text-4xl text-brand-500 mb-4"></i>
+        <p class="text-slate-500">جاري تحميل الفاتورة...</p>
+    </div>
+
+    <!-- Error State -->
+    <div id="pinv-error" class="hidden py-16 text-center">
+        <i class="fa-solid fa-circle-exclamation text-5xl mb-4 text-red-300"></i>
+        <p class="text-lg font-semibold text-slate-500">خطأ في تحميل الفاتورة</p>
+        <p class="text-sm text-slate-400 mt-1">قد تكون الفاتورة غير موجودة أو تم إلغاؤها</p>
+    </div>
+
+    <!-- Invoice Card -->
+    <div id="pinv-card" class="hidden bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        
+        <!-- Invoice Header -->
+        <div class="bg-slate-50 border-b border-slate-200 p-6">
+            <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+                <div>
+                    <div class="flex items-center gap-3 mb-2">
+                        <h1 class="text-2xl font-black text-slate-800">
+                            فاتورة مبيعات <span class="text-brand-600">#<span id="pinv-number">---</span></span>
+                        </h1>
+                        <span id="pinv-status" class="px-3 py-1 rounded-lg text-xs font-bold">---</span>
+                    </div>
+                    <p class="text-slate-500 text-sm">
+                        <i class="fa-regular fa-calendar ml-1"></i>
+                        تاريخ الفاتورة: <span id="pinv-date">---</span>
+                    </p>
+                    <p class="text-slate-500 text-sm mt-1">
+                        <i class="fa-regular fa-clock ml-1"></i>
+                        تاريخ الاستحقاق: <span id="pinv-due">---</span>
+                    </p>
+                </div>
+                <div class="text-left md:text-right">
+                    <div class="text-sm text-slate-500 mb-1">العميل</div>
+                    <div id="pinv-client-name" class="text-lg font-bold text-slate-800">---</div>
+                    <div id="pinv-client-phone" class="text-sm text-slate-500">---</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Invoice Items -->
+        <div class="p-6">
+            <h3 class="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2">
+                <i class="fa-solid fa-box text-brand-500"></i>
+                أصناف الفاتورة
+            </h3>
+            <div class="overflow-x-auto rounded-lg border border-slate-200">
+                <table class="w-full text-sm">
+                    <thead class="bg-slate-50 text-slate-600">
+                        <tr>
+                            <th class="py-3 px-4 text-right font-semibold">الصنف</th>
+                            <th class="py-3 px-4 text-center font-semibold">المقاس</th>
+                            <th class="py-3 px-4 text-center font-semibold">الكمية</th>
+                            <th class="py-3 px-4 text-center font-semibold">السعر</th>
+                            <th class="py-3 px-4 text-center font-semibold">الخصم</th>
+                            <th class="py-3 px-4 text-left font-semibold">الإجمالي</th>
+                        </tr>
+                    </thead>
+                    <tbody id="pinv-items" class="divide-y divide-slate-100">
+                        <!-- Items rendered here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Additional Expenses -->
+        <div id="pinv-expenses-section" class="hidden px-6 pb-4">
+            <h3 class="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+                <i class="fa-solid fa-plus-circle text-amber-500"></i>
+                مصاريف إضافية
+            </h3>
+            <div class="bg-amber-50 rounded-lg p-4">
+                <table class="w-full text-sm">
+                    <tbody id="pinv-expenses" class="divide-y divide-amber-100">
+                        <!-- Expenses rendered here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Totals -->
+        <div class="bg-slate-50 border-t border-slate-200 p-6">
+            <div class="flex flex-col md:flex-row md:justify-end">
+                <div class="w-full md:w-72 space-y-2">
+                    <div class="flex justify-between text-sm">
+                        <span class="text-slate-600">الإجمالي الفرعي:</span>
+                        <span id="pinv-subtotal" class="font-semibold">0.00</span>
+                    </div>
+                    <div class="flex justify-between text-sm">
+                        <span class="text-slate-600">الضريبة (15%):</span>
+                        <span id="pinv-tax" class="font-semibold">0.00</span>
+                    </div>
+                    <div id="pinv-expenses-total-row" class="hidden flex justify-between text-sm">
+                        <span class="text-slate-600">مصاريف إضافية:</span>
+                        <span id="pinv-expenses-total" class="font-semibold">0.00</span>
+                    </div>
+                    <div class="flex justify-between text-lg font-bold border-t border-slate-200 pt-2 mt-2">
+                        <span class="text-slate-800">الإجمالي الكلي:</span>
+                        <span id="pinv-grand-total" class="text-brand-600">0.00</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Notes -->
+        <div id="pinv-notes-section" class="hidden px-6 pb-6">
+            <div class="bg-slate-50 rounded-lg p-4 text-sm">
+                <div class="font-semibold text-slate-700 mb-1">ملاحظات:</div>
+                <div id="pinv-notes" class="text-slate-600"></div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="bg-slate-100 border-t border-slate-200 p-4 text-center text-xs text-slate-500">
+            <p>هذه الفاتورة تم عرضها من خلال نظام G.PACK ERP</p>
+            <p class="mt-1">تاريخ العرض: <span id="pinv-view-date">---</span></p>
+        </div>
+    </div>
+</div>
+
+<script>
+    function _goBack() {
+        // Go back to client statement using history
+        if (window.history.length > 1) {
+            window.history.back();
+        } else {
+            // Fallback: try to get client token from localStorage or redirect to home
+            window.location.hash = '/';
+        }
+    }
+</script>

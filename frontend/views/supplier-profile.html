@@ -1,0 +1,271 @@
+<!-- =============================================================================
+     G.PACK 2.0 - Supplier Profile View Fragment
+     Injected into #main-content by the SPA router.
+     Logic handled by /js/views/supplier-profile.js
+============================================================================= -->
+
+<!-- Page Header -->
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+    <div class="flex items-center gap-3">
+        <button onclick="window.navigateTo('suppliers')"
+                class="w-9 h-9 flex items-center justify-center rounded-xl bg-white border border-slate-200 text-slate-500 hover:text-brand-600 hover:border-brand-300 transition-colors shadow-sm">
+            <i class="fa-solid fa-arrow-right text-sm"></i>
+        </button>
+        <div>
+            <h1 id="sp-page-title" class="text-2xl font-extrabold text-slate-800">ملف المورد</h1>
+            <p id="sp-page-sub" class="text-slate-400 text-sm mt-0.5">جاري التحميل...</p>
+        </div>
+    </div>
+    <div class="flex items-center gap-2">
+        <button id="sp-print-btn"
+                onclick="document.getElementById('sp-print-modal').style.display='flex'; requestAnimationFrame(()=>document.getElementById('sp-print-modal').classList.add('opacity-100'))"
+                class="hidden flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 hover:border-brand-400
+                       text-slate-700 text-sm font-bold rounded-xl shadow-sm transition-all active:scale-[0.98]">
+            <i class="fa-solid fa-print text-brand-600"></i>
+            <span>طباعة كشف الحساب</span>
+        </button>
+        <button id="sp-edit-btn" onclick="window.openSupplierModal(window._spSupplierId)"
+                class="hidden flex items-center gap-2 px-5 py-2.5 bg-brand-600 hover:bg-brand-700
+                       text-white text-sm font-bold rounded-xl shadow-md transition-all active:scale-[0.98]">
+            <i class="fa-solid fa-pen-to-square"></i>
+            <span>تعديل بيانات المورد</span>
+        </button>
+    </div>
+</div>
+
+<!-- Loading skeleton -->
+<div id="sp-loading" class="space-y-4">
+    <div class="bg-white rounded-2xl p-6 animate-pulse">
+        <div class="h-5 bg-slate-100 rounded w-1/3 mb-3"></div>
+        <div class="h-4 bg-slate-100 rounded w-1/2"></div>
+    </div>
+</div>
+
+<!-- Error state -->
+<div id="sp-error" class="hidden bg-white rounded-2xl p-12 text-center">
+    <i class="fa-solid fa-circle-exclamation text-4xl text-red-300 mb-3"></i>
+    <p id="sp-error-msg" class="text-slate-500 text-sm">حدث خطأ أثناء تحميل البيانات.</p>
+</div>
+
+<!-- Main Content -->
+<div id="sp-content" class="hidden space-y-5">
+
+    <!-- ── Supplier Info Card ─────────────────────────────────────────────── -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+        <div class="bg-gradient-to-l from-slate-700 to-slate-900 px-6 py-5">
+            <div class="flex items-center gap-4">
+                <div class="w-14 h-14 rounded-2xl bg-white/20 flex items-center justify-center flex-shrink-0">
+                    <i class="fa-solid fa-industry text-white text-xl"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h2 id="sp-name" class="text-xl font-black text-white truncate"></h2>
+                    <p id="sp-type-badge" class="mt-1"></p>
+                </div>
+                <div id="sp-status-badge"></div>
+            </div>
+        </div>
+        <div class="p-6">
+            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-5">
+                <div>
+                    <p class="text-xs text-slate-400 mb-1">جهة الاتصال</p>
+                    <p id="sp-contact" class="text-sm font-semibold text-slate-700">—</p>
+                </div>
+                <div>
+                    <p class="text-xs text-slate-400 mb-1">الهاتف</p>
+                    <p id="sp-phone" class="text-sm font-semibold text-slate-700">—</p>
+                </div>
+                <div>
+                    <p class="text-xs text-slate-400 mb-1">البريد الإلكتروني</p>
+                    <p id="sp-email" class="text-sm font-semibold text-slate-700">—</p>
+                </div>
+                <div>
+                    <p class="text-xs text-slate-400 mb-1">المدينة</p>
+                    <p id="sp-city" class="text-sm font-semibold text-slate-700">—</p>
+                </div>
+                <div>
+                    <p class="text-xs text-slate-400 mb-1">السجل التجاري</p>
+                    <p id="sp-cr" class="text-sm font-semibold text-slate-700">—</p>
+                </div>
+                <div>
+                    <p class="text-xs text-slate-400 mb-1">الرقم الضريبي</p>
+                    <p id="sp-tax" class="text-sm font-semibold text-slate-700">—</p>
+                </div>
+                <div>
+                    <p class="text-xs text-slate-400 mb-1">شروط الدفع</p>
+                    <p id="sp-terms" class="text-sm font-semibold text-slate-700">—</p>
+                </div>
+                <div>
+                    <p class="text-xs text-slate-400 mb-1">العنوان</p>
+                    <p id="sp-address" class="text-sm font-semibold text-slate-700">—</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Stats Row ──────────────────────────────────────────────────────── -->
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 text-center">
+            <p class="text-2xl font-black text-slate-700" id="sp-stat-orders">—</p>
+            <p class="text-xs text-slate-400 mt-1">إجمالي الطلبات</p>
+        </div>
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 text-center">
+            <p class="text-2xl font-black text-amber-500" id="sp-stat-pending">—</p>
+            <p class="text-xs text-slate-400 mt-1">طلبات معلقة</p>
+        </div>
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 text-center">
+            <p class="text-2xl font-black text-emerald-600" id="sp-stat-value">—</p>
+            <p class="text-xs text-slate-400 mt-1">إجمالي قيمة الطلبات</p>
+        </div>
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 text-center">
+            <p class="text-2xl font-black text-blue-600" id="sp-stat-paid">—</p>
+            <p class="text-xs text-slate-400 mt-1">إجمالي المدفوع</p>
+        </div>
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 text-center">
+            <p class="text-2xl font-black text-red-500" id="sp-stat-remaining">—</p>
+            <p class="text-xs text-slate-400 mt-1">المتبقي المستحق</p>
+        </div>
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 text-center">
+            <p class="text-2xl font-black text-purple-600" id="sp-stat-open-inv">—</p>
+            <p class="text-xs text-slate-400 mt-1">فواتير مفتوحة</p>
+        </div>
+    </div>
+
+    <!-- ── Tabs ───────────────────────────────────────────────────────────── -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+        <div class="flex border-b border-slate-100 overflow-x-auto">
+            <button onclick="spTab('orders')"   id="sp-tab-orders"   class="sp-tab active-sp-tab">
+                <i class="fa-solid fa-boxes-stacked ml-1.5"></i>أوامر التصنيع
+                <span id="sp-tab-orders-badge"   class="sp-badge bg-slate-100 text-slate-700"></span>
+            </button>
+            <button onclick="spTab('invoices')" id="sp-tab-invoices" class="sp-tab">
+                <i class="fa-solid fa-file-invoice ml-1.5"></i>فواتير الشراء
+                <span id="sp-tab-invoices-badge" class="sp-badge bg-purple-100 text-purple-700"></span>
+            </button>
+            <button onclick="spTab('vouchers')" id="sp-tab-vouchers" class="sp-tab">
+                <i class="fa-solid fa-money-bill-transfer ml-1.5"></i>سندات الصرف
+                <span id="sp-tab-vouchers-badge" class="sp-badge bg-emerald-100 text-emerald-700"></span>
+            </button>
+        </div>
+
+        <!-- Orders Tab -->
+        <div id="sp-panel-orders" class="sp-panel p-0">
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="bg-slate-50 text-xs text-slate-500 border-b border-slate-100">
+                            <th class="py-3 px-4 text-right font-semibold">رقم الأمر</th>
+                            <th class="py-3 px-4 text-right font-semibold">الحالة</th>
+                            <th class="py-3 px-4 text-right font-semibold hidden sm:table-cell">طلب العميل</th>
+                            <th class="py-3 px-4 text-right font-semibold hidden sm:table-cell">تاريخ الإنشاء</th>
+                            <th class="py-3 px-4 text-right font-semibold hidden md:table-cell">موعد التسليم</th>
+                            <th class="py-3 px-4 text-right font-semibold hidden md:table-cell">الأصناف</th>
+                            <th class="py-3 px-4 text-right font-semibold">الإجمالي</th>
+                            <th class="py-3 px-4 text-right font-semibold hidden md:table-cell">المدفوع</th>
+                            <th class="py-3 px-4 text-right font-semibold hidden md:table-cell">المتبقي</th>
+                            <th class="py-3 px-4 text-right font-semibold hidden sm:table-cell">فاتورة</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sp-orders-tbody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Invoices Tab -->
+        <div id="sp-panel-invoices" class="sp-panel hidden p-0">
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="bg-slate-50 text-xs text-slate-500 border-b border-slate-100">
+                            <th class="py-3 px-4 text-right font-semibold">رقم الفاتورة</th>
+                            <th class="py-3 px-4 text-right font-semibold hidden sm:table-cell">مرجع المورد</th>
+                            <th class="py-3 px-4 text-right font-semibold">أمر التصنيع</th>
+                            <th class="py-3 px-4 text-right font-semibold hidden sm:table-cell">التاريخ</th>
+                            <th class="py-3 px-4 text-right font-semibold">الإجمالي</th>
+                            <th class="py-3 px-4 text-right font-semibold hidden md:table-cell">المدفوع</th>
+                            <th class="py-3 px-4 text-right font-semibold hidden md:table-cell">المتبقي</th>
+                            <th class="py-3 px-4 text-right font-semibold">الحالة</th>
+                            <th class="py-3 px-4 text-right font-semibold">طباعة</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sp-invoices-tbody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Payment Vouchers Tab -->
+        <div id="sp-panel-vouchers" class="sp-panel hidden p-0">
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="bg-slate-50 text-xs text-slate-500 border-b border-slate-100">
+                            <th class="py-3 px-4 text-right font-semibold">رقم السند</th>
+                            <th class="py-3 px-4 text-right font-semibold hidden sm:table-cell">التاريخ</th>
+                            <th class="py-3 px-4 text-right font-semibold">المبلغ</th>
+                            <th class="py-3 px-4 text-right font-semibold hidden md:table-cell">البيان</th>
+                            <th class="py-3 px-4 text-right font-semibold">الحالة</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sp-vouchers-tbody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.sp-tab {
+    display:flex; align-items:center; gap:4px;
+    padding:12px 20px; font-size:13px; font-weight:700;
+    color:#64748b; border-bottom:2px solid transparent;
+    white-space:nowrap; transition:all 0.15s;
+    background:none; border-top:none; border-right:none; border-left:none; cursor:pointer;
+}
+.sp-tab:hover { color:#334155; background:#f8fafc; }
+.sp-tab.active-sp-tab { color:#334155; border-bottom-color:#334155; }
+.sp-badge { font-size:10px; font-weight:800; padding:1px 6px; border-radius:999px; }
+</style>
+
+<!-- ── Print Statement Date Filter Modal ─────────────────────────────────── -->
+<div id="sp-print-modal"
+     style="display:none"
+     class="fixed inset-0 z-50 items-center justify-center p-4 bg-black/50 opacity-0 transition-opacity duration-200">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+        <div class="flex items-center justify-between mb-5">
+            <h3 class="text-base font-bold text-slate-800">طباعة كشف حساب المورد</h3>
+            <button onclick="document.getElementById('sp-print-modal').classList.remove('opacity-100'); setTimeout(()=>document.getElementById('sp-print-modal').style.display='none',200)"
+                    class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        <div class="space-y-4">
+            <div>
+                <label class="block text-xs font-bold text-slate-600 mb-1.5">من تاريخ <span class="font-normal text-slate-400">(اختياري)</span></label>
+                <input type="date" id="sp-print-from"
+                       class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-700 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition-all" />
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-600 mb-1.5">إلى تاريخ <span class="font-normal text-slate-400">(اختياري)</span></label>
+                <input type="date" id="sp-print-to"
+                       class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-700 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition-all" />
+            </div>
+            <p class="text-xs text-slate-400">اتركهما فارغين لطباعة كامل السجل</p>
+        </div>
+        <div class="flex gap-3 mt-6">
+            <button onclick="
+                const from = document.getElementById('sp-print-from').value;
+                const to   = document.getElementById('sp-print-to').value;
+                document.getElementById('sp-print-modal').classList.remove('opacity-100');
+                setTimeout(()=>document.getElementById('sp-print-modal').style.display='none',200);
+                window.printSupplierStatement(from || null, to || null);"
+                    class="flex-1 flex items-center justify-center gap-2 py-2.5 bg-slate-800 hover:bg-slate-900 text-white text-sm font-bold rounded-xl transition-all">
+                <i class="fa-solid fa-print"></i> طباعة
+            </button>
+            <button onclick="document.getElementById('sp-print-modal').classList.remove('opacity-100'); setTimeout(()=>document.getElementById('sp-print-modal').style.display='none',200)"
+                    class="flex-1 py-2.5 border border-slate-200 text-slate-600 text-sm font-bold rounded-xl hover:bg-slate-50 transition-all">
+                إلغاء
+            </button>
+        </div>
+    </div>
+</div>
+
+<script src="/js/views/supplier-profile.js?v=20260512a"></script>

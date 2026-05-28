@@ -1,0 +1,1379 @@
+<!-- =============================================================================
+     G.PACK 2.0 - Quotations View Fragment
+     Injected into #main-content by the SPA router.
+     Logic is handled by /js/views/quotations.js.
+     A "Quotation" = orders record with status = 'quote'.
+============================================================================= -->
+
+<!-- Page Header -->
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+    <div>
+        <h1 class="text-2xl font-extrabold text-slate-800">عروض الأسعار</h1>
+        <p class="text-slate-500 text-sm mt-0.5">إنشاء وإدارة عروض الأسعار للعملاء</p>
+    </div>
+    <button id="add-quote-btn"
+            class="flex items-center gap-2 px-5 py-2.5 bg-brand-600 hover:bg-brand-700 active:scale-[0.98]
+                   text-white text-sm font-bold rounded-xl shadow-md shadow-brand-600/20 transition-all">
+        <i class="fa-solid fa-file-circle-plus"></i>
+        <span>إنشاء عرض سعر</span>
+    </button>
+</div>
+
+<!-- Stats Cards -->
+<div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+    <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-3.5">
+        <div class="flex items-center gap-2.5">
+            <div class="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center">
+                <i class="fa-solid fa-file-invoice text-blue-500 text-sm"></i>
+            </div>
+            <div>
+                <p class="text-xs text-slate-400 font-semibold">عروض نشطة</p>
+                <p id="stat-active" class="text-lg font-extrabold text-slate-800">0</p>
+            </div>
+        </div>
+    </div>
+    <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-3.5">
+        <div class="flex items-center gap-2.5">
+            <div class="w-9 h-9 rounded-lg bg-emerald-50 flex items-center justify-center">
+                <i class="fa-solid fa-coins text-emerald-500 text-sm"></i>
+            </div>
+            <div>
+                <p class="text-xs text-slate-400 font-semibold">إجمالي المبالغ</p>
+                <p id="stat-total" class="text-lg font-extrabold text-slate-800">0</p>
+            </div>
+        </div>
+    </div>
+    <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-3.5">
+        <div class="flex items-center gap-2.5">
+            <div class="w-9 h-9 rounded-lg bg-red-50 flex items-center justify-center">
+                <i class="fa-solid fa-clock-rotate-left text-red-500 text-sm"></i>
+            </div>
+            <div>
+                <p class="text-xs text-slate-400 font-semibold">منتهية الصلاحية</p>
+                <p id="stat-expired" class="text-lg font-extrabold text-red-600">0</p>
+            </div>
+        </div>
+    </div>
+    <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-3.5">
+        <div class="flex items-center gap-2.5">
+            <div class="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center">
+                <i class="fa-solid fa-box-archive text-slate-400 text-sm"></i>
+            </div>
+            <div>
+                <p class="text-xs text-slate-400 font-semibold">مؤرشفة</p>
+                <p id="stat-archived" class="text-lg font-extrabold text-slate-600">0</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Search & Filter Bar -->
+<div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 mb-4">
+    <div class="flex flex-col sm:flex-row gap-3">
+        <div class="relative flex-1">
+            <span class="absolute inset-y-0 right-0 flex items-center pr-3.5 text-slate-400 pointer-events-none">
+                <i class="fa-solid fa-magnifying-glass text-sm"></i>
+            </span>
+            <input type="text"
+                   id="quotes-search"
+                   placeholder="بحث برقم العرض أو اسم العميل..."
+                   class="w-full pr-10 pl-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                          text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                          focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all" />
+        </div>
+        <select id="quotes-client-filter"
+                onchange="window.applyQuoteFilters()"
+                class="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700
+                       outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all
+                       appearance-none min-w-[140px]">
+            <option value="">كل العملاء</option>
+        </select>
+        <input type="date" id="quotes-date-from"
+               onchange="window.applyQuoteFilters()"
+               title="من تاريخ"
+               class="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700
+                      outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all w-[130px]" />
+        <input type="date" id="quotes-date-to"
+               onchange="window.applyQuoteFilters()"
+               title="إلى تاريخ"
+               class="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700
+                      outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all w-[130px]" />
+    </div>
+</div>
+
+<!-- Archive Tabs -->
+<div class="flex gap-1 mb-4">
+    <button id="tab-active"
+            onclick="window.switchQuoteTab('active')"
+            class="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all
+                   bg-brand-600 text-white shadow-sm">
+        <i class="fa-solid fa-file-invoice"></i>
+        <span>العروض النشطة</span>
+        <span id="tab-active-count" class="bg-white/20 text-white text-xs px-2 py-0.5 rounded-full font-bold mr-1"></span>
+    </button>
+    <button id="tab-archived"
+            onclick="window.switchQuoteTab('archived')"
+            class="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all
+                   bg-slate-100 text-slate-500 hover:bg-slate-200">
+        <i class="fa-solid fa-box-archive"></i>
+        <span>الأرشيف</span>
+        <span id="tab-archived-count" class="bg-slate-200 text-slate-500 text-xs px-2 py-0.5 rounded-full font-bold mr-1"></span>
+    </button>
+</div>
+
+<!-- Quotations Table Card -->
+<div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+    <div class="overflow-x-auto">
+        <table class="w-full">
+            <thead>
+                <tr class="bg-slate-50 border-b border-slate-200">
+                    <th class="text-right py-3.5 px-4 text-xs font-bold text-slate-500 uppercase tracking-wide">رقم العرض</th>
+                    <th class="text-right py-3.5 px-4 text-xs font-bold text-slate-500 uppercase tracking-wide">العميل</th>
+                    <th class="text-right py-3.5 px-4 text-xs font-bold text-slate-500 uppercase tracking-wide hidden sm:table-cell">التاريخ</th>
+                    <th class="text-right py-3.5 px-4 text-xs font-bold text-slate-500 uppercase tracking-wide hidden md:table-cell">صالح حتى</th>
+                    <th class="text-right py-3.5 px-4 text-xs font-bold text-slate-500 uppercase tracking-wide hidden md:table-cell">الإجمالي</th>
+                    <th class="text-right py-3.5 px-4 text-xs font-bold text-slate-500 uppercase tracking-wide">الحالة</th>
+                    <th class="py-3.5 px-4"></th>
+                </tr>
+            </thead>
+            <tbody id="quotes-tbody">
+                <tr>
+                    <td colspan="7" class="py-10 text-center text-slate-400">
+                        <i class="fa-solid fa-circle-notch fa-spin text-2xl"></i>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Empty state -->
+    <div id="quotes-empty" class="hidden py-16 text-center text-slate-400">
+        <i class="fa-solid fa-file-invoice text-5xl mb-4 text-slate-200"></i>
+        <p class="text-base font-semibold text-slate-500">لا توجد عروض أسعار حتى الآن</p>
+        <p class="text-sm mt-1">ابدأ بإنشاء أول عرض سعر للعملاء</p>
+    </div>
+</div>
+
+<!-- =============================================================================
+     QUOTE ADD / EDIT MODAL (Full-Screen)
+============================================================================= -->
+<div id="quote-modal"
+     style="display:none"
+     class="fixed inset-0 z-50 items-center justify-center p-0 sm:p-4
+            bg-black/60 opacity-0 transition-opacity duration-200">
+
+    <div class="modal-panel bg-white w-full sm:rounded-2xl shadow-2xl
+                sm:max-w-5xl max-h-screen sm:max-h-[95vh] flex flex-col
+                transform scale-95 transition-transform duration-200">
+
+        <!-- Modal Header -->
+        <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100 flex-shrink-0">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-lg bg-brand-100 flex items-center justify-center">
+                    <i class="fa-solid fa-file-invoice text-brand-600 text-sm"></i>
+                </div>
+                <div>
+                    <h2 id="quote-modal-title" class="text-base font-bold text-slate-800">إنشاء عرض سعر جديد</h2>
+                    <p id="quote-modal-number" class="text-xs text-slate-400 font-mono hidden"></p>
+                </div>
+            </div>
+            <button id="quote-modal-close-btn" type="button"
+                    class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400
+                           hover:text-slate-700 hover:bg-slate-100 transition-colors">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <!-- Modal Body — Scrollable -->
+        <div class="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+
+            <!-- Error Alert -->
+            <div id="quote-form-error"
+                 class="hidden flex items-center gap-2 bg-red-50 border border-red-200
+                        text-red-700 rounded-xl px-4 py-3 text-sm font-medium">
+                <i class="fa-solid fa-circle-exclamation flex-shrink-0"></i>
+                <span></span>
+            </div>
+
+            <!-- ── Section A: Header Info ── -->
+            <div>
+                <div class="flex items-center gap-2 mb-4">
+                    <div class="w-6 h-6 rounded-md bg-brand-100 flex items-center justify-center flex-shrink-0">
+                        <i class="fa-solid fa-circle-info text-brand-600 text-xs"></i>
+                    </div>
+                    <h3 class="text-sm font-bold text-slate-700">معلومات العرض</h3>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <!-- Client -->
+                    <div class="sm:col-span-1">
+                        <label for="quote-client" class="block text-xs font-semibold text-slate-600 mb-1.5">
+                            العميل <span class="text-red-500">*</span>
+                        </label>
+                        <div class="flex items-center gap-1.5">
+                            <div class="relative flex-1">
+                                <span class="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 pointer-events-none">
+                                    <i class="fa-solid fa-user text-xs"></i>
+                                </span>
+                                <select id="quote-client"
+                                        class="w-full pr-8 pl-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                               text-slate-800 outline-none focus:border-brand-500 focus:ring-2
+                                               focus:ring-brand-500/20 focus:bg-white transition-all appearance-none">
+                                    <option value="">— اختر العميل —</option>
+                                </select>
+                            </div>
+                            <button id="quick-add-client-btn" type="button" title="إضافة عميل سريع"
+                                    class="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-xl
+                                           bg-emerald-50 border border-emerald-200 text-emerald-600
+                                           hover:bg-emerald-100 transition-colors active:scale-95">
+                                <i class="fa-solid fa-plus text-sm"></i>
+                            </button>
+                            <button id="client-history-btn" type="button" title="سجل العميل"
+                                    class="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-xl
+                                           bg-blue-50 border border-blue-200 text-blue-600
+                                           hover:bg-blue-100 transition-colors active:scale-95">
+                                <i class="fa-solid fa-clock-rotate-left text-sm"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Order Date -->
+                    <div>
+                        <label for="quote-order-date" class="block text-xs font-semibold text-slate-600 mb-1.5">
+                            تاريخ العرض
+                        </label>
+                        <input type="date" id="quote-order-date"
+                               class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                      text-slate-800 outline-none focus:border-brand-500 focus:ring-2
+                                      focus:ring-brand-500/20 focus:bg-white transition-all" />
+                    </div>
+
+                    <!-- Valid Until -->
+                    <div>
+                        <label for="quote-valid-until" class="block text-xs font-semibold text-slate-600 mb-1.5">
+                            صالح حتى
+                        </label>
+                        <input type="date" id="quote-valid-until"
+                               class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                      text-slate-800 outline-none focus:border-brand-500 focus:ring-2
+                                      focus:ring-brand-500/20 focus:bg-white transition-all" />
+                    </div>
+
+                    <!-- Notes -->
+                    <div class="sm:col-span-2">
+                        <label for="quote-notes" class="block text-xs font-semibold text-slate-600 mb-1.5">
+                            ملاحظات للعميل
+                        </label>
+                        <input type="text" id="quote-notes" placeholder="تظهر على عرض السعر..."
+                               class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                      text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                                      focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all" />
+                    </div>
+
+                    <!-- Down Payment -->
+                    <div>
+                        <label for="quote-down-payment" class="block text-xs font-semibold text-slate-600 mb-1.5">
+                            <i class="fa-solid fa-wallet text-brand-500 mr-1"></i>مبلغ الدفعة الأولية
+                        </label>
+                        <div class="relative">
+                            <input type="number" id="quote-down-payment" placeholder="0.00"
+                                   step="0.01" min="0"
+                                   class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                          text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                                          focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all
+                                          [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
+                            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">SAR</span>
+                        </div>
+                        <p class="text-[10px] text-slate-400 mt-1">
+                            يظهر هذا المبلغ للعميل في عرض السعر والطباعة
+                        </p>
+                    </div>
+
+                    <!-- Internal Notes -->
+                    <div>
+                        <label for="quote-internal-notes" class="block text-xs font-semibold text-slate-600 mb-1.5">
+                            ملاحظات داخلية
+                        </label>
+                        <input type="text" id="quote-internal-notes" placeholder="للاستخدام الداخلي فقط..."
+                               class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                      text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                                      focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all" />
+                    </div>
+                </div>
+            </div>
+
+            <div class="border-t border-slate-100"></div>
+
+            <!-- ── Section B: Items ── -->
+            <div>
+                <div class="flex items-center justify-between mb-4">
+                    <div class="flex items-center gap-2">
+                        <div class="w-6 h-6 rounded-md bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                            <i class="fa-solid fa-list-ul text-emerald-600 text-xs"></i>
+                        </div>
+                        <h3 class="text-sm font-bold text-slate-700">الأصناف</h3>
+                        <span id="quote-items-count"
+                              class="text-xs font-semibold bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">
+                            0 أصناف
+                        </span>
+                    </div>
+                    <button id="add-item-row-btn" type="button"
+                            class="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-emerald-700
+                                   bg-emerald-50 hover:bg-emerald-100 border border-emerald-200
+                                   rounded-lg transition-colors active:scale-[0.97]">
+                        <i class="fa-solid fa-plus"></i>
+                        إضافة صنف
+                    </button>
+                </div>
+
+                <!-- Items Table Header -->
+                <div class="hidden sm:grid grid-cols-[2fr_2fr_1fr_1.2fr_1.2fr_1.2fr_auto] gap-2 px-3 mb-1.5">
+                    <span class="text-xs font-bold text-slate-500">المنتج</span>
+                    <span class="text-xs font-bold text-slate-500">المقاس</span>
+                    <span class="text-xs font-bold text-slate-500">الكمية</span>
+                    <span class="text-xs font-bold text-slate-500">السعر (ر.س)</span>
+                    <span class="text-xs font-bold text-slate-500">الإجمالي</span>
+                    <span class="text-xs font-bold text-slate-500">حالة التصميم</span>
+                    <span class="text-xs font-bold text-slate-500 w-8"></span>
+                </div>
+
+                <!-- Dynamic Items Container -->
+                <div id="quote-items-container" class="space-y-2">
+                    <!-- Rows injected by addQuoteItemRow() -->
+                </div>
+
+                <!-- Empty items placeholder -->
+                <div id="quote-items-empty"
+                     class="py-8 text-center text-slate-400 border-2 border-dashed border-slate-200 rounded-xl">
+                    <i class="fa-solid fa-box-open text-3xl mb-2 text-slate-200"></i>
+                    <p class="text-sm font-semibold text-slate-400">لم يتم إضافة أي أصناف</p>
+                    <p class="text-xs mt-0.5">اضغط "إضافة صنف" لبدء تعبئة عرض السعر</p>
+                </div>
+            </div>
+
+            <div class="border-t border-slate-100"></div>
+
+            <!-- ── Section C: Terms & Conditions ── -->
+            <div>
+                <div class="flex items-center justify-between mb-3">
+                    <div class="flex items-center gap-2">
+                        <div class="w-6 h-6 rounded-md bg-violet-100 flex items-center justify-center flex-shrink-0">
+                            <i class="fa-solid fa-file-contract text-violet-600 text-xs"></i>
+                        </div>
+                        <h3 class="text-sm font-bold text-slate-700">الشروط والأحكام</h3>
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                        <button type="button" id="terms-edit-btn" onclick="window.toggleTermsEdit()"
+                                class="inline-flex items-center px-2.5 py-1.5 text-xs font-bold text-violet-700
+                                       bg-violet-100 hover:bg-violet-200 rounded-lg transition-colors">
+                            <i class="fa-solid fa-pen mr-1"></i>تعديل
+                        </button>
+                        <button type="button" onclick="window.addNewTerm()"
+                                class="inline-flex items-center px-2.5 py-1.5 text-xs font-bold text-emerald-700
+                                       bg-emerald-100 hover:bg-emerald-200 rounded-lg transition-colors">
+                            <i class="fa-solid fa-plus mr-1"></i>شرط جديد
+                        </button>
+                    </div>
+                </div>
+                <div id="terms-container" class="space-y-2">
+                    <p class="text-xs text-slate-400">جارٍ تحميل الشروط...</p>
+                </div>
+                <p class="text-[10px] text-slate-400 mt-2">
+                    <i class="fa-solid fa-circle-info mr-1"></i>
+                    التعديلات تكون خاصة بهذا العرض فقط ولا تؤثر على الشروط الافتراضية
+                </p>
+            </div>
+        </div>
+
+        <!-- ── Footer: Totals + Submit ── -->
+        <div class="flex-shrink-0 border-t border-slate-100 bg-slate-50/80 px-6 py-4">
+            <div class="flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4">
+
+                <!-- Totals -->
+                <div class="w-full sm:w-72 space-y-2">
+                    <div class="flex items-center justify-between text-sm">
+                        <span class="text-slate-500 font-medium">المجموع قبل الضريبة</span>
+                        <span id="quote-subtotal" class="font-bold text-slate-700 font-mono">0.00 ر.س</span>
+                    </div>
+                    <div class="flex items-center justify-between text-sm">
+                        <span class="text-slate-500 font-medium">ضريبة القيمة المضافة (15%)</span>
+                        <span id="quote-tax" class="font-bold text-slate-700 font-mono">0.00 ر.س</span>
+                    </div>
+                    <div class="h-px bg-slate-200"></div>
+                    <div class="flex items-center justify-between">
+                        <span class="text-base font-bold text-slate-800">الإجمالي الكلي</span>
+                        <span id="quote-grand-total" class="text-lg font-extrabold text-brand-600 font-mono">0.00 ر.س</span>
+                    </div>
+                </div>
+
+                <!-- Actions -->
+                <div class="flex items-center gap-3 w-full sm:w-auto">
+                    <button id="quote-modal-cancel-btn" type="button"
+                            class="flex-1 sm:flex-none px-5 py-2.5 text-sm font-semibold text-slate-600
+                                   bg-white border border-slate-200 rounded-xl hover:bg-slate-100 transition-colors">
+                        إلغاء
+                    </button>
+                    <button id="quote-modal-submit-btn" type="button"
+                            onclick="window.submitQuoteForm()"
+                            class="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2.5
+                                   text-sm font-bold text-white bg-brand-600 hover:bg-brand-700
+                                   rounded-xl shadow-md shadow-brand-600/20 transition-all active:scale-[0.98]">
+                        <i class="fa-solid fa-paper-plane"></i>
+                        <span>حفظ عرض السعر</span>
+                    </button>
+                    <button type="button" id="view-mode-back-btn"
+                            class="hidden flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2.5
+                                   text-sm font-bold text-gray-800 bg-gray-200 hover:bg-gray-300
+                                   rounded-xl transition-all active:scale-[0.98]">
+                        <i class="fa-solid fa-arrow-right"></i>
+                        <span>رجوع للسجل</span>
+                    </button>
+                    <button type="button" id="view-mode-clone-btn"
+                            class="hidden flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2.5
+                                   text-sm font-bold text-white bg-brand-600 hover:bg-brand-700
+                                   rounded-xl shadow-md shadow-brand-600/20 transition-all active:scale-[0.98]">
+                        <i class="fa-solid fa-copy"></i>
+                        <span>نسخ لطلب جديد</span>
+                    </button>
+                    <button type="button" id="view-mode-share-btn"
+                            class="hidden flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2.5
+                                   text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700
+                                   rounded-xl shadow-md shadow-emerald-600/20 transition-all active:scale-[0.98]">
+                        <i class="fa-solid fa-share-nodes"></i>
+                        <span>مشاركة مع العميل</span>
+                    </button>
+                    <button type="button" id="view-mode-print-btn"
+                            class="hidden flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2.5
+                                   text-sm font-bold text-white bg-[#4b0082] hover:bg-[#5d198e]
+                                   rounded-xl shadow-md shadow-[#4b0082]/20 transition-all active:scale-[0.98]">
+                        <i class="fa-solid fa-print"></i>
+                        <span>طباعة العرض</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- =============================================================================
+     QUICK ADD CLIENT MODAL
+============================================================================= -->
+<div id="quick-client-modal"
+     style="display:none; z-index:9999"
+     class="fixed inset-0 items-center justify-center p-4
+            bg-black/60 opacity-0 transition-opacity duration-200">
+
+    <div class="quick-client-panel bg-white w-full sm:max-w-md rounded-2xl shadow-2xl flex flex-col
+                transform scale-95 transition-transform duration-200">
+
+        <!-- Header -->
+        <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center">
+                    <i class="fa-solid fa-user-plus text-emerald-600 text-sm"></i>
+                </div>
+                <h2 class="text-base font-bold text-slate-800">إضافة عميل سريع</h2>
+            </div>
+            <button id="quick-client-close-btn" type="button"
+                    class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400
+                           hover:text-slate-700 hover:bg-slate-100 transition-colors">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <!-- Body -->
+        <div class="px-6 py-5 space-y-4">
+
+            <!-- Error -->
+            <div id="quick-client-error"
+                 class="hidden flex items-center gap-2 bg-red-50 border border-red-200
+                        text-red-700 rounded-xl px-4 py-3 text-sm font-medium">
+                <i class="fa-solid fa-circle-exclamation flex-shrink-0"></i>
+                <span></span>
+            </div>
+
+            <!-- Name (Required) -->
+            <div>
+                <label for="qc-name" class="block text-xs font-semibold text-slate-600 mb-1.5">
+                    اسم العميل <span class="text-red-500">*</span>
+                </label>
+                <input type="text" id="qc-name" placeholder="اسم العميل أو الشركة..."
+                       class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                              text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                              focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all" />
+            </div>
+
+            <!-- Phone -->
+            <div>
+                <label for="qc-phone" class="block text-xs font-semibold text-slate-600 mb-1.5">
+                    رقم الهاتف
+                </label>
+                <input type="text" id="qc-phone" placeholder="05xxxxxxxx"
+                       class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                              text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                              focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all" />
+            </div>
+
+            <!-- Parent Client (Franchise) -->
+            <div>
+                <label for="qc-parent" class="block text-xs font-semibold text-slate-600 mb-1.5">
+                    العميل الرئيسي (فرنشايز)
+                </label>
+                <select id="qc-parent"
+                        class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                               text-slate-800 outline-none focus:border-brand-500 focus:ring-2
+                               focus:ring-brand-500/20 focus:bg-white transition-all appearance-none">
+                    <option value="">— بدون (عميل رئيسي) —</option>
+                </select>
+                <p class="text-xs text-slate-400 mt-1">اتركه فارغاً إذا كان العميل مستقلاً</p>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="px-6 py-4 border-t border-slate-100 flex items-center gap-3 justify-end">
+            <button id="quick-client-cancel-btn" type="button"
+                    class="px-5 py-2.5 text-sm font-semibold text-slate-600
+                           bg-white border border-slate-200 rounded-xl hover:bg-slate-100 transition-colors">
+                إلغاء
+            </button>
+            <button id="quick-client-submit-btn" type="button"
+                    onclick="window.submitQuickClientForm()"
+                    class="flex items-center gap-2 px-6 py-2.5 text-sm font-bold text-white
+                           bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-md
+                           shadow-emerald-600/20 transition-all active:scale-[0.98]">
+                <i class="fa-solid fa-user-plus"></i>
+                <span>إضافة العميل</span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- =============================================================================
+     CLIENT HISTORY MODAL
+============================================================================= -->
+<div id="client-history-modal"
+     style="display:none; z-index:9999"
+     class="fixed inset-0 items-center justify-center p-4
+            bg-black/60 opacity-0 transition-opacity duration-200">
+
+    <div class="client-history-panel bg-white w-full sm:max-w-2xl rounded-2xl shadow-2xl flex flex-col
+                max-h-[85vh] transform scale-95 transition-transform duration-200">
+
+        <!-- Header -->
+        <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100 flex-shrink-0">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
+                    <i class="fa-solid fa-clock-rotate-left text-blue-600 text-sm"></i>
+                </div>
+                <div>
+                    <h2 class="text-base font-bold text-slate-800">سجل العميل</h2>
+                    <p id="ch-client-name" class="text-xs text-slate-400"></p>
+                </div>
+            </div>
+            <button id="client-history-close-btn" type="button"
+                    class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400
+                           hover:text-slate-700 hover:bg-slate-100 transition-colors">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <!-- Body -->
+        <div class="flex-1 overflow-y-auto px-6 py-4">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="bg-slate-50 border-b border-slate-200">
+                        <th class="text-right py-2.5 px-3 text-xs font-bold text-slate-500">رقم الطلب</th>
+                        <th class="text-right py-2.5 px-3 text-xs font-bold text-slate-500">الحالة</th>
+                        <th class="text-right py-2.5 px-3 text-xs font-bold text-slate-500">التاريخ</th>
+                        <th class="text-right py-2.5 px-3 text-xs font-bold text-slate-500">الإجمالي</th>
+                        <th class="py-2.5 px-3 w-20"></th>
+                    </tr>
+                </thead>
+                <tbody id="ch-history-tbody">
+                    <tr><td colspan="5" class="py-8 text-center text-slate-400">
+                        <i class="fa-solid fa-circle-notch fa-spin text-xl"></i>
+                    </td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Footer -->
+        <div class="px-6 py-3 border-t border-slate-100 flex justify-end flex-shrink-0">
+            <button id="client-history-cancel-btn" type="button"
+                    class="px-5 py-2.5 text-sm font-semibold text-slate-600
+                           bg-white border border-slate-200 rounded-xl hover:bg-slate-100 transition-colors">
+                إغلاق
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- =============================================================================
+     CONVERT TO PRODUCTION MODAL
+============================================================================= -->
+<div id="convert-modal"
+     style="display:none"
+     class="fixed inset-0 z-50 items-center justify-center p-4
+            bg-black/60 opacity-0 transition-opacity duration-200">
+
+    <div class="convert-modal-panel bg-white w-full sm:max-w-md rounded-2xl shadow-2xl flex flex-col
+                transform scale-95 transition-transform duration-200">
+
+        <!-- Header -->
+        <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center">
+                    <i class="fa-solid fa-industry text-amber-600 text-sm"></i>
+                </div>
+                <div>
+                    <h2 class="text-base font-bold text-slate-800">تحويل لأمر إنتاج</h2>
+                    <p id="convert-modal-order-num" class="text-xs text-slate-400 font-mono"></p>
+                </div>
+            </div>
+            <button id="convert-modal-close-btn" type="button"
+                    class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400
+                           hover:text-slate-700 hover:bg-slate-100 transition-colors">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <!-- Body -->
+        <div class="px-6 py-5 space-y-4">
+
+            <!-- Error -->
+            <div id="convert-form-error"
+                 class="hidden flex items-center gap-2 bg-red-50 border border-red-200
+                        text-red-700 rounded-xl px-4 py-3 text-sm font-medium">
+                <i class="fa-solid fa-circle-exclamation flex-shrink-0"></i>
+                <span></span>
+            </div>
+
+            <!-- Order summary (readonly) -->
+            <div class="bg-slate-50 rounded-xl p-3 space-y-1 text-sm">
+                <div class="flex justify-between">
+                    <span class="text-slate-500">العميل</span>
+                    <span id="convert-client-name" class="font-semibold text-slate-700">—</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-slate-500">الإجمالي الكلي</span>
+                    <span id="convert-grand-total" class="font-bold text-brand-600 font-mono">—</span>
+                </div>
+            </div>
+
+            <!-- Down Payment Amount -->
+            <div>
+                <label for="convert-down-payment" class="block text-xs font-semibold text-slate-600 mb-1.5">
+                    الدفعة المقدمة (ر.س)
+                </label>
+                <input type="number" id="convert-down-payment"
+                       placeholder="0.00" min="0" step="0.01"
+                       class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                              text-slate-800 outline-none focus:border-brand-500 focus:ring-2
+                              focus:ring-brand-500/20 focus:bg-white transition-all" />
+                <p class="text-xs text-slate-400 mt-1">اتركها فارغة أو 0 إذا لم يتم استلام دفعة مقدمة</p>
+            </div>
+
+            <!-- Payment Method -->
+            <div>
+                <label for="convert-payment-method" class="block text-xs font-semibold text-slate-600 mb-1.5">
+                    طريقة الدفع
+                </label>
+                <select id="convert-payment-method" onchange="_onConvertPaymentMethodChange(this.value)"
+                        class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                               text-slate-800 outline-none focus:border-brand-500 focus:ring-2
+                               focus:ring-brand-500/20 focus:bg-white transition-all appearance-none">
+                    <option value="">— اختر —</option>
+                    <option value="cash">نقداً</option>
+                    <option value="bank_transfer">تحويل بنكي</option>
+                    <option value="pos">نقاط البيع</option>
+                </select>
+            </div>
+
+            <!-- Cash Fields -->
+            <div id="convert-cash-fields" style="display:none;">
+                <label for="convert-cash-box" class="block text-xs font-semibold text-slate-600 mb-1.5">
+                    الصندوق <span class="text-red-500">*</span>
+                </label>
+                <select id="convert-cash-box"
+                        class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                               text-slate-800 outline-none focus:border-brand-500 focus:ring-2
+                               focus:ring-brand-500/20 focus:bg-white transition-all appearance-none">
+                    <option value="main">الصندوق الرئيسي</option>
+                    <option value="branch1">صندوق فرع 1</option>
+                    <option value="branch2">صندوق فرع 2</option>
+                </select>
+            </div>
+
+            <!-- Bank Fields -->
+            <div id="convert-bank-fields" style="display:none;">
+                <label for="convert-bank-account" class="block text-xs font-semibold text-slate-600 mb-1.5">
+                    الحساب البنكي <span class="text-red-500">*</span>
+                </label>
+                <select id="convert-bank-account"
+                        class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                               text-slate-800 outline-none focus:border-brand-500 focus:ring-2
+                               focus:ring-brand-500/20 focus:bg-white transition-all appearance-none">
+                    <option value="alrajhi">مصرف الراجحي - SA03 8000 1234 5678 9012 3456</option>
+                    <option value="alahli">البنك الأهلي - SA02 1000 9876 5432 1098 7654</option>
+                </select>
+                <label for="convert-bank-ref" class="block text-xs font-semibold text-slate-600 mt-2 mb-1.5">
+                    رقم الحوالة / المرجع <span class="text-red-500">*</span>
+                </label>
+                <input type="text" id="convert-bank-ref" placeholder="مثال: TRF-2026-001234"
+                       class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                              text-slate-800 outline-none focus:border-brand-500 focus:ring-2
+                              focus:ring-brand-500/20 focus:bg-white transition-all" />
+            </div>
+
+            <!-- POS Fields -->
+            <div id="convert-pos-fields" style="display:none;">
+                <label for="convert-pos-terminal" class="block text-xs font-semibold text-slate-600 mb-1.5">
+                    جهاز نقاط البيع <span class="text-red-500">*</span>
+                </label>
+                <select id="convert-pos-terminal"
+                        class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                               text-slate-800 outline-none focus:border-brand-500 focus:ring-2
+                               focus:ring-brand-500/20 focus:bg-white transition-all appearance-none">
+                    <option value="pos_main">جهاز رئيسي - مكتب</option>
+                    <option value="pos_warehouse">جهاز المستودع</option>
+                </select>
+                <label for="convert-pos-ref" class="block text-xs font-semibold text-slate-600 mt-2 mb-1.5">
+                    رقم العملية (Reference) <span class="text-red-500">*</span>
+                </label>
+                <input type="text" id="convert-pos-ref" placeholder="مثال: POS-2026-56789"
+                       class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                              text-slate-800 outline-none focus:border-brand-500 focus:ring-2
+                              focus:ring-brand-500/20 focus:bg-white transition-all" />
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="px-6 py-4 border-t border-slate-100 flex items-center gap-3 justify-end">
+            <button id="convert-modal-cancel-btn" type="button"
+                    class="px-5 py-2.5 text-sm font-semibold text-slate-600
+                           bg-white border border-slate-200 rounded-xl hover:bg-slate-100 transition-colors">
+                إلغاء
+            </button>
+            <button id="convert-modal-submit-btn" type="button"
+                    onclick="window.submitConvertForm()"
+                    class="flex items-center gap-2 px-6 py-2.5 text-sm font-bold text-white
+                           bg-amber-600 hover:bg-amber-700 rounded-xl shadow-md
+                           shadow-amber-600/20 transition-all active:scale-[0.98]">
+                <i class="fa-solid fa-industry"></i>
+                <span>تحويل لإنتاج</span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- =============================================================================
+     PRINT CONTAINER — Hidden on screen, visible only in @media print
+============================================================================= -->
+<div id="print-container" class="hidden">
+    <style>
+        @media print {
+            @page { size: A4 portrait; margin: 8mm 12mm 10mm 12mm; }
+            html, body { margin: 0; padding: 0; }
+            body * { visibility: hidden !important; }
+            #print-container,
+            #print-container * { visibility: visible !important; }
+            #print-container {
+                display: flex !important;
+                flex-direction: column;
+                position: absolute;
+                left: 0; top: 0;
+                width: 100%;
+                min-height: 100vh;
+                box-sizing: border-box;
+                background: #fff;
+                font-family: 'Segoe UI', Tahoma, sans-serif;
+                font-size: 9.5pt;
+                color: #1e293b;
+                direction: rtl;
+            }
+            .no-print { display: none !important; }
+            .print-no-break { page-break-inside: avoid; }
+        }
+        @media screen {
+            #print-container { display: none !important; }
+        }
+    </style>
+
+    <!-- Main content wrapper: flex-1 pushes footer to bottom -->
+    <div style="flex:1;">
+
+    <!-- ══════════════ HEADER ══════════════ -->
+    <div style="display:flex; align-items:center; justify-content:space-between; padding-bottom:10px; border-bottom:3px solid #4b0082; margin-bottom:10px;">
+        <div style="display:flex; align-items:center; gap:12px;">
+            <img src="/images/logo.png" alt="G.PACK" style="height:48px; width:auto;" />
+            <div>
+                <h1 style="font-size:22pt; font-weight:900; color:#4b0082; margin:0; letter-spacing:-0.5px;">G.PACK</h1>
+                <p style="font-size:8.5pt; color:#334155; margin:1px 0 0; font-weight:600;">مصنع غلاف وغطاء للتعبئة والتغليف</p>
+                <p style="font-size:7.5pt; color:#64748b; margin:1px 0 0;">G.PACK Packaging Solutions</p>
+                <p style="font-size:7pt; color:#6e329b; margin:2px 0 0;">CR: 4700121038 | VAT: 310033995300003</p>
+            </div>
+        </div>
+        <div style="background:linear-gradient(135deg,#f3eef8,#ede5f2); border-right:4px solid #4b0082; padding:8px 14px; border-radius:4px; text-align:center; min-width:145px;">
+            <div style="font-size:13pt; font-weight:800; color:#4b0082; margin-bottom:3px;">عرض سعر</div>
+            <div style="font-size:8pt; color:#4b0082;">التاريخ: <strong id="print-order-date"></strong></div>
+            <div style="font-size:8pt; color:#4b0082; margin-top:1px;">صالح حتى: <strong id="print-valid-until"></strong></div>
+            <div style="font-size:8pt; color:#4b0082; margin-top:1px;">رقم العرض: <strong id="print-order-number" style="font-family:monospace;"></strong></div>
+        </div>
+    </div>
+
+    <!-- ══════════════ CLIENT ══════════════ -->
+    <div style="background:#f8f5ff; border:1px solid #e8e0f5; border-radius:6px; padding:8px 14px; margin-bottom:10px; display:flex; align-items:center; justify-content:space-between;">
+        <span style="font-weight:700; color:#4b0082; font-size:10pt;">عناية السادة / <span id="print-client-name"></span></span>
+        <span style="font-size:8pt; color:#94a3b8;">نقدم لكم عرض السعر التالي آملين أن ينال إعجابكم</span>
+    </div>
+
+    <!-- ══════════════ NOTES ══════════════ -->
+    <div id="print-notes-section" style="margin-bottom:8px; display:none;">
+        <p id="print-notes" style="font-size:8.5pt; padding:5px 10px; background:#fffbeb; border:1px solid #fde68a; border-radius:5px; color:#92400e; margin:0;"></p>
+    </div>
+
+    <!-- ══════════════ ITEMS TABLE ══════════════ -->
+    <table style="width:100%; border-collapse:collapse; font-size:9pt; margin-bottom:6px;">
+        <thead>
+            <tr style="background:#4b0082; color:#ffffff;">
+                <th style="text-align:center; padding:6px 4px; font-weight:700; border:1px solid #3a0066; width:24px;">#</th>
+                <th style="text-align:right; padding:6px 8px; font-weight:700; border:1px solid #3a0066;">المنتج</th>
+                <th style="text-align:right; padding:6px 8px; font-weight:700; border:1px solid #3a0066;">المقاس</th>
+                <th style="text-align:center; padding:6px 4px; font-weight:700; border:1px solid #3a0066; width:46px;">الكمية</th>
+                <th style="text-align:center; padding:6px 4px; font-weight:700; border:1px solid #3a0066; width:60px;">السعر</th>
+                <th style="text-align:center; padding:6px 4px; font-weight:700; border:1px solid #3a0066; width:68px;">الإجمالي</th>
+            </tr>
+        </thead>
+        <tbody id="print-items-tbody"></tbody>
+    </table>
+
+    <!-- ══════════════ TOTALS ══════════════ -->
+    <div class="print-no-break" style="display:flex; justify-content:flex-end; margin-bottom:10px;">
+        <div style="background:#f8f5ff; border:1px solid #e8e0f5; border-radius:8px; padding:12px 16px; min-width:280px; font-size:9pt; direction:rtl;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; color:#64748b;">
+                <span style="font-size:8.5pt;">المجموع قبل الضريبة</span>
+                <span style="font-weight:600; font-family:monospace; direction:ltr;" id="print-subtotal"></span>
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; color:#64748b;">
+                <span style="font-size:8.5pt;">ضريبة القيمة المضافة (15%)</span>
+                <span style="font-weight:600; font-family:monospace; direction:ltr;" id="print-tax"></span>
+            </div>
+            <div id="print-down-payment-section" style="display:none; justify-content:space-between; align-items:center; margin-bottom:6px; background:#fff8e1; border-radius:6px; padding:5px 8px; margin-left:-4px; margin-right:-4px;">
+                <span style="font-size:8.5pt; font-weight:700; color:#b45309;">مبلغ الدفعة الأولية</span>
+                <span style="font-weight:700; font-family:monospace; direction:ltr; color:#b45309;" id="print-down-payment"></span>
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center; background:#4b0082; border-radius:6px; padding:7px 10px; margin-top:6px; margin-left:-4px; margin-right:-4px;">
+                <span style="font-size:10pt; font-weight:800; color:#ffffff;">الإجمالي الكلي</span>
+                <span style="font-weight:800; font-size:10.5pt; font-family:monospace; color:#ffd700; direction:ltr;" id="print-grand-total"></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- ══════════════ TERMS ══════════════ -->
+    <div class="print-no-break" style="border:1px solid #e8e0f5; border-radius:6px; padding:8px 12px; margin-bottom:10px; background:#fdfcfe;">
+        <h4 style="color:#4b0082; font-weight:700; font-size:9.5pt; margin:0 0 4px; border-bottom:1px solid #e8e0f5; padding-bottom:4px;">شروط وبنود الاتفاقية:</h4>
+        <ul id="print-terms-list" style="list-style-type:disc; padding-right:18px; font-size:8.5pt; color:#334155; line-height:1.7; margin:0;"></ul>
+    </div>
+
+    </div><!-- end flex-1 content wrapper -->
+
+    <!-- ══════════════ FOOTER ══════════════ -->
+    <div class="print-no-break" style="margin-top:auto;">
+        <!-- Bank Info -->
+        <div style="background:#4b0082; color:#ffffff; padding:10px 14px; border-radius:6px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                    <h4 style="color:#ffd700; font-weight:700; font-size:9.5pt; margin:0 0 2px;">بيانات التحويل البنكي (مصرف الراجحي):</h4>
+                    <p style="margin:0; font-size:8pt; color:#e0d4f5;">مصنع غلاف وغطاء للتعبئة والتغليف</p>
+                </div>
+                <div style="text-align:left; direction:ltr; font-size:8pt;">
+                    <p style="margin:0 0 2px;"><strong style="color:#ffd700;">IBAN:</strong> SA19 8000 0150 6080 1653 9130</p>
+                    <p style="margin:0;"><strong style="color:#ffd700;">ACC:</strong> 15000 0010 0060 8653 9130</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Signature Area — white background for pen signing -->
+        <div style="display:flex; justify-content:space-between; margin-top:8px; padding:6px 0;">
+            <div style="text-align:center; flex:1;">
+                <span style="font-size:8pt; color:#64748b; font-weight:600;">التاريخ</span>
+                <div style="border-bottom:1px dashed #94a3b8; margin-top:20px; width:80%; margin-right:auto; margin-left:auto;"></div>
+            </div>
+            <div style="text-align:center; flex:1;">
+                <span style="font-size:8pt; color:#64748b; font-weight:600;">قسم المبيعات</span>
+                <div style="border-bottom:1px dashed #94a3b8; margin-top:20px; width:80%; margin-right:auto; margin-left:auto;"></div>
+            </div>
+            <div style="text-align:center; flex:1;">
+                <span style="font-size:8pt; color:#64748b; font-weight:600;">توقيع العميل</span>
+                <div style="border-bottom:1px dashed #94a3b8; margin-top:20px; width:80%; margin-right:auto; margin-left:auto;"></div>
+            </div>
+        </div>
+
+        <!-- System footer -->
+        <div style="margin-top:4px; text-align:center; font-size:6.5pt; color:#94a3b8;">
+            تم إنشاء هذا العرض بواسطة نظام G.PACK 2.0 — هذا العرض صالح حسب التاريخ المذكور أعلاه
+        </div>
+    </div>
+</div>
+
+<!-- =============================================================================
+     QUICK ADD PRODUCT MODAL
+============================================================================= -->
+<div id="quick-product-modal"
+     style="display:none; z-index:9999"
+     class="fixed inset-0 items-center justify-center p-4
+            bg-black/60 opacity-0 transition-opacity duration-200">
+
+    <div class="quick-product-panel bg-white w-full sm:max-w-md rounded-2xl shadow-2xl flex flex-col
+                transform scale-95 transition-transform duration-200">
+
+        <!-- Header -->
+        <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-lg bg-brand-100 flex items-center justify-center">
+                    <i class="fa-solid fa-box text-brand-600 text-sm"></i>
+                </div>
+                <h2 class="text-base font-bold text-slate-800">إضافة منتج سريع</h2>
+            </div>
+            <button id="quick-product-close-btn" type="button"
+                    class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400
+                           hover:text-slate-700 hover:bg-slate-100 transition-colors">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <!-- Body -->
+        <div class="px-6 py-5 space-y-4">
+            <div id="quick-product-error"
+                 class="hidden flex items-center gap-2 bg-red-50 border border-red-200
+                        text-red-700 rounded-xl px-4 py-3 text-sm font-medium">
+                <i class="fa-solid fa-circle-exclamation flex-shrink-0"></i>
+                <span></span>
+            </div>
+
+            <div>
+                <label for="qp-name" class="block text-xs font-semibold text-slate-600 mb-1.5">
+                    اسم المنتج <span class="text-red-500">*</span>
+                </label>
+                <input type="text" id="qp-name" placeholder="مثال: كرتون موج"
+                       class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                              text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                              focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all" />
+            </div>
+
+            <div>
+                <label for="qp-sku" class="block text-xs font-semibold text-slate-600 mb-1.5">
+                    SKU (اختياري)
+                </label>
+                <input type="text" id="qp-sku" placeholder="رمز المنتج"
+                       class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                              text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                              focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all" />
+            </div>
+            <input type="hidden" id="quick-product-id" value="" />
+        </div>
+
+        <!-- Footer -->
+        <div class="px-6 py-4 border-t border-slate-100 flex items-center gap-3 justify-end">
+            <button id="quick-product-cancel-btn" type="button"
+                    class="px-5 py-2.5 text-sm font-semibold text-slate-600
+                           bg-white border border-slate-200 rounded-xl hover:bg-slate-100 transition-colors">
+                إلغاء
+            </button>
+            <button id="quick-product-submit-btn" type="button"
+                    onclick="window.submitQuickProductForm()"
+                    class="flex items-center gap-2 px-6 py-2.5 text-sm font-bold text-white
+                           bg-brand-600 hover:bg-brand-700 rounded-xl shadow-md
+                           shadow-brand-600/20 transition-all active:scale-[0.98]">
+                <i class="fa-solid fa-plus"></i>
+                <span>إضافة المنتج</span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- =============================================================================
+     QUICK ADD SIZE (VARIANT) MODAL
+============================================================================= -->
+<div id="quick-size-modal"
+     style="display:none; z-index:9999"
+     class="fixed inset-0 items-center justify-center p-4
+            bg-black/60 opacity-0 transition-opacity duration-200">
+
+    <div class="quick-size-panel bg-white w-full sm:max-w-md rounded-2xl shadow-2xl flex flex-col
+                transform scale-95 transition-transform duration-200">
+
+        <!-- Header -->
+        <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center">
+                    <i class="fa-solid fa-ruler text-emerald-600 text-sm"></i>
+                </div>
+                <h2 class="text-base font-bold text-slate-800">إضافة مقاس سريع</h2>
+            </div>
+            <button id="quick-size-close-btn" type="button"
+                    class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400
+                           hover:text-slate-700 hover:bg-slate-100 transition-colors">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <!-- Body -->
+        <div class="px-6 py-5 space-y-4">
+            <div id="quick-size-error"
+                 class="hidden flex items-center gap-2 bg-red-50 border border-red-200
+                        text-red-700 rounded-xl px-4 py-3 text-sm font-medium">
+                <i class="fa-solid fa-circle-exclamation flex-shrink-0"></i>
+                <span></span>
+            </div>
+
+            <div>
+                <label class="block text-xs font-semibold text-slate-600 mb-1.5">
+                    المنتج
+                </label>
+                <p id="qs-product-name" class="text-sm font-bold text-brand-600">—</p>
+                <input type="hidden" id="qs-product-id" />
+                <input type="hidden" id="quick-size-id" value="" />
+            </div>
+
+            <div>
+                <label for="qs-size-name" class="block text-xs font-semibold text-slate-600 mb-1.5">
+                    اسم المقاس <span class="text-red-500">*</span>
+                </label>
+                <input type="text" id="qs-size-name" placeholder="مثال: 30×40 سم"
+                       class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                              text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                              focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all" />
+            </div>
+
+            <div>
+                <label for="qs-selling-price" class="block text-xs font-semibold text-slate-600 mb-1.5">
+                    سعر البيع (ر.س)
+                </label>
+                <input type="number" id="qs-selling-price" placeholder="0.00" min="0" step="0.01"
+                       class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                              text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                              focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all" />
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="px-6 py-4 border-t border-slate-100 flex items-center gap-3 justify-end">
+            <button id="quick-size-cancel-btn" type="button"
+                    class="px-5 py-2.5 text-sm font-semibold text-slate-600
+                           bg-white border border-slate-200 rounded-xl hover:bg-slate-100 transition-colors">
+                إلغاء
+            </button>
+            <button id="quick-size-submit-btn" type="button"
+                    onclick="window.submitQuickSizeForm()"
+                    class="flex items-center gap-2 px-6 py-2.5 text-sm font-bold text-white
+                           bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-md
+                           shadow-emerald-600/20 transition-all active:scale-[0.98]">
+                <i class="fa-solid fa-plus"></i>
+                <span>إضافة المقاس</span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- =============================================================================
+     DESIGN GALLERY MODAL
+============================================================================= -->
+<div id="design-gallery-modal"
+     style="display:none"
+     class="fixed inset-0 z-[70] items-center justify-center p-4
+            bg-black/60 opacity-0 transition-opacity duration-200">
+
+    <div class="modal-panel bg-white w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col max-h-[85vh]
+                transform scale-95 transition-transform duration-200">
+
+        <!-- Modal Header -->
+        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center">
+                    <i class="fa-solid fa-images text-purple-600 text-sm"></i>
+                </div>
+                <div>
+                    <h2 class="text-base font-bold text-slate-800">تصاميم المنتج</h2>
+                    <p id="gallery-subtitle" class="text-xs text-slate-400">اختر تصميم أو اعرض التفاصيل</p>
+                </div>
+            </div>
+            <button type="button" onclick="window.closeDesignGallery()"
+                    class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400
+                           hover:text-slate-700 hover:bg-slate-100 transition-colors">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <!-- Gallery Body -->
+        <div class="px-5 py-4 overflow-y-auto flex-1">
+            <!-- Loading -->
+            <div id="gallery-loading" class="flex flex-col items-center justify-center py-12 gap-3">
+                <div class="w-8 h-8 border-3 border-purple-200 border-t-purple-600 rounded-full animate-spin"></div>
+                <span class="text-sm text-slate-400">جاري تحميل التصاميم...</span>
+            </div>
+
+            <!-- Empty State -->
+            <div id="gallery-empty" class="hidden flex flex-col items-center justify-center py-12 gap-3">
+                <div class="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center">
+                    <i class="fa-solid fa-palette text-2xl text-slate-300"></i>
+                </div>
+                <p class="text-sm font-semibold text-slate-500">لا توجد تصاميم لهذا المنتج</p>
+                <p class="text-xs text-slate-400">ارفع تصميم جديد من زرار الرفع</p>
+            </div>
+
+            <!-- Gallery Grid -->
+            <div id="gallery-grid" class="hidden grid grid-cols-3 gap-3"></div>
+        </div>
+
+        <!-- Footer -->
+        <div class="flex items-center justify-between px-5 py-3 border-t border-slate-100">
+            <button type="button" onclick="window.openDesignUploadFromGallery()"
+                    class="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-emerald-700
+                           bg-emerald-50 border border-emerald-200 rounded-xl hover:bg-emerald-100 transition-colors">
+                <i class="fa-solid fa-cloud-arrow-up"></i>
+                رفع تصميم جديد
+            </button>
+            <button type="button" onclick="window.closeDesignGallery()"
+                    class="px-5 py-2 text-sm font-semibold text-slate-600
+                           bg-white border border-slate-200 rounded-xl hover:bg-slate-100 transition-colors">
+                إغلاق
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- =============================================================================
+     DESIGN VIEWER MODAL (Full-size image)
+============================================================================= -->
+<div id="design-viewer-modal"
+     style="display:none"
+     class="fixed inset-0 z-[80] items-center justify-center p-4
+            bg-black/80 opacity-0 transition-opacity duration-200 cursor-pointer"
+     onclick="window.closeDesignViewer(event)">
+
+    <div class="modal-panel relative max-w-4xl max-h-[90vh] transform scale-95 transition-transform duration-200">
+        <img id="design-viewer-img" src="" alt="" class="max-w-full max-h-[85vh] object-contain rounded-xl shadow-2xl">
+        <button type="button" onclick="window.closeDesignViewer()"
+                class="absolute top-3 right-3 w-10 h-10 bg-black/60 hover:bg-black/80 text-white rounded-full
+                       flex items-center justify-center shadow-lg transition-colors backdrop-blur-sm">
+            <i class="fa-solid fa-xmark text-lg"></i>
+        </button>
+        <div id="design-viewer-info" class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent
+             rounded-b-xl px-5 py-4">
+            <p id="design-viewer-name" class="text-white font-bold text-sm"></p>
+            <p id="design-viewer-date" class="text-white/70 text-xs mt-0.5"></p>
+        </div>
+    </div>
+</div>
+
+<!-- =============================================================================
+     DESIGN UPLOAD MODAL
+============================================================================= -->
+<div id="design-upload-modal"
+     style="display:none"
+     class="fixed inset-0 z-[70] items-center justify-center p-4
+            bg-black/60 opacity-0 transition-opacity duration-200">
+
+    <div class="modal-panel bg-white w-full max-w-md rounded-2xl shadow-2xl flex flex-col
+                transform scale-95 transition-transform duration-200">
+
+        <!-- Modal Header -->
+        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center">
+                    <i class="fa-solid fa-palette text-purple-600 text-sm"></i>
+                </div>
+                <h2 class="text-base font-bold text-slate-800">رفع تصميم جديد</h2>
+            </div>
+            <button type="button" onclick="window.closeDesignUploadModal()"
+                    class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400
+                           hover:text-slate-700 hover:bg-slate-100 transition-colors">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <!-- Modal Body -->
+        <div class="px-5 py-5 space-y-4">
+            <form id="design-upload-form" onsubmit="event.preventDefault(); window.uploadDesign();">
+                <!-- Design Name -->
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1.5">اسم التصميم (اختياري)</label>
+                    <input type="text" id="design-name-input" placeholder="مثال: تصميم الصيف 2025"
+                           class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                  text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                                  focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all">
+                </div>
+
+                <!-- File Upload -->
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1.5">ملف التصميم</label>
+                    <div class="relative">
+                        <input type="file" id="design-file-input" accept="image/*"
+                               onchange="window.previewDesignFile(this)"
+                               class="hidden">
+                        <label for="design-file-input" id="design-file-label"
+                               class="flex flex-col items-center justify-center gap-2 w-full px-4 py-6
+                                      bg-slate-50 border-2 border-dashed border-slate-300 rounded-xl
+                                      cursor-pointer hover:bg-slate-100 hover:border-brand-300 transition-all">
+                            <i class="fa-solid fa-cloud-arrow-up text-2xl text-slate-400"></i>
+                            <span class="text-sm font-semibold text-slate-600">اختر ملف أو اسحب هنا</span>
+                            <span class="text-xs text-slate-400">PNG, JPG, JPEG</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Image Preview (shows after file selection) -->
+                <div id="design-modal-preview" class="hidden">
+                    <label class="block text-xs font-semibold text-slate-600 mb-1.5">معاينة التصميم</label>
+                    <div class="relative w-full h-48 bg-slate-100 rounded-xl overflow-hidden border border-slate-200">
+                        <img id="design-modal-preview-img" src="" alt="معاينة التصميم"
+                             class="w-full h-full object-contain">
+                        <button type="button" onclick="window.clearDesignFile()"
+                                class="absolute top-2 right-2 w-8 h-8 bg-red-500 hover:bg-red-600 text-white rounded-full
+                                       flex items-center justify-center shadow-lg transition-colors">
+                            <i class="fa-solid fa-trash text-xs"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Preview -->
+                <div id="design-preview-container" class="hidden">
+                    <label class="block text-xs font-semibold text-slate-600 mb-1.5">معاينة</label>
+                    <div class="relative bg-slate-100 rounded-xl p-3">
+                        <img id="design-upload-preview" src="" alt=""
+                             class="w-full h-40 object-contain rounded-lg hidden">
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <!-- Footer -->
+        <div class="flex items-center justify-end gap-2 px-5 py-4 border-t border-slate-100">
+            <button type="button" onclick="window.closeDesignUploadModal()"
+                    class="px-5 py-2.5 text-sm font-semibold text-slate-600
+                           bg-white border border-slate-200 rounded-xl hover:bg-slate-100 transition-colors">
+                إلغاء
+            </button>
+            <button type="button" onclick="window.uploadDesign()"
+                    class="flex items-center gap-2 px-6 py-2.5 text-sm font-bold text-white
+                           bg-brand-600 hover:bg-brand-700 rounded-xl shadow-md transition-colors">
+                <i class="fa-solid fa-check"></i>
+                رفع التصميم
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================================
+     SHARE QUOTE MODAL
+============================================================ -->
+<div id="share-quote-modal"
+     style="display:none; opacity:0; z-index:9999; transition: opacity 0.2s;"
+     class="fixed inset-0 items-center justify-center p-4 bg-black/60"
+     onclick="if(event.target===this) window.closeShareModal()">
+    <div class="bg-white w-full max-w-md rounded-2xl shadow-2xl p-6">
+        <div class="flex items-center justify-between mb-5">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center">
+                    <i class="fa-solid fa-share-nodes text-emerald-600"></i>
+                </div>
+                <div>
+                    <h3 class="text-base font-bold text-slate-800">مشاركة عرض السعر</h3>
+                    <p class="text-xs text-slate-400">أرسل الرابط للعميل ليوافق أو يرفض</p>
+                </div>
+            </div>
+            <button onclick="window.closeShareModal()" class="text-slate-400 hover:text-slate-600 text-xl">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <div class="space-y-3">
+            <label class="block text-xs font-bold text-slate-600 mb-1">رابط العرض (صالح 7 أيام)</label>
+            <div id="share-link-row" class="flex gap-2">
+                <input id="share-quote-link" type="text" readonly
+                       class="flex-1 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 outline-none select-all"
+                       onclick="this.select()" />
+                <button id="copy-link-btn" onclick="window.copyShareLink()"
+                        class="bg-brand-600 text-white px-4 py-2.5 rounded-xl text-xs font-bold hover:bg-brand-700 transition-colors whitespace-nowrap">
+                    <i class="fa-solid fa-copy"></i> نسخ الرابط
+                </button>
+            </div>
+            <div id="share-quote-status"></div>
+        </div>
+
+        <div id="share-receipt-section" class="hidden"></div>
+
+        <div class="mt-4 p-3 bg-blue-50 border border-blue-100 rounded-xl">
+            <p class="text-xs text-blue-700">
+                <i class="fa-solid fa-circle-info ml-1"></i>
+                سيرى العميل تفاصيل العرض كاملاً ويمكنه الموافقة ورفع إيصال الدفعة المقدمة أو الرفض مع ذكر السبب.
+            </p>
+        </div>
+
+        <button onclick="window.closeShareModal()" class="w-full mt-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-sm font-bold transition-colors">
+            إغلاق
+        </button>
+    </div>
+</div>
+
+<!-- =============================================================================
+     PRICE HISTORY POPUP — Shows previous prices for a client+variant
+============================================================================= -->
+<div id="price-history-modal" class="hidden fixed inset-0 z-[200] items-center justify-center p-4 bg-black/60 opacity-0 transition-opacity duration-200">
+    <div class="bg-white w-full max-w-md rounded-2xl shadow-2xl flex flex-col transform scale-95 transition-transform duration-200 max-h-[80vh]">
+        <!-- Header -->
+        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-gradient-to-l from-slate-50 to-white rounded-t-2xl">
+            <div class="flex items-center gap-2.5">
+                <div class="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center">
+                    <i class="fa-solid fa-tags text-emerald-600 text-sm"></i>
+                </div>
+                <div>
+                    <h2 class="text-sm font-bold text-slate-800">تاريخ الأسعار</h2>
+                    <p id="price-history-subtitle" class="text-[11px] text-slate-400">للصنف المحدد مع هذا العميل</p>
+                </div>
+            </div>
+            <button onclick="window.closePriceHistoryModal()" type="button"
+                    class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <!-- Body -->
+        <div id="price-history-body" class="p-4 overflow-y-auto">
+            <!-- Content injected by JS -->
+        </div>
+    </div>
+</div>
+
+<!-- =============================================================================
+     ORDER DETAILS POPUP — Shows full order details when clicking order number
+============================================================================= -->
+<div id="order-details-modal" class="hidden fixed inset-0 z-[300] items-center justify-center p-4 bg-black/60 opacity-0 transition-opacity duration-200">
+    <div class="bg-white w-full max-w-lg rounded-2xl shadow-2xl flex flex-col transform scale-95 transition-transform duration-200 max-h-[85vh]">
+        <!-- Header -->
+        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-gradient-to-l from-brand-50 to-white rounded-t-2xl">
+            <div class="flex items-center gap-2.5">
+                <div class="w-8 h-8 rounded-lg bg-brand-100 flex items-center justify-center">
+                    <i class="fa-solid fa-file-invoice text-brand-600 text-sm"></i>
+                </div>
+                <div>
+                    <h2 class="text-sm font-bold text-slate-800">تفاصيل العرض</h2>
+                    <p id="order-details-subtitle" class="text-[11px] text-slate-400">—</p>
+                </div>
+            </div>
+            <button onclick="window.closeOrderDetailsModal()" type="button"
+                    class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <!-- Body -->
+        <div id="order-details-body" class="p-4 overflow-y-auto">
+            <!-- Content injected by JS -->
+        </div>
+    </div>
+</div>
+
+<!-- Load the view controller -->
+<script src="/js/views/quotations.js?v=20260512b"></script>

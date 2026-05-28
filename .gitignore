@@ -1,0 +1,25 @@
+# Environment Variables — NEVER push to GitHub
+.env
+.env.local
+.env.production
+
+# Node.js
+node_modules/
+npm-debug.log*
+
+# Docker volumes & temp
+postgres_data/
+backups/
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Scripts created during dev
+fix-all.ps1
+backend/scripts/run-migration.js

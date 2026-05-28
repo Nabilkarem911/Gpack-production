@@ -1,0 +1,235 @@
+'use strict';
+
+// =============================================================================
+// G.PACK 2.0 — Sales Invoices Routes
+// GET  /api/invoices          — list all sales invoices with filters
+// GET  /api/invoices/:id       — get invoice details with items
+// POST /api/invoices           — create new sales invoice
+// =============================================================================
+
+const express = require('express');
+const router  = express.Router();
+const db      = require('../db');
+const { success, created } = require('../utils/response');
+
+// ── GET /api/invoices ───────────────────────────────────────────────────────
+// Query params: client_id, status, from, to, search, limit, offset
+router.get('/', async (req, res) => {
+    try {
+        const { client_id, status, from, to, search, limit = 50, offset = 0 } = req.query;
+
+        let where = ['i.id IS NOT NULL']; // always true base
+        const params = [];
+        let paramIdx = 1;
+
+        if (client_id) {
+            where.push(`i.client_id = $${paramIdx++}`);
+            params.push(client_id);
+        }
+        if (status) {
+            where.push(`i.status = $${paramIdx++}`);
+            params.push(status);
+        }
+        if (from) {
+            where.push(`i.invoice_date >= $${paramIdx++}`);
+            params.push(from);
+        }
+        if (to) {
+            where.push(`i.invoice_date <= $${paramIdx++}`);
+            params.push(to);
+        }
+        if (search) {
+            where.push(`(c.name ILIKE $${paramIdx} OR CAST(i.invoice_number AS TEXT) ILIKE $${paramIdx})`);
+            params.push(`%${search}%`);
+            paramIdx++;
+        }
+
+        const whereClause = where.join(' AND ');
+
+        // Count query
+        const countRes = await db.query(`
+            SELECT COUNT(*)::int AS total
+            FROM invoices i
+            LEFT JOIN clients c ON c.id = i.client_id
+            WHERE ${whereClause}
+        `, params);
+
+        // Data query
+        const dataRes = await db.query(`
+            SELECT
+                i.id, i.invoice_number, i.invoice_date, i.due_date,
+                i.subtotal, i.tax_rate, i.tax_amount, i.grand_total,
+                i.status, i.notes, i.created_at,
+                c.id AS client_id, c.name AS client_name,
+                o.id AS order_id, o.order_number,
+                u.name AS created_by_name
+            FROM invoices i
+            LEFT JOIN clients c ON c.id = i.client_id
+            LEFT JOIN orders o ON o.id = i.order_id
+            LEFT JOIN users u ON u.id = i.created_by
+            WHERE ${whereClause}
+            ORDER BY i.created_at DESC
+            LIMIT $${paramIdx++} OFFSET $${paramIdx++}
+        `, [...params, parseInt(limit), parseInt(offset)]);
+
+        res.json({
+            data: dataRes.rows,
+            total: countRes.rows[0].total,
+            limit: parseInt(limit),
+            offset: parseInt(offset),
+        });
+
+    } catch (err) {
+        console.error('[Invoices] GET / error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── GET /api/invoices/:id ───────────────────────────────────────────────────
+// Full invoice details with items
+router.get('/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        // Invoice header
+        const invRes = await db.query(`
+            SELECT
+                i.id, i.invoice_number, i.invoice_date, i.due_date,
+                i.subtotal, i.tax_rate, i.tax_amount, i.additional_expenses, i.grand_total,
+                i.status, i.payment_terms, i.notes, i.created_at,
+                c.id AS client_id, c.name AS client_name, c.phone AS client_phone,
+                o.id AS order_id, o.order_number,
+                u.name AS created_by_name
+            FROM invoices i
+            LEFT JOIN clients c ON c.id = i.client_id
+            LEFT JOIN orders o ON o.id = i.order_id
+            LEFT JOIN users u ON u.id = i.created_by
+            WHERE i.id = $1
+        `, [id]);
+
+        if (!invRes.rows.length) {
+            return res.status(404).json({ error: 'Invoice not found' });
+        }
+
+        const invoice = invRes.rows[0];
+
+        // Invoice items
+        const itemsRes = await db.query(`
+            SELECT
+                ii.id, ii.quantity, ii.unit_price, ii.discount_percent, ii.line_total,
+                pv.id AS variant_id, pv.size_name,
+                p.id AS product_id, p.name AS product_name,
+                oi.id AS order_item_id
+            FROM invoice_items ii
+            JOIN product_variants pv ON pv.id = ii.variant_id
+            JOIN products p ON p.id = pv.product_id
+            LEFT JOIN order_items oi ON oi.id = ii.order_item_id
+            WHERE ii.invoice_id = $1
+        `, [id]);
+
+        invoice.items = itemsRes.rows;
+
+        // Additional expenses
+        const expRes = await db.query(`
+            SELECT id, description, amount
+            FROM invoice_expenses
+            WHERE invoice_id = $1
+        `, [id]);
+        invoice.expenses = expRes.rows;
+
+        res.json({ data: invoice });
+
+    } catch (err) {
+        console.error('[Invoices] GET /:id error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── POST /api/invoices ──────────────────────────────────────────────────────
+// Create new sales invoice
+// Body: client_id, invoice_date, due_date, items[], tax_rate, notes, order_id (optional)
+router.post('/', async (req, res) => {
+    const client = await db.pool.connect();
+    try {
+        const {
+            client_id,
+            order_id = null,
+            invoice_date,
+            due_date,
+            items = [],
+            tax_rate = 0.15,
+            additional_expenses = 0,
+            notes = '',
+        } = req.body;
+
+        if (!client_id || !items.length) {
+            return res.status(400).json({ error: 'client_id and items[] required' });
+        }
+
+        const userId = req.user?.id || null;
+
+        await client.query('BEGIN');
+
+        // Calculate totals
+        let subtotal = 0;
+        for (const item of items) {
+            const qty = parseFloat(item.quantity) || 0;
+            const price = parseFloat(item.unit_price) || 0;
+            const discount = parseFloat(item.discount_percent) || 0;
+            const lineTotal = qty * price * (1 - discount / 100);
+            subtotal += lineTotal;
+        }
+
+        const taxAmount = parseFloat((subtotal * tax_rate).toFixed(2));
+        const grandTotal = parseFloat((subtotal + taxAmount + parseFloat(additional_expenses)).toFixed(2));
+
+        // Insert invoice
+        const invRes = await client.query(`
+            INSERT INTO invoices
+                (client_id, order_id, invoice_date, due_date, subtotal, tax_rate, tax_amount,
+                 additional_expenses, grand_total, status, notes, created_by)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'issued', $10, $11)
+            RETURNING id, invoice_number
+        `, [
+            client_id, order_id, invoice_date || new Date().toISOString().split('T')[0],
+            due_date, subtotal, tax_rate, taxAmount,
+            additional_expenses, grandTotal, notes, userId,
+        ]);
+
+        const invoiceId = invRes.rows[0].id;
+        const invoiceNumber = invRes.rows[0].invoice_number;
+
+        // Insert invoice items
+        for (const item of items) {
+            await client.query(`
+                INSERT INTO invoice_items (invoice_id, variant_id, order_item_id, quantity, unit_price, discount_percent)
+                VALUES ($1, $2, $3, $4, $5, $6)
+            `, [
+                invoiceId, item.variant_id, item.order_item_id || null,
+                item.quantity, item.unit_price, item.discount_percent || 0,
+            ]);
+        }
+
+        // Client transaction record
+        await client.query(`
+            INSERT INTO client_transactions (client_id, invoice_id, type, amount, description, created_at)
+            VALUES ($1, $2, 'invoice', $3, $4, NOW())
+        `, [
+            client_id, invoiceId, grandTotal,
+            `فاتورة مبيعات رقم ${invoiceNumber}`,
+        ]);
+
+        await client.query('COMMIT');
+
+        return created(res, { id: invoiceId, invoice_number: invoiceNumber }, 'تم إنشاء الفاتورة بنجاح');
+
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('[Invoices] POST / error:', err.message);
+        res.status(500).json({ error: err.message });
+    } finally {
+        client.release();
+    }
+});
+
+module.exports = router;

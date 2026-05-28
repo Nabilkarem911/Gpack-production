@@ -1,0 +1,84 @@
+# =============================================================================
+# G.PACK 2.0 — Cursor Rules & Best Practices
+// قواعد وأفضل الممارسات للتطوير التلقائي
+# =============================================================================
+
+# Core Architecture Rules
+- ALWAYS use Vanilla JavaScript (ES6+) - NO frameworks (React, Vue, Angular)
+- ALWAYS use PostgreSQL RAW queries via pg pool - NO ORMs (Prisma, Sequelize)
+- ALWAYS use Docker & Docker Compose for deployment
+- ALWAYS follow modular SPA architecture with api.js layer
+
+# Code Style Rules
+- All functions MUST start with underscore: _init(), _loadData(), _renderTable()
+- Always start files with 'use strict';
+- Use camelCase for variables, _camelCase for functions, UPPER_SNAKE_CASE for constants
+- Use proper error handling with try/catch blocks
+- Always use proper HTML escaping with esc() function
+
+# Database Rules
+- All database operations MUST use pool.query()
+- Financial operations MUST use transactions (BEGIN, COMMIT, ROLLBACK)
+- VMI orders MUST NOT include financial fields in payload
+- Accounting vouchers MUST be immutable - use Revert & Recreate pattern
+
+# Frontend Rules
+- Use Tailwind CSS for styling - NO inline styles
+- All API calls MUST go through apiFetch() in api.js
+- Use proper Arabic RTL layout (dir="rtl")
+- All forms MUST have proper validation
+- Use FontAwesome icons consistently
+
+# Backend Rules
+- All routes MUST have proper authentication middleware
+- Use proper HTTP status codes (200, 400, 401, 403, 404, 500)
+- All responses MUST follow consistent format: { data: ..., message: ..., total: ... }
+- Database connections MUST use connection pooling
+- All sensitive data MUST be environment variables
+
+# Security Rules
+- Never commit .env files or sensitive data
+- Always validate and sanitize user input
+- Use parameterized queries to prevent SQL injection
+- Implement proper JWT authentication
+- Use HTTPS in production
+
+# Performance Rules
+- Use proper database indexing
+- Implement pagination for large datasets
+- Use proper caching strategies
+- Optimize images and assets
+- Use lazy loading where appropriate
+
+# Testing & Quality Rules
+- All new features MUST include error handling
+- Test all database operations
+- Validate all user inputs
+- Check for null/undefined values
+- Use proper logging for debugging
+
+# File Organization Rules
+- Frontend: /frontend/js/views/ for page controllers
+- Backend: /backend/routes/ for API endpoints
+- Database: /database/ for SQL migrations
+- All files MUST have proper headers with purpose
+
+# Auto-Fix Rules
+- Fix function naming: init() → _init()
+- Add 'use strict' if missing
+- Fix async function naming: async function init() → async function _init()
+- Add proper error handling if missing
+
+# Forbidden Patterns
+- NEVER use: import React from 'react'
+- NEVER use: require('prisma')
+- NEVER use: localhost or 127.0.0.1 in code
+- NEVER use: process.env.VAR directly (use proper config)
+- NEVER use: inline styles or style attributes
+
+# Required Patterns
+- ALWAYS use: 'use strict';
+- ALWAYS use: function _functionName()
+- ALWAYS use: pool.query() for database
+- ALWAYS use: BEGIN/COMMIT/ROLLBACK for transactions
+- ALWAYS use: esc() for HTML escaping

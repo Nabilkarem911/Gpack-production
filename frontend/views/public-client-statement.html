@@ -1,0 +1,88 @@
+<!-- =============================================================================
+     G.PACK 2.0 — Public Client Statement View
+     كشف حساب عام للعميل (بدون تسجيل دخول)
+============================================================================= -->
+
+<!-- Logo & Header -->
+<div class="flex flex-col items-center justify-center py-8 mb-6">
+    <div class="w-20 h-20 rounded-2xl bg-brand-600 flex items-center justify-center mb-4 shadow-lg">
+        <span class="text-3xl font-black text-white">G</span>
+    </div>
+    <h1 class="text-2xl font-extrabold text-slate-800">G.PACK 2.0</h1>
+    <p class="text-slate-400 text-sm">نظام إدارة المستودعات والإنتاج</p>
+</div>
+
+<!-- Client Info -->
+<div id="pcs-party-info" class="hidden bg-gradient-to-r from-brand-50 to-blue-50 rounded-2xl shadow-sm border border-brand-100 p-5 mb-5">
+    <div class="flex items-center gap-4">
+        <div class="w-14 h-14 rounded-2xl bg-white flex items-center justify-center shadow-sm">
+            <i class="fa-solid fa-user text-2xl text-brand-500"></i>
+        </div>
+        <div>
+            <p class="text-xs text-brand-500 font-bold mb-1">كشف حساب العميل</p>
+            <h3 class="text-xl font-bold text-slate-800" id="pcs-client-name">---</h3>
+            <p class="text-sm text-slate-500" id="pcs-client-details">---</p>
+        </div>
+    </div>
+</div>
+
+<!-- Summary Cards -->
+<div id="pcs-summary-section" class="hidden grid grid-cols-3 gap-4 mb-5">
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
+        <p class="text-xs text-slate-400 mb-1">عليك (فواتير)</p>
+        <p id="pcs-total-debit" class="text-2xl font-black text-red-600">0.00</p>
+    </div>
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
+        <p class="text-xs text-slate-400 mb-1">لديك (مدفوعات)</p>
+        <p id="pcs-total-credit" class="text-2xl font-black text-emerald-600">0.00</p>
+    </div>
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
+        <p class="text-xs text-slate-400 mb-1">الرصيد النهائي</p>
+        <p id="pcs-final-balance" class="text-2xl font-black text-slate-800">0.00</p>
+    </div>
+</div>
+
+<!-- Statement Table -->
+<div id="pcs-statement-section" class="hidden bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden mb-5">
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="bg-slate-50 text-xs text-slate-500 border-b border-slate-100">
+                    <th class="py-3 px-4 text-right font-semibold">التاريخ</th>
+                    <th class="py-3 px-4 text-right font-semibold">الوثيقة</th>
+                    <th class="py-3 px-4 text-right font-semibold">الرقم</th>
+                    <th class="py-3 px-4 text-right font-semibold">عليك</th>
+                    <th class="py-3 px-4 text-right font-semibold">لديك</th>
+                    <th class="py-3 px-4 text-right font-semibold">الرصيد</th>
+                    <th class="py-3 px-4 text-right font-semibold">ملاحظات</th>
+                </tr>
+            </thead>
+            <tbody id="pcs-tbody">
+                <!-- Transactions injected by JS -->
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Loading State -->
+<div id="pcs-loading" class="flex flex-col items-center justify-center py-20 text-slate-400">
+    <i class="fa-solid fa-circle-notch fa-spin text-4xl mb-4"></i>
+    <p class="text-lg font-semibold text-slate-500">جاري تحميل كشف الحساب...</p>
+</div>
+
+<!-- Error State -->
+<div id="pcs-error" class="hidden flex flex-col items-center justify-center py-20 text-slate-400">
+    <div class="w-20 h-20 rounded-2xl bg-red-100 flex items-center justify-center mb-4">
+        <i class="fa-solid fa-lock text-3xl text-red-400"></i>
+    </div>
+    <p class="text-xl font-bold text-slate-500 mb-2">الرابط غير صالح</p>
+    <p class="text-sm text-slate-400">رجاء التواصل مع الإدارة للحصول على رابط صحيح</p>
+</div>
+
+<!-- Footer -->
+<div class="text-center py-6 text-slate-400 text-xs">
+    <p>© 2026 G.PACK 2.0 - جميع الحقوق محفوظة</p>
+    <p class="mt-1">هذا الكشف خاص بالعميل ولا يجوز مشاركته مع الغير</p>
+</div>
+
+<script src="/js/views/public-client-statement.js?v=20260513"></script>

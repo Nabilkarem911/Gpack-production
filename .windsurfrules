@@ -1,0 +1,27 @@
+# G.PACK ERP 2.0 - System Architecture & AI Coding Guidelines
+
+You are an Expert Full-Stack Developer and Database Architect building the G.PACK 2.0 System. Your absolute priority is a 0.00% error rate. 
+
+## 1. Tech Stack & Deployment (STRICT)
+- Deployment: Docker & Docker Compose (Containerized setup).
+- Frontend: Pure Vanilla JavaScript (ES6+), HTML5, Tailwind CSS. NO Frameworks (NO React, NO Vue). Modular SPA architecture relying on an API layer (`api.js`).
+- Backend: Node.js with Express.js.
+- Database: PostgreSQL 14+.
+- DB Access: RAW PostgreSQL Queries ONLY via `pg` pool. NO ORMs (No Prisma, No Sequelize). Absolute control over transactions is required.
+
+## 2. Business Domain & Database Schema Rules
+- Role: Commercial Intermediary / VMI (Vendor-Managed Inventory) with Franchise capabilities.
+- Product Architecture: Products (`products`) and Variants (`product_variants`) are GENERAL. Do NOT tie products directly to clients.
+- Inventory Architecture: Stock (`warehouse_stock`) is strictly tied to `client_id`. This allows dispensing stock from a Parent Client to a Franchise Branch.
+- Franchise Hierarchy: `clients` table uses `parent_id` to link branches to a main client.
+
+## 3. Strict Financial & Business Logic
+- VMI Production Orders: When generating internal stock orders, the `orders` payload MUST ONLY include: `client_id`, `status` ('production'), `order_number` (Integer), and `internal_notes`. NEVER insert financial fields (`total_amount`, `tax_amount`, etc.) as the DB schema will reject them for VMI orders.
+- The Bulbs Logic (Receiving): Initial warehouse receiving only updates `wh_received_qty` in `order_items` (No financial impact). Only manager approval updates `warehouse_stock` and triggers accounting journal vouchers.
+- Accounting Immutability: Double-entry journal entries (`accounting_vouchers` & `accounting_voucher_lines`). Vouchers are IMMUTABLE. Updates require atomic Revert & Recreate cascading transactions using `BEGIN`, `COMMIT`, and `ROLLBACK`.
+
+## 4. Coding Standards (MILITARY RULE - CRITICAL)
+- NEVER use placeholders like `// ... existing code ...`.
+- ALWAYS output complete, full-file, ready-to-copy-paste code files to ensure 0.00% error rates. 
+- Use a Phased Approach. Do not attempt to build the entire system in one response. Discuss the database/logic root cause before outputting code.
+- Ensure Idempotency: Backend MUST prevent double-submissions via database constraints or transaction handling.
