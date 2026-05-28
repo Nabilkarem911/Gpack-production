@@ -801,7 +801,7 @@ ON CONFLICT (code) DO NOTHING;
 INSERT INTO users (email, password_hash, name, role_id, status)
 SELECT
     'admin@gpack.com',
-    '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBvq3Lr6NBNKLO',
+    '$2b$12$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi',
     'System Administrator',
     r.id,
     'active'

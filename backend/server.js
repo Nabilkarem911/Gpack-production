@@ -78,26 +78,31 @@ async function runMigrations() {
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Trust nginx reverse proxy (required for correct IP detection behind Docker+nginx)
+app.set('trust proxy', 1);
+
 // =============================================================================
 // Security: Rate Limiting
 // =============================================================================
 
 // Login rate limiter - prevent brute force attacks
 const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // max 10 login attempts per IP
+  windowMs: 15 * 60 * 1000,
+  max: 10,
   message: { error: 'Too many login attempts. Please try again in 15 minutes.' },
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
 });
 
 // General API rate limiter
 const apiLimiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  max: 200, // max 200 requests per minute per IP
+  windowMs: 60 * 1000,
+  max: 200,
   message: { error: 'Too many requests. Please slow down.' },
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
 });
 
 // =============================================================================
