@@ -9,8 +9,6 @@ services:
       POSTGRES_DB: gpack_db
       POSTGRES_USER: gpack_user
       POSTGRES_PASSWORD: ${DB_PASSWORD}
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -38,7 +36,7 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "3000:3000"
+      - "3002:3000"
     volumes:
       - ./backend:/app
       - /app/node_modules

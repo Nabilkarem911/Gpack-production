@@ -105,6 +105,16 @@ const apiLimiter = rateLimit({
   validate: { xForwardedForHeader: false },
 });
 
+// Public routes rate limiter
+const publicLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  message: { error: 'Too many requests.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
+});
+
 // =============================================================================
 // Global Middleware
 // =============================================================================
@@ -184,7 +194,7 @@ app.use('/api/auth', loginLimiter);  // Strict limit for auth endpoints
 app.use('/api/', apiLimiter);        // General limit for all API endpoints
 
 app.use('/api/auth',                require('./routes/auth'));
-app.use('/api/public',              require('./routes/public_quotation'));
+app.use('/api/public',              publicLimiter, require('./routes/public_quotation'));
 app.use('/api/users',               authenticate, require('./routes/users'));
 app.use('/api/clients',             authenticate, require('./routes/clients'));
 app.use('/api/products',            authenticate, require('./routes/products'));
@@ -193,6 +203,7 @@ app.use('/api/categories',          authenticate, require('./routes/categories')
 app.use('/api/units',               authenticate, require('./routes/units'));
 app.use('/api/orders',              authenticate, require('./routes/orders'));
 app.use('/api/manufacturer-orders', authenticate, require('./routes/manufacturer_orders'));
+app.use('/api/manufacturer-orders',       authenticate, require('./routes/manufacturer_print'));
 app.use('/api/suppliers',           authenticate, require('./routes/suppliers'));
 app.use('/api/terms',               authenticate, require('./routes/terms'));
 app.use('/api/delivery-notes',      authenticate, require('./routes/delivery-notes'));
@@ -200,7 +211,6 @@ app.use('/api/dashboard',           authenticate, require('./routes/dashboard'))
 app.use('/api/client-designs',        authenticate, require('./routes/client_designs'));
 app.use('/api/client-pantone-colors', authenticate, require('./routes/client_pantone_colors'));
 app.use('/api/client-items',          authenticate, require('./routes/client_items'));
-app.use('/api/manufacturer-orders', authenticate, require('./routes/manufacturer_print'));
 app.use('/api/vmi',                 authenticate, require('./routes/vmi'));
 app.use('/api/invoices',            authenticate, require('./routes/invoices'));
 app.use('/api/purchase-invoices',   authenticate, require('./routes/purchase-invoices'));
@@ -211,8 +221,8 @@ app.use('/api/receipt-vouchers',    authenticate, require('./routes/receipt-vouc
 app.use('/api/payment-vouchers',    authenticate, require('./routes/payment-vouchers'));
 app.use('/api/accounts',            authenticate, require('./routes/accounts'));
 app.use('/api/journal-entries',     authenticate, require('./routes/journal-entries'));
-app.use('/api/public',              require('./routes/public-statement')); // No auth required
-app.use('/api/public/invoice',      require('./routes/public-invoice'));   // No auth required
+app.use('/api/public',              publicLimiter, require('./routes/public-statement')); // No auth required
+app.use('/api/public/invoice',      publicLimiter, require('./routes/public-invoice'));   // No auth required
 
 // Static files for uploads
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
