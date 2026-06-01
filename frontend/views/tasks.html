@@ -1,0 +1,263 @@
+<!-- =============================================================================
+     G.PACK 2.0 - Tasks Management View
+     Injected into #main-content by the SPA router.
+     Logic is handled by /js/views/tasks.js (loaded below).
+============================================================================= -->
+
+<!-- Page Header -->
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+    <div>
+        <h1 class="text-2xl font-extrabold text-slate-800">إدارة المهام والتكليفات</h1>
+        <p class="text-slate-500 text-sm mt-0.5">تتبع مهام العمال والفريق</p>
+    </div>
+    <div class="flex items-center gap-2">
+        <button id="add-task-btn"
+                class="flex items-center gap-2 px-5 py-2.5 bg-brand-600 hover:bg-brand-700 active:scale-[0.98]
+                       text-white text-sm font-bold rounded-xl shadow-md shadow-brand-600/20 transition-all">
+            <i class="fa-solid fa-plus"></i>
+            <span>مهمة جديدة</span>
+        </button>
+    </div>
+</div>
+
+<!-- Stats Cards -->
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex items-start gap-4">
+        <div class="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0">
+            <i class="fa-solid fa-list-check text-blue-600 text-xl"></i>
+        </div>
+        <div class="min-w-0">
+            <p class="text-xs font-semibold text-slate-500 uppercase">إجمالي المهام</p>
+            <p class="text-2xl font-extrabold text-slate-800 mt-0.5" id="stat-total-tasks">0</p>
+        </div>
+    </div>
+    <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex items-start gap-4">
+        <div class="w-12 h-12 rounded-xl bg-orange-50 flex items-center justify-center flex-shrink-0">
+            <i class="fa-solid fa-clock text-orange-600 text-xl"></i>
+        </div>
+        <div class="min-w-0">
+            <p class="text-xs font-semibold text-slate-500 uppercase">قيد التنفيذ</p>
+            <p class="text-2xl font-extrabold text-slate-800 mt-0.5" id="stat-pending-tasks">0</p>
+        </div>
+    </div>
+    <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex items-start gap-4">
+        <div class="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center flex-shrink-0">
+            <i class="fa-solid fa-check-double text-emerald-600 text-xl"></i>
+        </div>
+        <div class="min-w-0">
+            <p class="text-xs font-semibold text-slate-500 uppercase">مكتملة</p>
+            <p class="text-2xl font-extrabold text-slate-800 mt-0.5" id="stat-completed-tasks">0</p>
+        </div>
+    </div>
+    <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex items-start gap-4">
+        <div class="w-12 h-12 rounded-xl bg-red-50 flex items-center justify-center flex-shrink-0">
+            <i class="fa-solid fa-exclamation-circle text-red-600 text-xl"></i>
+        </div>
+        <div class="min-w-0">
+            <p class="text-xs font-semibold text-slate-500 uppercase">متأخرة</p>
+            <p class="text-2xl font-extrabold text-slate-800 mt-0.5" id="stat-overdue-tasks">0</p>
+        </div>
+    </div>
+</div>
+
+<!-- Filters & Search -->
+<div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 mb-4">
+    <div class="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
+        <div class="relative max-w-sm">
+            <span class="absolute inset-y-0 right-0 flex items-center pr-3.5 text-slate-400 pointer-events-none">
+                <i class="fa-solid fa-magnifying-glass text-sm"></i>
+            </span>
+            <input type="text"
+                   id="tasks-search"
+                   placeholder="بحث بالعنوان، الموظف..."
+                   class="w-full pr-10 pl-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                          text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                          focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all" />
+        </div>
+        <div class="flex items-center gap-2">
+            <select id="filter-status" class="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 outline-none focus:border-brand-500">
+                <option value="">كل الحالات</option>
+                <option value="pending">قيد التنفيذ</option>
+                <option value="completed">مكتملة</option>
+                <option value="overdue">متأخرة</option>
+            </select>
+            <select id="filter-priority" class="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 outline-none focus:border-brand-500">
+                <option value="">كل الأولويات</option>
+                <option value="high">عالية</option>
+                <option value="medium">متوسطة</option>
+                <option value="low">منخفضة</option>
+            </select>
+        </div>
+    </div>
+</div>
+
+<!-- Tasks Grid -->
+<div id="tasks-grid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+    <!-- Tasks will be loaded here -->
+    <div class="col-span-full text-center p-12 text-slate-400">
+        <i class="fa-solid fa-circle-notch fa-spin text-4xl mb-3 text-brand-400"></i>
+        <p>جارٍ تحميل المهام...</p>
+    </div>
+</div>
+
+<!-- Task Modal (Add/Edit) -->
+<div id="task-modal" class="fixed inset-0 z-50 hidden opacity-0 pointer-events-none transition-opacity">
+    <div class="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onclick="window.closeTaskModal()"></div>
+    <div class="relative min-h-screen flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg transform scale-95 transition-transform" id="task-modal-content">
+            <div class="flex items-center justify-between p-5 border-b border-slate-100">
+                <h3 class="font-bold text-xl text-slate-800" id="task-modal-title">مهمة جديدة</h3>
+                <button onclick="window.closeTaskModal()" class="text-slate-400 hover:text-slate-600 transition-colors">
+                    <i class="fa-solid fa-times text-xl"></i>
+                </button>
+            </div>
+            <form id="task-form" class="p-5 space-y-4">
+                <input type="hidden" id="task-id">
+                <div>
+                    <label class="block text-sm font-semibold text-slate-700 mb-1.5">عنوان المهمة *</label>
+                    <input type="text" id="task-title" required
+                           class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                  focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition-all"
+                           placeholder="مثال: تجهيز طلب شركة النور">
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-slate-700 mb-1.5">التفاصيل</label>
+                    <textarea id="task-description" rows="3"
+                              class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                     focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition-all resize-none"
+                              placeholder="وصف تفصيلي للمهمة..."></textarea>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-sm font-semibold text-slate-700 mb-1.5">تعيين إلى *</label>
+                        <select id="task-assignee" required
+                                class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                       focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition-all">
+                            <option value="">اختر الموظف</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-slate-700 mb-1.5">تاريخ التسليم *</label>
+                        <input type="date" id="task-due-date" required
+                               class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                      focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition-all">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-sm font-semibold text-slate-700 mb-1.5">الأولوية</label>
+                        <select id="task-priority"
+                                class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                       focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition-all">
+                            <option value="medium">متوسطة</option>
+                            <option value="high">عالية</option>
+                            <option value="low">منخفضة</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-slate-700 mb-1.5">الحالة</label>
+                        <select id="task-status"
+                                class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                       focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition-all">
+                            <option value="pending">قيد التنفيذ</option>
+                            <option value="completed">مكتملة</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="border-t border-slate-100 pt-4 mt-4">
+                    <label class="block text-sm font-semibold text-slate-700 mb-2">المهام الفرعية</label>
+                    <div class="flex gap-2 mb-2">
+                        <input type="text" id="new-subtask" 
+                               class="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm"
+                               placeholder="أضف مهمة فرعية...">
+                        <button type="button" onclick="window.addSubtaskInput()" 
+                                class="px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-600 transition-colors">
+                            <i class="fa-solid fa-plus"></i>
+                        </button>
+                    </div>
+                    <div id="subtasks-container" class="space-y-1 max-h-32 overflow-y-auto">
+                        <!-- Subtasks added here -->
+                    </div>
+                </div>
+                <div class="flex items-center justify-end gap-2 pt-4 border-t border-slate-100">
+                    <button type="button" onclick="window.closeTaskModal()"
+                            class="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-medium text-sm transition-colors">
+                        إلغاء
+                    </button>
+                    <button type="submit" id="save-task-btn"
+                            class="px-6 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-medium text-sm transition-colors">
+                        حفظ المهمة
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Task Details Modal -->
+<div id="task-details-modal" class="fixed inset-0 z-50 hidden opacity-0 pointer-events-none transition-opacity">
+    <div class="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onclick="window.closeTaskDetailsModal()"></div>
+    <div class="relative min-h-screen flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl transform scale-95 transition-transform" id="task-details-content">
+            <div class="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50 rounded-t-2xl">
+                <div class="flex items-center gap-3">
+                    <span id="details-status-badge" class="px-2.5 py-1 rounded-full text-xs font-bold"></span>
+                    <h3 class="font-bold text-lg text-slate-800" id="details-title"></h3>
+                </div>
+                <button onclick="window.closeTaskDetailsModal()" class="text-slate-400 hover:text-slate-600 transition-colors">
+                    <i class="fa-solid fa-times text-xl"></i>
+                </button>
+            </div>
+            <div class="p-5 space-y-4">
+                <div class="grid grid-cols-2 gap-4 text-sm">
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-user text-slate-400"></i>
+                        <span class="text-slate-500">الموظف:</span>
+                        <span id="details-assignee" class="font-medium text-slate-800"></span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-calendar text-slate-400"></i>
+                        <span class="text-slate-500">تاريخ التسليم:</span>
+                        <span id="details-due-date" class="font-medium text-slate-800"></span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-flag text-slate-400"></i>
+                        <span class="text-slate-500">الأولوية:</span>
+                        <span id="details-priority" class="font-medium"></span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-clock text-slate-400"></i>
+                        <span class="text-slate-500">تاريخ الإنشاء:</span>
+                        <span id="details-created" class="font-medium text-slate-800"></span>
+                    </div>
+                </div>
+                <div class="bg-slate-50 rounded-xl p-4">
+                    <p class="text-xs font-semibold text-slate-500 mb-2">الوصف:</p>
+                    <p id="details-description" class="text-sm text-slate-700 whitespace-pre-wrap"></p>
+                </div>
+                <div>
+                    <p class="text-xs font-semibold text-slate-500 mb-2">المهام الفرعية:</p>
+                    <div id="details-subtasks" class="space-y-2">
+                        <!-- Subtasks here -->
+                    </div>
+                </div>
+                <div class="flex items-center justify-between pt-4 border-t border-slate-100">
+                    <div class="flex items-center gap-2">
+                        <button onclick="window.editCurrentTask()" class="px-4 py-2 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 text-sm font-medium transition-colors">
+                            <i class="fa-solid fa-edit mr-1"></i> تعديل
+                        </button>
+                        <button onclick="window.deleteCurrentTask()" class="px-4 py-2 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 text-sm font-medium transition-colors">
+                            <i class="fa-solid fa-trash mr-1"></i> حذف
+                        </button>
+                    </div>
+                    <button id="details-toggle-status" class="px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                        <!-- Toggle status button -->
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Load tasks.js -->
+<script src="/js/views/tasks.js?v=20260601"></script>

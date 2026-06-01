@@ -78,8 +78,8 @@ var NAV_ITEMS = [ // var allows re-declaration if script loads more than once in
     // ─────────────────────────────────────────────────────────────────────────────
     { section: 'الإدارة' },
     { view: 'users',         label: 'المستخدمون',       icon: 'fa-user-gear',     permission: 'users'    }, // ✅ users.html
+    { view: 'tasks',         label: 'المهام',           icon: 'fa-list-check',    permission: null       }, // ✅ tasks.html
     { view: 'settings',      label: 'الإعدادات',        icon: 'fa-gear',          permission: null       }, // ✅ settings.html
-    // { view: 'tasks',      label: 'المهام',           icon: 'fa-list-check',    permission: null       }, // ⏳ not built yet
 
     // ─────────────────────────────────────────────────────────────────────────────
     // Public Pages (no login required)
