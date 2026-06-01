@@ -221,6 +221,7 @@ app.use('/api/receipt-vouchers',    authenticate, require('./routes/receipt-vouc
 app.use('/api/payment-vouchers',    authenticate, require('./routes/payment-vouchers'));
 app.use('/api/accounts',            authenticate, require('./routes/accounts'));
 app.use('/api/journal-entries',     authenticate, require('./routes/journal-entries'));
+app.use('/api/tasks',               authenticate, require('./routes/tasks'));
 app.use('/api/public',              publicLimiter, require('./routes/public-statement')); // No auth required
 app.use('/api/public/invoice',      publicLimiter, require('./routes/public-invoice'));   // No auth required
 
