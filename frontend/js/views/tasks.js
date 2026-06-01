@@ -5,7 +5,7 @@
 // Handles CRUD operations for employee tasks with subtasks
 // =============================================================================
 
-const tasksView = {
+var tasksView = {
     tasks: [],
     users: [],
     currentSubtasks: [],
@@ -29,7 +29,7 @@ const tasksView = {
     async _loadUsers() {
         try {
             const response = await apiFetch('/api/users');
-            this.users = response.users || [];
+            this.users = response.data || response.users || [];
             this._populateUserDropdown();
         } catch (error) {
             console.error('[Tasks] Failed to load users:', error);
@@ -441,55 +441,74 @@ const tasksView = {
     // ─────────────────────────────────────────────────────────────────────────
     // Open Task Details
     // ─────────────────────────────────────────────────────────────────────────
-    _openTaskDetails(taskId) {
-        const task = this.tasks.find(t => t.id === taskId);
-        if (!task) return;
-
-        this.currentTask = task;
-        
-        document.getElementById('details-title').textContent = task.title;
-        document.getElementById('details-description').textContent = task.description || 'لا يوجد وصف';
-        document.getElementById('details-assignee').textContent = task.assigned_to_name || this._getUserName(task.assigned_to, task.assigned_to_name);
-        document.getElementById('details-due-date').textContent = task.due_date;
-        document.getElementById('details-priority').textContent = this._getPriorityLabel(task.priority);
-        document.getElementById('details-created').textContent = new Date(task.created_at).toLocaleDateString('ar-SA');
-
-        // Priority color
-        const priorityEl = document.getElementById('details-priority');
-        priorityEl.className = `font-medium ${task.priority === 'high' ? 'text-red-600' : task.priority === 'medium' ? 'text-orange-600' : 'text-slate-500'}`;
-
-        // Status badge
-        const isOverdue = this._isOverdue(task);
-        const isCompleted = task.status === 'completed';
-        const statusBadge = document.getElementById('details-status-badge');
-        
-        if (isCompleted) {
-            statusBadge.className = 'px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700';
-            statusBadge.textContent = 'مكتملة';
-        } else if (isOverdue) {
-            statusBadge.className = 'px-2.5 py-1 rounded-full text-xs font-bold bg-red-100 text-red-700';
-            statusBadge.textContent = 'متأخرة';
-        } else {
-            statusBadge.className = 'px-2.5 py-1 rounded-full text-xs font-bold bg-orange-100 text-orange-700';
-            statusBadge.textContent = 'قيد التنفيذ';
-        }
-
-        // Toggle status button
-        const toggleBtn = document.getElementById('details-toggle-status');
-        if (isCompleted) {
-            toggleBtn.className = 'px-4 py-2 rounded-lg text-sm font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors';
-            toggleBtn.innerHTML = '<i class="fa-solid fa-undo mr-1"></i> تراجع عن الإنجاز';
-            toggleBtn.onclick = () => { window.toggleTaskStatus(taskId); window.closeTaskDetailsModal(); };
-        } else {
-            toggleBtn.className = 'px-4 py-2 rounded-lg text-sm font-medium bg-emerald-500 text-white hover:bg-emerald-600 transition-colors';
-            toggleBtn.innerHTML = '<i class="fa-solid fa-check mr-1"></i> تحديد كمكتملة';
-            toggleBtn.onclick = () => { window.toggleTaskStatus(taskId); window.closeTaskDetailsModal(); };
-        }
-
-        // Render subtasks
-        this._renderDetailsSubtasks(task.subtasks || []);
-        
+    async _openTaskDetails(taskId) {
+        // Show loading
         this._openModal('task-details-modal');
+        document.getElementById('details-title').textContent = 'جارٍ التحميل...';
+        
+        try {
+            // Fetch full task details with subtasks from API
+            const response = await apiFetch(`/api/tasks/${taskId}`);
+            const task = response.task;
+            
+            if (!task) {
+                showToast('المهمة غير موجودة', 'error');
+                window.closeTaskDetailsModal();
+                return;
+            }
+            
+            this.currentTask = task;
+            
+            document.getElementById('details-title').textContent = task.title;
+            document.getElementById('details-description').textContent = task.description || 'لا يوجد وصف';
+            document.getElementById('details-assignee').textContent = task.assigned_to_name || this._getUserName(task.assigned_to, task.assigned_to_name);
+            document.getElementById('details-due-date').textContent = task.due_date;
+            document.getElementById('details-priority').textContent = this._getPriorityLabel(task.priority);
+            document.getElementById('details-created').textContent = new Date(task.created_at).toLocaleDateString('ar-SA');
+
+            // Priority color
+            const priorityEl = document.getElementById('details-priority');
+            priorityEl.className = `font-medium ${task.priority === 'high' ? 'text-red-600' : task.priority === 'medium' ? 'text-orange-600' : 'text-slate-500'}`;
+
+            // Status badge
+            const isOverdue = this._isOverdue(task);
+            const isCompleted = task.status === 'completed';
+            const statusBadge = document.getElementById('details-status-badge');
+            
+            if (isCompleted) {
+                statusBadge.className = 'px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700';
+                statusBadge.textContent = 'مكتملة';
+            } else if (isOverdue) {
+                statusBadge.className = 'px-2.5 py-1 rounded-full text-xs font-bold bg-red-100 text-red-700';
+                statusBadge.textContent = 'متأخرة';
+            } else {
+                statusBadge.className = 'px-2.5 py-1 rounded-full text-xs font-bold bg-orange-100 text-orange-700';
+                statusBadge.textContent = 'قيد التنفيذ';
+            }
+
+            // Toggle status button
+            const toggleBtn = document.getElementById('details-toggle-status');
+            if (isCompleted) {
+                toggleBtn.className = 'px-4 py-2 rounded-lg text-sm font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors';
+                toggleBtn.innerHTML = '<i class="fa-solid fa-undo mr-1"></i> تراجع عن الإنجاز';
+                toggleBtn.onclick = () => { window.toggleTaskStatus(taskId); window.closeTaskDetailsModal(); };
+            } else {
+                toggleBtn.className = 'px-4 py-2 rounded-lg text-sm font-medium bg-emerald-500 text-white hover:bg-emerald-600 transition-colors';
+                toggleBtn.innerHTML = '<i class="fa-solid fa-check mr-1"></i> تحديد كمكتملة';
+                toggleBtn.onclick = () => { window.toggleTaskStatus(taskId); window.closeTaskDetailsModal(); };
+            }
+
+            // Render subtasks from API response
+            this._renderDetailsSubtasks(task.subtasks || []);
+            
+            // Render comments
+            this._renderComments(task.comments || []);
+            
+        } catch (error) {
+            console.error('[Tasks] Failed to load task details:', error);
+            showToast('فشل تحميل تفاصيل المهمة', 'error');
+            window.closeTaskDetailsModal();
+        }
     },
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -523,12 +542,83 @@ const tasksView = {
     // ─────────────────────────────────────────────────────────────────────────
     // Toggle Subtask in Details
     // ─────────────────────────────────────────────────────────────────────────
-    _toggleSubtaskInDetails(idx) {
+    async _toggleSubtaskInDetails(idx) {
         if (!this.currentTask) return;
-        this.currentTask.subtasks[idx].completed = !this.currentTask.subtasks[idx].completed;
-        this._renderDetailsSubtasks(this.currentTask.subtasks);
-        this._renderTasks();
-        this._updateStats();
+        const subtask = this.currentTask.subtasks[idx];
+        const newCompleted = !subtask.completed;
+        
+        try {
+            // Update in database via API
+            await apiFetch(`/api/tasks/${this.currentTask.id}/subtasks/${subtask.id}`, {
+                method: 'PUT',
+                body: JSON.stringify({ is_completed: newCompleted })
+            });
+            
+            // Update local state after successful API call
+            subtask.completed = newCompleted;
+            this._renderDetailsSubtasks(this.currentTask.subtasks);
+            this._renderTasks();
+            this._updateStats();
+            
+            // Refresh task details to get updated progress
+            await this._loadTasks();
+        } catch (error) {
+            console.error('[Tasks] Failed to update subtask:', error);
+            showToast('فشل تحديث المهمة الفرعية', 'error');
+        }
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Render Comments (Chat)
+    // ─────────────────────────────────────────────────────────────────────────
+    _renderComments(comments) {
+        const container = document.getElementById('details-comments');
+        if (!container) return;
+        
+        if (comments.length === 0) {
+            container.innerHTML = '<p class="text-sm text-slate-400 text-center py-4">لا توجد تعليقات. ابدأ المحادثة...</p>';
+            return;
+        }
+        
+        container.innerHTML = comments.map(c => `
+            <div class="flex gap-3 mb-4 ${c.user_id === window.GpackUser?.id ? 'flex-row-reverse' : ''}">
+                <div class="w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center text-brand-600 text-xs font-bold flex-shrink-0">
+                    ${c.user_name?.charAt(0).toUpperCase() || '?'}
+                </div>
+                <div class="${c.user_id === window.GpackUser?.id ? 'bg-brand-500 text-white' : 'bg-slate-100 text-slate-700'} rounded-2xl px-4 py-2 max-w-[80%]">
+                    <p class="text-xs font-medium mb-1 ${c.user_id === window.GpackUser?.id ? 'text-brand-100' : 'text-slate-500'}">${c.user_name || 'غير معروف'}</p>
+                    <p class="text-sm">${c.comment}</p>
+                    <p class="text-xs mt-1 opacity-70">${new Date(c.created_at).toLocaleString('ar-SA')}</p>
+                </div>
+            </div>
+        `).join('');
+        
+        // Scroll to bottom
+        container.scrollTop = container.scrollHeight;
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Add Comment
+    // ─────────────────────────────────────────────────────────────────────────
+    async _addComment() {
+        const input = document.getElementById('new-comment');
+        const comment = input?.value?.trim();
+        if (!comment || !this.currentTask) return;
+        
+        try {
+            await apiFetch(`/api/tasks/${this.currentTask.id}/comments`, {
+                method: 'POST',
+                body: JSON.stringify({ comment })
+            });
+            
+            input.value = '';
+            // Refresh task details
+            await this._openTaskDetails(this.currentTask.id);
+            showToast('تم إرسال التعليق', 'success');
+        } catch (error) {
+            console.error('[Tasks] Failed to add comment:', error);
+            showToast('فشل إرسال التعليق', 'error');
+        }
     },
 
     // ─────────────────────────────────────────────────────────────────────────
