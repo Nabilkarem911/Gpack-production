@@ -178,7 +178,7 @@ router.get('/:id', authenticate, async (req, res) => {
 // Create new task
 // =============================================================================
 router.post('/', authenticate, async (req, res) => {
-    const { title, description, assigned_to, due_date, priority = 'medium', order_id, client_id, subtasks = [] } = req.body;
+    const { title, description, assigned_to, due_date, priority = 'medium', subtasks = [] } = req.body;
     
     if (!title || !assigned_to || !due_date) {
         return res.status(400).json({ error: 'Title, assigned_to, and due_date are required' });
@@ -191,10 +191,10 @@ router.post('/', authenticate, async (req, res) => {
         
         // Create task
         const taskResult = await client.query(`
-            INSERT INTO tasks (title, description, assigned_to, created_by, due_date, priority, order_id, client_id, status)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending')
+            INSERT INTO tasks (title, description, assigned_to, created_by, due_date, priority, status)
+            VALUES ($1, $2, $3, $4, $5, $6, 'pending')
             RETURNING *
-        `, [title, description, assigned_to, req.user.id, due_date, priority, order_id, client_id]);
+        `, [title, description, assigned_to, req.user.id, due_date, priority]);
         
         const task = taskResult.rows[0];
         
@@ -202,9 +202,9 @@ router.post('/', authenticate, async (req, res) => {
         if (subtasks.length > 0) {
             for (let i = 0; i < subtasks.length; i++) {
                 await client.query(`
-                    INSERT INTO task_subtasks (task_id, title, description, sort_order)
-                    VALUES ($1, $2, $3, $4)
-                `, [task.id, subtasks[i].title, subtasks[i].description, i]);
+                    INSERT INTO task_subtasks (task_id, title, sort_order)
+                    VALUES ($1, $2, $3)
+                `, [task.id, subtasks[i].title, i]);
             }
         }
         
@@ -292,9 +292,6 @@ router.put('/:id', authenticate, async (req, res) => {
                 updates.push(`completed_at = NOW()`);
             }
         }
-        if (order_id !== undefined) { updates.push(`order_id = $${paramIdx++}`); params.push(order_id); }
-        if (client_id !== undefined) { updates.push(`client_id = $${paramIdx++}`); params.push(client_id); }
-        
         if (updates.length === 0) {
             return res.status(400).json({ error: 'No fields to update' });
         }
