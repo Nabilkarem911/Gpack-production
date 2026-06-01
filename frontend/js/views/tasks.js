@@ -49,12 +49,21 @@ const tasksView = {
                     <p>جارٍ تحميل المهام...</p>
                 </div>`;
 
-            // TODO: Replace with actual API endpoint when backend is ready
-            // const response = await apiFetch('/api/tasks');
-            // this.tasks = response.tasks || [];
-            
-            // For now, use sample data
-            this.tasks = this._getSampleTasks();
+            // Build query params based on current filters
+            const params = new URLSearchParams();
+            if (this.filters.status && this.filters.status !== 'overdue') {
+                params.append('status', this.filters.status);
+            }
+            if (this.filters.status === 'overdue') {
+                params.append('overdue', 'true');
+            }
+            if (this.filters.priority) {
+                params.append('priority', this.filters.priority);
+            }
+            params.append('limit', '100');
+
+            const response = await apiFetch(`/api/tasks?${params.toString()}`);
+            this.tasks = response.tasks || [];
             
             this._renderTasks();
             this._updateStats();
@@ -63,75 +72,21 @@ const tasksView = {
             document.getElementById('tasks-grid').innerHTML = `
                 <div class="col-span-full text-center p-12 text-slate-400">
                     <i class="fa-solid fa-circle-exclamation text-4xl mb-3 text-red-400"></i>
-                    <p>فشل تحميل المهام</p>
+                    <p>فشل تحميل المهام. تأكد من اتصالك بالخادم.</p>
+                    <button onclick="tasksView._loadTasks()" class="mt-4 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm hover:bg-brand-700">
+                        إعادة المحاولة
+                    </button>
                 </div>`;
         }
     },
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Sample Data (Temporary until backend API is ready)
+    // Get User Name (from API data or users list)
     // ─────────────────────────────────────────────────────────────────────────
-    _getSampleTasks() {
-        const today = new Date();
-        const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
-        const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
-        
-        return [
-            {
-                id: '1',
-                title: 'تجهيز طلب شركة النور',
-                description: 'تجهيز 500 كيس تغليف للعميل مع الطباعة الخاصة',
-                assigned_to: this.users[0]?.id || '1',
-                due_date: tomorrow.toISOString().split('T')[0],
-                status: 'pending',
-                priority: 'high',
-                created_at: today.toISOString(),
-                subtasks: [
-                    { id: 's1', title: 'استلام خامات من المخزن', completed: true },
-                    { id: 's2', title: 'بدء الطباعة', completed: false },
-                    { id: 's3', title: 'التسليم للتعبئة', completed: false }
-                ]
-            },
-            {
-                id: '2',
-                title: 'صيانة الطابعة الرئيسية',
-                description: 'الفحوصات الدورية للطابعة الكبيرة',
-                assigned_to: this.users[1]?.id || '2',
-                due_date: today.toISOString().split('T')[0],
-                status: 'pending',
-                priority: 'medium',
-                created_at: yesterday.toISOString(),
-                subtasks: [
-                    { id: 's4', title: 'تنظيف الرؤوس', completed: true },
-                    { id: 's5', title: 'معايرة الألوان', completed: true }
-                ]
-            },
-            {
-                id: '3',
-                title: 'تحديث بيانات العملاء',
-                description: 'مراجعة وتحديث أرقام التواصل لـ 15 عميل',
-                assigned_to: this.users[0]?.id || '1',
-                due_date: yesterday.toISOString().split('T')[0],
-                status: 'completed',
-                priority: 'low',
-                created_at: yesterday.toISOString(),
-                subtasks: []
-            },
-            {
-                id: '4',
-                title: 'جرد المخزن الشهري',
-                description: 'الجرد الكامل لجميع الأصناف في المستودع الرئيسي',
-                assigned_to: this.users[2]?.id || '3',
-                due_date: yesterday.toISOString().split('T')[0],
-                status: 'pending',
-                priority: 'high',
-                created_at: yesterday.toISOString(),
-                subtasks: [
-                    { id: 's6', title: 'جرد الورق', completed: false },
-                    { id: 's7', title: 'جرد الأحبار', completed: false }
-                ]
-            }
-        ];
+    _getUserName(id, assignedToName) {
+        if (assignedToName) return assignedToName;
+        const user = this.users.find(u => u.id === id);
+        return user ? user.name : 'غير محدد';
     },
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -145,14 +100,6 @@ const tasksView = {
         this.users.forEach(user => {
             select.innerHTML += `<option value="${user.id}">${user.name}</option>`;
         });
-    },
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // Get User Name by ID
-    // ─────────────────────────────────────────────────────────────────────────
-    _getUserName(id) {
-        const user = this.users.find(u => u.id === id);
-        return user ? user.name : 'غير محدد';
     },
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -186,7 +133,17 @@ const tasksView = {
     // ─────────────────────────────────────────────────────────────────────────
     _renderTasks() {
         const grid = document.getElementById('tasks-grid');
-        let filtered = this._applyFilters();
+        
+        // Apply search filter only (status/priority handled by API)
+        let filtered = this.tasks;
+        if (this.filters.search) {
+            const search = this.filters.search.toLowerCase();
+            filtered = filtered.filter(t => 
+                t.title.toLowerCase().includes(search) ||
+                (t.description && t.description.toLowerCase().includes(search)) ||
+                (t.assigned_to_name && t.assigned_to_name.toLowerCase().includes(search))
+            );
+        }
 
         if (filtered.length === 0) {
             grid.innerHTML = `
@@ -201,9 +158,10 @@ const tasksView = {
         grid.innerHTML = filtered.map(task => {
             const isOverdue = this._isOverdue(task);
             const isCompleted = task.status === 'completed';
-            const completedSubtasks = task.subtasks?.filter(s => s.completed).length || 0;
-            const totalSubtasks = task.subtasks?.length || 0;
-            const progress = totalSubtasks > 0 ? Math.round((completedSubtasks / totalSubtasks) * 100) : 0;
+            // Use API-provided counts
+            const completedSubtasks = task.completed_subtasks || 0;
+            const totalSubtasks = task.total_subtasks || 0;
+            const progress = task.progress_percentage || 0;
 
             let cardClass = 'bg-white border-slate-200';
             let statusBadge = `<span class="bg-orange-100 text-orange-700 text-xs px-2 py-1 rounded-full font-bold">قيد التنفيذ</span>`;
@@ -232,7 +190,7 @@ const tasksView = {
                     <div class="flex items-center justify-between text-xs text-slate-500 mb-3 bg-slate-50 p-2 rounded-lg">
                         <div class="flex items-center gap-1.5">
                             <i class="fa-solid fa-user text-brand-500"></i>
-                            <span class="font-medium">${this._getUserName(task.assigned_to)}</span>
+                            <span class="font-medium">${task.assigned_to_name || this._getUserName(task.assigned_to, task.assigned_to_name)}</span>
                         </div>
                         <div class="flex items-center gap-1.5 ${isOverdue ? 'text-red-600 font-bold' : ''}">
                             <i class="fa-solid fa-calendar"></i>
@@ -327,20 +285,21 @@ const tasksView = {
             window.openNewTaskModal();
         });
 
-        // Filters
+        // Filters - reload from API when status/priority changes
         document.getElementById('filter-status')?.addEventListener('change', (e) => {
             this.filters.status = e.target.value;
-            this._renderTasks();
+            this._loadTasks(); // Reload from API with new filter
         });
 
         document.getElementById('filter-priority')?.addEventListener('change', (e) => {
             this.filters.priority = e.target.value;
-            this._renderTasks();
+            this._loadTasks(); // Reload from API with new filter
         });
 
+        // Search filter - client side only
         document.getElementById('tasks-search')?.addEventListener('input', (e) => {
             this.filters.search = e.target.value;
-            this._renderTasks();
+            this._renderTasks(); // Just re-render, no API call needed
         });
 
         // Form submit
@@ -372,29 +331,23 @@ const tasksView = {
             };
 
             if (taskId) {
-                // Update existing task
-                const index = this.tasks.findIndex(t => t.id === taskId);
-                if (index !== -1) {
-                    this.tasks[index] = { ...this.tasks[index], ...payload };
-                }
+                // Update existing task via API
+                await apiFetch(`/api/tasks/${taskId}`, { 
+                    method: 'PUT', 
+                    body: JSON.stringify(payload) 
+                });
                 showToast('تم تحديث المهمة بنجاح', 'success');
             } else {
-                // Create new task
-                const newTask = {
-                    id: Date.now().toString(),
-                    ...payload,
-                    created_at: new Date().toISOString()
-                };
-                this.tasks.unshift(newTask);
+                // Create new task via API
+                await apiFetch('/api/tasks', { 
+                    method: 'POST', 
+                    body: JSON.stringify(payload) 
+                });
                 showToast('تم إنشاء المهمة بنجاح', 'success');
             }
 
             window.closeTaskModal();
-            this._renderTasks();
-            this._updateStats();
-            
-            // TODO: Send to API when ready
-            // await apiFetch('/api/tasks', { method: taskId ? 'PUT' : 'POST', body: JSON.stringify(payload) });
+            await this._loadTasks(); // Reload from API
         } catch (error) {
             console.error('[Tasks] Save error:', error);
             showToast('فشل حفظ المهمة', 'error');
@@ -454,13 +407,9 @@ const tasksView = {
         if (!confirm('هل أنت متأكد من حذف هذه المهمة؟')) return;
 
         try {
-            this.tasks = this.tasks.filter(t => t.id !== taskId);
-            this._renderTasks();
-            this._updateStats();
+            await apiFetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
             showToast('تم حذف المهمة', 'success');
-            
-            // TODO: Call API
-            // await apiFetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
+            await this._loadTasks(); // Reload from API
         } catch (error) {
             console.error('[Tasks] Delete error:', error);
             showToast('فشل حذف المهمة', 'error');
@@ -475,14 +424,18 @@ const tasksView = {
         if (!task) return;
 
         const newStatus = task.status === 'completed' ? 'pending' : 'completed';
-        task.status = newStatus;
         
-        this._renderTasks();
-        this._updateStats();
-        showToast(newStatus === 'completed' ? 'تم إنجاز المهمة' : 'تم إرجاع المهمة للتنفيذ', 'success');
-        
-        // TODO: Call API
-        // await apiFetch(`/api/tasks/${taskId}/status`, { method: 'PATCH', body: JSON.stringify({ status: newStatus }) });
+        try {
+            await apiFetch(`/api/tasks/${taskId}`, { 
+                method: 'PUT', 
+                body: JSON.stringify({ status: newStatus }) 
+            });
+            showToast(newStatus === 'completed' ? 'تم إنجاز المهمة' : 'تم إرجاع المهمة للتنفيذ', 'success');
+            await this._loadTasks(); // Reload from API
+        } catch (error) {
+            console.error('[Tasks] Toggle status error:', error);
+            showToast('فشل تحديث حالة المهمة', 'error');
+        }
     },
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -496,7 +449,7 @@ const tasksView = {
         
         document.getElementById('details-title').textContent = task.title;
         document.getElementById('details-description').textContent = task.description || 'لا يوجد وصف';
-        document.getElementById('details-assignee').textContent = this._getUserName(task.assigned_to);
+        document.getElementById('details-assignee').textContent = task.assigned_to_name || this._getUserName(task.assigned_to, task.assigned_to_name);
         document.getElementById('details-due-date').textContent = task.due_date;
         document.getElementById('details-priority').textContent = this._getPriorityLabel(task.priority);
         document.getElementById('details-created').textContent = new Date(task.created_at).toLocaleDateString('ar-SA');

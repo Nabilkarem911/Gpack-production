@@ -14,6 +14,7 @@ const router = express.Router();
 // =============================================================================
 // GET /api/tasks
 // List all tasks with optional filtering
+// ROLE-BASED: Regular employees see only their tasks
 // =============================================================================
 router.get('/', authenticate, async (req, res) => {
     const { status, priority, assigned_to, overdue, limit = 50, offset = 0 } = req.query;
@@ -22,6 +23,19 @@ router.get('/', authenticate, async (req, res) => {
         let where = [];
         let params = [];
         let paramIdx = 1;
+        
+        // ROLE-BASED FILTERING:
+        // - Admin/Super Admin: see all tasks
+        // - Regular users: see only tasks assigned to them
+        const userRole = req.user.role?.toLowerCase() || '';
+        const isAdmin = ['super_admin', 'admin', 'manager'].includes(userRole);
+        
+        if (!isAdmin) {
+            // Regular employee - show only their tasks
+            where.push(`t.assigned_to = $${paramIdx++}`);
+            params.push(req.user.id);
+        }
+        // Admins can see all tasks (no additional filter)
         
         if (status) {
             where.push(`t.status = $${paramIdx++}`);
@@ -33,7 +47,8 @@ router.get('/', authenticate, async (req, res) => {
             params.push(priority);
         }
         
-        if (assigned_to) {
+        if (assigned_to && isAdmin) {
+            // Only admins can filter by specific employee
             where.push(`t.assigned_to = $${paramIdx++}`);
             params.push(assigned_to);
         }
@@ -95,6 +110,7 @@ router.get('/', authenticate, async (req, res) => {
 // =============================================================================
 // GET /api/tasks/:id
 // Get single task with subtasks
+// ROLE-BASED: Regular employees can only view their own tasks
 // =============================================================================
 router.get('/:id', authenticate, async (req, res) => {
     const { id } = req.params;
@@ -117,6 +133,15 @@ router.get('/:id', authenticate, async (req, res) => {
         }
         
         const task = taskResult.rows[0];
+        
+        // Check permissions: only admin or assigned employee can view
+        const userRole = req.user.role?.toLowerCase() || '';
+        const isAdmin = ['super_admin', 'admin', 'manager'].includes(userRole);
+        const isAssigned = task.assigned_to === req.user.id;
+        
+        if (!isAdmin && !isAssigned) {
+            return res.status(403).json({ error: 'You can only view tasks assigned to you' });
+        }
         
         // Get subtasks
         const subtasksResult = await db.query(`
@@ -202,12 +227,55 @@ router.post('/', authenticate, async (req, res) => {
 // =============================================================================
 // PUT /api/tasks/:id
 // Update task
+// ROLE-BASED: Regular employees can only update status of their own tasks
 // =============================================================================
 router.put('/:id', authenticate, async (req, res) => {
     const { id } = req.params;
     const { title, description, assigned_to, due_date, priority, status, order_id, client_id } = req.body;
     
     try {
+        // Check user permissions
+        const userRole = req.user.role?.toLowerCase() || '';
+        const isAdmin = ['super_admin', 'admin', 'manager'].includes(userRole);
+        
+        // Get current task to check ownership
+        const taskCheck = await db.query('SELECT assigned_to FROM tasks WHERE id = $1', [id]);
+        if (taskCheck.rowCount === 0) {
+            return res.status(404).json({ error: 'Task not found' });
+        }
+        
+        const isAssigned = taskCheck.rows[0].assigned_to === req.user.id;
+        
+        if (!isAdmin && !isAssigned) {
+            return res.status(403).json({ error: 'You can only update tasks assigned to you' });
+        }
+        
+        // Regular employees can only update status
+        if (!isAdmin && isAssigned) {
+            // Non-admin can only update status field
+            if (status) {
+                const updates = ['status = $1'];
+                const params = [status];
+                if (status === 'completed') {
+                    updates.push('completed_at = NOW()');
+                }
+                updates.push('updated_at = NOW()');
+                params.push(id);
+                
+                const result = await db.query(`
+                    UPDATE tasks 
+                    SET ${updates.join(', ')}
+                    WHERE id = $${params.length}
+                    RETURNING *
+                `, params);
+                
+                return res.json({ task: result.rows[0], message: 'Task updated successfully' });
+            } else {
+                return res.status(403).json({ error: 'You can only update the status of your tasks' });
+            }
+        }
+        
+        // Admin can update all fields
         const updates = [];
         const params = [];
         let paramIdx = 1;
@@ -241,10 +309,6 @@ router.put('/:id', authenticate, async (req, res) => {
             RETURNING *
         `, params);
         
-        if (result.rowCount === 0) {
-            return res.status(404).json({ error: 'Task not found' });
-        }
-        
         res.json({ task: result.rows[0], message: 'Task updated successfully' });
         
     } catch (error) {
@@ -256,11 +320,20 @@ router.put('/:id', authenticate, async (req, res) => {
 // =============================================================================
 // DELETE /api/tasks/:id
 // Delete task
+// ROLE-BASED: Only admins can delete tasks
 // =============================================================================
 router.delete('/:id', authenticate, async (req, res) => {
     const { id } = req.params;
     
     try {
+        // Check user permissions
+        const userRole = req.user.role?.toLowerCase() || '';
+        const isAdmin = ['super_admin', 'admin', 'manager'].includes(userRole);
+        
+        if (!isAdmin) {
+            return res.status(403).json({ error: 'Only administrators can delete tasks' });
+        }
+        
         const result = await db.query('DELETE FROM tasks WHERE id = $1 RETURNING id', [id]);
         
         if (result.rowCount === 0) {

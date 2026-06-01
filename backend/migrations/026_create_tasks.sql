@@ -15,8 +15,6 @@ CREATE TABLE IF NOT EXISTS tasks (
     due_date DATE NOT NULL,
     status VARCHAR(20) DEFAULT 'pending', -- pending, completed, cancelled
     priority VARCHAR(20) DEFAULT 'medium', -- high, medium, low
-    order_id UUID REFERENCES orders(id) ON DELETE SET NULL, -- optional link to order
-    client_id UUID REFERENCES clients(id) ON DELETE SET NULL, -- optional link to client
     completed_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -27,7 +25,6 @@ CREATE INDEX IF NOT EXISTS idx_tasks_assigned_to ON tasks(assigned_to);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date);
 CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority);
-CREATE INDEX IF NOT EXISTS idx_tasks_order_id ON tasks(order_id) WHERE order_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks(created_at);
 
 -- =============================================================================
