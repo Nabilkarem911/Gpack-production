@@ -10,66 +10,56 @@
     <p class="text-slate-500 text-sm mt-1" id="dash-welcome-sub">مرحباً بك في نظام G.PACK 2.0</p>
 </div>
 
-<!-- KPI Cards Row -->
+<!-- Task Alert Banner (Dynamic - shows when there are pending tasks) -->
+<div id="task-alert-banner"></div>
+
+<!-- KPI Cards -->
 <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-
-    <!-- Card 1: Total Quotations -->
-    <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex items-start gap-4 hover:shadow-md transition-shadow">
-        <div class="w-12 h-12 rounded-xl bg-brand-50 flex items-center justify-center flex-shrink-0">
-            <i class="fa-solid fa-file-invoice text-brand-600 text-xl"></i>
-        </div>
-        <div class="min-w-0">
-            <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">عروض الأسعار</p>
-            <p class="text-2xl font-extrabold text-slate-800 mt-0.5" id="stat-quotations">0</p>
-            <p class="text-xs text-emerald-600 font-medium mt-1 flex items-center gap-1">
-                <i class="fa-solid fa-arrow-trend-up"></i>
-                <span>+١٢٪ هذا الشهر</span>
-            </p>
+    <div class="bg-white rounded-xl p-5 border border-slate-200 shadow-sm">
+        <div class="flex items-center gap-3 mb-3">
+            <div class="w-10 h-10 rounded-lg bg-brand-50 flex items-center justify-center">
+                <i class="fa-solid fa-file-invoice text-brand-600"></i>
+            </div>
+            <div>
+                <p class="text-xs text-slate-500">عروض الأسعار المفتوحة</p>
+                <p class="text-2xl font-bold text-slate-800" id="stat-quotations">0</p>
+            </div>
         </div>
     </div>
 
-    <!-- Card 2: Active Orders -->
-    <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex items-start gap-4 hover:shadow-md transition-shadow">
-        <div class="w-12 h-12 rounded-xl bg-amber-50 flex items-center justify-center flex-shrink-0">
-            <i class="fa-solid fa-cart-shopping text-amber-600 text-xl"></i>
-        </div>
-        <div class="min-w-0">
-            <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">الطلبات النشطة</p>
-            <p class="text-2xl font-extrabold text-slate-800 mt-0.5" id="stat-orders">0</p>
-            <p class="text-xs text-amber-600 font-medium mt-1 flex items-center gap-1">
-                <i class="fa-solid fa-clock"></i>
-                <span>٧ بانتظار التسعير</span>
-            </p>
+    <div class="bg-white rounded-xl p-5 border border-slate-200 shadow-sm">
+        <div class="flex items-center gap-3 mb-3">
+            <div class="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center">
+                <i class="fa-solid fa-cart-shopping text-blue-600"></i>
+            </div>
+            <div>
+                <p class="text-xs text-slate-500">الطلبات قيد التنفيذ</p>
+                <p class="text-2xl font-bold text-slate-800" id="stat-orders">0</p>
+            </div>
         </div>
     </div>
 
-    <!-- Card 3: Total Revenue -->
-    <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex items-start gap-4 hover:shadow-md transition-shadow">
-        <div class="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center flex-shrink-0">
-            <i class="fa-solid fa-sack-dollar text-emerald-600 text-xl"></i>
-        </div>
-        <div class="min-w-0">
-            <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">الإيرادات (ر.س)</p>
-            <p class="text-2xl font-extrabold text-slate-800 mt-0.5" id="stat-revenue">0</p>
-            <p class="text-xs text-emerald-600 font-medium mt-1 flex items-center gap-1">
-                <i class="fa-solid fa-arrow-trend-up"></i>
-                <span>+٨٪ عن الربع السابق</span>
-            </p>
+    <div class="bg-white rounded-xl p-5 border border-slate-200 shadow-sm">
+        <div class="flex items-center gap-3 mb-3">
+            <div class="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center">
+                <i class="fa-solid fa-sack-dollar text-emerald-600"></i>
+            </div>
+            <div>
+                <p class="text-xs text-slate-500">إجمالي الإيرادات (ر.س)</p>
+                <p class="text-2xl font-bold text-slate-800" id="stat-revenue">0</p>
+            </div>
         </div>
     </div>
 
-    <!-- Card 4: Outstanding Receivables -->
-    <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex items-start gap-4 hover:shadow-md transition-shadow">
-        <div class="w-12 h-12 rounded-xl bg-red-50 flex items-center justify-center flex-shrink-0">
-            <i class="fa-solid fa-hand-holding-dollar text-red-500 text-xl"></i>
-        </div>
-        <div class="min-w-0">
-            <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">المستحقات (ر.س)</p>
-            <p class="text-2xl font-extrabold text-slate-800 mt-0.5" id="stat-receivables">0</p>
-            <p class="text-xs text-red-500 font-medium mt-1 flex items-center gap-1">
-                <i class="fa-solid fa-triangle-exclamation"></i>
-                <span>٥ فواتير متأخرة</span>
-            </p>
+    <div class="bg-white rounded-xl p-5 border border-slate-200 shadow-sm">
+        <div class="flex items-center gap-3 mb-3">
+            <div class="w-10 h-10 rounded-lg bg-red-50 flex items-center justify-center">
+                <i class="fa-solid fa-hand-holding-dollar text-red-600"></i>
+            </div>
+            <div>
+                <p class="text-xs text-slate-500">المستحقات الغير محصلة (ر.س)</p>
+                <p class="text-2xl font-bold text-slate-800" id="stat-receivables">0</p>
+            </div>
         </div>
     </div>
 </div>
@@ -77,45 +67,13 @@
 <!-- Second Row: Quick Stats + Recent Orders -->
 <div class="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-6">
 
-    <!-- Inventory Alerts -->
+    <!-- Tasks Widget -->
     <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
         <div class="flex items-center justify-between mb-4">
-            <h3 class="font-bold text-slate-800 text-base">تنبيهات المخزون</h3>
-            <span class="px-2.5 py-0.5 bg-red-100 text-red-600 text-xs font-bold rounded-full">٣ تنبيهات</span>
-        </div>
-        <div class="space-y-3">
-            <div class="flex items-center gap-3 p-3 bg-red-50 rounded-xl border border-red-100">
-                <div class="w-2 h-2 rounded-full bg-red-500 flex-shrink-0"></div>
-                <div class="flex-1 min-w-0">
-                    <p class="text-sm font-semibold text-slate-700 truncate">كيس تغليف 50×70</p>
-                    <p class="text-xs text-red-600">المخزون: ٢٠ — أقل من الحد الأدنى</p>
-                </div>
-            </div>
-            <div class="flex items-center gap-3 p-3 bg-amber-50 rounded-xl border border-amber-100">
-                <div class="w-2 h-2 rounded-full bg-amber-500 flex-shrink-0"></div>
-                <div class="flex-1 min-w-0">
-                    <p class="text-sm font-semibold text-slate-700 truncate">ورق مقوى A3</p>
-                    <p class="text-xs text-amber-600">المخزون: ١٥٠ — منخفض</p>
-                </div>
-            </div>
-            <div class="flex items-center gap-3 p-3 bg-red-50 rounded-xl border border-red-100">
-                <div class="w-2 h-2 rounded-full bg-red-500 flex-shrink-0"></div>
-                <div class="flex-1 min-w-0">
-                    <p class="text-sm font-semibold text-slate-700 truncate">شريط لاصق 48mm</p>
-                    <p class="text-xs text-red-600">المخزون: ٠ — نفد</p>
-                </div>
-            </div>
-        </div>
-        <button onclick="window.navigateTo('inventory')"
-                class="mt-4 w-full text-center text-xs text-brand-600 hover:text-brand-700 font-semibold transition-colors">
-            عرض كل التنبيهات ←
-        </button>
-    </div>
-
-    <!-- Tasks Summary -->
-    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
-        <div class="flex items-center justify-between mb-4">
-            <h3 class="font-bold text-slate-800 text-base">المهام اليوم</h3>
+            <h3 class="font-bold text-slate-800 text-base flex items-center gap-2">
+                <i class="fa-solid fa-list-check text-brand-500"></i>
+                مهامي
+            </h3>
             <button onclick="window.navigateTo('tasks')"
                     class="text-xs text-brand-600 hover:text-brand-700 font-semibold transition-colors">
                 عرض الكل ←
@@ -144,75 +102,69 @@
         </div>
     </div>
 
-    <!-- Recent Orders Table -->
-    <div class="xl:col-span-2 bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+    <!-- Alerts Widget -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
         <div class="flex items-center justify-between mb-4">
-            <h3 class="font-bold text-slate-800 text-base">آخر الطلبات</h3>
-            <button onclick="window.navigateTo('orders')"
-                    class="text-xs text-brand-600 hover:text-brand-700 font-semibold transition-colors">
-                عرض الكل ←
-            </button>
+            <h3 class="font-bold text-slate-800 text-base flex items-center gap-2">
+                <i class="fa-solid fa-triangle-exclamation text-red-500"></i>
+                تنبيهات
+            </h3>
+            <span id="alerts-count" class="px-2 py-0.5 bg-red-100 text-red-600 text-xs font-bold rounded-full">٠</span>
         </div>
-        <div class="overflow-x-auto">
-            <table class="w-full text-sm">
-                <thead>
-                    <tr class="border-b border-slate-100">
-                        <th class="text-right pb-3 font-semibold text-slate-500 text-xs">رقم الطلب</th>
-                        <th class="text-right pb-3 font-semibold text-slate-500 text-xs">العميل</th>
-                        <th class="text-right pb-3 font-semibold text-slate-500 text-xs">الحالة</th>
-                        <th class="text-right pb-3 font-semibold text-slate-500 text-xs">الإجمالي</th>
-                        <th class="text-right pb-3 font-semibold text-slate-500 text-xs">التاريخ</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-50">
-                    <tr class="hover:bg-slate-50 transition-colors">
-                        <td class="py-3 font-mono font-bold text-brand-600">#١٠٤٧</td>
-                        <td class="py-3 text-slate-700 font-medium">شركة النور للتعبئة</td>
-                        <td class="py-3">
-                            <span class="px-2.5 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs font-semibold">مكتمل</span>
-                        </td>
-                        <td class="py-3 font-semibold text-slate-800">٢٣٫٥٠٠ ر.س</td>
-                        <td class="py-3 text-slate-500 text-xs">٢٠٢٦/٠٤/٢٨</td>
-                    </tr>
-                    <tr class="hover:bg-slate-50 transition-colors">
-                        <td class="py-3 font-mono font-bold text-brand-600">#١٠٤٦</td>
-                        <td class="py-3 text-slate-700 font-medium">مجموعة الرياض التجارية</td>
-                        <td class="py-3">
-                            <span class="px-2.5 py-1 bg-amber-100 text-amber-700 rounded-full text-xs font-semibold">قيد التصنيع</span>
-                        </td>
-                        <td class="py-3 font-semibold text-slate-800">٨٧٫٢٠٠ ر.س</td>
-                        <td class="py-3 text-slate-500 text-xs">٢٠٢٦/٠٤/٢٦</td>
-                    </tr>
-                    <tr class="hover:bg-slate-50 transition-colors">
-                        <td class="py-3 font-mono font-bold text-brand-600">#١٠٤٥</td>
-                        <td class="py-3 text-slate-700 font-medium">شركة أمانة للتوزيع</td>
-                        <td class="py-3">
-                            <span class="px-2.5 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-semibold">تحت التسعير</span>
-                        </td>
-                        <td class="py-3 text-slate-400 text-xs">—</td>
-                        <td class="py-3 text-slate-500 text-xs">٢٠٢٦/٠٤/٢٥</td>
-                    </tr>
-                    <tr class="hover:bg-slate-50 transition-colors">
-                        <td class="py-3 font-mono font-bold text-brand-600">#١٠٤٤</td>
-                        <td class="py-3 text-slate-700 font-medium">شركة النور للتعبئة</td>
-                        <td class="py-3">
-                            <span class="px-2.5 py-1 bg-slate-100 text-slate-600 rounded-full text-xs font-semibold">مؤرشف</span>
-                        </td>
-                        <td class="py-3 font-semibold text-slate-800">١٢٫٠٠٠ ر.س</td>
-                        <td class="py-3 text-slate-500 text-xs">٢٠٢٦/٠٤/٢٠</td>
-                    </tr>
-                    <tr class="hover:bg-slate-50 transition-colors">
-                        <td class="py-3 font-mono font-bold text-brand-600">#١٠٤٣</td>
-                        <td class="py-3 text-slate-700 font-medium">مجموعة الرياض التجارية</td>
-                        <td class="py-3">
-                            <span class="px-2.5 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs font-semibold">مكتمل</span>
-                        </td>
-                        <td class="py-3 font-semibold text-slate-800">٥٤٫٧٥٠ ر.س</td>
-                        <td class="py-3 text-slate-500 text-xs">٢٠٢٦/٠٤/١٨</td>
-                    </tr>
-                </tbody>
-            </table>
+        <div id="dashboard-alerts-list" class="space-y-2 max-h-56 overflow-y-auto">
+            <div class="text-center py-4 text-slate-400">
+                <i class="fa-solid fa-circle-notch fa-spin text-brand-400"></i>
+                <p class="text-xs mt-2">جارٍ التحميل...</p>
+            </div>
         </div>
+        <button onclick="window.navigateTo('inventory')" class="mt-4 w-full text-center text-xs text-brand-600 hover:text-brand-700 font-semibold transition-colors">
+            عرض كل التنبيهات ←
+        </button>
+    </div>
+
+    <!-- Activity Feed -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="font-bold text-slate-800 text-base flex items-center gap-2">
+                <i class="fa-solid fa-clock-rotate-left text-slate-500"></i>
+                آخر النشاطات
+            </h3>
+        </div>
+        <div id="dashboard-activity-list" class="space-y-1 max-h-56 overflow-y-auto">
+            <div class="text-center py-4 text-slate-400">
+                <i class="fa-solid fa-circle-notch fa-spin text-brand-400"></i>
+                <p class="text-xs mt-2">جارٍ التحميل...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ══════════════════════════  RECENT ORDERS  ═══════════════════════════ -->
+<div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 mb-6">
+    <div class="flex items-center justify-between mb-4">
+        <h3 class="font-bold text-slate-800 text-base flex items-center gap-2">
+            <i class="fa-solid fa-cart-shopping text-brand-500"></i>
+            آخر الطلبات
+        </h3>
+        <button onclick="window.navigateTo('orders')" class="text-xs text-brand-600 hover:text-brand-700 font-semibold transition-colors">
+            عرض الكل ←
+        </button>
+    </div>
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="border-b border-slate-100">
+                    <th class="text-right pb-3 font-semibold text-slate-500 text-xs">رقم الطلب</th>
+                    <th class="text-right pb-3 font-semibold text-slate-500 text-xs">العميل</th>
+                    <th class="text-right pb-3 font-semibold text-slate-500 text-xs">الحالة</th>
+                    <th class="text-right pb-3 font-semibold text-slate-500 text-xs">المبلغ</th>
+                    <th class="text-right pb-3 font-semibold text-slate-500 text-xs">التاريخ</th>
+                </tr>
+            </thead>
+            <tbody id="recent-orders-table" class="divide-y divide-slate-50">
+                <tr><td colspan="5" class="py-4 text-center text-slate-400 text-xs">جارٍ التحميل...</td></tr>
+            </tbody>
+        </table>
     </div>
 </div>
 

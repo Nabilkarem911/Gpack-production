@@ -16,7 +16,10 @@ const dashboardView = {
         console.log('[Dashboard] Initializing view...');
         await Promise.all([
             this._loadDashboardStats(),
-            this._loadTasks()
+            this._loadTasks(),
+            this._loadAlerts(),
+            this._loadRecentOrders(),
+            this._loadActivities()
         ]);
     },
 
@@ -222,6 +225,182 @@ const dashboardView = {
         sessionStorage.setItem('selectedTaskId', taskId);
         // Navigate to tasks page
         window.navigateTo('tasks');
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Load Alerts from API
+    // ─────────────────────────────────────────────────────────────────────────
+    async _loadAlerts() {
+        try {
+            const response = await apiFetch('/api/dashboard/alerts');
+            const alerts = response.data || [];
+            this._renderAlerts(alerts);
+        } catch (error) {
+            console.error('[Dashboard] Failed to load alerts:', error);
+            this._renderAlerts([]);
+        }
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Render Alerts Widget
+    // ─────────────────────────────────────────────────────────────────────────
+    _renderAlerts(alerts) {
+        const container = document.getElementById('dashboard-alerts-list');
+        const countBadge = document.getElementById('alerts-count');
+        if (!container) return;
+
+        if (countBadge) countBadge.textContent = alerts.length;
+
+        if (alerts.length === 0) {
+            container.innerHTML = `
+                <div class="text-center py-6 text-slate-400">
+                    <i class="fa-solid fa-check-circle text-3xl mb-2 text-emerald-400"></i>
+                    <p class="text-sm">لا توجد تنبيهات</p>
+                    <p class="text-xs text-slate-300 mt-1">كل شيء على ما يرام</p>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = alerts.slice(0, 5).map(alert => {
+            const severityClass = alert.severity === 'critical' ? 'bg-red-50 border-red-100 text-red-700' :
+                                   alert.severity === 'warning' ? 'bg-amber-50 border-amber-100 text-amber-700' :
+                                   'bg-blue-50 border-blue-100 text-blue-700';
+            const icon = alert.severity === 'critical' ? 'fa-circle-exclamation' :
+                          alert.severity === 'warning' ? 'fa-triangle-exclamation' : 'fa-info-circle';
+
+            return `
+                <div class="p-3 rounded-xl border ${severityClass} flex items-start gap-3">
+                    <i class="fa-solid ${icon} mt-0.5 flex-shrink-0"></i>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-sm font-semibold truncate">${alert.title}</p>
+                        <p class="text-xs opacity-80">${alert.message}</p>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Load Recent Orders from API
+    // ─────────────────────────────────────────────────────────────────────────
+    async _loadRecentOrders() {
+        try {
+            const response = await apiFetch('/api/dashboard/recent-orders?limit=5');
+            const orders = response.data || [];
+            this._renderRecentOrders(orders);
+        } catch (error) {
+            console.error('[Dashboard] Failed to load recent orders:', error);
+            this._renderRecentOrders([]);
+        }
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Render Recent Orders Table
+    // ─────────────────────────────────────────────────────────────────────────
+    _renderRecentOrders(orders) {
+        const container = document.getElementById('recent-orders-table');
+        if (!container) return;
+
+        if (orders.length === 0) {
+            container.innerHTML = '<tr><td colspan="5" class="py-4 text-center text-slate-400 text-xs">لا توجد طلبات</td></tr>';
+            return;
+        }
+
+        const statusMap = {
+            'pending': { label: 'معلق', class: 'bg-amber-100 text-amber-700' },
+            'confirmed': { label: 'مؤكد', class: 'bg-blue-100 text-blue-700' },
+            'processing': { label: 'قيد التصنيع', class: 'bg-purple-100 text-purple-700' },
+            'ready': { label: 'جاهز', class: 'bg-cyan-100 text-cyan-700' },
+            'delivered': { label: 'تم التسليم', class: 'bg-emerald-100 text-emerald-700' },
+            'completed': { label: 'مكتمل', class: 'bg-emerald-100 text-emerald-700' },
+            'cancelled': { label: 'ملغي', class: 'bg-red-100 text-red-700' },
+            'quote': { label: 'عرض سعر', class: 'bg-slate-100 text-slate-600' }
+        };
+
+        container.innerHTML = orders.map(order => {
+            const status = statusMap[order.status] || { label: order.status, class: 'bg-slate-100 text-slate-600' };
+            return `
+                <tr class="hover:bg-slate-50 transition-colors cursor-pointer" onclick="window.navigateTo('orders')">
+                    <td class="py-3 font-mono font-bold text-brand-600">#${order.order_number || order.id?.slice(-4) || '---'}</td>
+                    <td class="py-3 text-slate-700 font-medium">${order.client_name || 'غير محدد'}</td>
+                    <td class="py-3">
+                        <span class="px-2.5 py-1 rounded-full text-xs font-semibold ${status.class}">${status.label}</span>
+                    </td>
+                    <td class="py-3 font-semibold text-slate-800">${order.total_amount ? parseFloat(order.total_amount).toLocaleString('en-US') + ' ر.س' : '—'}</td>
+                    <td class="py-3 text-slate-500 text-xs">${order.created_at ? new Date(order.created_at).toLocaleDateString('ar-SA') : '—'}</td>
+                </tr>
+            `;
+        }).join('');
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Load Activities from API
+    // ─────────────────────────────────────────────────────────────────────────
+    async _loadActivities() {
+        try {
+            const response = await apiFetch('/api/dashboard/activities?limit=5');
+            const activities = response.data || [];
+            this._renderActivities(activities);
+        } catch (error) {
+            console.error('[Dashboard] Failed to load activities:', error);
+            this._renderActivities([]);
+        }
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Render Activity Feed
+    // ─────────────────────────────────────────────────────────────────────────
+    _renderActivities(activities) {
+        const container = document.getElementById('dashboard-activity-list');
+        if (!container) return;
+
+        if (activities.length === 0) {
+            container.innerHTML = `
+                <div class="text-center py-4 text-slate-400 text-xs">
+                    لا توجد نشاطات حديثة
+                </div>
+            `;
+            return;
+        }
+
+        const actionLabels = {
+            'in': 'إضافة مخزون',
+            'out': 'صرف مخزون',
+            'transfer': 'تحويل مخزون',
+            'adjustment': 'تسوية مخزون'
+        };
+
+        container.innerHTML = activities.map(activity => {
+            const actionLabel = actionLabels[activity.action] || activity.action;
+            const timeAgo = activity.created_at ? this._timeAgo(new Date(activity.created_at)) : '';
+            return `
+                <div class="flex items-start gap-3 p-2 hover:bg-slate-50 rounded-lg transition-colors">
+                    <div class="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0">
+                        <i class="fa-solid fa-box text-slate-500 text-xs"></i>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-sm text-slate-700 font-medium">${actionLabel}</p>
+                        <p class="text-xs text-slate-500 truncate">${activity.description || ''} ${activity.warehouse ? '(' + activity.warehouse + ')' : ''}</p>
+                        <p class="text-xs text-slate-400 mt-0.5">${timeAgo}</p>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Time Ago Helper
+    // ─────────────────────────────────────────────────────────────────────────
+    _timeAgo(date) {
+        const seconds = Math.floor((new Date() - date) / 1000);
+        if (seconds < 60) return 'منذ لحظات';
+        const minutes = Math.floor(seconds / 60);
+        if (minutes < 60) return `منذ ${minutes} دقيقة`;
+        const hours = Math.floor(minutes / 60);
+        if (hours < 24) return `منذ ${hours} ساعة`;
+        const days = Math.floor(hours / 24);
+        return `منذ ${days} يوم`;
     },
 
     // ─────────────────────────────────────────────────────────────────────────
