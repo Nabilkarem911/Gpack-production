@@ -266,6 +266,8 @@
                 </td>
                 <td class="py-3.5 px-4">
                     ${_statusBadge(q.status)}
+                    ${q.pricing_status === 'pending' ? '<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-600 mr-1"><i class="fa-solid fa-circle-exclamation"></i> في انتظار التسعير</span>' : ''}
+                    ${q.pricing_status === 'priced' ? '<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700 mr-1"><i class="fa-solid fa-check"></i> تم التسعير</span>' : ''}
                     ${q.client_response === 'approved' ? '<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700 mr-1"><i class="fa-solid fa-circle-check"></i> وافق</span>' : ''}
                     ${q.client_response === 'rejected' ? '<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-600 mr-1"><i class="fa-solid fa-circle-xmark"></i> رفض</span>' : ''}
                     ${q.share_token && !q.client_response ? '<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-600 mr-1"><i class="fa-solid fa-share-nodes"></i> مُرسَل</span>' : ''}

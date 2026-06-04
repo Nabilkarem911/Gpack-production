@@ -181,7 +181,7 @@ router.get('/alerts', async (req, res) => {
                 o.id as order_id,
                 o.order_number,
                 c.name as client_name,
-                o.total_amount,
+                o.grand_total,
                 o.created_at,
                 EXTRACT(DAY FROM NOW() - o.created_at) as days_pending
              FROM orders o
@@ -273,7 +273,7 @@ router.get('/chart-data', async (req, res) => {
             `SELECT 
                 DATE_TRUNC('month', created_at) as month,
                 COUNT(*) as orders_count,
-                COALESCE(SUM(total_amount), 0) as total_sales
+                COALESCE(SUM(grand_total), 0) as total_sales
              FROM orders
              WHERE status != 'cancelled'
              AND created_at >= NOW() - INTERVAL '6 months'
