@@ -65,21 +65,61 @@ const dashboardView = {
     // ─────────────────────────────────────────────────────────────────────────
     async _loadTasks() {
         try {
-            // First load users for name mapping
-            await this._loadUsers();
+            // Load real tasks from API
+            const response = await apiFetch('/api/tasks?limit=5&status=pending');
+            this.tasks = response.tasks || response.data || [];
             
-            // TODO: Replace with actual API when ready
-            // const response = await apiFetch('/api/tasks?limit=5');
-            // this.tasks = response.tasks || [];
-            
-            // For now, use same sample data as tasks view
-            this.tasks = this._getSampleTasks();
-            
+            // Render tasks and alert banner
             this._renderDashboardTasks();
             this._updateTaskStats();
+            this._renderTaskAlertBanner();
         } catch (error) {
             console.error('[Dashboard] Failed to load tasks:', error);
+            this.tasks = [];
+            this._renderDashboardTasks();
         }
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Render Task Alert Banner (prominent notification)
+    // ─────────────────────────────────────────────────────────────────────────
+    _renderTaskAlertBanner() {
+        const container = document.getElementById('task-alert-banner');
+        if (!container) return;
+        
+        const pendingTasks = this.tasks.filter(t => t.status === 'pending');
+        const overdueTasks = pendingTasks.filter(t => this._isOverdue(t));
+        
+        if (pendingTasks.length === 0) {
+            container.innerHTML = ''; // Hide if no tasks
+            return;
+        }
+        
+        const urgentClass = overdueTasks.length > 0 ? 'bg-red-500' : 'bg-brand-500';
+        const icon = overdueTasks.length > 0 ? 'fa-exclamation-circle' : 'fa-tasks';
+        const message = overdueTasks.length > 0 
+            ? `لديك ${overdueTasks.length} مهمة متأخرة!`
+            : `لديك ${pendingTasks.length} مهمة قيد التنفيذ`;
+        
+        container.innerHTML = `
+            <div class="${urgentClass} text-white rounded-xl p-4 mb-4 shadow-lg animate-pulse">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
+                            <i class="fa-solid ${icon} text-xl"></i>
+                        </div>
+                        <div>
+                            <h4 class="font-bold text-lg">${message}</h4>
+                            <p class="text-white/80 text-sm">اضغط على المهمة للتفاصيل والإنجاز</p>
+                        </div>
+                    </div>
+                    <button onclick="window.navigateTo('tasks')" 
+                            class="px-4 py-2 bg-white text-slate-800 rounded-lg font-medium hover:bg-slate-100 transition-colors">
+                        عرض المهام
+                    </button>
+                </div>
+            </div>
+        `;
     },
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -92,66 +132,6 @@ const dashboardView = {
         } catch (error) {
             console.log('[Dashboard] Could not load users');
         }
-    },
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // Sample Tasks Data (Temporary)
-    // ─────────────────────────────────────────────────────────────────────────
-    _getSampleTasks() {
-        const today = new Date();
-        const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
-        const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
-        
-        return [
-            {
-                id: '1',
-                title: 'تجهيز طلب شركة النور',
-                description: 'تجهيز 500 كيس تغليف',
-                assigned_to: this.users[0]?.id || '1',
-                due_date: today.toISOString().split('T')[0],
-                status: 'pending',
-                priority: 'high',
-                created_at: today.toISOString()
-            },
-            {
-                id: '2',
-                title: 'صيانة الطابعة الرئيسية',
-                description: 'الفحوصات الدورية',
-                assigned_to: this.users[1]?.id || '2',
-                due_date: today.toISOString().split('T')[0],
-                status: 'completed',
-                priority: 'medium',
-                created_at: yesterday.toISOString()
-            },
-            {
-                id: '3',
-                title: 'جرد المخزن الشهري',
-                description: 'الجرد الكامل',
-                assigned_to: this.users[2]?.id || '3',
-                due_date: yesterday.toISOString().split('T')[0],
-                status: 'pending',
-                priority: 'high',
-                created_at: yesterday.toISOString()
-            },
-            {
-                id: '4',
-                title: 'تحديث بيانات العملاء',
-                description: '15 عميل',
-                assigned_to: this.users[0]?.id || '1',
-                due_date: tomorrow.toISOString().split('T')[0],
-                status: 'pending',
-                priority: 'low',
-                created_at: today.toISOString()
-            }
-        ];
-    },
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // Get User Name
-    // ─────────────────────────────────────────────────────────────────────────
-    _getUserName(id) {
-        const user = this.users.find(u => u.id === id);
-        return user ? user.name.split(' ')[0] : 'غير محدد';
     },
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -173,58 +153,75 @@ const dashboardView = {
         if (!container) return;
 
         if (this.tasks.length === 0) {
-            container.innerHTML = '<p class="text-center text-slate-400 text-sm py-4">لا توجد مهام</p>';
+            container.innerHTML = `
+                <div class="text-center py-6 text-slate-400">
+                    <i class="fa-solid fa-clipboard-check text-3xl mb-2 text-emerald-400"></i>
+                    <p class="text-sm">لا توجد مهام حالياً</p>
+                    <p class="text-xs text-slate-300 mt-1">سيتم إشعارك عند وجود مهام جديدة</p>
+                </div>
+            `;
             return;
         }
 
-        // Show today's and upcoming tasks
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        
-        const relevantTasks = this.tasks
-            .filter(t => {
-                const due = new Date(t.due_date);
-                // Show: overdue, today, or tomorrow
-                return t.status !== 'completed' || this._isOverdue(t);
-            })
-            .slice(0, 5); // Show max 5
+        // Sort: overdue first, then pending, then by due date
+        const sortedTasks = [...this.tasks].sort((a, b) => {
+            const aOverdue = this._isOverdue(a);
+            const bOverdue = this._isOverdue(b);
+            if (aOverdue && !bOverdue) return -1;
+            if (!aOverdue && bOverdue) return 1;
+            if (a.status === 'pending' && b.status !== 'pending') return -1;
+            if (a.status !== 'pending' && b.status === 'pending') return 1;
+            return new Date(a.due_date) - new Date(b.due_date);
+        });
 
-        if (relevantTasks.length === 0) {
-            container.innerHTML = '<p class="text-center text-slate-400 text-sm py-4">لا توجد مهام مستحقة</p>';
-            return;
-        }
-
-        container.innerHTML = relevantTasks.map(task => {
+        container.innerHTML = sortedTasks.slice(0, 5).map(task => {
             const isOverdue = this._isOverdue(task);
-            const isToday = task.due_date === today.toISOString().split('T')[0];
+            const isPending = task.status === 'pending';
+            const progress = task.total_subtasks ? Math.round((task.completed_subtasks || 0) / task.total_subtasks * 100) : 0;
             
-            let statusClass = 'bg-slate-50 border-slate-100';
-            let statusIcon = '<i class="fa-solid fa-circle text-slate-300 text-xs"></i>';
-            let dateText = task.due_date;
+            const bgClass = isOverdue ? 'bg-red-50 border-red-200' : 
+                           isPending ? 'bg-white border-slate-200 hover:border-brand-300' : 
+                           'bg-slate-50 border-slate-100';
             
-            if (isOverdue) {
-                statusClass = 'bg-red-50 border-red-100';
-                statusIcon = '<i class="fa-solid fa-exclamation text-red-500 text-xs"></i>';
-                dateText = 'متأخر';
-            } else if (isToday) {
-                statusClass = 'bg-orange-50 border-orange-100';
-                statusIcon = '<i class="fa-solid fa-clock text-orange-500 text-xs"></i>';
-                dateText = 'اليوم';
-            }
-
-            const priorityIcon = task.priority === 'high' ? '<i class="fa-solid fa-flag text-red-400 text-xs mr-1"></i>' : '';
-
             return `
-                <div class="flex items-center gap-2 p-2 rounded-lg border ${statusClass} cursor-pointer hover:shadow-sm transition-all"
-                     onclick="window.navigateTo('tasks')">
-                    ${statusIcon}
-                    <div class="flex-1 min-w-0">
-                        <p class="text-sm font-medium text-slate-800 truncate">${priorityIcon}${task.title}</p>
-                        <p class="text-xs text-slate-500">${this._getUserName(task.assigned_to)} • ${dateText}</p>
+                <div class="p-3 rounded-xl border ${bgClass} transition-all cursor-pointer group hover:shadow-md"
+                     onclick="dashboardView._openTaskDirect('${task.id}')">
+                    <div class="flex items-start justify-between gap-2">
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2">
+                                <p class="text-sm font-semibold text-slate-700 truncate group-hover:text-brand-600">${task.title}</p>
+                                ${isOverdue ? '<span class="px-1.5 py-0.5 bg-red-100 text-red-600 text-xs rounded font-medium">متأخر</span>' : ''}
+                                ${task.priority === 'high' && !isOverdue ? '<span class="px-1.5 py-0.5 bg-orange-100 text-orange-600 text-xs rounded">عاجل</span>' : ''}
+                            </div>
+                            <p class="text-xs text-slate-500 mt-1 flex items-center gap-2">
+                                <span><i class="fa-regular fa-calendar mr-1"></i>${task.due_date}</span>
+                                ${task.total_subtasks ? `<span class="text-brand-600">${task.completed_subtasks || 0}/${task.total_subtasks} تم</span>` : ''}
+                            </p>
+                            ${task.total_subtasks ? `
+                                <div class="mt-2 w-full bg-slate-100 rounded-full h-1.5">
+                                    <div class="bg-brand-500 h-1.5 rounded-full transition-all" style="width: ${progress}%"></div>
+                                </div>
+                            ` : ''}
+                        </div>
+                        <div class="flex flex-col items-center">
+                            ${isPending && task.priority === 'high' ? 
+                                `<span class="w-2 h-2 rounded-full bg-red-500 animate-pulse mb-1"></span>` : ''}
+                            <i class="fa-solid ${isPending ? 'fa-circle text-slate-300' : 'fa-check-circle text-emerald-500'}"></i>
+                        </div>
                     </div>
                 </div>
             `;
         }).join('');
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Open Task Directly (from dashboard click)
+    // ─────────────────────────────────────────────────────────────────────────
+    _openTaskDirect(taskId) {
+        // Store selected task ID
+        sessionStorage.setItem('selectedTaskId', taskId);
+        // Navigate to tasks page
+        window.navigateTo('tasks');
     },
 
     // ─────────────────────────────────────────────────────────────────────────
