@@ -19,7 +19,8 @@ const dashboardView = {
             this._loadTasks(),
             this._loadAlerts(),
             this._loadRecentOrders(),
-            this._loadActivities()
+            this._loadActivities(),
+            this._loadChartData()
         ]);
     },
 
@@ -387,6 +388,99 @@ const dashboardView = {
                 </div>
             `;
         }).join('');
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Load Chart Data from API
+    // ─────────────────────────────────────────────────────────────────────────
+    async _loadChartData() {
+        try {
+            const response = await apiFetch('/api/dashboard/chart-data');
+            const data = response.data || {};
+            this._renderTopProducts(data.top_products || []);
+            this._renderRevenueChart(data.monthly_sales || []);
+        } catch (error) {
+            console.error('[Dashboard] Failed to load chart data:', error);
+            this._renderTopProducts([]);
+            this._renderRevenueChart([]);
+        }
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Render Top Products Widget
+    // ─────────────────────────────────────────────────────────────────────────
+    _renderTopProducts(products) {
+        const container = document.getElementById('top-products-list');
+        if (!container) return;
+
+        if (products.length === 0) {
+            container.innerHTML = `
+                <div class="text-center py-6 text-slate-400 text-xs">
+                    لا توجد بيانات مبيعات
+                </div>
+            `;
+            return;
+        }
+
+        const maxQty = Math.max(...products.map(p => p.total_quantity));
+
+        container.innerHTML = products.map((product, index) => {
+            const percentage = maxQty > 0 ? (product.total_quantity / maxQty) * 100 : 0;
+            const rankColors = ['text-amber-500', 'text-slate-400', 'text-orange-400'];
+            const rankIcon = index < 3 ? `<i class="fa-solid fa-crown ${rankColors[index]}"></i>` : `<span class="text-slate-300 text-xs w-4 text-center">${index + 1}</span>`;
+
+            return `
+                <div class="flex items-center gap-3">
+                    <div class="w-6 flex-shrink-0 text-center">${rankIcon}</div>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center justify-between mb-1">
+                            <p class="text-sm font-medium text-slate-700 truncate">${product.product_name}</p>
+                            <p class="text-xs font-bold text-slate-600">${product.total_quantity} <span class="text-slate-400 font-normal">قطعة</span></p>
+                        </div>
+                        <div class="w-full bg-slate-100 rounded-full h-2">
+                            <div class="bg-brand-500 h-2 rounded-full transition-all duration-500" style="width: ${percentage}%"></div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Render Revenue Bar Chart (CSS-only)
+    // ─────────────────────────────────────────────────────────────────────────
+    _renderRevenueChart(monthlySales) {
+        const container = document.getElementById('revenue-chart-container');
+        const labelsContainer = document.getElementById('revenue-chart-labels');
+        if (!container || !labelsContainer) return;
+
+        if (monthlySales.length === 0) {
+            container.innerHTML = '<div class="text-center w-full text-slate-400 text-xs py-6">لا توجد بيانات</div>';
+            labelsContainer.innerHTML = '';
+            return;
+        }
+
+        const maxSales = Math.max(...monthlySales.map(m => m.total_sales));
+        const barColors = ['#3b82f6', '#6366f1', '#8b5cf6', '#a855f7', '#c084fc', '#d8b4fe'];
+
+        container.innerHTML = monthlySales.map((month, index) => {
+            const height = maxSales > 0 ? (month.total_sales / maxSales) * 100 : 0;
+            const color = barColors[index % barColors.length];
+            const revenue = parseFloat(month.total_sales).toLocaleString('en-US');
+
+            return `
+                <div class="flex-1 flex flex-col items-center justify-end group relative" style="height: 100%">
+                    <div class="absolute -top-8 opacity-0 group-hover:opacity-100 transition-opacity bg-slate-800 text-white text-xs rounded px-2 py-1 whitespace-nowrap z-10">
+                        ${revenue} ر.س
+                    </div>
+                    <div class="w-full max-w-[40px] rounded-t-lg transition-all duration-700 hover:brightness-110" style="height: ${Math.max(height, 5)}%; background-color: ${color};"></div>
+                </div>
+            `;
+        }).join('');
+
+        labelsContainer.innerHTML = monthlySales.map(m => `
+            <span class="flex-1 text-center">${m.month || ''}</span>
+        `).join('');
     },
 
     // ─────────────────────────────────────────────────────────────────────────
