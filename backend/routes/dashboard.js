@@ -384,4 +384,171 @@ router.get('/activities', async (req, res) => {
     }
 });
 
+// =============================================================================
+// GET /api/dashboard/pending-pricing
+// Returns quotations (status='quote') that have items with zero/null unit_price
+// and pricing_status = 'pending'. Visible to admin/manager only.
+// =============================================================================
+
+router.get('/pending-pricing', async (req, res) => {
+    try {
+        // Find quote orders with at least one item having unit_price = 0 or NULL
+        const result = await db.query(
+            `SELECT 
+                o.id,
+                o.order_number,
+                o.order_date,
+                o.valid_until,
+                o.internal_notes,
+                o.pricing_status,
+                o.pricing_notes,
+                c.name as client_name,
+                u.name as created_by_name,
+                o.created_at,
+                COUNT(oi.id) as total_items,
+                COUNT(CASE WHEN COALESCE(oi.unit_price, 0) = 0 THEN 1 END) as unpriced_items
+             FROM orders o
+             JOIN clients c ON o.client_id = c.id
+             LEFT JOIN users u ON o.created_by = u.id
+             JOIN order_items oi ON oi.order_id = o.id
+             WHERE o.status = 'quote'
+             AND (
+                 o.pricing_status = 'pending'
+                 OR EXISTS (
+                     SELECT 1 FROM order_items oi2 
+                     WHERE oi2.order_id = o.id 
+                     AND COALESCE(oi2.unit_price, 0) = 0
+                 )
+             )
+             GROUP BY o.id, o.order_number, o.order_date, o.valid_until, 
+                      o.internal_notes, o.pricing_status, o.pricing_notes,
+                      c.name, u.name, o.created_at
+             ORDER BY o.created_at DESC`
+        );
+
+        const pending = result.rows.map(row => ({
+            id: row.id,
+            order_number: row.order_number,
+            order_date: row.order_date,
+            valid_until: row.valid_until,
+            client_name: row.client_name,
+            created_by_name: row.created_by_name,
+            total_items: parseInt(row.total_items),
+            unpriced_items: parseInt(row.unpriced_items),
+            pricing_status: row.pricing_status || 'pending',
+            pricing_notes: row.pricing_notes,
+            internal_notes: row.internal_notes,
+            created_at: row.created_at
+        }));
+
+        return success(res, pending);
+    } catch (err) {
+        console.error('Pending pricing error:', err);
+        return res.status(500).json({ error: 'فشل في تحميل عروض الأسعار المستنّدة' });
+    }
+});
+
+// =============================================================================
+// PUT /api/dashboard/pending-pricing/:id
+// Manager updates unit prices for items and sets pricing_status to 'priced'
+// Body: { items: [{id, unit_price}], pricing_notes }
+// =============================================================================
+
+router.put('/pending-pricing/:id', async (req, res) => {
+    const { id } = req.params;
+    const { items, pricing_notes } = req.body;
+
+    if (!Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ error: 'يجب إرسال قائمة الأسعار' });
+    }
+
+    try {
+        await db.query('BEGIN');
+
+        // Update each item price
+        for (const item of items) {
+            if (item.id && item.unit_price !== undefined) {
+                await db.query(
+                    `UPDATE order_items 
+                     SET unit_price = $1, 
+                         line_total = quantity * $1 * (1 - COALESCE(discount_percent, 0) / 100) - COALESCE(discount_amount, 0)
+                     WHERE id = $2 AND order_id = $3`,
+                    [item.unit_price, item.id, id]
+                );
+            }
+        }
+
+        // Recalculate order totals
+        await db.query(
+            `UPDATE orders 
+             SET subtotal = (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE order_id = $1),
+                 tax_amount = (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE order_id = $1) * COALESCE(tax_rate, 0.15),
+                 grand_total = (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE order_id = $1) * (1 + COALESCE(tax_rate, 0.15)),
+                 pricing_status = 'priced',
+                 pricing_notes = COALESCE($2, pricing_notes),
+                 updated_at = NOW()
+             WHERE id = $1`,
+            [id, pricing_notes || null]
+        );
+
+        await db.query('COMMIT');
+        return success(res, { message: 'تم تحديث الأسعار بنجاح' });
+    } catch (err) {
+        await db.query('ROLLBACK');
+        console.error('Update pricing error:', err);
+        return res.status(500).json({ error: 'فشل في تحديث الأسعار' });
+    }
+});
+
+// =============================================================================
+// GET /api/dashboard/pending-pricing/:id
+// Get full quotation details with items for pricing modal
+// =============================================================================
+
+router.get('/pending-pricing/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const orderResult = await db.query(
+            `SELECT 
+                o.id, o.order_number, o.order_date, o.valid_until,
+                o.internal_notes, o.pricing_status, o.pricing_notes,
+                c.name as client_name, u.name as created_by_name,
+                o.created_at
+             FROM orders o
+             JOIN clients c ON o.client_id = c.id
+             LEFT JOIN users u ON o.created_by = u.id
+             WHERE o.id = $1 AND o.status = 'quote'`,
+            [id]
+        );
+
+        if (orderResult.rows.length === 0) {
+            return res.status(404).json({ error: 'عرض السعر غير موجود' });
+        }
+
+        const order = orderResult.rows[0];
+
+        const itemsResult = await db.query(
+            `SELECT 
+                oi.id, oi.quantity, oi.unit_price, oi.discount_percent,
+                oi.line_total,
+                p.name as product_name, pv.size_name as variant_size,
+                pv.sku
+             FROM order_items oi
+             JOIN product_variants pv ON oi.variant_id = pv.id
+             JOIN products p ON pv.product_id = p.id
+             WHERE oi.order_id = $1
+             ORDER BY oi.created_at ASC`,
+            [id]
+        );
+
+        return success(res, {
+            ...order,
+            items: itemsResult.rows
+        });
+    } catch (err) {
+        console.error('Get pricing detail error:', err);
+        return res.status(500).json({ error: 'فشل في تحميل تفاصيل عرض السعر' });
+    }
+});
+
 module.exports = router;

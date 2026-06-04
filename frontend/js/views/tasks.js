@@ -21,6 +21,15 @@ var tasksView = {
         await this._loadTasks();
         this._setupEventListeners();
         this._updateStats();
+        
+        // Check if coming from dashboard with selected task
+        const selectedTaskId = sessionStorage.getItem('selectedTaskId');
+        if (selectedTaskId) {
+            sessionStorage.removeItem('selectedTaskId');
+            setTimeout(() => {
+                this._openTaskDetails(selectedTaskId);
+            }, 300);
+        }
     },
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -540,31 +549,107 @@ var tasksView = {
     },
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Toggle Subtask in Details
+    // Toggle Subtask in Details (local only, save later)
     // ─────────────────────────────────────────────────────────────────────────
-    async _toggleSubtaskInDetails(idx) {
+    _toggleSubtaskInDetails(idx) {
         if (!this.currentTask) return;
         const subtask = this.currentTask.subtasks[idx];
-        const newCompleted = !subtask.completed;
+        subtask.completed = !subtask.completed;
+        subtask._changed = true; // mark as changed
+        
+        // Update UI only
+        this._renderDetailsSubtasks(this.currentTask.subtasks);
+        
+        // Show save button if there are changes
+        this._showSaveSubtasksButton();
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Show Save Subtasks Button
+    // ─────────────────────────────────────────────────────────────────────────
+    _showSaveSubtasksButton() {
+        const container = document.getElementById('subtasks-save-btn');
+        if (container) {
+            container.style.display = 'block';
+        }
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Save Subtasks Changes to Database
+    // ─────────────────────────────────────────────────────────────────────────
+    async _saveSubtasksChanges() {
+        if (!this.currentTask) return;
+        
+        const changedSubtasks = this.currentTask.subtasks.filter(st => st._changed);
+        if (changedSubtasks.length === 0) return;
+        
+        const btn = document.getElementById('save-subtasks-btn');
+        const originalText = btn?.innerHTML || 'حفظ التغييرات';
+        if (btn) btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> جاري الحفظ...';
         
         try {
-            // Update in database via API
-            await apiFetch(`/api/tasks/${this.currentTask.id}/subtasks/${subtask.id}`, {
+            // Save each changed subtask
+            for (const subtask of changedSubtasks) {
+                await apiFetch(`/api/tasks/${this.currentTask.id}/subtasks/${subtask.id}`, {
+                    method: 'PUT',
+                    body: JSON.stringify({ is_completed: subtask.completed })
+                });
+                delete subtask._changed; // clear changed flag
+            }
+            
+            showToast('تم حفظ التغييرات بنجاح', 'success');
+            
+            // Check if all subtasks are completed
+            const allCompleted = this.currentTask.subtasks.every(st => st.completed);
+            if (allCompleted && this.currentTask.status !== 'completed') {
+                // Show complete task button
+                this._showCompleteTaskButton();
+            }
+            
+            // Refresh data
+            await this._loadTasks();
+            
+            // Hide save button
+            const saveBtnContainer = document.getElementById('subtasks-save-btn');
+            if (saveBtnContainer) saveBtnContainer.style.display = 'none';
+            
+        } catch (error) {
+            console.error('[Tasks] Failed to save subtasks:', error);
+            showToast('فشل حفظ التغييرات', 'error');
+        } finally {
+            if (btn) btn.innerHTML = originalText;
+        }
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Show Complete Task Button
+    // ─────────────────────────────────────────────────────────────────────────
+    _showCompleteTaskButton() {
+        const container = document.getElementById('complete-task-btn-container');
+        if (container) {
+            container.classList.remove('hidden');
+            container.classList.add('block');
+        }
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Complete Task (mark as done)
+    // ─────────────────────────────────────────────────────────────────────────
+    async _completeTask() {
+        if (!this.currentTask) return;
+        
+        try {
+            await apiFetch(`/api/tasks/${this.currentTask.id}`, {
                 method: 'PUT',
-                body: JSON.stringify({ is_completed: newCompleted })
+                body: JSON.stringify({ status: 'completed' })
             });
             
-            // Update local state after successful API call
-            subtask.completed = newCompleted;
-            this._renderDetailsSubtasks(this.currentTask.subtasks);
-            this._renderTasks();
-            this._updateStats();
-            
-            // Refresh task details to get updated progress
+            showToast('تم إنجاز المهمة بنجاح', 'success');
             await this._loadTasks();
+            window.closeTaskDetailsModal();
         } catch (error) {
-            console.error('[Tasks] Failed to update subtask:', error);
-            showToast('فشل تحديث المهمة الفرعية', 'error');
+            console.error('[Tasks] Failed to complete task:', error);
+            showToast('فشل إنجاز المهمة', 'error');
         }
     },
 

@@ -20,7 +20,8 @@ const dashboardView = {
             this._loadAlerts(),
             this._loadRecentOrders(),
             this._loadActivities(),
-            this._loadChartData()
+            this._loadChartData(),
+            this._loadPendingPricing()
         ]);
     },
 
@@ -541,6 +542,268 @@ const dashboardView = {
         } catch (error) {
             console.error('[Dashboard] Add comment error:', error);
             showToast('فشل الإرسال', 'error');
+        }
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Load Pending Pricing (quotations with zero prices)
+    // ─────────────────────────────────────────────────────────────────────────
+    async _loadPendingPricing() {
+        try {
+            // Only load for admin/manager
+            const user = window.GpackUser;
+            if (!user || (user.role !== 'admin' && user.role !== 'manager')) {
+                return;
+            }
+            const response = await apiFetch('/api/dashboard/pending-pricing');
+            this.pendingPricing = response.data || [];
+            this._renderPricingAlertBanner();
+        } catch (error) {
+            console.error('[Dashboard] Failed to load pending pricing:', error);
+            this.pendingPricing = [];
+        }
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Render Pricing Alert Banner
+    // ─────────────────────────────────────────────────────────────────────────
+    _renderPricingAlertBanner() {
+        const container = document.getElementById('pricing-alert-banner');
+        if (!container) return;
+
+        const count = this.pendingPricing.length;
+        if (count === 0) {
+            container.innerHTML = '';
+            return;
+        }
+
+        container.innerHTML = `
+            <div class="bg-red-500 rounded-2xl p-4 mb-6 text-white shadow-lg shadow-red-200">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
+                            <i class="fa-solid fa-tags text-xl"></i>
+                        </div>
+                        <div>
+                            <h4 class="font-bold text-lg">${count} عرض سعر بحاجة تسعير</h4>
+                            <p class="text-white/80 text-sm">أصناف بسعر غير محدد تحتاج مراجعة المدير</p>
+                        </div>
+                    </div>
+                    <button onclick="dashboardView._openPricingListModal()" 
+                            class="px-4 py-2 bg-white text-slate-800 rounded-lg font-medium hover:bg-slate-100 transition-colors">
+                        تسعير الآن
+                    </button>
+                </div>
+            </div>
+        `;
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Open Pricing List Modal
+    // ─────────────────────────────────────────────────────────────────────────
+    _openPricingListModal() {
+        const modal = document.getElementById('dash-pricing-list-modal');
+        if (!modal) return;
+        modal.classList.remove('hidden');
+        this._renderPricingListModal();
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Close Pricing List Modal
+    // ─────────────────────────────────────────────────────────────────────────
+    _closePricingListModal() {
+        const modal = document.getElementById('dash-pricing-list-modal');
+        if (modal) modal.classList.add('hidden');
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Render Pricing List Modal
+    // ─────────────────────────────────────────────────────────────────────────
+    _renderPricingListModal() {
+        const container = document.getElementById('dash-pricing-list-container');
+        if (!container) return;
+
+        if (this.pendingPricing.length === 0) {
+            container.innerHTML = `
+                <div class="text-center py-8 text-slate-400">
+                    <i class="fa-solid fa-check-circle text-3xl mb-2 text-emerald-400"></i>
+                    <p class="text-sm">لا توجد عروض أسعار بحاجة تسعير</p>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = this.pendingPricing.map(quote => {
+            const hasUnpriced = quote.unpriced_items > 0;
+            return `
+                <div class="p-4 rounded-xl border ${hasUnpriced ? 'bg-red-50 border-red-200' : 'bg-white border-slate-200'} transition-all cursor-pointer hover:shadow-md group"
+                     onclick="dashboardView._openPricingDetailModal('${quote.id}')">
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2 mb-1 flex-wrap">
+                                <p class="text-sm font-bold text-slate-800 group-hover:text-brand-600">
+                                    عرض سعر #${quote.order_number}
+                                </p>
+                                <span class="px-2 py-0.5 bg-orange-100 text-orange-600 text-xs rounded">في انتظار التسعير</span>
+                                ${hasUnpriced ? `<span class="px-2 py-0.5 bg-red-100 text-red-600 text-xs rounded font-bold">${quote.unpriced_items} صنف بدون سعر</span>` : ''}
+                            </div>
+                            <p class="text-xs text-slate-500 mb-1">
+                                <span class="ml-3"><i class="fa-solid fa-user mr-1"></i>${quote.client_name || 'غير محدد'}</span>
+                                <span class="ml-3"><i class="fa-solid fa-calendar mr-1"></i>${quote.order_date || '—'}</span>
+                                <span><i class="fa-solid fa-box mr-1"></i>${quote.total_items} صنف</span>
+                            </p>
+                            ${quote.internal_notes ? `<p class="text-xs text-slate-400 truncate mt-1">${quote.internal_notes}</p>` : ''}
+                        </div>
+                        <div class="flex-shrink-0 pt-1">
+                            <i class="fa-solid fa-chevron-left text-slate-300 group-hover:text-brand-500 transition-colors"></i>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Open Pricing Detail Modal
+    // ─────────────────────────────────────────────────────────────────────────
+    async _openPricingDetailModal(quoteId) {
+        const modal = document.getElementById('dash-pricing-detail-modal');
+        if (!modal) return;
+        modal.classList.remove('hidden');
+
+        // Clear previous
+        document.getElementById('pricing-detail-items').innerHTML = '<tr><td colspan="5" class="py-4 text-center text-slate-400 text-xs">جارٍ التحميل...</td></tr>';
+        document.getElementById('pricing-detail-notes').value = '';
+
+        try {
+            const response = await apiFetch(`/api/dashboard/pending-pricing/${quoteId}`);
+            this.currentPricingQuote = response.data;
+            this._renderPricingDetail();
+        } catch (error) {
+            console.error('[Dashboard] Failed to load pricing detail:', error);
+            showToast('فشل تحميل تفاصيل عرض السعر', 'error');
+            this._closePricingDetailModal();
+        }
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Close Pricing Detail Modal
+    // ─────────────────────────────────────────────────────────────────────────
+    _closePricingDetailModal() {
+        const modal = document.getElementById('dash-pricing-detail-modal');
+        if (modal) modal.classList.add('hidden');
+        this.currentPricingQuote = null;
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Render Pricing Detail
+    // ─────────────────────────────────────────────────────────────────────────
+    _renderPricingDetail() {
+        const quote = this.currentPricingQuote;
+        if (!quote) return;
+
+        document.getElementById('pricing-detail-number').textContent = '#' + quote.order_number;
+        document.getElementById('pricing-detail-client').textContent = quote.client_name || 'غير محدد';
+        document.getElementById('pricing-detail-date').textContent = quote.order_date ? new Date(quote.order_date).toLocaleDateString('ar-SA') : '—';
+        document.getElementById('pricing-detail-rep').textContent = quote.created_by_name || 'غير محدد';
+        document.getElementById('pricing-detail-notes').value = quote.pricing_notes || quote.internal_notes || '';
+
+        const tbody = document.getElementById('pricing-detail-items');
+        tbody.innerHTML = quote.items.map(item => {
+            const isUnpriced = !item.unit_price || item.unit_price === 0;
+            const lineTotal = parseFloat(item.quantity || 0) * parseFloat(item.unit_price || 0) * (1 - (parseFloat(item.discount_percent || 0) / 100));
+
+            return `
+                <tr class="${isUnpriced ? 'bg-red-50' : ''}" data-item-id="${item.id}">
+                    <td class="py-2 px-3 text-slate-700">
+                        <div class="font-medium text-sm">${item.product_name}</div>
+                        <div class="text-xs text-slate-400">${item.variant_size || ''} ${item.sku ? '• ' + item.sku : ''}</div>
+                    </td>
+                    <td class="py-2 px-3 text-slate-700 text-center">${item.quantity}</td>
+                    <td class="py-2 px-3">
+                        <input type="number" step="0.01" min="0"
+                               value="${item.unit_price || ''}"
+                               onchange="dashboardView._updatePricingLineTotal(this, '${item.id}')"
+                               class="w-24 px-2 py-1 border border-slate-200 rounded-lg text-sm text-center focus:outline-none focus:border-brand-500 ${isUnpriced ? 'border-red-300 bg-red-50' : ''}"
+                               placeholder="0.00">
+                    </td>
+                    <td class="py-2 px-3 text-center text-slate-500">${item.discount_percent || 0}%</td>
+                    <td class="py-2 px-3 text-slate-700 font-medium text-right pricing-line-total" data-qty="${item.quantity}" data-discount="${item.discount_percent || 0}">
+                        ${lineTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Update Pricing Line Total (when price input changes)
+    // ─────────────────────────────────────────────────────────────────────────
+    _updatePricingLineTotal(input, itemId) {
+        const row = input.closest('tr');
+        const qty = parseFloat(row.querySelector('.pricing-line-total').dataset.qty) || 0;
+        const discount = parseFloat(row.querySelector('.pricing-line-total').dataset.discount) || 0;
+        const price = parseFloat(input.value) || 0;
+        const total = qty * price * (1 - discount / 100);
+
+        row.querySelector('.pricing-line-total').textContent = total.toLocaleString('en-US', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        });
+
+        // Remove red styling if price is set
+        if (price > 0) {
+            row.classList.remove('bg-red-50');
+            input.classList.remove('border-red-300', 'bg-red-50');
+        }
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Save Pricing (manager submits prices)
+    // ─────────────────────────────────────────────────────────────────────────
+    async _savePricing() {
+        if (!this.currentPricingQuote) return;
+
+        const rows = document.querySelectorAll('#pricing-detail-items tr');
+        const items = [];
+        let hasEmptyPrice = false;
+
+        rows.forEach(row => {
+            const itemId = row.dataset.itemId;
+            const input = row.querySelector('input[type="number"]');
+            const price = parseFloat(input?.value) || 0;
+            if (price <= 0) hasEmptyPrice = true;
+            items.push({ id: itemId, unit_price: price });
+        });
+
+        if (hasEmptyPrice) {
+            if (!confirm('هناك أصناف بدون سعر. هل تريد المتابعة؟')) return;
+        }
+
+        const notes = document.getElementById('pricing-detail-notes')?.value?.trim();
+
+        const btn = document.querySelector('#dash-pricing-detail-modal button[onclick="dashboardView._savePricing()"]');
+        const originalText = btn?.innerHTML || 'حفظ الأسعار';
+        if (btn) btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> جاري الحفظ...';
+
+        try {
+            await apiFetch(`/api/dashboard/pending-pricing/${this.currentPricingQuote.id}`, {
+                method: 'PUT',
+                body: JSON.stringify({ items, pricing_notes: notes })
+            });
+
+            showToast('تم حفظ الأسعار بنجاح', 'success');
+
+            // Refresh
+            await this._loadPendingPricing();
+            this._closePricingDetailModal();
+            this._closePricingListModal();
+
+        } catch (error) {
+            console.error('[Dashboard] Save pricing error:', error);
+            showToast('فشل حفظ الأسعار', 'error');
+        } finally {
+            if (btn) btn.innerHTML = originalText;
         }
     },
 

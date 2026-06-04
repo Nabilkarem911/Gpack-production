@@ -1690,9 +1690,13 @@
 
         const downPayment = document.getElementById('quote-down-payment')?.value || null;
 
+        // Check if any item has zero price (needs manager pricing approval)
+        const hasZeroPrice = items.some(item => !item.unit_price || item.unit_price === 0);
+
         const payload = {
             client_id:             clientId,
             status:                'quote',
+            pricing_status:        hasZeroPrice ? 'pending' : 'priced',
             order_date:            orderDate || _today(),
             valid_until:           validUntil || null,
             client_notes:          notes    || null,

@@ -237,8 +237,22 @@
                 </div>
                 <div>
                     <p class="text-xs font-semibold text-slate-500 mb-2">المهام الفرعية:</p>
-                    <div id="details-subtasks" class="space-y-2">
+                    <div id="details-subtasks" class="space-y-2 mb-3">
                         <!-- Subtasks here -->
+                    </div>
+                    <!-- Save Subtasks Button (hidden by default) -->
+                    <div id="subtasks-save-btn" class="hidden mb-3">
+                        <button onclick="tasksView._saveSubtasksChanges()" id="save-subtasks-btn"
+                                class="w-full px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-sm font-medium transition-colors">
+                            <i class="fa-solid fa-save mr-1"></i> حفظ التغييرات
+                        </button>
+                    </div>
+                    <!-- Complete Task Button (hidden by default, shown when all subtasks done) -->
+                    <div id="complete-task-btn-container" class="hidden mb-3">
+                        <button onclick="tasksView._completeTask()"
+                                class="w-full px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-sm font-bold transition-colors shadow-lg">
+                            <i class="fa-solid fa-check-circle mr-1"></i> إنجاز المهمة (كل التاسكات تمت)
+                        </button>
                     </div>
                 </div>
                 

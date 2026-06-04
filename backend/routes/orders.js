@@ -634,14 +634,15 @@ router.post('/', async (req, res) => {
 
             const orderInsert = await client.query(
                 `INSERT INTO orders
-                    (client_id, status, order_date, valid_until,
+                    (client_id, status, pricing_status, order_date, valid_until,
                      subtotal, tax_amount, grand_total,
                      client_notes, internal_notes, terms_conditions, custom_terms, down_payment_required, created_by)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb, $12, $13)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12::jsonb, $13, $14)
                  RETURNING *`,
                 [
                     client_id,
                     status || 'quote',
+                    req.body.pricing_status || 'priced',
                     order_date || new Date().toISOString().split('T')[0],
                     valid_until || null,
                     subtotal,
@@ -769,6 +770,7 @@ router.put('/:id', async (req, res) => {
                 `UPDATE orders SET
                     client_id             = $1,
                     status                = $2,
+                    pricing_status        = COALESCE($14, pricing_status),
                     order_date            = $3,
                     valid_until           = $4,
                     subtotal              = $5,
@@ -799,6 +801,7 @@ router.put('/:id', async (req, res) => {
                     customTermsJson,
                     downPaymentAmount,
                     id,
+                    req.body.pricing_status || null,
                 ]
             );
 
