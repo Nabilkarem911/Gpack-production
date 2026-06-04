@@ -343,6 +343,8 @@ router.get('/price-history', async (req, res) => {
                 o.status,
                 o.order_date,
                 o.grand_total,
+                o.pricing_notes,
+                o.client_notes,
                 oi.quantity,
                 oi.unit_price,
                 oi.line_total,

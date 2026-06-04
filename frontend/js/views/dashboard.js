@@ -719,6 +719,11 @@ const dashboardView = {
                     <td class="py-2 px-3 text-slate-700">
                         <div class="font-medium text-sm">${item.product_name}</div>
                         <div class="text-xs text-slate-400">${item.variant_size || ''} ${item.sku ? '• ' + item.sku : ''}</div>
+                        <button onclick="dashboardView._showPriceHistory('${item.variant_id}', '${item.product_name.replace(/'/g, "\\'")}')"
+                                class="mt-1 text-[10px] text-brand-500 hover:text-brand-700 flex items-center gap-1 font-medium"
+                                title="عرض تاريخ أسعار العميل لهذا المنتج">
+                            <i class="fa-solid fa-clock-rotate-left"></i> تاريخ الأسعار
+                        </button>
                     </td>
                     <td class="py-2 px-3 text-slate-700 text-center">${item.quantity}</td>
                     <td class="py-2 px-3">
@@ -806,6 +811,111 @@ const dashboardView = {
         } finally {
             if (btn) btn.innerHTML = originalText;
         }
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Price History Popup
+    // ─────────────────────────────────────────────────────────────────────────
+    async _showPriceHistory(variantId, productName) {
+        const popup = document.getElementById('dash-price-history-popup');
+        const content = document.getElementById('price-history-content');
+        const title = document.getElementById('price-history-title');
+        if (!popup || !content) return;
+
+        title.textContent = `تاريخ أسعار: ${productName}`;
+        popup.classList.remove('hidden');
+        content.innerHTML = '<div class="text-center py-8 text-slate-400 text-sm"><i class="fa-solid fa-circle-notch fa-spin mr-1"></i> جارٍ التحميل...</div>';
+
+        try {
+            const clientId = this.currentPricingQuote?.client_id;
+            if (!clientId) {
+                content.innerHTML = '<div class="text-center py-8 text-red-400 text-sm">معرف العميل غير متوفر</div>';
+                return;
+            }
+            const response = await apiFetch(`/api/orders/price-history?client_id=${clientId}&variant_id=${variantId}`);
+            const history = response.history || [];
+            this._renderPriceHistory(history, productName);
+        } catch (error) {
+            console.error('[Dashboard] Price history error:', error);
+            content.innerHTML = '<div class="text-center py-8 text-red-400 text-sm">فشل تحميل تاريخ الأسعار</div>';
+        }
+    },
+
+    _closePriceHistoryPopup() {
+        const popup = document.getElementById('dash-price-history-popup');
+        if (popup) popup.classList.add('hidden');
+    },
+
+    _renderPriceHistory(history, productName) {
+        const content = document.getElementById('price-history-content');
+        if (!content) return;
+
+        if (history.length === 0) {
+            content.innerHTML = '<div class="text-center py-8 text-slate-400 text-sm">لا يوجد سجل أسعار سابق لهذا المنتج</div>';
+            return;
+        }
+
+        const statusBadge = (status) => {
+            const colors = {
+                quote: 'bg-slate-100 text-slate-600',
+                pending: 'bg-amber-100 text-amber-700',
+                confirmed: 'bg-emerald-100 text-emerald-700',
+                production: 'bg-blue-100 text-blue-700',
+                completed: 'bg-purple-100 text-purple-700',
+                cancelled: 'bg-red-100 text-red-600'
+            };
+            const labels = {
+                quote: 'عرض سعر', pending: 'معلق', confirmed: 'مؤكد',
+                production: 'إنتاج', completed: 'منتهي', cancelled: 'ملغي'
+            };
+            return `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold ${colors[status] || colors.quote}">${labels[status] || status}</span>`;
+        };
+
+        content.innerHTML = `
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="border-b border-slate-200 bg-slate-50">
+                        <th class="text-right py-2 px-2 font-semibold text-slate-600 text-xs">رقم الطلب</th>
+                        <th class="text-right py-2 px-2 font-semibold text-slate-600 text-xs">التاريخ</th>
+                        <th class="text-right py-2 px-2 font-semibold text-slate-600 text-xs">السعر</th>
+                        <th class="text-right py-2 px-2 font-semibold text-slate-600 text-xs">الكمية</th>
+                        <th class="text-right py-2 px-2 font-semibold text-slate-600 text-xs">الحالة</th>
+                        <th class="text-center py-2 px-2 font-semibold text-slate-600 text-xs"></th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    ${history.map(row => `
+                        <tr class="hover:bg-slate-50 cursor-pointer group" onclick="dashboardView._viewOrderDetail('${row.id}')">
+                            <td class="py-2 px-2 text-slate-700 font-medium">
+                                #${row.order_number}
+                                ${row.pricing_notes ? `<i class="fa-solid fa-note-sticky text-amber-400 text-[10px] ml-1" title="${row.pricing_notes.replace(/"/g, '&quot;')}"></i>` : ''}
+                            </td>
+                            <td class="py-2 px-2 text-slate-500 text-xs">${row.order_date ? new Date(row.order_date).toLocaleDateString('ar-SA') : '—'}</td>
+                            <td class="py-2 px-2 text-brand-600 font-bold">${parseFloat(row.unit_price || 0).toLocaleString('en-US', {minimumFractionDigits:2})}</td>
+                            <td class="py-2 px-2 text-slate-600 text-center">${row.quantity}</td>
+                            <td class="py-2 px-2">${statusBadge(row.status)}</td>
+                            <td class="py-2 px-2 text-center">
+                                <i class="fa-solid fa-chevron-left text-slate-300 text-xs group-hover:text-brand-500 transition-colors"></i>
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+            <p class="text-[10px] text-slate-400 mt-3 text-center">اضغط على أي صف لفتح تفاصيل الطلب</p>
+        `;
+    },
+
+    _viewOrderDetail(orderId) {
+        // Navigate to quotations page and open the order detail
+        this._closePriceHistoryPopup();
+        this._closePricingDetailModal();
+        this._closePricingListModal();
+        // Use the router to navigate
+        if (window.router && typeof window.router.navigate === 'function') {
+            window.router.navigate('quotations');
+        }
+        // Store the order ID to be opened after navigation
+        localStorage.setItem('gpack_open_order', orderId);
     },
 
     // ─────────────────────────────────────────────────────────────────────────

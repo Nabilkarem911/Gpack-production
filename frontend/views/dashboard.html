@@ -452,6 +452,34 @@
     </div>
 </div>
 
+<!-- Price History Popup (per item) -->
+<div id="dash-price-history-popup" class="fixed inset-0 z-[60] hidden" style="background: rgba(0,0,0,0.4);">
+    <div class="absolute inset-0" onclick="dashboardView._closePriceHistoryPopup()"></div>
+    <div class="relative min-h-screen flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden">
+            <div class="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50">
+                <h3 class="font-bold text-base text-slate-800 flex items-center gap-2">
+                    <i class="fa-solid fa-clock-rotate-left text-brand-500"></i>
+                    <span id="price-history-title">تاريخ أسعار العميل</span>
+                </h3>
+                <button onclick="dashboardView._closePriceHistoryPopup()" class="text-slate-400 hover:text-slate-600">
+                    <i class="fa-solid fa-times"></i>
+                </button>
+            </div>
+            <div class="p-4 overflow-y-auto max-h-[60vh]">
+                <div id="price-history-content">
+                    <div class="text-center py-8 text-slate-400 text-sm">جارٍ التحميل...</div>
+                </div>
+            </div>
+            <div class="p-3 border-t border-slate-100 bg-slate-50 text-center">
+                <button onclick="dashboardView._closePriceHistoryPopup()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-sm font-medium transition-colors">
+                    إغلاق
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Load dashboard.js -->
 <script src="/js/views/dashboard.js"></script>
 <script>

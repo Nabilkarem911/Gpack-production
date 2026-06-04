@@ -508,9 +508,10 @@ router.get('/pending-pricing/:id', async (req, res) => {
     const { id } = req.params;
     try {
         const orderResult = await db.query(
-            `SELECT 
+            `SELECT
                 o.id, o.order_number, o.order_date, o.valid_until,
                 o.internal_notes, o.pricing_status, o.pricing_notes,
+                o.client_id,
                 c.name as client_name, u.name as created_by_name,
                 o.created_at
              FROM orders o
@@ -527,9 +528,9 @@ router.get('/pending-pricing/:id', async (req, res) => {
         const order = orderResult.rows[0];
 
         const itemsResult = await db.query(
-            `SELECT 
+            `SELECT
                 oi.id, oi.quantity, oi.unit_price, oi.discount_percent,
-                oi.line_total,
+                oi.line_total, oi.variant_id,
                 p.name as product_name, pv.size_name as variant_size,
                 pv.sku
              FROM order_items oi
