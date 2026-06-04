@@ -1926,15 +1926,9 @@
         // Quote modal
         const closeBtn  = document.getElementById('quote-modal-close-btn');
         const cancelBtn = document.getElementById('quote-modal-cancel-btn');
-        const modal     = document.getElementById('quote-modal');
 
         if (closeBtn)  closeBtn.addEventListener('click',  window.closeQuoteModal);
         if (cancelBtn) cancelBtn.addEventListener('click', window.closeQuoteModal);
-        if (modal) {
-            modal.addEventListener('click', (e) => {
-                if (e.target === modal) window.closeQuoteModal();
-            });
-        }
 
         // View-mode buttons
         const vmBackBtn  = document.getElementById('view-mode-back-btn');
@@ -1943,7 +1937,6 @@
         if (vmBackBtn) {
             vmBackBtn.addEventListener('click', () => {
                 _closeModal();
-                setTimeout(() => _openClientHistoryModal(), 250);
             });
         }
 
