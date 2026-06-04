@@ -117,7 +117,7 @@ const dashboardView = {
                             <p class="text-white/80 text-sm">اضغط على المهمة للتفاصيل والإنجاز</p>
                         </div>
                     </div>
-                    <button onclick="window.navigateTo('tasks')" 
+                    <button onclick="dashboardView._openTasksListModal()" 
                             class="px-4 py-2 bg-white text-slate-800 rounded-lg font-medium hover:bg-slate-100 transition-colors">
                         عرض المهام
                     </button>
@@ -211,6 +211,99 @@ const dashboardView = {
                             ${isPending && task.priority === 'high' ? 
                                 `<span class="w-2 h-2 rounded-full bg-red-500 animate-pulse mb-1"></span>` : ''}
                             <i class="fa-solid ${isPending ? 'fa-circle text-slate-300' : 'fa-check-circle text-emerald-500'}"></i>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Open Tasks List Modal (shows all tasks in popup)
+    // ─────────────────────────────────────────────────────────────────────────
+    _openTasksListModal() {
+        const modal = document.getElementById('dash-tasks-list-modal');
+        if (!modal) return;
+        modal.classList.remove('hidden');
+        this._renderTasksListModal();
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Close Tasks List Modal
+    // ─────────────────────────────────────────────────────────────────────────
+    _closeTasksListModal() {
+        const modal = document.getElementById('dash-tasks-list-modal');
+        if (modal) modal.classList.add('hidden');
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Render Tasks List Modal
+    // ─────────────────────────────────────────────────────────────────────────
+    _renderTasksListModal() {
+        const container = document.getElementById('dash-tasks-list-container');
+        if (!container) return;
+
+        if (this.tasks.length === 0) {
+            container.innerHTML = `
+                <div class="text-center py-8 text-slate-400">
+                    <i class="fa-solid fa-clipboard-check text-3xl mb-2 text-emerald-400"></i>
+                    <p class="text-sm">لا توجد مهام حالياً</p>
+                </div>
+            `;
+            return;
+        }
+
+        // Sort: overdue first, then pending, then by due date
+        const sortedTasks = [...this.tasks].sort((a, b) => {
+            const aOverdue = this._isOverdue(a);
+            const bOverdue = this._isOverdue(b);
+            if (aOverdue && !bOverdue) return -1;
+            if (!aOverdue && bOverdue) return 1;
+            if (a.status === 'pending' && b.status !== 'pending') return -1;
+            if (a.status !== 'pending' && b.status === 'pending') return 1;
+            return new Date(a.due_date) - new Date(b.due_date);
+        });
+
+        container.innerHTML = sortedTasks.map(task => {
+            const isOverdue = this._isOverdue(task);
+            const isPending = task.status === 'pending';
+            const progress = task.total_subtasks ? Math.round((task.completed_subtasks || 0) / task.total_subtasks * 100) : 0;
+            const isCompleted = task.status === 'completed';
+
+            const bgClass = isOverdue ? 'bg-red-50 border-red-200' :
+                           isCompleted ? 'bg-emerald-50 border-emerald-200' :
+                           'bg-white border-slate-200 hover:border-brand-300';
+
+            const statusBadge = isCompleted ?
+                '<span class="px-2 py-0.5 bg-emerald-100 text-emerald-600 text-xs rounded font-medium">مكتملة</span>' :
+                isOverdue ?
+                '<span class="px-2 py-0.5 bg-red-100 text-red-600 text-xs rounded font-medium">متأخرة</span>' :
+                '<span class="px-2 py-0.5 bg-orange-100 text-orange-600 text-xs rounded font-medium">قيد التنفيذ</span>';
+
+            return `
+                <div class="p-4 rounded-xl border ${bgClass} transition-all cursor-pointer hover:shadow-md group"
+                     onclick="dashboardView._openTaskModal('${task.id}'); dashboardView._closeTasksListModal();">
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2 mb-1 flex-wrap">
+                                <p class="text-sm font-bold text-slate-800 group-hover:text-brand-600">${task.title}</p>
+                                ${statusBadge}
+                                ${task.priority === 'high' ? '<span class="px-2 py-0.5 bg-orange-100 text-orange-600 text-xs rounded">عاجل</span>' : ''}
+                            </div>
+                            <p class="text-xs text-slate-500 mb-2 line-clamp-2">${task.description || 'لا يوجد وصف'}</p>
+                            <div class="flex items-center gap-4 text-xs text-slate-500">
+                                <span><i class="fa-regular fa-calendar mr-1"></i>${task.due_date || '—'}</span>
+                                <span><i class="fa-solid fa-user mr-1"></i>${task.assigned_to_name || 'غير محدد'}</span>
+                                ${task.total_subtasks ? `<span class="text-brand-600 font-medium">${task.completed_subtasks || 0}/${task.total_subtasks} تم</span>` : ''}
+                            </div>
+                            ${task.total_subtasks ? `
+                                <div class="mt-2 w-full bg-slate-100 rounded-full h-2">
+                                    <div class="${isCompleted ? 'bg-emerald-500' : 'bg-brand-500'} h-2 rounded-full transition-all" style="width: ${progress}%"></div>
+                                </div>
+                            ` : ''}
+                        </div>
+                        <div class="flex-shrink-0 pt-1">
+                            <i class="fa-solid fa-chevron-left text-slate-300 group-hover:text-brand-500 transition-colors"></i>
                         </div>
                     </div>
                 </div>
