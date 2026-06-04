@@ -3062,18 +3062,6 @@
             _loadTerms(),
             loadQuotes(),
         ]);
-
-        // Check if we need to open a specific order (from price history click)
-        const openOrderId = localStorage.getItem('gpack_open_order');
-        if (openOrderId) {
-            localStorage.removeItem('gpack_open_order');
-            // Small delay to ensure table is rendered
-            setTimeout(() => {
-                if (typeof window.openQuoteModal === 'function') {
-                    window.openQuoteModal(openOrderId, true);
-                }
-            }, 300);
-        }
     }
 
     // ==========================================================================

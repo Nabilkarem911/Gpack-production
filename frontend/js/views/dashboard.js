@@ -906,16 +906,111 @@ const dashboardView = {
     },
 
     _viewOrderDetail(orderId) {
-        // Navigate to quotations page and open the order detail
-        this._closePriceHistoryPopup();
-        this._closePricingDetailModal();
-        this._closePricingListModal();
-        // Use the router to navigate
-        if (window.router && typeof window.router.navigate === 'function') {
-            window.router.navigate('quotations');
+        // Open a small summary popup instead of navigating away
+        this._openOrderDetailPopup(orderId);
+    },
+
+    async _openOrderDetailPopup(orderId) {
+        const popup = document.getElementById('dash-order-detail-popup');
+        const content = document.getElementById('order-detail-content');
+        if (!popup || !content) return;
+
+        popup.classList.remove('hidden');
+        content.innerHTML = '<div class="text-center py-8 text-slate-400 text-sm"><i class="fa-solid fa-circle-notch fa-spin mr-1"></i> جارٍ التحميل...</div>';
+
+        try {
+            const response = await apiFetch(`/api/orders/${orderId}/details`);
+            const order = response.order;
+            const items = response.items || [];
+            this._renderOrderDetail(order, items);
+        } catch (error) {
+            console.error('[Dashboard] Order detail error:', error);
+            content.innerHTML = '<div class="text-center py-8 text-red-400 text-sm">فشل تحميل تفاصيل الطلب</div>';
         }
-        // Store the order ID to be opened after navigation
-        localStorage.setItem('gpack_open_order', orderId);
+    },
+
+    _closeOrderDetailPopup() {
+        const popup = document.getElementById('dash-order-detail-popup');
+        if (popup) popup.classList.add('hidden');
+    },
+
+    _renderOrderDetail(order, items) {
+        const content = document.getElementById('order-detail-content');
+        if (!content) return;
+
+        const statusColors = {
+            quote: 'bg-slate-100 text-slate-600',
+            pending: 'bg-amber-100 text-amber-700',
+            confirmed: 'bg-emerald-100 text-emerald-700',
+            production: 'bg-blue-100 text-blue-700',
+            processing: 'bg-blue-100 text-blue-700',
+            completed: 'bg-purple-100 text-purple-700',
+            cancelled: 'bg-red-100 text-red-600'
+        };
+        const statusLabels = {
+            quote: 'عرض سعر', pending: 'معلق', confirmed: 'مؤكد',
+            production: 'إنتاج', processing: 'إنتاج', completed: 'منتهي', cancelled: 'ملغي'
+        };
+
+        const statusClass = statusColors[order.status] || statusColors.quote;
+        const statusLabel = statusLabels[order.status] || order.status;
+
+        content.innerHTML = `
+            <div class="bg-slate-50 rounded-xl p-3 text-sm space-y-1">
+                <div class="flex justify-between items-center">
+                    <span class="text-slate-500">رقم الطلب:</span>
+                    <span class="font-bold text-slate-800">#${order.order_number}</span>
+                </div>
+                <div class="flex justify-between items-center">
+                    <span class="text-slate-500">العميل:</span>
+                    <span class="font-medium text-slate-700">${order.client_name || '—'}</span>
+                </div>
+                <div class="flex justify-between items-center">
+                    <span class="text-slate-500">التاريخ:</span>
+                    <span class="text-slate-600">${order.order_date ? new Date(order.order_date).toLocaleDateString('ar-SA') : '—'}</span>
+                </div>
+                <div class="flex justify-between items-center">
+                    <span class="text-slate-500">الحالة:</span>
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold ${statusClass}">${statusLabel}</span>
+                </div>
+            </div>
+
+            <div>
+                <p class="text-xs font-semibold text-slate-500 mb-2">الأصناف (${items.length}):</p>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="border-b border-slate-200 bg-slate-50">
+                                <th class="text-right py-1.5 px-2 font-semibold text-slate-600 text-[10px]">الصنف</th>
+                                <th class="text-center py-1.5 px-2 font-semibold text-slate-600 text-[10px]">الكمية</th>
+                                <th class="text-center py-1.5 px-2 font-semibold text-slate-600 text-[10px]">السعر</th>
+                                <th class="text-center py-1.5 px-2 font-semibold text-slate-600 text-[10px]">الخصم</th>
+                                <th class="text-right py-1.5 px-2 font-semibold text-slate-600 text-[10px]">الإجمالي</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            ${items.map(item => `
+                                <tr>
+                                    <td class="py-1.5 px-2 text-slate-700 text-xs">
+                                        <div class="font-medium">${item.product_name}</div>
+                                        <div class="text-[10px] text-slate-400">${item.size_name || ''}</div>
+                                    </td>
+                                    <td class="py-1.5 px-2 text-center text-slate-600 text-xs">${item.quantity}</td>
+                                    <td class="py-1.5 px-2 text-center text-brand-600 font-bold text-xs">${parseFloat(item.unit_price || 0).toLocaleString('en-US', {minimumFractionDigits:2})}</td>
+                                    <td class="py-1.5 px-2 text-center text-slate-500 text-xs">${item.discount_percent || 0}%</td>
+                                    <td class="py-1.5 px-2 text-right text-slate-700 font-medium text-xs">${parseFloat(item.line_total || 0).toLocaleString('en-US', {minimumFractionDigits:2})}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="flex justify-between items-center border-t border-slate-100 pt-3">
+                <span class="text-sm font-bold text-slate-700">إجمالي الطلب:</span>
+                <span class="text-lg font-bold text-brand-600">${parseFloat(order.grand_total || 0).toLocaleString('en-US', {minimumFractionDigits:2})}</span>
+            </div>
+        `;
     },
 
     // ─────────────────────────────────────────────────────────────────────────
