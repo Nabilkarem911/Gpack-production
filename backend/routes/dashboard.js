@@ -465,13 +465,12 @@ router.put('/pending-pricing/:id', async (req, res) => {
     try {
         await db.query('BEGIN');
 
-        // Update each item price
+        // Update each item price (line_total is GENERATED — auto-calculates)
         for (const item of items) {
             if (item.id && item.unit_price !== undefined) {
                 await db.query(
                     `UPDATE order_items 
-                     SET unit_price = $1, 
-                         line_total = quantity * $1 * (1 - COALESCE(discount_percent, 0) / 100) - COALESCE(discount_amount, 0)
+                     SET unit_price = $1
                      WHERE id = $2 AND order_id = $3`,
                     [item.unit_price, item.id, id]
                 );
