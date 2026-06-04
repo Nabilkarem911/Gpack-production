@@ -245,6 +245,93 @@
     </button>
 </div>
 
+<!-- Task Detail Modal (Dashboard) -->
+<div id="dash-task-modal" class="fixed inset-0 z-50 hidden" style="background: rgba(0,0,0,0.5);">
+    <div class="absolute inset-0" onclick="dashboardView._closeTaskModal()"></div>
+    <div class="relative min-h-screen flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <!-- Header -->
+            <div class="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50 rounded-t-2xl sticky top-0">
+                <div class="flex items-center gap-3">
+                    <span id="dash-modal-status" class="px-2.5 py-1 rounded-full text-xs font-bold"></span>
+                    <h3 class="font-bold text-lg text-slate-800" id="dash-modal-title">تفاصيل المهمة</h3>
+                </div>
+                <button onclick="dashboardView._closeTaskModal()" class="text-slate-400 hover:text-slate-600 transition-colors">
+                    <i class="fa-solid fa-times text-xl"></i>
+                </button>
+            </div>
+            
+            <!-- Content -->
+            <div class="p-5 space-y-4">
+                <!-- Info Grid -->
+                <div class="grid grid-cols-2 gap-4 text-sm">
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-user text-slate-400"></i>
+                        <span class="text-slate-500">الموظف:</span>
+                        <span id="dash-modal-assignee" class="font-medium text-slate-800"></span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-calendar text-slate-400"></i>
+                        <span class="text-slate-500">تاريخ التسليم:</span>
+                        <span id="dash-modal-due" class="font-medium text-slate-800"></span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-flag text-slate-400"></i>
+                        <span class="text-slate-500">الأولوية:</span>
+                        <span id="dash-modal-priority" class="font-medium"></span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-clock text-slate-400"></i>
+                        <span class="text-slate-500">الإنشاء:</span>
+                        <span id="dash-modal-created" class="font-medium text-slate-800"></span>
+                    </div>
+                </div>
+                
+                <!-- Description -->
+                <div class="bg-slate-50 rounded-xl p-4">
+                    <p class="text-xs font-semibold text-slate-500 mb-2">الوصف:</p>
+                    <p id="dash-modal-desc" class="text-sm text-slate-700 whitespace-pre-wrap"></p>
+                </div>
+                
+                <!-- Subtasks -->
+                <div>
+                    <p class="text-xs font-semibold text-slate-500 mb-2">المهام الفرعية:</p>
+                    <div id="dash-modal-subtasks" class="space-y-2 mb-3"></div>
+                    <div id="dash-modal-save-btn" class="hidden mb-3">
+                        <button onclick="dashboardView._saveModalSubtasks()" id="dash-modal-save-btn-el"
+                                class="w-full px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-sm font-medium transition-colors">
+                            <i class="fa-solid fa-save mr-1"></i> حفظ التغييرات
+                        </button>
+                    </div>
+                    <div id="dash-modal-complete-btn" class="hidden mb-3">
+                        <button onclick="dashboardView._completeModalTask()"
+                                class="w-full px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-sm font-bold transition-colors shadow-lg">
+                            <i class="fa-solid fa-check-circle mr-1"></i> إنجاز المهمة
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Chat -->
+                <div class="border-t border-slate-100 pt-4">
+                    <p class="text-xs font-semibold text-slate-500 mb-2">المحادثة:</p>
+                    <div id="dash-modal-comments" class="bg-slate-50 rounded-xl p-4 max-h-48 overflow-y-auto space-y-3 mb-3">
+                        <p class="text-sm text-slate-400 text-center">لا توجد رسائل...</p>
+                    </div>
+                    <div class="flex gap-2">
+                        <input type="text" id="dash-modal-comment-input" 
+                               class="flex-1 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-brand-500"
+                               placeholder="اكتب رسالة...">
+                        <button onclick="dashboardView._addModalComment()" 
+                                class="px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-sm font-medium transition-colors">
+                            <i class="fa-solid fa-paper-plane"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Load dashboard.js -->
 <script src="/js/views/dashboard.js"></script>
 <script>

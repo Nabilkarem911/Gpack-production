@@ -189,7 +189,7 @@ const dashboardView = {
             
             return `
                 <div class="p-3 rounded-xl border ${bgClass} transition-all cursor-pointer group hover:shadow-md"
-                     onclick="dashboardView._openTaskDirect('${task.id}')">
+                     onclick="dashboardView._openTaskModal('${task.id}')">
                     <div class="flex items-start justify-between gap-2">
                         <div class="flex-1 min-w-0">
                             <div class="flex items-center gap-2">
@@ -219,13 +219,236 @@ const dashboardView = {
     },
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Open Task Directly (from dashboard click)
+    // Open Task Modal (on dashboard)
     // ─────────────────────────────────────────────────────────────────────────
-    _openTaskDirect(taskId) {
-        // Store selected task ID
-        sessionStorage.setItem('selectedTaskId', taskId);
-        // Navigate to tasks page
-        window.navigateTo('tasks');
+    async _openTaskModal(taskId) {
+        const modal = document.getElementById('dash-task-modal');
+        if (!modal) return;
+        
+        // Show modal with loading state
+        modal.classList.remove('hidden');
+        document.getElementById('dash-modal-title').textContent = 'جارٍ التحميل...';
+        
+        try {
+            const response = await apiFetch(`/api/tasks/${taskId}`);
+            const task = response.task;
+            if (!task) {
+                showToast('المهمة غير موجودة', 'error');
+                this._closeTaskModal();
+                return;
+            }
+            
+            this.currentModalTask = task;
+            
+            // Fill in details
+            document.getElementById('dash-modal-title').textContent = task.title;
+            document.getElementById('dash-modal-desc').textContent = task.description || 'لا يوجد وصف';
+            document.getElementById('dash-modal-assignee').textContent = task.assigned_to_name || 'غير محدد';
+            document.getElementById('dash-modal-due').textContent = task.due_date || '—';
+            document.getElementById('dash-modal-created').textContent = new Date(task.created_at).toLocaleDateString('ar-SA');
+            
+            // Priority
+            const priorityLabels = { high: 'عالية', medium: 'متوسطة', low: 'منخفضة' };
+            const priorityEl = document.getElementById('dash-modal-priority');
+            priorityEl.textContent = priorityLabels[task.priority] || 'متوسطة';
+            priorityEl.className = `font-medium ${task.priority === 'high' ? 'text-red-600' : task.priority === 'medium' ? 'text-orange-600' : 'text-slate-500'}`;
+            
+            // Status badge
+            const statusEl = document.getElementById('dash-modal-status');
+            if (task.status === 'completed') {
+                statusEl.className = 'px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700';
+                statusEl.textContent = 'مكتملة';
+            } else if (this._isOverdue(task)) {
+                statusEl.className = 'px-2.5 py-1 rounded-full text-xs font-bold bg-red-100 text-red-700';
+                statusEl.textContent = 'متأخرة';
+            } else {
+                statusEl.className = 'px-2.5 py-1 rounded-full text-xs font-bold bg-orange-100 text-orange-700';
+                statusEl.textContent = 'قيد التنفيذ';
+            }
+            
+            // Subtasks
+            this._renderModalSubtasks(task.subtasks || []);
+            
+            // Comments
+            this._renderModalComments(task.comments || []);
+            
+        } catch (error) {
+            console.error('[Dashboard] Failed to load task details:', error);
+            showToast('فشل تحميل تفاصيل المهمة', 'error');
+            this._closeTaskModal();
+        }
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Close Task Modal
+    // ─────────────────────────────────────────────────────────────────────────
+    _closeTaskModal() {
+        const modal = document.getElementById('dash-task-modal');
+        if (modal) modal.classList.add('hidden');
+        this.currentModalTask = null;
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Render Modal Subtasks
+    // ─────────────────────────────────────────────────────────────────────────
+    _renderModalSubtasks(subtasks) {
+        const container = document.getElementById('dash-modal-subtasks');
+        const saveBtn = document.getElementById('dash-modal-save-btn');
+        const completeBtn = document.getElementById('dash-modal-complete-btn');
+        
+        if (!container) return;
+        
+        if (saveBtn) saveBtn.classList.add('hidden');
+        if (completeBtn) completeBtn.classList.add('hidden');
+        
+        if (subtasks.length === 0) {
+            container.innerHTML = '<p class="text-sm text-slate-400 text-center py-4">لا توجد مهام فرعية</p>';
+            return;
+        }
+        
+        container.innerHTML = subtasks.map((st, idx) => `
+            <div class="flex items-center gap-3 p-2 rounded-lg ${st.is_completed ? 'bg-slate-50' : 'bg-white border border-slate-100'}">
+                <input type="checkbox" ${st.is_completed ? 'checked' : ''} 
+                       onchange="dashboardView._toggleModalSubtask(${idx})"
+                       class="w-4 h-4 text-brand-600 rounded cursor-pointer">
+                <span class="text-sm ${st.is_completed ? 'line-through text-slate-400' : 'text-slate-700'}">${st.title}</span>
+            </div>
+        `).join('');
+        
+        // Show complete button if all done
+        const allDone = subtasks.every(st => st.is_completed);
+        if (allDone && this.currentModalTask && this.currentModalTask.status !== 'completed') {
+            if (completeBtn) completeBtn.classList.remove('hidden');
+        }
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Toggle Modal Subtask
+    // ─────────────────────────────────────────────────────────────────────────
+    _toggleModalSubtask(idx) {
+        if (!this.currentModalTask) return;
+        const st = this.currentModalTask.subtasks[idx];
+        st.is_completed = !st.is_completed;
+        st._changed = true;
+        this._renderModalSubtasks(this.currentModalTask.subtasks);
+        
+        const saveBtn = document.getElementById('dash-modal-save-btn');
+        if (saveBtn) saveBtn.classList.remove('hidden');
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Save Modal Subtasks
+    // ─────────────────────────────────────────────────────────────────────────
+    async _saveModalSubtasks() {
+        if (!this.currentModalTask) return;
+        
+        const changed = this.currentModalTask.subtasks.filter(st => st._changed);
+        if (changed.length === 0) return;
+        
+        const btn = document.getElementById('dash-modal-save-btn-el');
+        const original = btn?.innerHTML || 'حفظ';
+        if (btn) btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+        
+        try {
+            for (const st of changed) {
+                await apiFetch(`/api/tasks/${this.currentModalTask.id}/subtasks/${st.id}`, {
+                    method: 'PUT',
+                    body: JSON.stringify({ is_completed: st.is_completed })
+                });
+                delete st._changed;
+            }
+            showToast('تم الحفظ', 'success');
+            
+            // Check if all completed
+            const allDone = this.currentModalTask.subtasks.every(st => st.is_completed);
+            const completeBtn = document.getElementById('dash-modal-complete-btn');
+            if (allDone && this.currentModalTask.status !== 'completed') {
+                if (completeBtn) completeBtn.classList.remove('hidden');
+            }
+            
+            // Refresh dashboard tasks
+            await this._loadTasks();
+            
+            const saveBtn = document.getElementById('dash-modal-save-btn');
+            if (saveBtn) saveBtn.classList.add('hidden');
+            
+        } catch (error) {
+            console.error('[Dashboard] Save subtasks error:', error);
+            showToast('فشل الحفظ', 'error');
+        } finally {
+            if (btn) btn.innerHTML = original;
+        }
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Complete Modal Task
+    // ─────────────────────────────────────────────────────────────────────────
+    async _completeModalTask() {
+        if (!this.currentModalTask) return;
+        
+        try {
+            await apiFetch(`/api/tasks/${this.currentModalTask.id}`, {
+                method: 'PUT',
+                body: JSON.stringify({ status: 'completed' })
+            });
+            showToast('تم إنجاز المهمة', 'success');
+            await this._loadTasks();
+            this._closeTaskModal();
+        } catch (error) {
+            console.error('[Dashboard] Complete task error:', error);
+            showToast('فشل الإنجاز', 'error');
+        }
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Render Modal Comments
+    // ─────────────────────────────────────────────────────────────────────────
+    _renderModalComments(comments) {
+        const container = document.getElementById('dash-modal-comments');
+        if (!container) return;
+        
+        if (comments.length === 0) {
+            container.innerHTML = '<p class="text-sm text-slate-400 text-center py-4">لا توجد رسائل. ابدأ المحادثة...</p>';
+            return;
+        }
+        
+        container.innerHTML = comments.map(c => `
+            <div class="flex gap-3 ${c.user_id === window.GpackUser?.id ? 'flex-row-reverse' : ''}">
+                <div class="w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center text-brand-600 text-xs font-bold flex-shrink-0">
+                    ${c.user_name?.charAt(0).toUpperCase() || '?'}
+                </div>
+                <div class="${c.user_id === window.GpackUser?.id ? 'bg-brand-500 text-white' : 'bg-white border border-slate-100 text-slate-700'} rounded-2xl px-4 py-2 max-w-[80%]">
+                    <p class="text-xs font-medium mb-1 ${c.user_id === window.GpackUser?.id ? 'text-brand-100' : 'text-slate-500'}">${c.user_name || 'غير معروف'}</p>
+                    <p class="text-sm">${c.comment}</p>
+                    <p class="text-xs mt-1 opacity-70">${new Date(c.created_at).toLocaleString('ar-SA')}</p>
+                </div>
+            </div>
+        `).join('');
+        
+        container.scrollTop = container.scrollHeight;
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Add Modal Comment
+    // ─────────────────────────────────────────────────────────────────────────
+    async _addModalComment() {
+        const input = document.getElementById('dash-modal-comment-input');
+        const comment = input?.value?.trim();
+        if (!comment || !this.currentModalTask) return;
+        
+        try {
+            await apiFetch(`/api/tasks/${this.currentModalTask.id}/comments`, {
+                method: 'POST',
+                body: JSON.stringify({ comment })
+            });
+            input.value = '';
+            // Refresh task details
+            await this._openTaskModal(this.currentModalTask.id);
+            showToast('تم إرسال الرسالة', 'success');
+        } catch (error) {
+            console.error('[Dashboard] Add comment error:', error);
+            showToast('فشل الإرسال', 'error');
+        }
     },
 
     // ─────────────────────────────────────────────────────────────────────────
