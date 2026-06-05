@@ -2,7 +2,9 @@
 
 // =============================================================================
 // Authorization Middleware
-// Role-based access control for API endpoints
+// Reads permissions from req.user.permissions (JSONB from roles table).
+// Falls back to legacy hardcoded list if permissions JSON is empty.
+// Supports CRUD: view | create | edit | delete
 // =============================================================================
 
 const ROLE_PERMISSIONS = {
@@ -15,100 +17,130 @@ const ROLE_PERMISSIONS = {
     viewer: ['reports'],
 };
 
+const MODULE_ACTION_MAP = {
+    'quotations': 'quotations',
+    'orders': 'orders',
+    'clients': 'clients',
+    'products': 'products',
+    'inventory': 'inventory',
+    'warehouses': 'warehouses',
+    'invoices': 'invoices',
+    'accounting': 'accounting',
+    'reports': 'reports',
+    'tasks': 'tasks',
+    'users': 'users',
+    'settings': 'settings',
+    'delivery-notes': 'delivery-notes',
+    'vmi': 'vmi',
+    'receipt-vouchers': 'receipt-vouchers',
+    'payment-vouchers': 'payment-vouchers',
+};
+
+function _hasPermission(userPermissions, moduleName, action) {
+    if (!userPermissions) return false;
+    // super_admin bypass
+    if (userPermissions.all_access === true) return true;
+    const mod = userPermissions[moduleName];
+    if (!mod) return false;
+    return mod[action] === true;
+}
+
+function _legacyCheck(userRole, permission) {
+    const perms = ROLE_PERMISSIONS[userRole] || [];
+    return perms.includes('all') || perms.includes(permission);
+}
+
 /**
- * Authorization middleware factory
- * @param {string} permission - Required permission to access the route
- * @returns {Function} Express middleware
+ * Authorize middleware — checks module + action in permissions JSONB.
+ * @param {string} moduleName — e.g. 'quotations', 'orders'
+ * @param {string} action — 'view' | 'create' | 'edit' | 'delete' (default: 'view')
  */
-const authorize = (permission) => {
+const authorize = (moduleName, action = 'view') => {
     return (req, res, next) => {
-        // Check if user is authenticated
         if (!req.user) {
-            return res.status(401).json({ 
-                error: 'Unauthorized',
-                message: 'Authentication required' 
+            return res.status(401).json({ error: 'Unauthorized', message: 'Authentication required' });
+        }
+
+        const userPermissions = req.user.permissions || {};
+
+        // If dynamic permissions exist (non-empty JSONB), use them
+        if (Object.keys(userPermissions).length > 0 && userPermissions.all_access !== undefined) {
+            if (_hasPermission(userPermissions, moduleName, action)) {
+                return next();
+            }
+            return res.status(403).json({
+                error: 'Forbidden',
+                message: 'Insufficient permissions to access this resource',
+                required_module: moduleName,
+                required_action: action,
+                user_role: req.user.role
             });
         }
 
-        const userRole = req.user.role;
-        
-        // Get permissions for user role
-        const permissions = ROLE_PERMISSIONS[userRole] || [];
-        
-        // Check if user has 'all' permissions or the specific permission
-        if (permissions.includes('all') || permissions.includes(permission)) {
+        // Fallback to legacy hardcoded list for backward compatibility
+        if (_legacyCheck(req.user.role, moduleName)) {
             return next();
         }
 
-        // User doesn't have required permission
-        return res.status(403).json({ 
+        return res.status(403).json({
             error: 'Forbidden',
             message: 'Insufficient permissions to access this resource',
-            required_permission: permission,
-            user_role: userRole
+            required_module: moduleName,
+            required_action: action,
+            user_role: req.user.role
         });
     };
 };
 
 /**
- * Check if user has any of the specified permissions
- * @param {string[]} permissions - Array of permissions
- * @returns {Function} Express middleware
+ * Check if user has view permission on ANY of the listed modules.
+ * @param {string[]} modules — Array of module names
  */
-const authorizeAny = (permissions) => {
+const authorizeAny = (modules) => {
     return (req, res, next) => {
         if (!req.user) {
-            return res.status(401).json({ 
-                error: 'Unauthorized',
-                message: 'Authentication required' 
-            });
+            return res.status(401).json({ error: 'Unauthorized', message: 'Authentication required' });
         }
 
-        const userRole = req.user.role;
-        const userPermissions = ROLE_PERMISSIONS[userRole] || [];
-        
-        // Check if user has 'all' permissions or any of the specified permissions
-        if (userPermissions.includes('all') || 
-            permissions.some(perm => userPermissions.includes(perm))) {
-            return next();
+        const userPermissions = req.user.permissions || {};
+
+        if (Object.keys(userPermissions).length > 0 && userPermissions.all_access !== undefined) {
+            if (userPermissions.all_access === true) return next();
+            const hasAny = modules.some(m => _hasPermission(userPermissions, m, 'view'));
+            if (hasAny) return next();
+        } else {
+            // Legacy fallback
+            const perms = ROLE_PERMISSIONS[req.user.role] || [];
+            if (perms.includes('all') || modules.some(m => perms.includes(m))) return next();
         }
 
-        return res.status(403).json({ 
+        return res.status(403).json({
             error: 'Forbidden',
             message: 'Insufficient permissions to access this resource',
-            required_permissions: permissions,
-            user_role: userRole
+            required_modules: modules,
+            user_role: req.user.role
         });
     };
 };
 
 /**
- * Check if user is admin or super_admin
- * @returns {Function} Express middleware
+ * Require admin or super_admin (role name check).
  */
 const requireAdmin = () => {
     return (req, res, next) => {
         if (!req.user) {
-            return res.status(401).json({ 
-                error: 'Unauthorized',
-                message: 'Authentication required' 
-            });
+            return res.status(401).json({ error: 'Unauthorized', message: 'Authentication required' });
         }
+
+        const userPermissions = req.user.permissions || {};
+        if (userPermissions.all_access === true) return next();
 
         if (['super_admin', 'admin'].includes(req.user.role)) {
             return next();
         }
 
-        return res.status(403).json({ 
-            error: 'Forbidden',
-            message: 'Admin access required'
-        });
+        return res.status(403).json({ error: 'Forbidden', message: 'Admin access required' });
     };
 };
 
-module.exports = {
-    authorize,
-    authorizeAny,
-    requireAdmin,
-    ROLE_PERMISSIONS
-};
+module.exports = { authorize, authorizeAny, requireAdmin, ROLE_PERMISSIONS };

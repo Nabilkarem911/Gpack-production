@@ -97,7 +97,12 @@ var NAV_ITEMS = [ // var allows re-declaration if script loads more than once in
 function _hasPermission(permKey) {
     if (!permKey) return true;
     if (window.GpackPerms && window.GpackPerms.all_access === true) return true;
-    return !!(window.GpackPerms && window.GpackPerms[permKey]);
+    const mod = window.GpackPerms && window.GpackPerms[permKey];
+    if (!mod) return false;
+    // New CRUD format: { view: true, create: true, ... }
+    if (typeof mod === 'object') return mod.view === true;
+    // Legacy boolean format
+    return !!mod;
 }
 
 // =============================================================================
@@ -300,6 +305,21 @@ window.navigateTo = async function (viewName) {
     // Find nav label for breadcrumb
     const navItem = NAV_ITEMS.find(n => n.view === viewName);
     const label   = navItem ? navItem.label : viewName;
+
+    // Permission gate: block view if user lacks permission
+    if (navItem && navItem.permission && !_hasPermission(navItem.permission)) {
+        mainContent.innerHTML = `
+            <div class="flex flex-col items-center justify-center h-64 text-slate-400">
+                <i class="fa-solid fa-lock text-5xl mb-4 text-slate-300"></i>
+                <p class="text-lg font-semibold text-slate-500">غير مصرح</p>
+                <p class="text-sm mt-1">ليس لديك صلاحية الوصول إلى هذه الصفحة</p>
+                <button onclick="window.navigateTo('dashboard')"
+                    class="mt-5 px-5 py-2 bg-brand-600 text-white rounded-lg text-sm hover:bg-brand-700 transition-colors">
+                    العودة للوحة التحكم
+                </button>
+            </div>`;
+        return;
+    }
 
     _setActiveNavItem(viewName);
     _setBreadcrumb(label);

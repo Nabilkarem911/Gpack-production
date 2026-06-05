@@ -16,6 +16,20 @@ function _applySession(user) {
 }
 
 // =============================================================================
+// window.hasPermission(module, action)
+// Returns true if current user has the requested CRUD permission.
+// module: e.g. 'quotations', 'orders', 'clients', 'products', 'inventory', etc.
+// action: 'view' | 'create' | 'edit' | 'delete' (default: 'view')
+// =============================================================================
+window.hasPermission = function (module, action = 'view') {
+    const perms = window.GpackPerms || {};
+    if (perms.all_access === true) return true;
+    const mod = perms[module];
+    if (!mod || typeof mod !== 'object') return false;
+    return mod[action] === true;
+};
+
+// =============================================================================
 // _renderLoginView()
 // Fetches the login HTML fragment and injects it into #login-view.
 // Then wires up the form submit handler.
