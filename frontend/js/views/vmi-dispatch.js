@@ -13,7 +13,7 @@
 
     // ── Helpers ───────────────────────────────────────────────────────────────
     const esc  = (s) => String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    const fmtD = (d) => d ? new Date(d).toLocaleDateString('ar-EG') : '—';
+    const fmtD = (d) => d ? new Date(d).toLocaleDateString('ar-SA-u-nu-latn') : '—';
     const _el  = (id) => document.getElementById(id);
 
     function showEl(id) { const e = _el(id); if (e) { e.classList.remove('hidden'); e.style.display = ''; } }
@@ -324,7 +324,7 @@ td{font-size:13px}tr:nth-child(even) td{background:#fffbeb}
 <div class="info-grid">
 <div class="info-item"><label>العميل</label><span>${dn.client_name || '—'}</span></div>
 <div class="info-item"><label>رقم الطلب</label><span>#${dn.order_number || '—'}</span></div>
-<div class="info-item"><label>تاريخ التسليم</label><span>${new Date(dispatch.created_at).toLocaleDateString('ar-EG')}</span></div>
+<div class="info-item"><label>تاريخ التسليم</label><span>${new Date(dispatch.created_at).toLocaleDateString('ar-SA-u-nu-latn')}</span></div>
 <div class="info-item"><label>بواسطة</label><span>${dispatch.created_by_name || '—'}</span></div>
 </div>
 <table><thead><tr><th style="width:40px">#</th><th>الصنف / المقاس</th><th style="width:100px;text-align:center">الكمية المُسلَّمة</th></tr></thead>

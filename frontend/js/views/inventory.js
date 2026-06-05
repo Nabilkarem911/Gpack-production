@@ -438,7 +438,7 @@ window.inventoryView = {
             i.product_name, i.variant_name, i.warehouse_name,
             i.total_dispensed, i.daily_rate, (i.daily_rate * 30).toFixed(1),
             i.current_qty, i.coverage_days ?? '—',
-            i.last_dispense_date ? new Date(i.last_dispense_date).toLocaleDateString('ar-EG') : '—'
+            i.last_dispense_date ? new Date(i.last_dispense_date).toLocaleDateString('ar-SA-u-nu-latn') : '—'
         ]);
         let csv = headers.join(',') + '\n';
         rows.forEach(r => { csv += r.map(v => `"${v ?? ''}"`).join(',') + '\n'; });

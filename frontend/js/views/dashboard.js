@@ -339,7 +339,7 @@ const dashboardView = {
             document.getElementById('dash-modal-desc').textContent = task.description || 'لا يوجد وصف';
             document.getElementById('dash-modal-assignee').textContent = task.assigned_to_name || 'غير محدد';
             document.getElementById('dash-modal-due').textContent = task.due_date || '—';
-            document.getElementById('dash-modal-created').textContent = new Date(task.created_at).toLocaleDateString('ar-SA');
+            document.getElementById('dash-modal-created').textContent = new Date(task.created_at).toLocaleDateString('ar-SA-u-nu-latn');
             
             // Priority
             const priorityLabels = { high: 'عالية', medium: 'متوسطة', low: 'منخفضة' };
@@ -514,7 +514,7 @@ const dashboardView = {
                 <div class="${c.user_id === window.GpackUser?.id ? 'bg-brand-500 text-white' : 'bg-white border border-slate-100 text-slate-700'} rounded-2xl px-4 py-2 max-w-[80%]">
                     <p class="text-xs font-medium mb-1 ${c.user_id === window.GpackUser?.id ? 'text-brand-100' : 'text-slate-500'}">${c.user_name || 'غير معروف'}</p>
                     <p class="text-sm">${c.comment}</p>
-                    <p class="text-xs mt-1 opacity-70">${new Date(c.created_at).toLocaleString('ar-SA')}</p>
+                    <p class="text-xs mt-1 opacity-70">${new Date(c.created_at).toLocaleString('ar-SA-u-nu-latn')}</p>
                 </div>
             </div>
         `).join('');
@@ -703,7 +703,7 @@ const dashboardView = {
 
         document.getElementById('pricing-detail-number').textContent = '#' + quote.order_number;
         document.getElementById('pricing-detail-client').textContent = quote.client_name || 'غير محدد';
-        document.getElementById('pricing-detail-date').textContent = quote.order_date ? new Date(quote.order_date).toLocaleDateString('ar-SA') : '—';
+        document.getElementById('pricing-detail-date').textContent = quote.order_date ? new Date(quote.order_date).toLocaleDateString('ar-SA-u-nu-latn') : '—';
         document.getElementById('pricing-detail-rep').textContent = quote.created_by_name || 'غير محدد';
         document.getElementById('pricing-detail-notes').value = quote.pricing_notes || quote.internal_notes || '';
 
@@ -888,7 +888,7 @@ const dashboardView = {
                                 #${row.order_number}
                                 ${row.pricing_notes ? `<i class="fa-solid fa-note-sticky text-amber-400 text-[10px] ml-1" title="${row.pricing_notes.replace(/"/g, '&quot;')}"></i>` : ''}
                             </td>
-                            <td class="py-2 px-2 text-slate-500 text-xs">${row.order_date ? new Date(row.order_date).toLocaleDateString('ar-SA') : '—'}</td>
+                            <td class="py-2 px-2 text-slate-500 text-xs">${row.order_date ? new Date(row.order_date).toLocaleDateString('ar-SA-u-nu-latn') : '—'}</td>
                             <td class="py-2 px-2 text-brand-600 font-bold">${parseFloat(row.unit_price || 0).toLocaleString('en-US', {minimumFractionDigits:2})}</td>
                             <td class="py-2 px-2 text-slate-600 text-center">${row.quantity}</td>
                             <td class="py-2 px-2">${statusBadge(row.status)}</td>
@@ -965,7 +965,7 @@ const dashboardView = {
                 </div>
                 <div class="flex justify-between items-center">
                     <span class="text-slate-500">التاريخ:</span>
-                    <span class="text-slate-600">${order.order_date ? new Date(order.order_date).toLocaleDateString('ar-SA') : '—'}</span>
+                    <span class="text-slate-600">${order.order_date ? new Date(order.order_date).toLocaleDateString('ar-SA-u-nu-latn') : '—'}</span>
                 </div>
                 <div class="flex justify-between items-center">
                     <span class="text-slate-500">الحالة:</span>
@@ -1112,7 +1112,7 @@ const dashboardView = {
                         <span class="px-2.5 py-1 rounded-full text-xs font-semibold ${status.class}">${status.label}</span>
                     </td>
                     <td class="py-3 font-semibold text-slate-800">${order.total_amount ? parseFloat(order.total_amount).toLocaleString('en-US') + ' ر.س' : '—'}</td>
-                    <td class="py-3 text-slate-500 text-xs">${order.created_at ? new Date(order.created_at).toLocaleDateString('ar-SA') : '—'}</td>
+                    <td class="py-3 text-slate-500 text-xs">${order.created_at ? new Date(order.created_at).toLocaleDateString('ar-SA-u-nu-latn') : '—'}</td>
                 </tr>
             `;
         }).join('');

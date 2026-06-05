@@ -90,7 +90,7 @@
 
         tbody.innerHTML = _orders.map(o => {
             const clientName = esc(o.client_name || '—');
-            const orderDate = new Date(o.order_date).toLocaleDateString('ar-EG');
+            const orderDate = new Date(o.order_date).toLocaleDateString('ar-SA-u-nu-latn');
 
             return `<tr class="border-b border-slate-100 hover:bg-blue-50/30 transition-colors">
                 <td class="py-3 px-4 font-bold font-mono text-slate-700">#${o.order_number}</td>

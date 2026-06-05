@@ -62,8 +62,8 @@
 
         // Header info
         _el('pinv-number').textContent = inv.invoice_number;
-        _el('pinv-date').textContent = new Date(inv.invoice_date).toLocaleDateString('ar-EG');
-        _el('pinv-due').textContent = inv.due_date ? new Date(inv.due_date).toLocaleDateString('ar-EG') : 'غير محدد';
+        _el('pinv-date').textContent = new Date(inv.invoice_date).toLocaleDateString('ar-SA-u-nu-latn');
+        _el('pinv-due').textContent = inv.due_date ? new Date(inv.due_date).toLocaleDateString('ar-SA-u-nu-latn') : 'غير محدد';
         
         // Client info
         _el('pinv-client-name').textContent = esc(inv.client_name || '---');
@@ -125,7 +125,7 @@
         }
 
         // View date
-        _el('pinv-view-date').textContent = new Date().toLocaleDateString('ar-EG');
+        _el('pinv-view-date').textContent = new Date().toLocaleDateString('ar-SA-u-nu-latn');
     }
 
     // ── Show Error ─────────────────────────────────────────────────────────────

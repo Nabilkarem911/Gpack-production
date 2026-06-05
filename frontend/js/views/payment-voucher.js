@@ -138,7 +138,7 @@
 
             return `<tr class="hover:bg-slate-50/60 transition-colors cursor-pointer" data-id="${v.id}">
                 <td class="py-3.5 px-4 font-mono font-bold text-brand-600">#${v.voucher_number}</td>
-                <td class="py-3.5 px-4 text-slate-600 text-xs">${new Date(v.voucher_date).toLocaleDateString('ar-EG')}</td>
+                <td class="py-3.5 px-4 text-slate-600 text-xs">${new Date(v.voucher_date).toLocaleDateString('ar-SA-u-nu-latn')}</td>
                 <td class="py-3.5 px-4">
                     <div class="font-semibold text-slate-800">${esc(v.supplier_name || '---')}</div>
                     <div class="text-xs text-slate-400">${esc(v.supplier_phone || '')}</div>
@@ -290,7 +290,7 @@
                         </div>
                         <div class="flex items-center justify-between mt-0.5">
                             <div class="flex items-center gap-2">
-                                <span class="text-xs text-slate-400">${new Date(inv.invoice_date).toLocaleDateString('ar-EG')}</span>
+                                <span class="text-xs text-slate-400">${new Date(inv.invoice_date).toLocaleDateString('ar-SA-u-nu-latn')}</span>
                                 ${clientInfo}
                                 ${moInfo}
                             </div>
@@ -472,7 +472,7 @@
                 </div>
             </div>
 
-            <p class="text-xs text-slate-400 text-left">بواسطة: ${esc(v.created_by_name || 'النظام')} • ${new Date(v.created_at).toLocaleDateString('ar-EG')}</p>
+            <p class="text-xs text-slate-400 text-left">بواسطة: ${esc(v.created_by_name || 'النظام')} • ${new Date(v.created_at).toLocaleDateString('ar-SA-u-nu-latn')}</p>
         `;
     }
 
@@ -556,7 +556,7 @@
     <div style="border-top:1px solid #cbd5e1;padding-top:8px;font-size:11px;color:#64748b">توقيع المحاسب</div>
   </div>
   <div style="margin-top:24px;text-align:center;font-size:10px;color:#94a3b8;border-top:1px dashed #cbd5e1;padding-top:12px">
-    بواسطة: ${esc(v.created_by_name || 'النظام')} &nbsp;|&nbsp; تاريخ الطباعة: ${new Date().toLocaleDateString('ar-EG')} &nbsp;|&nbsp; G.PACK ERP 2.0
+    بواسطة: ${esc(v.created_by_name || 'النظام')} &nbsp;|&nbsp; تاريخ الطباعة: ${new Date().toLocaleDateString('ar-SA-u-nu-latn')} &nbsp;|&nbsp; G.PACK ERP 2.0
   </div>
 <script>window.onload=function(){window.print();window.onafterprint=function(){window.close();};};<\/script>
 </body></html>`;

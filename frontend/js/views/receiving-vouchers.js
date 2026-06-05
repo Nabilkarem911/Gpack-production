@@ -18,7 +18,7 @@
     // ─────────────────────────────────────────────────────────────────────────
     const _el  = id => document.getElementById(id);
     const esc  = t  => (t || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    const fmtD = d  => d ? new Date(d).toLocaleDateString('ar-EG') : '—';
+    const fmtD = d  => d ? new Date(d).toLocaleDateString('ar-SA-u-nu-latn') : '—';
 
     function showEl(id)  { const e = _el(id); if(e) { e.style.display=''; e.classList.remove('hidden'); } }
     function hideEl(id)  { const e = _el(id); if(e) { e.classList.add('hidden'); } }
@@ -529,7 +529,7 @@
                         <span class="font-mono font-bold text-slate-700">#${r.voucher_number}</span>
                     </div>
                 </td>
-                <td class="py-3 px-4 text-xs text-slate-600">${new Date(r.receiving_date).toLocaleDateString('ar-SA')}</td>
+                <td class="py-3 px-4 text-xs text-slate-600">${new Date(r.receiving_date).toLocaleDateString('ar-SA-u-nu-latn')}</td>
                 <td class="py-3 px-4">
                     <span class="text-xs font-medium text-slate-700">${esc(r.supplier_name || '—')}</span>
                 </td>
@@ -1247,7 +1247,7 @@
             const items = res.data?.items || [];
 
             _el('rv-detail-title').textContent = `سند استلام #${v.voucher_number}`;
-            _el('rv-detail-sub').textContent = `${new Date(v.receiving_date).toLocaleDateString('ar-SA')} — ${v.supplier_name || '—'}`;
+            _el('rv-detail-sub').textContent = `${new Date(v.receiving_date).toLocaleDateString('ar-SA-u-nu-latn')} — ${v.supplier_name || '—'}`;
 
             const voidBtn = _el('rv-detail-void-btn');
             if (v.status === 'voided') {
@@ -1260,7 +1260,7 @@
                 <div class="space-y-4">
                     <div class="grid grid-cols-2 gap-4 bg-slate-50 rounded-xl p-4">
                         <div><span class="text-xs text-slate-400">المورد:</span><p class="text-sm font-bold text-slate-700">${esc(v.supplier_name || '—')}</p></div>
-                        <div><span class="text-xs text-slate-400">التاريخ:</span><p class="text-sm font-bold text-slate-700">${new Date(v.receiving_date).toLocaleDateString('ar-SA')}</p></div>
+                        <div><span class="text-xs text-slate-400">التاريخ:</span><p class="text-sm font-bold text-slate-700">${new Date(v.receiving_date).toLocaleDateString('ar-SA-u-nu-latn')}</p></div>
                         ${v.purchase_invoice_number ? `<div><span class="text-xs text-slate-400">فاتورة الشراء:</span><p class="text-sm font-bold text-slate-700">#${v.purchase_invoice_number}</p></div>` : ''}
                         ${v.mo_number ? `<div><span class="text-xs text-slate-400">أمر التشغيل:</span><p class="text-sm font-bold text-slate-700">#${v.mo_number}</p></div>` : ''}
                         <div><span class="text-xs text-slate-400">الحالة:</span>

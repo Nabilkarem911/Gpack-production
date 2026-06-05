@@ -66,7 +66,7 @@
         if (empty) empty.classList.add('hidden');
 
         tbody.innerHTML = orders.map(o => {
-            const dateStr = o.order_date ? new Date(o.order_date).toLocaleDateString('ar-SA') : '—';
+            const dateStr = o.order_date ? new Date(o.order_date).toLocaleDateString('ar-SA-u-nu-latn') : '—';
             const total = o.grand_total ? _fmtNum(o.grand_total) : '—';
             const moCount = o.manufacturer_orders_count || 0;
 
@@ -252,7 +252,7 @@
             if (titleEl) titleEl.textContent = `أمر تشغيل #${order.order_number || '—'}`;
             if (numberEl) numberEl.textContent = `الحالة: ${_statusBadge(order.status)}`;
             if (clientEl) clientEl.textContent = order.client_name || '—';
-            if (dateEl) dateEl.textContent = order.order_date ? new Date(order.order_date).toLocaleDateString('ar-SA') : '—';
+            if (dateEl) dateEl.textContent = order.order_date ? new Date(order.order_date).toLocaleDateString('ar-SA-u-nu-latn') : '—';
             if (totalEl) totalEl.textContent = order.grand_total ? _fmtNum(order.grand_total) : '—';
 
             // Render status actions
@@ -434,8 +434,8 @@
                     </div>
                 </div>
                 <div class="text-xs text-slate-500 flex flex-wrap gap-4">
-                    <span><i class="fa-regular fa-calendar ml-1"></i> ${mo.order_date ? new Date(mo.order_date).toLocaleDateString('ar-SA') : '—'}</span>
-                    <span><i class="fa-regular fa-clock ml-1"></i> تسليم: ${mo.expected_delivery ? new Date(mo.expected_delivery).toLocaleDateString('ar-SA') : '—'}</span>
+                    <span><i class="fa-regular fa-calendar ml-1"></i> ${mo.order_date ? new Date(mo.order_date).toLocaleDateString('ar-SA-u-nu-latn') : '—'}</span>
+                    <span><i class="fa-regular fa-clock ml-1"></i> تسليم: ${mo.expected_delivery ? new Date(mo.expected_delivery).toLocaleDateString('ar-SA-u-nu-latn') : '—'}</span>
                     <span><i class="fa-solid fa-box ml-1"></i> ${items.length} بند</span>
                     <span><i class="fa-solid fa-coins ml-1"></i> ${_fmtNum(mo.total_cost)}</span>
                 </div>

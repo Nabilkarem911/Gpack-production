@@ -192,7 +192,7 @@
                 const docLink = _getDocLink(t);
                 
                 return `<tr class="${rowClass} border-b border-slate-100 hover:bg-blue-50/30 transition-colors">
-                    <td class="py-3 px-4 text-slate-600 text-xs">${new Date(t.trans_date).toLocaleDateString('ar-EG')}</td>
+                    <td class="py-3 px-4 text-slate-600 text-xs">${new Date(t.trans_date).toLocaleDateString('ar-SA-u-nu-latn')}</td>
                     <td class="py-3 px-4">
                         <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold ${_getDocTypeClass(t.document_type)}">
                             ${_getDocTypeIcon(t.document_type)}

@@ -89,9 +89,9 @@
         _el('sid-status-badge').textContent = st.label;
 
         // Dates
-        _el('sid-invoice-date').textContent = new Date(inv.invoice_date).toLocaleDateString('ar-EG');
+        _el('sid-invoice-date').textContent = new Date(inv.invoice_date).toLocaleDateString('ar-SA-u-nu-latn');
         _el('sid-due-date').textContent = inv.due_date 
-            ? new Date(inv.due_date).toLocaleDateString('ar-EG') 
+            ? new Date(inv.due_date).toLocaleDateString('ar-SA-u-nu-latn') 
             : 'غير محدد';
 
         // Client info
@@ -246,7 +246,7 @@
     </div>
     <div style="text-align:left">
       <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">تفاصيل الفاتورة</div>
-      <div style="font-size:12px;color:#475569;margin-bottom:2px">تاريخ الاستحقاق: <strong>${inv.due_date ? new Date(inv.due_date).toLocaleDateString('ar-EG') : 'غير محدد'}</strong></div>
+      <div style="font-size:12px;color:#475569;margin-bottom:2px">تاريخ الاستحقاق: <strong>${inv.due_date ? new Date(inv.due_date).toLocaleDateString('ar-SA-u-nu-latn') : 'غير محدد'}</strong></div>
       ${inv.order_number ? `<div style="font-size:12px;color:#475569">أمر التشغيل: <strong>#${inv.order_number}</strong></div>` : ''}
     </div>
   </div>
@@ -306,7 +306,7 @@
     <div style="border-top:1px solid #cbd5e1;padding-top:8px;font-size:11px;color:#64748b">توقيع المحاسب</div>
   </div>
   <div style="margin-top:20px;text-align:center;font-size:10px;color:#94a3b8;border-top:1px dashed #cbd5e1;padding-top:12px">
-    بواسطة: ${esc(inv.created_by_name || 'النظام')} &nbsp;|&nbsp; تاريخ الطباعة: ${new Date().toLocaleDateString('ar-EG')} &nbsp;|&nbsp; G.PACK ERP 2.0
+    بواسطة: ${esc(inv.created_by_name || 'النظام')} &nbsp;|&nbsp; تاريخ الطباعة: ${new Date().toLocaleDateString('ar-SA-u-nu-latn')} &nbsp;|&nbsp; G.PACK ERP 2.0
   </div>
 <script>window.onload=function(){window.print();window.onafterprint=function(){window.close();};};<\/script>
 </body></html>`;

@@ -88,7 +88,7 @@
         tbody.innerHTML = _moList.map(mo => {
             const supplierName = esc(mo.supplier_name || '—');
             const clientName   = esc(mo.client_name   || '—');
-            const orderDate    = new Date(mo.created_at).toLocaleDateString('ar-EG');
+            const orderDate    = new Date(mo.created_at).toLocaleDateString('ar-SA-u-nu-latn');
             const subtotal   = parseFloat(mo.total_cost || 0);
             const grandTotal  = subtotal * 1.15; // 15% VAT
 
@@ -389,7 +389,7 @@
 
         tbody.innerHTML = _arcList.map(inv => {
             const st   = statusMap[inv.status] || statusMap.unpaid;
-            const date = new Date(inv.invoice_date).toLocaleDateString('ar-EG');
+            const date = new Date(inv.invoice_date).toLocaleDateString('ar-SA-u-nu-latn');
             return `<tr class="border-b border-slate-100 hover:bg-slate-50 transition-colors">
                 <td class="py-3 px-4 font-bold font-mono text-slate-700">#${inv.invoice_number}</td>
                 <td class="py-3 px-4 text-slate-500 text-xs">${date}</td>
@@ -486,7 +486,7 @@
     </div>
     <div style="text-align:left">
       <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">تفاصيل الفاتورة</div>
-      ${inv.due_date             ? `<div style="font-size:12px;color:#475569;margin-bottom:2px">تاريخ الاستحقاق: <strong>${new Date(inv.due_date).toLocaleDateString('ar-EG')}</strong></div>` : ''}
+      ${inv.due_date             ? `<div style="font-size:12px;color:#475569;margin-bottom:2px">تاريخ الاستحقاق: <strong>${new Date(inv.due_date).toLocaleDateString('ar-SA-u-nu-latn')}</strong></div>` : ''}
       ${inv.supplier_invoice_ref ? `<div style="font-size:12px;color:#475569;margin-bottom:2px">مرجع المورد: <strong>${esc(inv.supplier_invoice_ref)}</strong></div>` : ''}
       ${inv.mo_number            ? `<div style="font-size:12px;color:#475569">أمر تصنيع: <strong>#${inv.mo_number}</strong></div>` : ''}
     </div>
@@ -537,7 +537,7 @@
     <div style="border-top:1px solid #cbd5e1;padding-top:8px;font-size:11px;color:#64748b">توقيع المحاسب</div>
   </div>
   <div style="margin-top:20px;text-align:center;font-size:10px;color:#94a3b8;border-top:1px dashed #cbd5e1;padding-top:12px">
-    بواسطة: ${esc(inv.created_by_name || 'النظام')} &nbsp;|&nbsp; تاريخ الطباعة: ${new Date().toLocaleDateString('ar-EG')} &nbsp;|&nbsp; G.PACK ERP 2.0
+    بواسطة: ${esc(inv.created_by_name || 'النظام')} &nbsp;|&nbsp; تاريخ الطباعة: ${new Date().toLocaleDateString('ar-SA-u-nu-latn')} &nbsp;|&nbsp; G.PACK ERP 2.0
   </div>
 <script>window.onload=function(){window.print();window.onafterprint=function(){window.close();};};<\/script>
 </body></html>`;

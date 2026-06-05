@@ -473,7 +473,7 @@ var tasksView = {
             document.getElementById('details-assignee').textContent = task.assigned_to_name || this._getUserName(task.assigned_to, task.assigned_to_name);
             document.getElementById('details-due-date').textContent = task.due_date;
             document.getElementById('details-priority').textContent = this._getPriorityLabel(task.priority);
-            document.getElementById('details-created').textContent = new Date(task.created_at).toLocaleDateString('ar-SA');
+            document.getElementById('details-created').textContent = new Date(task.created_at).toLocaleDateString('ar-SA-u-nu-latn');
 
             // Priority color
             const priorityEl = document.getElementById('details-priority');
@@ -673,7 +673,7 @@ var tasksView = {
                 <div class="${c.user_id === window.GpackUser?.id ? 'bg-brand-500 text-white' : 'bg-slate-100 text-slate-700'} rounded-2xl px-4 py-2 max-w-[80%]">
                     <p class="text-xs font-medium mb-1 ${c.user_id === window.GpackUser?.id ? 'text-brand-100' : 'text-slate-500'}">${c.user_name || 'غير معروف'}</p>
                     <p class="text-sm">${c.comment}</p>
-                    <p class="text-xs mt-1 opacity-70">${new Date(c.created_at).toLocaleString('ar-SA')}</p>
+                    <p class="text-xs mt-1 opacity-70">${new Date(c.created_at).toLocaleString('ar-SA-u-nu-latn')}</p>
                 </div>
             </div>
         `).join('');

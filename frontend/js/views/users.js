@@ -1,32 +1,44 @@
-﻿'use strict';
+'use strict';
 // G.PACK 2.0 - Users & Roles View (Clean Build)
 
 const usersView = (() => {
-    // ── State ──────────────────────────────────────────────────────
+    // ?? State ??????????????????????????????????????????????????????
     let _users = [];
     let _roles = [];
     let _editingUserId  = null;
     let _editingRoleId  = null;
 
-    // ── Permission Modules (CRUD grid) ─────────────────────────────
+    // ?? Permission Modules (CRUD grid) ?????????????????????????????
     const _PERMISSION_MODULES = [
-        { key: 'dashboard',   label: 'لوحة التحكم' },
-        { key: 'quotations',  label: 'عروض الأسعار' },
-        { key: 'orders',      label: 'الطلبات' },
-        { key: 'clients',     label: 'العملاء' },
-        { key: 'products',    label: 'المنتجات' },
-        { key: 'inventory',   label: 'المخزون' },
-        { key: 'warehouses',  label: 'المستودعات' },
-        { key: 'invoices',    label: 'الفواتير' },
-        { key: 'accounting',  label: 'المحاسبة' },
-        { key: 'reports',     label: 'التقارير' },
-        { key: 'tasks',       label: 'المهام' },
-        { key: 'users',       label: 'المستخدمين' },
-        { key: 'settings',    label: 'الإعدادات' },
+        { key: 'dashboard',   label: '���� ������' },
+        { key: 'quotations',  label: '���� �������' },
+        { key: 'orders',      label: '�������' },
+        { key: 'clients',     label: '�������' },
+        { key: 'products',    label: '��������' },
+        { key: 'inventory',   label: '�������' },
+        { key: 'warehouses',  label: '����������' },
+        { key: 'invoices',    label: '��������' },
+        { key: 'accounting',  label: '��������' },
+        { key: 'reports',     label: '��������' },
+        { key: 'tasks',       label: '������' },
+        { key: 'users',       label: '����������' },
+        { key: 'settings',    label: '���������' },
     ];
 
-    // ── Helpers ────────────────────────────────────────────────────
+    // ?? Helpers ????????????????????????????????????????????????????
     function el(id) { return document.getElementById(id); }
+
+    function _roleLabel(roleName) {
+        const map = {
+            super_admin: '���� ������',
+            admin: '����',
+            manager: '����',
+            sales: '������',
+            accountant: '�����',
+            warehouse: '������',
+        };
+        return map[roleName] || roleName;
+    }
 
     function toast(msg, type = 'success') {
         if (typeof window.showToast === 'function') {
@@ -41,14 +53,14 @@ const usersView = (() => {
         setTimeout(() => t.remove(), 3000);
     }
 
-    // ── API ────────────────────────────────────────────────────────
+    // ?? API ????????????????????????????????????????????????????????
     async function api(path, opts = {}) {
         const res = await window.apiFetch(path, opts);
-        if (!res.success) throw new Error(res.error || 'خطأ غير معروف');
+        if (!res.success) throw new Error(res.error || '��� ��� �����');
         return res;
     }
 
-    // ── Load ───────────────────────────────────────────────────────
+    // ?? Load ???????????????????????????????????????????????????????
     async function loadAll() {
         try {
             const [usersRes, rolesRes] = await Promise.all([
@@ -63,11 +75,11 @@ const usersView = (() => {
             _populateRoleDropdowns();
         } catch (err) {
             console.error('[usersView] loadAll error:', err);
-            toast('فشل في تحميل البيانات', 'error');
+            toast('��� �� ����� ��������', 'error');
         }
     }
 
-    // ── Stats ──────────────────────────────────────────────────────
+    // ?? Stats ??????????????????????????????????????????????????????
     function updateStats() {
         el('stat-total').textContent      = _users.length;
         el('stat-active').textContent     = _users.filter(u => u.status === 'active').length;
@@ -75,7 +87,7 @@ const usersView = (() => {
         el('stat-with-roles').textContent = _users.filter(u => u.role_id).length;
     }
 
-    // ── Tabs ───────────────────────────────────────────────────────
+    // ?? Tabs ???????????????????????????????????????????????????????
     function switchTab(tab) {
         const isUsers = tab === 'users';
         el('tab-users').classList.toggle('hidden', !isUsers);
@@ -92,7 +104,7 @@ const usersView = (() => {
         }
     }
 
-    // ── Render Users ───────────────────────────────────────────────
+    // ?? Render Users ???????????????????????????????????????????????
     function renderUsers() {
         const tbody  = el('users-tbody');
         const empty  = el('users-empty');
@@ -117,13 +129,13 @@ const usersView = (() => {
         tbody.innerHTML = list.map(u => {
             const role       = _roles.find(r => r.id === u.role_id);
             const roleBadge  = role
-                ? `<span class="inline-flex px-2.5 py-1 rounded-lg text-xs font-medium bg-purple-50 text-purple-700">${role.role_name}</span>`
-                : `<span class="inline-flex px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-100 text-slate-500">بدون دور</span>`;
+                ? `<span class="inline-flex px-2.5 py-1 rounded-lg text-xs font-medium bg-purple-50 text-purple-700">${_roleLabel(role.role_name)}</span>`
+                : `<span class="inline-flex px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-100 text-slate-500">���� ���</span>`;
             const statusBadge = u.status === 'active'
-                ? `<span class="inline-flex px-2.5 py-1 rounded-lg text-xs font-medium bg-emerald-100 text-emerald-700">نشط</span>`
-                : `<span class="inline-flex px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-100 text-slate-500">معطل</span>`;
+                ? `<span class="inline-flex px-2.5 py-1 rounded-lg text-xs font-medium bg-emerald-100 text-emerald-700">���</span>`
+                : `<span class="inline-flex px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-100 text-slate-500">����</span>`;
             const initial = (u.name || 'U').charAt(0).toUpperCase();
-            const date    = u.created_at ? new Date(u.created_at).toLocaleDateString('ar-EG') : '-';
+            const date    = u.created_at ? new Date(u.created_at).toLocaleDateString('ar-SA-u-nu-latn') : '-';
 
             return `<tr class="border-b border-slate-100 hover:bg-slate-50 transition-colors">
                 <td class="px-4 py-3">
@@ -141,12 +153,12 @@ const usersView = (() => {
                 <td class="px-4 py-3 text-center">
                     <div class="flex items-center justify-center gap-1">
                         <button onclick="usersView.openUserModal('${u.id}')"
-                                class="w-8 h-8 rounded-lg hover:bg-blue-50 text-blue-500 flex items-center justify-center transition-colors" title="تعديل">
+                                class="w-8 h-8 rounded-lg hover:bg-blue-50 text-blue-500 flex items-center justify-center transition-colors" title="�����">
                             <i class="fa-solid fa-pen-to-square text-xs"></i>
                         </button>
                         <button onclick="usersView.toggleStatus('${u.id}')"
                                 class="w-8 h-8 rounded-lg hover:bg-amber-50 text-amber-500 flex items-center justify-center transition-colors"
-                                title="${u.status === 'active' ? 'تعطيل' : 'تفعيل'}">
+                                title="${u.status === 'active' ? '�����' : '�����'}">
                             <i class="fa-solid fa-${u.status === 'active' ? 'ban' : 'check'} text-xs"></i>
                         </button>
                     </div>
@@ -155,7 +167,7 @@ const usersView = (() => {
         }).join('');
     }
 
-    // ── Render Roles ───────────────────────────────────────────────
+    // ?? Render Roles ???????????????????????????????????????????????
     function renderRoles() {
         const tbody = el('roles-tbody');
         const empty = el('roles-empty');
@@ -171,8 +183,8 @@ const usersView = (() => {
             const count      = _users.filter(u => u.role_id === r.id).length;
             const isSuperAdmin = r.role_name === 'super_admin';
             const badge      = isSuperAdmin
-                ? `<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-50 text-amber-700"><i class="fa-solid fa-crown text-xs"></i> Super Admin</span>`
-                : `<span class="inline-flex px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-100 text-slate-600">${r.role_name}</span>`;
+                ? `<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-50 text-amber-700"><i class="fa-solid fa-crown text-xs"></i> ���� ������</span>`
+                : `<span class="inline-flex px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-100 text-slate-600">${_roleLabel(r.role_name)}</span>`;
 
             return `<tr class="border-b border-slate-100 hover:bg-slate-50 transition-colors">
                 <td class="px-4 py-3">
@@ -185,43 +197,43 @@ const usersView = (() => {
                 </td>
                 <td class="px-4 py-3 text-sm text-slate-500">${r.description || '-'}</td>
                 <td class="px-4 py-3">
-                    <span class="inline-flex px-2.5 py-1 rounded-lg text-xs font-medium bg-blue-50 text-blue-700">${count} مستخدم</span>
+                    <span class="inline-flex px-2.5 py-1 rounded-lg text-xs font-medium bg-blue-50 text-blue-700">${count} ������</span>
                 </td>
                 <td class="px-4 py-3 text-center">
                     <div class="flex items-center justify-center gap-1">
                         ${!isSuperAdmin ? `
                         <button onclick="usersView.openRoleModal('${r.id}')"
-                                class="w-8 h-8 rounded-lg hover:bg-blue-50 text-blue-500 flex items-center justify-center transition-colors" title="تعديل">
+                                class="w-8 h-8 rounded-lg hover:bg-blue-50 text-blue-500 flex items-center justify-center transition-colors" title="�����">
                             <i class="fa-solid fa-pen-to-square text-xs"></i>
                         </button>
                         ${count === 0 ? `
                         <button onclick="usersView.deleteRole('${r.id}')"
-                                class="w-8 h-8 rounded-lg hover:bg-red-50 text-red-500 flex items-center justify-center transition-colors" title="حذف">
+                                class="w-8 h-8 rounded-lg hover:bg-red-50 text-red-500 flex items-center justify-center transition-colors" title="���">
                             <i class="fa-solid fa-trash text-xs"></i>
                         </button>` : ''}
-                        ` : '<span class="text-xs text-slate-400">محمي</span>'}
+                        ` : '<span class="text-xs text-slate-400">����</span>'}
                     </div>
                 </td>
             </tr>`;
         }).join('');
     }
 
-    // ── Populate dropdowns ─────────────────────────────────────────
+    // ?? Populate dropdowns ?????????????????????????????????????????
     function _populateRoleDropdowns() {
-        const opts = _roles.map(r => `<option value="${r.id}">${r.role_name}</option>`).join('');
+        const opts = _roles.map(r => `<option value="${r.id}">${_roleLabel(r.role_name)}</option>`).join('');
         const filterEl = el('filter-role');
-        if (filterEl) filterEl.innerHTML = '<option value="">جميع الأدوار</option>' + opts;
+        if (filterEl) filterEl.innerHTML = '<option value="">���� �������</option>' + opts;
         const umRole = el('um-role');
-        if (umRole) umRole.innerHTML = '<option value="">بدون دور</option>' + opts;
+        if (umRole) umRole.innerHTML = '<option value="">���� ���</option>' + opts;
     }
 
-    // ── User Modal ─────────────────────────────────────────────────
+    // ?? User Modal ?????????????????????????????????????????????????
     function openUserModal(userId = null) {
         _editingUserId = userId;
-        el('user-modal-title').textContent = userId ? 'تعديل مستخدم' : 'مستخدم جديد';
+        el('user-modal-title').textContent = userId ? '����� ������' : '������ ����';
         el('um-password-label').innerHTML = userId
-            ? 'كلمة المرور الجديدة <span class="text-slate-400 font-normal text-xs">(اتركها فارغة لعدم التغيير)</span>'
-            : 'كلمة المرور <span class="text-red-500">*</span>';
+            ? '���� ������ ������� <span class="text-slate-400 font-normal text-xs">(������ ����� ���� �������)</span>'
+            : '���� ������ <span class="text-red-500">*</span>';
 
         if (userId) {
             const u = _users.find(u => u.id === userId);
@@ -251,31 +263,31 @@ const usersView = (() => {
         const roleId = el('um-role').value;
         const status = el('um-status').value;
 
-        if (!name || !email) { toast('الاسم والبريد مطلوبان', 'error'); return; }
+        if (!name || !email) { toast('����� ������� �������', 'error'); return; }
 
         const body = { name, email, role_id: roleId || null, status };
 
         const pw = el('um-password').value;
         if (!_editingUserId) {
-            if (!pw || pw.length < 6) { toast('كلمة المرور مطلوبة (6 أحرف على الأقل)', 'error'); return; }
+            if (!pw || pw.length < 6) { toast('���� ������ ������ (6 ���� ��� �����)', 'error'); return; }
             body.password = pw;
         } else if (pw && pw.length > 0) {
-            if (pw.length < 6) { toast('كلمة المرور يجب أن تكون 6 أحرف على الأقل', 'error'); return; }
+            if (pw.length < 6) { toast('���� ������ ��� �� ���� 6 ���� ��� �����', 'error'); return; }
             body.password = pw;
         }
 
         try {
             if (_editingUserId) {
                 await api(`/api/users/${_editingUserId}`, { method: 'PUT', body });
-                toast('تم تحديث المستخدم');
+                toast('�� ����� ��������');
             } else {
                 await api('/api/users', { method: 'POST', body });
-                toast('تم إنشاء المستخدم');
+                toast('�� ����� ��������');
             }
             closeUserModal();
             await loadAll();
         } catch (err) {
-            toast(err.message || 'فشل في الحفظ', 'error');
+            toast(err.message || '��� �� �����', 'error');
         }
     }
 
@@ -283,17 +295,17 @@ const usersView = (() => {
         const u = _users.find(u => u.id === userId);
         if (!u) return;
         const newStatus = u.status === 'active' ? 'inactive' : 'active';
-        if (!confirm(`هل تريد ${newStatus === 'active' ? 'تفعيل' : 'تعطيل'} المستخدم "${u.name}"؟`)) return;
+        if (!confirm(`�� ���� ${newStatus === 'active' ? '�����' : '�����'} �������� "${u.name}"�`)) return;
         try {
             await api(`/api/users/${userId}`, { method: 'PUT', body: { status: newStatus } });
-            toast(newStatus === 'active' ? 'تم التفعيل' : 'تم التعطيل');
+            toast(newStatus === 'active' ? '�� �������' : '�� �������');
             await loadAll();
         } catch (err) {
-            toast(err.message || 'فشل في التحديث', 'error');
+            toast(err.message || '��� �� �������', 'error');
         }
     }
 
-    // ── Role Permissions Grid ─────────────────────────────────────
+    // ?? Role Permissions Grid ?????????????????????????????????????
     function _renderRolePermissions(existingPerms = {}) {
         const tbody = el('rm-perms-tbody');
         if (!tbody) return;
@@ -341,10 +353,10 @@ const usersView = (() => {
         document.querySelectorAll('.rm-perm-cb').forEach(cb => { cb.checked = checked; });
     }
 
-    // ── Role Modal ─────────────────────────────────────────────────
+    // ?? Role Modal ?????????????????????????????????????????????????
     function openRoleModal(roleId = null) {
         _editingRoleId = roleId;
-        el('role-modal-title').textContent = roleId ? 'تعديل دور' : 'دور جديد';
+        el('role-modal-title').textContent = roleId ? '����� ���' : '��� ����';
 
         if (roleId) {
             const r = _roles.find(r => r.id === roleId);
@@ -366,12 +378,11 @@ const usersView = (() => {
     }
 
     async function saveRole() {
-        const name = el('rm-name').value.trim().toLowerCase().replace(/\s+/g, '_');
+        const name = el('rm-name').value.trim();
         const desc = el('rm-desc').value.trim();
         const permissions = _collectRolePermissions();
 
-        if (!name) { toast('اسم الدور مطلوب', 'error'); return; }
-        if (!/^[a-z0-9_]+$/.test(name)) { toast('الاسم يجب أن يحتوي على حروف إنجليزية صغيرة وأرقام وشرطة سفلية فقط', 'error'); return; }
+        if (!name) { toast('��� ����� �����', 'error'); return; }
 
         try {
             if (_editingRoleId) {
@@ -379,35 +390,35 @@ const usersView = (() => {
                     method: 'PUT',
                     body: { role_name: name, description: desc, permissions }
                 });
-                toast('تم تحديث الدور');
+                toast('�� ����� �����');
             } else {
                 await api('/api/users/roles', {
                     method: 'POST',
                     body: { role_name: name, description: desc, permissions }
                 });
-                toast('تم إنشاء الدور');
+                toast('�� ����� �����');
             }
             closeRoleModal();
             await loadAll();
         } catch (err) {
-            toast(err.message || 'فشل في الحفظ', 'error');
+            toast(err.message || '��� �� �����', 'error');
         }
     }
 
     async function deleteRole(roleId) {
         const r = _roles.find(r => r.id === roleId);
         if (!r) return;
-        if (!confirm(`هل تريد حذف الدور "${r.role_name}"؟`)) return;
+        if (!confirm(`�� ���� ��� ����� "${r.role_name}"�`)) return;
         try {
             await api(`/api/users/roles/${roleId}`, { method: 'DELETE' });
-            toast('تم حذف الدور');
+            toast('�� ��� �����');
             await loadAll();
         } catch (err) {
-            toast(err.message || 'فشل في الحذف', 'error');
+            toast(err.message || '��� �� �����', 'error');
         }
     }
 
-    // ── Init ───────────────────────────────────────────────────────
+    // ?? Init ???????????????????????????????????????????????????????
     function _init() {
         el('btn-add-user')?.addEventListener('click', () => openUserModal());
         el('btn-add-role')?.addEventListener('click', () => openRoleModal());
@@ -419,7 +430,7 @@ const usersView = (() => {
         loadAll();
     }
 
-    // ── Public API ─────────────────────────────────────────────────
+    // ?? Public API ?????????????????????????????????????????????????
     return {
         _init,
         switchTab,
