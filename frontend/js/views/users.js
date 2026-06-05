@@ -8,6 +8,23 @@ const usersView = (() => {
     let _editingUserId  = null;
     let _editingRoleId  = null;
 
+    // ── Permission Modules (CRUD grid) ─────────────────────────────
+    const _PERMISSION_MODULES = [
+        { key: 'dashboard',   label: 'لوحة التحكم' },
+        { key: 'quotations',  label: 'عروض الأسعار' },
+        { key: 'orders',      label: 'الطلبات' },
+        { key: 'clients',     label: 'العملاء' },
+        { key: 'products',    label: 'المنتجات' },
+        { key: 'inventory',   label: 'المخزون' },
+        { key: 'warehouses',  label: 'المستودعات' },
+        { key: 'invoices',    label: 'الفواتير' },
+        { key: 'accounting',  label: 'المحاسبة' },
+        { key: 'reports',     label: 'التقارير' },
+        { key: 'tasks',       label: 'المهام' },
+        { key: 'users',       label: 'المستخدمين' },
+        { key: 'settings',    label: 'الإعدادات' },
+    ];
+
     // ── Helpers ────────────────────────────────────────────────────
     function el(id) { return document.getElementById(id); }
 
@@ -276,6 +293,54 @@ const usersView = (() => {
         }
     }
 
+    // ── Role Permissions Grid ─────────────────────────────────────
+    function _renderRolePermissions(existingPerms = {}) {
+        const tbody = el('rm-perms-tbody');
+        if (!tbody) return;
+        tbody.innerHTML = _PERMISSION_MODULES.map(m => {
+            const p = existingPerms[m.key] || {};
+            return `
+                <tr class="hover:bg-slate-50">
+                    <td class="py-2 px-3 text-slate-700 font-medium text-xs">${m.label}</td>
+                    <td class="py-2 px-2 text-center">
+                        <input type="checkbox" data-mod="${m.key}" data-action="view"
+                               ${p.view === true ? 'checked' : ''}
+                               class="rm-perm-cb w-4 h-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500 cursor-pointer">
+                    </td>
+                    <td class="py-2 px-2 text-center">
+                        <input type="checkbox" data-mod="${m.key}" data-action="create"
+                               ${p.create === true ? 'checked' : ''}
+                               class="rm-perm-cb w-4 h-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500 cursor-pointer">
+                    </td>
+                    <td class="py-2 px-2 text-center">
+                        <input type="checkbox" data-mod="${m.key}" data-action="edit"
+                               ${p.edit === true ? 'checked' : ''}
+                               class="rm-perm-cb w-4 h-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500 cursor-pointer">
+                    </td>
+                    <td class="py-2 px-2 text-center">
+                        <input type="checkbox" data-mod="${m.key}" data-action="delete"
+                               ${p.delete === true ? 'checked' : ''}
+                               class="rm-perm-cb w-4 h-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500 cursor-pointer">
+                    </td>
+                </tr>`;
+        }).join('');
+    }
+
+    function _collectRolePermissions() {
+        const perms = {};
+        document.querySelectorAll('.rm-perm-cb').forEach(cb => {
+            const mod = cb.getAttribute('data-mod');
+            const action = cb.getAttribute('data-action');
+            if (!perms[mod]) perms[mod] = {};
+            perms[mod][action] = cb.checked;
+        });
+        return perms;
+    }
+
+    function _toggleAllPermissions(checked) {
+        document.querySelectorAll('.rm-perm-cb').forEach(cb => { cb.checked = checked; });
+    }
+
     // ── Role Modal ─────────────────────────────────────────────────
     function openRoleModal(roleId = null) {
         _editingRoleId = roleId;
@@ -286,9 +351,11 @@ const usersView = (() => {
             if (!r) return;
             el('rm-name').value = r.role_name   || '';
             el('rm-desc').value = r.description || '';
+            _renderRolePermissions(r.permissions || {});
         } else {
             el('rm-name').value = '';
             el('rm-desc').value = '';
+            _renderRolePermissions({});
         }
         el('role-modal').classList.remove('hidden');
     }
@@ -301,6 +368,7 @@ const usersView = (() => {
     async function saveRole() {
         const name = el('rm-name').value.trim().toLowerCase().replace(/\s+/g, '_');
         const desc = el('rm-desc').value.trim();
+        const permissions = _collectRolePermissions();
 
         if (!name) { toast('اسم الدور مطلوب', 'error'); return; }
         if (!/^[a-z0-9_]+$/.test(name)) { toast('الاسم يجب أن يحتوي على حروف إنجليزية صغيرة وأرقام وشرطة سفلية فقط', 'error'); return; }
@@ -309,13 +377,13 @@ const usersView = (() => {
             if (_editingRoleId) {
                 await api(`/api/users/roles/${_editingRoleId}`, {
                     method: 'PUT',
-                    body: { role_name: name, description: desc }
+                    body: { role_name: name, description: desc, permissions }
                 });
                 toast('تم تحديث الدور');
             } else {
                 await api('/api/users/roles', {
                     method: 'POST',
-                    body: { role_name: name, description: desc, permissions: {} }
+                    body: { role_name: name, description: desc, permissions }
                 });
                 toast('تم إنشاء الدور');
             }
@@ -364,6 +432,7 @@ const usersView = (() => {
         closeRoleModal,
         saveRole,
         deleteRole,
+        _toggleAllPermissions,
     };
 })();
 
