@@ -550,10 +550,8 @@ const dashboardView = {
     // ─────────────────────────────────────────────────────────────────────────
     async _loadPendingPricing() {
         try {
-            // Only load for admin/manager/super_admin
-            const user = window.GpackUser;
-            const allowedRoles = ['admin', 'manager', 'super_admin'];
-            if (!user || !allowedRoles.includes(user.role)) {
+            // Only load for users with pricing (edit) permission on quotations
+            if (!window.hasPermission || !window.hasPermission('quotations', 'edit')) {
                 return;
             }
             const response = await apiFetch('/api/dashboard/pending-pricing');
