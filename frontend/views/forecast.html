@@ -1,0 +1,96 @@
+<!-- =============================================================================
+     G.PACK 2.0 - AI Demand Forecasting View
+     Predicts future demand using historical order data
+============================================================================= -->
+
+<div class="mb-6">
+    <h1 class="text-2xl font-extrabold text-slate-800">
+        <i class="fa-solid fa-brain text-purple-600 ml-2"></i>
+        توقع الطلب بالذكاء الاصطناعي
+    </h1>
+    <p class="text-slate-500 text-sm mt-1">يتنبأ تلقائياً بالكميات المطلوبة بناءً على تاريخ المبيعات</p>
+</div>
+
+<!-- Controls -->
+<div class="bg-white rounded-xl p-5 border border-slate-200 shadow-sm mb-6">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+        <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">العميل</label>
+            <select id="forecast-client" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+                <option value="">اختر عميل...</option>
+            </select>
+        </div>
+        <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">مدة التوقع (يوم)</label>
+            <select id="forecast-periods" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+                <option value="7">7 أيام</option>
+                <option value="14">14 يوم</option>
+                <option value="30" selected>30 يوم</option>
+                <option value="60">60 يوم</option>
+                <option value="90">90 يوم</option>
+            </select>
+        </div>
+        <div>
+            <button id="forecast-btn" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg px-4 py-2 text-sm transition-colors">
+                <i class="fa-solid fa-wand-magic-sparkles ml-1"></i>
+                شغل التوقع
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Status / Loading -->
+<div id="forecast-status" class="hidden mb-6 rounded-lg p-4 text-sm"></div>
+
+<!-- Results -->
+<div id="forecast-results" class="hidden">
+    <!-- Summary Cards -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+        <div class="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-xl p-5 border border-purple-100">
+            <p class="text-xs text-purple-700 font-medium">إجمالي التوقع</p>
+            <p class="text-2xl font-bold text-purple-900" id="forecast-total">0</p>
+            <p class="text-xs text-purple-600">كمية متوقعة</p>
+        </div>
+        <div class="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-xl p-5 border border-blue-100">
+            <p class="text-xs text-blue-700 font-medium">المتوسط اليومي</p>
+            <p class="text-2xl font-bold text-blue-900" id="forecast-avg">0</p>
+            <p class="text-xs text-blue-600">كمية / يوم</p>
+        </div>
+        <div class="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl p-5 border border-emerald-100">
+            <p class="text-xs text-emerald-700 font-medium">الطلبات السابقة</p>
+            <p class="text-2xl font-bold text-emerald-900" id="forecast-history">0</p>
+            <p class="text-xs text-emerald-600">طلب مسجل</p>
+        </div>
+    </div>
+
+    <!-- Chart -->
+    <div class="bg-white rounded-xl p-5 border border-slate-200 shadow-sm mb-6">
+        <h3 class="text-lg font-bold text-slate-800 mb-4">منحنى التوقع</h3>
+        <canvas id="forecast-chart" height="120"></canvas>
+    </div>
+
+    <!-- Table -->
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="px-5 py-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+            <h3 class="text-sm font-bold text-slate-700">تفاصيل التوقع اليومي</h3>
+            <button id="forecast-export" class="text-xs bg-white border border-slate-300 rounded-lg px-3 py-1 hover:bg-slate-50 transition-colors">
+                <i class="fa-solid fa-download ml-1"></i> تصدير CSV
+            </button>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-slate-50 text-slate-600 font-medium">
+                    <tr>
+                        <th class="px-4 py-3 text-right">التاريخ</th>
+                        <th class="px-4 py-3 text-right">الكمية المتوقعة</th>
+                        <th class="px-4 py-3 text-right">التراكمي</th>
+                        <th class="px-4 py-3 text-right">الحالة</th>
+                    </tr>
+                </thead>
+                <tbody id="forecast-table-body" class="divide-y divide-slate-100"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script src="/js/views/forecast.js"></script>

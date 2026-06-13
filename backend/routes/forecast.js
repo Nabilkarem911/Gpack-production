@@ -1,0 +1,93 @@
+'use strict';
+
+// =============================================================================
+// G.PACK 2.0 — AI Demand Forecasting Route
+// /api/forecast
+// =============================================================================
+
+const express = require('express');
+const router  = express.Router();
+const http    = require('http');
+
+const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://ai-service:8000';
+
+function aiRequest(path, method = 'GET', body = null) {
+    return new Promise((resolve, reject) => {
+        const url = new URL(path, AI_SERVICE_URL);
+        const options = {
+            hostname: url.hostname,
+            port: url.port,
+            path: url.pathname + url.search,
+            method: method,
+            headers: { 'Content-Type': 'application/json' },
+            timeout: 10000,
+        };
+
+        const req = http.request(options, (res) => {
+            let data = '';
+            res.on('data', (chunk) => { data += chunk; });
+            res.on('end', () => {
+                try {
+                    resolve(JSON.parse(data));
+                } catch {
+                    resolve(data);
+                }
+            });
+        });
+
+        req.on('error', (err) => reject(err));
+        req.on('timeout', () => { req.destroy(); reject(new Error('AI service timeout')); });
+
+        if (body) {
+            req.write(JSON.stringify(body));
+        }
+        req.end();
+    });
+}
+
+// =============================================================================
+// GET /api/forecast/health
+// Health check for AI service
+// =============================================================================
+router.get('/health', async (req, res) => {
+    try {
+        const data = await aiRequest('/health');
+        res.json({ ai_status: 'connected', data });
+    } catch (err) {
+        res.status(503).json({ error: 'خدمة الذكاء الاصطناعي غير متاحة', detail: err.message });
+    }
+});
+
+// =============================================================================
+// POST /api/forecast/client/:clientId
+// Forecast demand for a specific client
+// =============================================================================
+router.post('/client/:clientId', async (req, res) => {
+    const { clientId } = req.params;
+    const { periods = 30 } = req.body || {};
+
+    try {
+        const data = await aiRequest(`/forecast/client/${clientId}?periods=${periods}`, 'POST');
+        res.json(data);
+    } catch (err) {
+        res.status(500).json({ error: 'خطأ في التواصل مع خدمة التوقع', detail: err.message });
+    }
+});
+
+// =============================================================================
+// POST /api/forecast/variant/:variantId
+// Forecast demand for a specific product variant
+// =============================================================================
+router.post('/variant/:variantId', async (req, res) => {
+    const { variantId } = req.params;
+    const { periods = 30 } = req.body || {};
+
+    try {
+        const data = await aiRequest(`/forecast/variant/${variantId}?periods=${periods}`, 'POST');
+        res.json(data);
+    } catch (err) {
+        res.status(500).json({ error: 'خطأ في التواصل مع خدمة التوقع', detail: err.message });
+    }
+});
+
+module.exports = router;

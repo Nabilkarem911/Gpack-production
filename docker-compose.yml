@@ -73,5 +73,21 @@ services:
       - ./mcp-server:/app
       - /app/node_modules
 
+  ai-service:
+    build: ./ai-service
+    container_name: gpack_ai
+    restart: unless-stopped
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: gpack_db
+      DB_USER: gpack_user
+      DB_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "3004:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   postgres_data:

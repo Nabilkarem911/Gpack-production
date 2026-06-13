@@ -244,6 +244,7 @@ _mountRoute('/payment-vouchers',    authenticate, require('./routes/payment-vouc
 _mountRoute('/accounts',            authenticate, require('./routes/accounts'));
 _mountRoute('/journal-entries',     authenticate, require('./routes/journal-entries'));
 _mountRoute('/tasks',               authenticate, require('./routes/tasks'));
+_mountRoute('/forecast',            authenticate, require('./routes/forecast'));
 _mountRoute('/public',              publicLimiter, require('./routes/public-statement')); // No auth required
 _mountRoute('/public/invoice',      publicLimiter, require('./routes/public-invoice'));   // No auth required
 

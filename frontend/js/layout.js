@@ -39,6 +39,7 @@ var NAV_ITEMS = [ // var allows re-declaration if script loads more than once in
     { view: 'sales-invoice-detail', label: 'تفاصيل الفاتورة', icon: 'fa-file-invoice', permission: 'sales', hidden: true }, // ✅ sales-invoice-detail.html
     { view: 'quotations',       label: 'عروض الأسعار',     icon: 'fa-file-lines',    permission: null      }, // ✅ quotations.html
     { view: 'production_orders', label: 'أوامر التشغيل',    icon: 'fa-industry',      permission: null      }, // ✅ production_orders.html
+    { view: 'forecast',            label: 'توقع الطلب (AI)',  icon: 'fa-brain',         permission: null      }, // ✅ forecast.html
 
     // ─────────────────────────────────────────────────────────────────────────────
     // 3. المشتريات
