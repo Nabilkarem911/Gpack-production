@@ -8,21 +8,57 @@
 const dashboardView = {
     tasks: [],
     users: [],
-    
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Role Helpers
+    // ─────────────────────────────────────────────────────────────────────────
+    _getUserRole() {
+        const role = (window.GpackUser?.role || '').toLowerCase();
+        return {
+            role,
+            isAdmin: ['super_admin', 'admin', 'manager'].includes(role),
+            isSalesRep: role === 'sales_rep',
+            isWarehouse: role === 'warehouse'
+        };
+    },
+
     // ─────────────────────────────────────────────────────────────────────────
     // Initialize Dashboard
+    // Only loads widgets the user is authorized to see.
     // ─────────────────────────────────────────────────────────────────────────
     async _init() {
         console.log('[Dashboard] Initializing view...');
-        await Promise.all([
+        const { isAdmin, isSalesRep, isWarehouse } = this._getUserRole();
+
+        const loaders = [
             this._loadDashboardStats(),
-            this._loadTasks(),
-            this._loadAlerts(),
-            this._loadRecentOrders(),
-            this._loadActivities(),
-            this._loadChartData(),
-            this._loadPendingPricing()
-        ]);
+            this._loadTasks()
+        ];
+
+        // Alerts: warehouse + admin see stock alerts; sales_rep sees pending order alerts
+        if (isAdmin || isWarehouse || isSalesRep) {
+            loaders.push(this._loadAlerts());
+        }
+
+        // Recent Orders: admin, sales_rep (own), warehouse (production-ready)
+        if (isAdmin || isSalesRep || isWarehouse) {
+            loaders.push(this._loadRecentOrders());
+        }
+
+        // Activities: admin + warehouse see inventory transactions
+        if (isAdmin || isWarehouse) {
+            loaders.push(this._loadActivities());
+        }
+
+        // Chart Data: admin + sales_rep
+        if (isAdmin || isSalesRep) {
+            loaders.push(this._loadChartData());
+        }
+
+        // Pending Pricing: checked internally by permission helper
+        loaders.push(this._loadPendingPricing());
+
+        await Promise.all(loaders);
     },
 
     // ─────────────────────────────────────────────────────────────────────────

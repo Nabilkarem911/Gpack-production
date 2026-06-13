@@ -3,92 +3,114 @@
 const express = require('express');
 const db = require('../db');
 const { success, error } = require('../utils/response');
+const { authenticate } = require('../middleware/authMiddleware');
+const authorize = require('../middleware/authorize');
 
 const router = express.Router();
+
+// =============================================================================
+// Role Helpers
+// =============================================================================
+function _getRoleInfo(req) {
+    const userRole = req.user?.role?.toLowerCase() || '';
+    const userId   = req.user?.id;
+    const isAdmin  = ['super_admin', 'admin', 'manager'].includes(userRole);
+    const isSalesRep = userRole === 'sales_rep';
+    const isWarehouse = userRole === 'warehouse';
+    return { userRole, userId, isAdmin, isSalesRep, isWarehouse };
+}
 
 // =============================================================================
 // GET /api/dashboard/stats
 // Returns dashboard statistics including orders, sales, stock, and clients
 // =============================================================================
 
-router.get('/stats', async (req, res) => {
+router.get('/stats', authenticate, async (req, res) => {
     try {
-        // Get today's date and start of month
+        const { isAdmin, isSalesRep, isWarehouse, userId } = _getRoleInfo(req);
         const today = new Date();
         const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
         const startOfMonthStr = startOfMonth.toISOString().split('T')[0];
+
+        let ordersWhere = '';
+        let ordersParams = [startOfMonthStr];
+        let pendingOrdersWhere = '';
+        let quotationsWhere = '';
+
+        if (isSalesRep) {
+            ordersWhere = ' AND created_by = $2';
+            ordersParams.push(userId);
+            pendingOrdersWhere = ` AND created_by = '${userId}'`;
+            quotationsWhere = ` AND created_by = '${userId}'`;
+        }
 
         // 1. Total Orders This Month
         const ordersResult = await db.query(
             `SELECT COUNT(*) as total_orders,
                     COALESCE(SUM(grand_total), 0) as total_sales
              FROM orders
-             WHERE created_at >= $1 AND status != 'cancelled'`,
-            [startOfMonthStr]
+             WHERE created_at >= $1 AND status != 'cancelled'${ordersWhere}`,
+            ordersParams
         );
 
-        // 2. Active Clients Count
-        const clientsResult = await db.query(
-            `SELECT COUNT(*) as total_clients
-             FROM clients
-             WHERE status = 'active'`
-        );
+        // 2. Active Clients Count (visible to admin/manager; sales_rep sees their own)
+        let clientsQuery = `SELECT COUNT(*) as total_clients FROM clients WHERE status = 'active'`;
+        if (isSalesRep) {
+            clientsQuery += ` AND created_by = '${userId}'`;
+        }
+        const clientsResult = await db.query(clientsQuery);
 
         // 3. Pending Orders Count
         const pendingResult = await db.query(
             `SELECT COUNT(*) as pending_orders
              FROM orders
-             WHERE status IN ('quote', 'confirmed', 'processing')`
+             WHERE status IN ('quote', 'confirmed', 'processing')${pendingOrdersWhere}`
         );
 
-        // 4. Low Stock Items Count (items below min_stock_level)
-        const lowStockResult = await db.query(
-            `SELECT COUNT(*) as low_stock_count
+        // 4. Low Stock Items Count
+        let lowStockQuery = `SELECT COUNT(*) as low_stock_count
              FROM warehouse_stock ws
              JOIN product_variants pv ON ws.variant_id = pv.id
-             WHERE ws.quantity <= COALESCE(pv.min_stock_level, 10)`
-        );
+             WHERE ws.quantity <= COALESCE(pv.min_stock_level, 10)`;
+        if (isSalesRep) {
+            lowStockQuery = `SELECT 0 as low_stock_count`;
+        }
+        const lowStockResult = await db.query(lowStockQuery);
 
         // 5. Total Products Count
         const productsResult = await db.query(
-            `SELECT COUNT(*) as total_products
-             FROM products
-             WHERE status = 'active'`
+            `SELECT COUNT(*) as total_products FROM products WHERE status = 'active'`
         );
 
         // 6. Manufacturer Orders Status
-        const manufacturerOrdersResult = await db.query(
-            `SELECT 
+        let moQuery = `SELECT
                 COUNT(*) FILTER (WHERE status = 'pending') as pending_mo,
                 COUNT(*) FILTER (WHERE status = 'sent') as sent_mo,
                 COUNT(*) FILTER (WHERE status = 'received') as received_mo
              FROM manufacturer_orders
-             WHERE created_at >= $1`,
-            [startOfMonthStr]
-        );
+             WHERE created_at >= $1`;
+        if (isSalesRep || isWarehouse) {
+            moQuery = `SELECT 0 as pending_mo, 0 as sent_mo, 0 as received_mo`;
+        }
+        const manufacturerOrdersResult = await db.query(moQuery, isSalesRep || isWarehouse ? [] : [startOfMonthStr]);
 
-        // 7. Quotations Count (orders with status='quote')
+        // 7. Quotations Count
         const quotationsResult = await db.query(
-            `SELECT COUNT(*) as quotations_count
-             FROM orders
-             WHERE status = 'quote'`
+            `SELECT COUNT(*) as quotations_count FROM orders WHERE status = 'quote'${quotationsWhere}`
         );
 
-        // 8. Outstanding Receivables (unpaid invoices)
-        const receivablesResult = await db.query(
-            `SELECT COALESCE(SUM(grand_total), 0) as outstanding
-             FROM invoices
-             WHERE status IN ('sent', 'overdue')`
-        );
+        // 8. Outstanding Receivables (financial — hide from non-admin)
+        let receivablesQuery = `SELECT COALESCE(SUM(grand_total), 0) as outstanding FROM invoices WHERE status IN ('sent', 'overdue')`;
+        if (isSalesRep || isWarehouse) {
+            receivablesQuery = `SELECT 0 as outstanding`;
+        }
+        const receivablesResult = await db.query(receivablesQuery);
 
         const stats = {
-            // For dashboard.js frontend
             quotations_count: parseInt(quotationsResult.rows[0]?.quotations_count || 0),
             orders_count: parseInt(pendingResult.rows[0]?.pending_orders || 0),
-            total_revenue: parseFloat(ordersResult.rows[0]?.total_sales || 0),
-            outstanding_receivables: parseFloat(receivablesResult.rows[0]?.outstanding || 0),
-            
-            // Additional stats
+            total_revenue: isAdmin ? parseFloat(ordersResult.rows[0]?.total_sales || 0) : 0,
+            outstanding_receivables: isAdmin ? parseFloat(receivablesResult.rows[0]?.outstanding || 0) : 0,
             orders_this_month: parseInt(ordersResult.rows[0]?.total_orders || 0),
             sales_this_month: parseFloat(ordersResult.rows[0]?.total_sales || 0),
             active_clients: parseInt(clientsResult.rows[0]?.total_clients || 0),
@@ -114,94 +136,101 @@ router.get('/stats', async (req, res) => {
 // Returns critical alerts (low stock, pending orders, etc.)
 // =============================================================================
 
-router.get('/alerts', async (req, res) => {
+router.get('/alerts', authenticate, async (req, res) => {
     try {
+        const { isAdmin, isSalesRep, isWarehouse, userId } = _getRoleInfo(req);
         const alerts = [];
 
-        // 1. Low Stock Alerts
-        const lowStockResult = await db.query(
-            `SELECT 
-                ws.id as stock_id,
-                p.name as product_name,
-                pv.size_name as variant_size,
-                ws.quantity as current_qty,
-                COALESCE(pv.min_stock_level, 10) as min_level,
-                w.name as warehouse_name
-             FROM warehouse_stock ws
-             JOIN product_variants pv ON ws.variant_id = pv.id
-             JOIN products p ON pv.product_id = p.id
-             JOIN warehouses w ON ws.warehouse_id = w.id
-             WHERE ws.quantity <= COALESCE(pv.min_stock_level, 10)
-             AND ws.quantity > 0
-             ORDER BY ws.quantity ASC
-             LIMIT 10`
-        );
+        // Sales Rep: only their own pending orders
+        if (isSalesRep || isAdmin) {
+            const pendingOrdersResult = await db.query(
+                `SELECT
+                    o.id as order_id,
+                    o.order_number,
+                    c.name as client_name,
+                    o.grand_total,
+                    o.created_at,
+                    EXTRACT(DAY FROM NOW() - o.created_at) as days_pending
+                 FROM orders o
+                 JOIN clients c ON o.client_id = c.id
+                 WHERE o.status IN ('pending', 'confirmed')
+                 AND o.created_at < NOW() - INTERVAL '3 days'
+                 ${isSalesRep ? `AND o.created_by = '${userId}'` : ''}
+                 ORDER BY o.created_at ASC
+                 LIMIT 5`
+            );
 
-        lowStockResult.rows.forEach(row => {
-            alerts.push({
-                type: 'low_stock',
-                severity: row.current_qty < row.min_level * 0.5 ? 'critical' : 'warning',
-                title: `مخزون منخفض: ${row.product_name}`,
-                message: `الكمية: ${row.current_qty} (الحد الأدنى: ${row.min_level}) - ${row.warehouse_name}`,
-                stock_id: row.stock_id,
-                created_at: new Date().toISOString()
+            pendingOrdersResult.rows.forEach(row => {
+                alerts.push({
+                    type: 'pending_order',
+                    severity: row.days_pending > 7 ? 'critical' : 'warning',
+                    title: `طلب معلق: ${row.order_number}`,
+                    message: `العميل: ${row.client_name} - مُعلّق منذ ${Math.floor(row.days_pending)} يوم`,
+                    order_id: row.order_id,
+                    created_at: row.created_at
+                });
             });
-        });
+        }
 
-        // 2. Out of Stock Items (quantity = 0)
-        const outOfStockResult = await db.query(
-            `SELECT 
-                ws.id as stock_id,
-                p.name as product_name,
-                pv.size_name as variant_size,
-                w.name as warehouse_name
-             FROM warehouse_stock ws
-             JOIN product_variants pv ON ws.variant_id = pv.id
-             JOIN products p ON pv.product_id = p.id
-             JOIN warehouses w ON ws.warehouse_id = w.id
-             WHERE ws.quantity = 0
-             ORDER BY p.name
-             LIMIT 5`
-        );
+        // Warehouse / Admin: low stock + out of stock
+        if (isWarehouse || isAdmin) {
+            // 1. Low Stock Alerts
+            const lowStockResult = await db.query(
+                `SELECT
+                    ws.id as stock_id,
+                    p.name as product_name,
+                    pv.size_name as variant_size,
+                    ws.quantity as current_qty,
+                    COALESCE(pv.min_stock_level, 10) as min_level,
+                    w.name as warehouse_name
+                 FROM warehouse_stock ws
+                 JOIN product_variants pv ON ws.variant_id = pv.id
+                 JOIN products p ON pv.product_id = p.id
+                 JOIN warehouses w ON ws.warehouse_id = w.id
+                 WHERE ws.quantity <= COALESCE(pv.min_stock_level, 10)
+                 AND ws.quantity > 0
+                 ORDER BY ws.quantity ASC
+                 LIMIT 10`
+            );
 
-        outOfStockResult.rows.forEach(row => {
-            alerts.push({
-                type: 'out_of_stock',
-                severity: 'critical',
-                title: `نفاد المخزون: ${row.product_name}`,
-                message: `نفد المخزون - ${row.warehouse_name}`,
-                stock_id: row.stock_id,
-                created_at: new Date().toISOString()
+            lowStockResult.rows.forEach(row => {
+                alerts.push({
+                    type: 'low_stock',
+                    severity: row.current_qty < row.min_level * 0.5 ? 'critical' : 'warning',
+                    title: `مخزون منخفض: ${row.product_name}`,
+                    message: `الكمية: ${row.current_qty} (الحد الأدنى: ${row.min_level}) - ${row.warehouse_name}`,
+                    stock_id: row.stock_id,
+                    created_at: new Date().toISOString()
+                });
             });
-        });
 
-        // 3. Pending Orders for too long (> 3 days)
-        const pendingOrdersResult = await db.query(
-            `SELECT 
-                o.id as order_id,
-                o.order_number,
-                c.name as client_name,
-                o.grand_total,
-                o.created_at,
-                EXTRACT(DAY FROM NOW() - o.created_at) as days_pending
-             FROM orders o
-             JOIN clients c ON o.client_id = c.id
-             WHERE o.status IN ('pending', 'confirmed')
-             AND o.created_at < NOW() - INTERVAL '3 days'
-             ORDER BY o.created_at ASC
-             LIMIT 5`
-        );
+            // 2. Out of Stock Items
+            const outOfStockResult = await db.query(
+                `SELECT
+                    ws.id as stock_id,
+                    p.name as product_name,
+                    pv.size_name as variant_size,
+                    w.name as warehouse_name
+                 FROM warehouse_stock ws
+                 JOIN product_variants pv ON ws.variant_id = pv.id
+                 JOIN products p ON pv.product_id = p.id
+                 JOIN warehouses w ON ws.warehouse_id = w.id
+                 WHERE ws.quantity = 0
+                 ORDER BY p.name
+                 LIMIT 5`
+            );
 
-        pendingOrdersResult.rows.forEach(row => {
-            alerts.push({
-                type: 'pending_order',
-                severity: row.days_pending > 7 ? 'critical' : 'warning',
-                title: `طلب معلق: ${row.order_number}`,
-                message: `العميل: ${row.client_name} - مُعلّق منذ ${Math.floor(row.days_pending)} يوم`,
-                order_id: row.order_id,
-                created_at: row.created_at
+            outOfStockResult.rows.forEach(row => {
+                alerts.push({
+                    type: 'out_of_stock',
+                    severity: 'critical',
+                    title: `نفاد المخزون: ${row.product_name}`,
+                    message: `نفد المخزون - ${row.warehouse_name}`,
+                    stock_id: row.stock_id,
+                    created_at: new Date().toISOString()
+                });
             });
-        });
+        }
 
         // Sort by severity (critical first)
         alerts.sort((a, b) => {
@@ -221,12 +250,24 @@ router.get('/alerts', async (req, res) => {
 // Returns recent orders with client info
 // =============================================================================
 
-router.get('/recent-orders', async (req, res) => {
+router.get('/recent-orders', authenticate, async (req, res) => {
     try {
+        const { isAdmin, isSalesRep, isWarehouse, userId } = _getRoleInfo(req);
         const { limit = 10 } = req.query;
 
+        let whereClause = '';
+        let params = [limit];
+
+        if (isSalesRep) {
+            whereClause = `WHERE o.created_by = $2`;
+            params = [limit, userId];
+        } else if (isWarehouse) {
+            // Warehouse sees production-ready orders
+            whereClause = `WHERE o.status IN ('production', 'processing', 'ready')`;
+        }
+
         const result = await db.query(
-            `SELECT 
+            `SELECT
                 o.id,
                 o.order_number,
                 c.name as client_name,
@@ -237,10 +278,11 @@ router.get('/recent-orders', async (req, res) => {
              FROM orders o
              JOIN clients c ON o.client_id = c.id
              LEFT JOIN order_items oi ON o.id = oi.order_id
+             ${whereClause}
              GROUP BY o.id, o.order_number, c.name, o.status, o.grand_total, o.created_at
              ORDER BY o.created_at DESC
              LIMIT $1`,
-            [limit]
+            params
         );
 
         const orders = result.rows.map(row => ({
@@ -266,19 +308,35 @@ router.get('/recent-orders', async (req, res) => {
 // Returns data for charts (monthly sales, etc.)
 // =============================================================================
 
-router.get('/chart-data', async (req, res) => {
+router.get('/chart-data', authenticate, async (req, res) => {
     try {
+        const { isAdmin, isSalesRep, userId } = _getRoleInfo(req);
+
+        // Financial charts — admin/manager only
+        if (!isAdmin && !isSalesRep) {
+            return success(res, { monthly_sales: [], sales_by_status: [], top_products: [] });
+        }
+
+        let whereFilter = '';
+        const params = [];
+        if (isSalesRep) {
+            whereFilter = `AND created_by = $1`;
+            params.push(userId);
+        }
+
         // Monthly sales for last 6 months
         const monthlySalesResult = await db.query(
-            `SELECT 
+            `SELECT
                 DATE_TRUNC('month', created_at) as month,
                 COUNT(*) as orders_count,
                 COALESCE(SUM(grand_total), 0) as total_sales
              FROM orders
              WHERE status != 'cancelled'
              AND created_at >= NOW() - INTERVAL '6 months'
+             ${whereFilter}
              GROUP BY DATE_TRUNC('month', created_at)
-             ORDER BY month ASC`
+             ORDER BY month ASC`,
+            params
         );
 
         const monthlySales = monthlySalesResult.rows.map(row => ({
@@ -289,12 +347,14 @@ router.get('/chart-data', async (req, res) => {
 
         // Sales by status
         const statusResult = await db.query(
-            `SELECT 
+            `SELECT
                 status,
                 COUNT(*) as count
              FROM orders
              WHERE created_at >= NOW() - INTERVAL '30 days'
-             GROUP BY status`
+             ${whereFilter}
+             GROUP BY status`,
+            params
         );
 
         const salesByStatus = statusResult.rows.map(row => ({
@@ -303,8 +363,7 @@ router.get('/chart-data', async (req, res) => {
         }));
 
         // Top selling products
-        const topProductsResult = await db.query(
-            `SELECT 
+        let topProductsQuery = `SELECT
                 p.name as product_name,
                 SUM(oi.quantity) as total_quantity,
                 SUM(oi.quantity * oi.unit_price) as total_revenue
@@ -314,10 +373,12 @@ router.get('/chart-data', async (req, res) => {
              JOIN orders o ON oi.order_id = o.id
              WHERE o.status != 'cancelled'
              AND o.created_at >= NOW() - INTERVAL '30 days'
+             ${isSalesRep ? `AND o.created_by = '${userId}'` : ''}
              GROUP BY p.name
              ORDER BY total_quantity DESC
-             LIMIT 5`
-        );
+             LIMIT 5`;
+
+        const topProductsResult = await db.query(topProductsQuery);
 
         const topProducts = topProductsResult.rows.map(row => ({
             product_name: row.product_name,
@@ -341,41 +402,49 @@ router.get('/chart-data', async (req, res) => {
 // Returns recent system activities
 // =============================================================================
 
-router.get('/activities', async (req, res) => {
+router.get('/activities', authenticate, async (req, res) => {
     try {
+        const { isAdmin, isSalesRep, isWarehouse, userId } = _getRoleInfo(req);
         const { limit = 10 } = req.query;
 
-        // Recent inventory transactions
-        const transactionsResult = await db.query(
-            `SELECT 
-                it.id,
-                it.transaction_type,
-                it.quantity,
-                it.created_at,
-                p.name as product_name,
-                pv.size_name as variant_size,
-                w.name as warehouse_name,
-                u.name as created_by_name
-             FROM inventory_transactions it
-             JOIN product_variants pv ON it.variant_id = pv.id
-             JOIN products p ON pv.product_id = p.id
-             JOIN warehouses w ON it.warehouse_from = w.id OR it.warehouse_to = w.id
-             LEFT JOIN users u ON it.created_by = u.id
-             ORDER BY it.created_at DESC
-             LIMIT $1`,
-            [limit]
-        );
+        let activities = [];
 
-        const activities = transactionsResult.rows.map(row => ({
-            id: row.id,
-            type: 'inventory',
-            action: row.transaction_type,
-            description: `${row.product_name} ${row.variant_size ? '- ' + row.variant_size : ''}`,
-            warehouse: row.warehouse_name,
-            quantity: row.quantity,
-            created_by: row.created_by_name,
-            created_at: row.created_at
-        }));
+        if (isWarehouse || isAdmin) {
+            // Inventory transactions
+            const transactionsResult = await db.query(
+                `SELECT
+                    it.id,
+                    it.transaction_type,
+                    it.quantity,
+                    it.created_at,
+                    p.name as product_name,
+                    pv.size_name as variant_size,
+                    w.name as warehouse_name,
+                    u.name as created_by_name
+                 FROM inventory_transactions it
+                 JOIN product_variants pv ON it.variant_id = pv.id
+                 JOIN products p ON pv.product_id = p.id
+                 JOIN warehouses w ON it.warehouse_from = w.id OR it.warehouse_to = w.id
+                 LEFT JOIN users u ON it.created_by = u.id
+                 ORDER BY it.created_at DESC
+                 LIMIT $1`,
+                [limit]
+            );
+
+            activities = transactionsResult.rows.map(row => ({
+                id: row.id,
+                type: 'inventory',
+                action: row.transaction_type,
+                description: `${row.product_name} ${row.variant_size ? '- ' + row.variant_size : ''}`,
+                warehouse: row.warehouse_name,
+                quantity: row.quantity,
+                created_by: row.created_by_name,
+                created_at: row.created_at
+            }));
+        } else if (isSalesRep) {
+            // Sales rep sees their own order-related activities (mock via audit_logs if available)
+            activities = [];
+        }
 
         return success(res, activities);
     } catch (err) {
@@ -390,7 +459,7 @@ router.get('/activities', async (req, res) => {
 // and pricing_status = 'pending'. Visible to admin/manager only.
 // =============================================================================
 
-router.get('/pending-pricing', async (req, res) => {
+router.get('/pending-pricing', authenticate, authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
     try {
         // Find quote orders with at least one item having unit_price = 0 or NULL
         const result = await db.query(
@@ -454,7 +523,7 @@ router.get('/pending-pricing', async (req, res) => {
 // Body: { items: [{id, unit_price}], pricing_notes }
 // =============================================================================
 
-router.put('/pending-pricing/:id', async (req, res) => {
+router.put('/pending-pricing/:id', authenticate, authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
     const { id } = req.params;
     const { items, pricing_notes } = req.body;
 
@@ -504,7 +573,7 @@ router.put('/pending-pricing/:id', async (req, res) => {
 // Get full quotation details with items for pricing modal
 // =============================================================================
 
-router.get('/pending-pricing/:id', async (req, res) => {
+router.get('/pending-pricing/:id', authenticate, authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
     const { id } = req.params;
     try {
         const orderResult = await db.query(
