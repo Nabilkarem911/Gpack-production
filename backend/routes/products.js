@@ -53,10 +53,13 @@ router.get('/', async (req, res) => {
                 p.sku,
                 p.barcode,
                 p.status,
+                p.created_by,
+                u.name   AS created_by_name,
                 p.created_at,
                 p.updated_at
              FROM products p
              LEFT JOIN categories c ON c.id = p.category_id
+             LEFT JOIN users u ON u.id = p.created_by
              ${whereClause}
              ORDER BY p.created_at DESC`,
             params
@@ -280,10 +283,13 @@ router.get('/:id', async (req, res) => {
                 p.sku,
                 p.barcode,
                 p.status,
+                p.created_by,
+                u.name   AS created_by_name,
                 p.created_at,
                 p.updated_at
              FROM products p
              LEFT JOIN categories c ON c.id = p.category_id
+             LEFT JOIN users u ON u.id = p.created_by
              WHERE p.id = $1
              LIMIT 1`,
             [req.params.id]
@@ -351,8 +357,8 @@ router.post('/', async (req, res) => {
         const result = await db.withTransaction(async (client) => {
             // Insert the parent product
             const productInsert = await client.query(
-                `INSERT INTO products (name, description, category_id, sku, barcode, status)
-                 VALUES ($1, $2, $3, $4, $5, $6)
+                `INSERT INTO products (name, description, category_id, sku, barcode, status, created_by)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7)
                  RETURNING *`,
                 [
                     name.trim(),
@@ -361,6 +367,7 @@ router.post('/', async (req, res) => {
                     sku || null,
                     barcode || null,
                     status || 'active',
+                    req.user?.id || null,
                 ]
             );
 

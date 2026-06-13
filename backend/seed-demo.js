@@ -41,13 +41,17 @@ const db = require('./db');
             { name: 'علب طعام', sku: 'FBX-001', variants: [{ s: '500 مل', p: 70 }, { s: '750 مل', p: 95 }, { s: '1000 مل', p: 125 }] },
         ];
 
+        // Get admin user ID for created_by
+        const adminRes = await db.query(`SELECT id FROM users WHERE email = 'admin@gpack.com' LIMIT 1`);
+        const adminId = adminRes.rows[0]?.id || null;
+
         for (const prod of products) {
             const pRes = await db.query(
-                `INSERT INTO products (name, sku, status)
-                 VALUES ($1, $2, 'active')
+                `INSERT INTO products (name, sku, status, created_by)
+                 VALUES ($1, $2, 'active', $3)
                  ON CONFLICT (sku) DO UPDATE SET name = EXCLUDED.name
                  RETURNING id`,
-                [prod.name, prod.sku]
+                [prod.name, prod.sku, adminId]
             );
             const pid = pRes.rows[0].id;
 

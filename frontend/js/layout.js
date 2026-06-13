@@ -37,7 +37,6 @@ var NAV_ITEMS = [ // var allows re-declaration if script loads more than once in
     { view: 'client-profile',   label: 'ملف العميل',       icon: 'fa-id-card',       permission: 'clients', hidden: true }, // ✅ client-profile.html
     { view: 'sales-invoices',   label: 'فواتير المبيعات',  icon: 'fa-file-invoice-dollar', permission: 'sales'   }, // ✅ sales-invoices.html
     { view: 'sales-invoice-detail', label: 'تفاصيل الفاتورة', icon: 'fa-file-invoice', permission: 'sales', hidden: true }, // ✅ sales-invoice-detail.html
-    // { view: 'sales-returns',    label: 'مرتجع المبيعات',   icon: 'fa-rotate-left',   permission: 'sales'   }, // ⏳ Phase 2
     { view: 'quotations',       label: 'عروض الأسعار',     icon: 'fa-file-lines',    permission: null      }, // ✅ quotations.html
     { view: 'production_orders', label: 'أوامر التشغيل',    icon: 'fa-industry',      permission: null      }, // ✅ production_orders.html
 
@@ -70,8 +69,6 @@ var NAV_ITEMS = [ // var allows re-declaration if script loads more than once in
     { view: 'product-movements',   label: 'حركات الأصناف',    icon: 'fa-arrow-right-arrow-left', permission: 'products', hidden: true }, // ✅ product-movements.html
     { view: 'vmi-dispatch',       label: 'سندات التسليم',     icon: 'fa-truck-fast',             permission: 'inventory' }, // ✅ vmi-dispatch.html
     { view: 'receiving-vouchers', label: 'سندات الاستلام',     icon: 'fa-clipboard-check', permission: 'inventory' }, // ✅ receiving-vouchers.html
-    // { view: 'receipt-vouchers',  label: 'سندات الاستلام',    icon: 'fa-boxes-packing',          permission: 'inventory' }, // ⏳ Phase 5
-    // { view: 'delivery-vouchers', label: 'سندات التسليم',    icon: 'fa-truck-fast',             permission: 'inventory' }, // ⏳ Phase 5
 
     // ─────────────────────────────────────────────────────────────────────────────
     // 6. الإدارة

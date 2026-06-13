@@ -125,6 +125,8 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
+// NOTE: In production, ALWAYS set CORS_ORIGIN in .env to your domain.
+// Default 'http://localhost' is safe for development only.
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -189,41 +191,47 @@ app.get('/api/migrate-tax-rate', async (req, res) => {
 // API Routes
 // =============================================================================
 
-// Apply rate limiters
-app.use('/api/auth', loginLimiter);  // Strict limit for auth endpoints
-app.use('/api/', apiLimiter);        // General limit for all API endpoints
+// Helper: mount routes under both /api/ and /api/v1/ for backward compatibility
+function _mountRoute(basePath, ...handlers) {
+  app.use(`/api${basePath}`, ...handlers);
+  app.use(`/api/v1${basePath}`, ...handlers);
+}
 
-app.use('/api/auth',                require('./routes/auth'));
-app.use('/api/public',              publicLimiter, require('./routes/public_quotation'));
-app.use('/api/users',               authenticate, require('./routes/users'));
-app.use('/api/clients',             authenticate, require('./routes/clients'));
-app.use('/api/products',            authenticate, require('./routes/products'));
-app.use('/api/inventory',           authenticate, require('./routes/inventory'));
-app.use('/api/categories',          authenticate, require('./routes/categories'));
-app.use('/api/units',               authenticate, require('./routes/units'));
-app.use('/api/orders',              authenticate, require('./routes/orders'));
-app.use('/api/manufacturer-orders', authenticate, require('./routes/manufacturer_orders'));
-app.use('/api/manufacturer-orders',       authenticate, require('./routes/manufacturer_print'));
-app.use('/api/suppliers',           authenticate, require('./routes/suppliers'));
-app.use('/api/terms',               authenticate, require('./routes/terms'));
-app.use('/api/delivery-notes',      authenticate, require('./routes/delivery-notes'));
-app.use('/api/dashboard',           authenticate, require('./routes/dashboard'));
-app.use('/api/client-designs',        authenticate, require('./routes/client_designs'));
-app.use('/api/client-pantone-colors', authenticate, require('./routes/client_pantone_colors'));
-app.use('/api/client-items',          authenticate, require('./routes/client_items'));
-app.use('/api/vmi',                 authenticate, require('./routes/vmi'));
-app.use('/api/invoices',            authenticate, require('./routes/invoices'));
-app.use('/api/purchase-invoices',   authenticate, require('./routes/purchase-invoices'));
-app.use('/api/purchase-returns',    authenticate, require('./routes/purchase-returns'));
-app.use('/api/receiving-vouchers', authenticate, require('./routes/receiving-vouchers'));
-app.use('/api/account-statement',   authenticate, require('./routes/account-statement'));
-app.use('/api/receipt-vouchers',    authenticate, require('./routes/receipt-vouchers'));
-app.use('/api/payment-vouchers',    authenticate, require('./routes/payment-vouchers'));
-app.use('/api/accounts',            authenticate, require('./routes/accounts'));
-app.use('/api/journal-entries',     authenticate, require('./routes/journal-entries'));
-app.use('/api/tasks',               authenticate, require('./routes/tasks'));
-app.use('/api/public',              publicLimiter, require('./routes/public-statement')); // No auth required
-app.use('/api/public/invoice',      publicLimiter, require('./routes/public-invoice'));   // No auth required
+// Apply rate limiters
+_mountRoute('/auth', loginLimiter);  // Strict limit for auth endpoints
+_mountRoute('/', apiLimiter);        // General limit for all API endpoints
+
+_mountRoute('/auth',                require('./routes/auth'));
+_mountRoute('/public',              publicLimiter, require('./routes/public_quotation'));
+_mountRoute('/users',               authenticate, require('./routes/users'));
+_mountRoute('/clients',             authenticate, require('./routes/clients'));
+_mountRoute('/products',            authenticate, require('./routes/products'));
+_mountRoute('/inventory',           authenticate, require('./routes/inventory'));
+_mountRoute('/categories',          authenticate, require('./routes/categories'));
+_mountRoute('/units',               authenticate, require('./routes/units'));
+_mountRoute('/orders',              authenticate, require('./routes/orders'));
+_mountRoute('/manufacturer-orders', authenticate, require('./routes/manufacturer_orders'));
+_mountRoute('/manufacturer-orders',       authenticate, require('./routes/manufacturer_print'));
+_mountRoute('/suppliers',           authenticate, require('./routes/suppliers'));
+_mountRoute('/terms',               authenticate, require('./routes/terms'));
+_mountRoute('/delivery-notes',      authenticate, require('./routes/delivery-notes'));
+_mountRoute('/dashboard',           authenticate, require('./routes/dashboard'));
+_mountRoute('/client-designs',        authenticate, require('./routes/client_designs'));
+_mountRoute('/client-pantone-colors', authenticate, require('./routes/client_pantone_colors'));
+_mountRoute('/client-items',          authenticate, require('./routes/client_items'));
+_mountRoute('/vmi',                 authenticate, require('./routes/vmi'));
+_mountRoute('/invoices',            authenticate, require('./routes/invoices'));
+_mountRoute('/purchase-invoices',   authenticate, require('./routes/purchase-invoices'));
+_mountRoute('/purchase-returns',    authenticate, require('./routes/purchase-returns'));
+_mountRoute('/receiving-vouchers', authenticate, require('./routes/receiving-vouchers'));
+_mountRoute('/account-statement',   authenticate, require('./routes/account-statement'));
+_mountRoute('/receipt-vouchers',    authenticate, require('./routes/receipt-vouchers'));
+_mountRoute('/payment-vouchers',    authenticate, require('./routes/payment-vouchers'));
+_mountRoute('/accounts',            authenticate, require('./routes/accounts'));
+_mountRoute('/journal-entries',     authenticate, require('./routes/journal-entries'));
+_mountRoute('/tasks',               authenticate, require('./routes/tasks'));
+_mountRoute('/public',              publicLimiter, require('./routes/public-statement')); // No auth required
+_mountRoute('/public/invoice',      publicLimiter, require('./routes/public-invoice'));   // No auth required
 
 // Static files for uploads
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));

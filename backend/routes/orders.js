@@ -615,19 +615,37 @@ router.post('/', async (req, res) => {
                 throw new Error('العميل المحدد غير موجود.');
             }
 
-            // ── Calculate totals server-side ──────────────────────────────────
-            let subtotal = 0;
-            const processedItems = items.map(item => {
-                const qty      = parseFloat(item.quantity);
-                const price    = parseFloat(item.unit_price) || 0;
-                const lineTotal = Math.round(qty * price * 100) / 100;
-                subtotal += lineTotal;
-                return { ...item, qty, price, lineTotal };
-            });
+            // ── Determine order type: VMI (production) vs Commercial ──────────
+            // VMI orders (status = 'production') MUST NOT have financial fields.
+            // VMI rule: only insert client_id, status, order_number, internal_notes.
+            const isVmiOrder = (status === 'production');
 
-            subtotal            = Math.round(subtotal * 100) / 100;
-            const tax_amount    = Math.round(subtotal * VAT_RATE * 100) / 100;
-            const grand_total   = Math.round((subtotal + tax_amount) * 100) / 100;
+            // ── Calculate totals server-side (Commercial only) ────────────────
+            let subtotal    = null;
+            let tax_amount  = null;
+            let grand_total = null;
+            let processedItems;
+
+            if (isVmiOrder) {
+                // VMI: Store items without prices (financial fields stay NULL)
+                processedItems = items.map(item => {
+                    const qty = parseFloat(item.quantity);
+                    return { ...item, qty, price: 0, lineTotal: 0 };
+                });
+            } else {
+                // Commercial: Calculate financial totals
+                subtotal = 0;
+                processedItems = items.map(item => {
+                    const qty      = parseFloat(item.quantity);
+                    const price    = parseFloat(item.unit_price) || 0;
+                    const lineTotal = Math.round(qty * price * 100) / 100;
+                    subtotal += lineTotal;
+                    return { ...item, qty, price, lineTotal };
+                });
+                subtotal            = Math.round(subtotal * 100) / 100;
+                tax_amount          = Math.round(subtotal * VAT_RATE * 100) / 100;
+                grand_total         = Math.round((subtotal + tax_amount) * 100) / 100;
+            }
 
             // ── Insert order ──────────────────────────────────────────────────
             const termsJson = Array.isArray(terms_conditions) ? JSON.stringify(terms_conditions) : '[]';
@@ -646,17 +664,17 @@ router.post('/', async (req, res) => {
                 [
                     client_id,
                     status || 'quote',
-                    req.body.pricing_status || 'priced',
+                    req.body.pricing_status || (isVmiOrder ? null : 'priced'),
                     order_date || new Date().toISOString().split('T')[0],
                     valid_until || null,
-                    subtotal,
-                    tax_amount,
-                    grand_total,
+                    subtotal,    // NULL for VMI
+                    tax_amount,  // NULL for VMI
+                    grand_total, // NULL for VMI
                     client_notes   || null,
                     internal_notes || null,
                     termsJson,
                     customTermsJson,
-                    downPaymentAmount,
+                    isVmiOrder ? null : downPaymentAmount,
                     req.user.id,
                 ]
             );
@@ -750,21 +768,39 @@ router.put('/:id', async (req, res) => {
 
         const result = await db.withTransaction(async (client) => {
 
-            // Recalculate totals
-            let subtotal = 0;
-            const processedItems = items.map(item => {
-                const qty       = parseFloat(item.quantity);
-                const price     = parseFloat(item.unit_price) || 0;
-                const lineTotal = Math.round(qty * price * 100) / 100;
-                subtotal += lineTotal;
-                return { ...item, qty, price, lineTotal };
-            });
+            // ── Determine if this is a VMI order (existing order is 'production') ──
+            // If the order is already in production status, it's a VMI order
+            // and financial fields (subtotal, tax_amount, grand_total) must remain NULL.
+            const isVmiOrder = (order.status === 'production' || status === 'production');
 
-            subtotal          = Math.round(subtotal * 100) / 100;
-            const tax_amount  = Math.round(subtotal * VAT_RATE * 100) / 100;
-            const grand_total = Math.round((subtotal + tax_amount) * 100) / 100;
+            // ── Recalculate totals (Commercial only) ─────────────────────────
+            let subtotal    = null;
+            let tax_amount  = null;
+            let grand_total = null;
+            let processedItems;
 
-            // Update order header
+            if (isVmiOrder) {
+                // VMI: Store items without prices (financial fields stay NULL)
+                processedItems = items.map(item => {
+                    const qty = parseFloat(item.quantity);
+                    return { ...item, qty, price: 0, lineTotal: 0 };
+                });
+            } else {
+                // Commercial: Calculate financial totals
+                subtotal = 0;
+                processedItems = items.map(item => {
+                    const qty       = parseFloat(item.quantity);
+                    const price     = parseFloat(item.unit_price) || 0;
+                    const lineTotal = Math.round(qty * price * 100) / 100;
+                    subtotal += lineTotal;
+                    return { ...item, qty, price, lineTotal };
+                });
+                subtotal          = Math.round(subtotal * 100) / 100;
+                tax_amount        = Math.round(subtotal * VAT_RATE * 100) / 100;
+                grand_total       = Math.round((subtotal + tax_amount) * 100) / 100;
+            }
+
+            // ── Update order header ──────────────────────────────────────────
             const termsJson = Array.isArray(terms_conditions) ? JSON.stringify(terms_conditions) : '[]';
             const customTermsJson = custom_terms ? JSON.stringify(custom_terms) : null;
 
@@ -796,14 +832,14 @@ router.put('/:id', async (req, res) => {
                     status || 'quote',
                     order_date || new Date().toISOString().split('T')[0],
                     valid_until || null,
-                    subtotal,
-                    tax_amount,
-                    grand_total,
+                    subtotal,     // NULL for VMI
+                    tax_amount,   // NULL for VMI
+                    grand_total,  // NULL for VMI
                     client_notes   || null,
                     internal_notes || null,
                     termsJson,
                     customTermsJson,
-                    downPaymentAmount,
+                    isVmiOrder ? null : downPaymentAmount,
                     id,
                     req.body.pricing_status || null,
                 ]

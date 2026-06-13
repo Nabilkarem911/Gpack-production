@@ -232,4 +232,81 @@ router.post('/', async (req, res) => {
     }
 });
 
+// ── PATCH /api/invoices/:id/status ────────────────────────────────────────────
+// Update invoice status (paid, overdue, cancelled, archived).
+// When status = 'paid', automatically creates a client_transaction receipt record.
+// طلبات التعديل على حالة الفاتورة
+router.patch('/:id/status', async (req, res) => {
+    const client = await db.pool.connect();
+    try {
+        const { id } = req.params;
+        const { status } = req.body;
+
+        if (!status) {
+            return res.status(400).json({ error: 'Status is required' });
+        }
+
+        const validStatuses = ['issued', 'paid', 'overdue', 'cancelled', 'archived'];
+        if (!validStatuses.includes(status)) {
+            return res.status(400).json({
+                error: `Invalid status. Must be one of: ${validStatuses.join(', ')}`,
+            });
+        }
+
+        // Check invoice exists
+        const invRes = await client.query(`
+            SELECT id, invoice_number, grand_total, status, client_id
+            FROM invoices WHERE id = $1
+        `, [id]);
+
+        if (!invRes.rows.length) {
+            return res.status(404).json({ error: 'Invoice not found' });
+        }
+
+        const invoice = invRes.rows[0];
+
+        if (invoice.status === status) {
+            return res.status(400).json({ error: `Invoice is already ${status}` });
+        }
+
+        await client.query('BEGIN');
+
+        // Update status
+        await client.query(`
+            UPDATE invoices SET status = $1, updated_at = NOW()
+            WHERE id = $2
+        `, [status, id]);
+
+        // If marking as paid, create receipt transaction if not already paid
+        if (status === 'paid' && invoice.status !== 'paid') {
+            await client.query(`
+                INSERT INTO client_transactions (client_id, invoice_id, type, amount, description, created_at)
+                VALUES ($1, $2, 'receipt', $3, $4, NOW())
+            `, [
+                invoice.client_id, id, invoice.grand_total,
+                `دفعة فاتورة رقم ${invoice.invoice_number}`,
+            ]);
+        }
+
+        // If cancelling, add note to description
+        if (status === 'cancelled') {
+            console.log(`[Invoices] Invoice #${invoice.invoice_number} (ID: ${id}) cancelled by user ${req.user?.id || 'unknown'}`);
+        }
+
+        await client.query('COMMIT');
+
+        res.json({
+            data: { id: parseInt(id), status },
+            message: `تم تحديث حالة الفاتورة إلى ${status === 'paid' ? 'مدفوعة' : status === 'overdue' ? 'متأخرة' : status === 'cancelled' ? 'ملغية' : status === 'archived' ? 'مؤرشفة' : status}`,
+        });
+
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('[Invoices] PATCH /:id/status error:', err.message);
+        res.status(500).json({ error: err.message });
+    } finally {
+        client.release();
+    }
+});
+
 module.exports = router;

@@ -237,7 +237,7 @@ router.get('/stock', async (req, res) => {
                 cat.name                    AS category_name,
                 ws.quantity                 AS qty_on_hand,
                 ws.reserved_qty,
-                ws.quantity                 AS available_qty,
+                (ws.quantity - ws.reserved_qty) AS available_qty,
                 ws.last_updated             AS stock_updated_at
              FROM warehouse_stock ws
              INNER JOIN product_variants pv ON pv.id = ws.variant_id
@@ -360,10 +360,12 @@ router.post('/stock/adjust', async (req, res) => {
                 }
                 
                 // Create inventory transaction record
+                // For decrease adjustments, record as 'dispense' with positive quantity
+                const transactionType = (adjustment_type === 'decrease') ? 'dispense' : 'receipt';
                 await db.query(
                     `INSERT INTO inventory_transactions (stock_id, transaction_type, quantity, notes, created_by, created_at)
-                     VALUES ($1, 'receipt', $2, $3, $4, NOW())`,
-                    [stockId, quantity, reason || 'تسوية يدوية', req.user?.id]
+                     VALUES ($1, $2, $3, $4, $5, NOW())`,
+                    [stockId, transactionType, quantity, reason || 'تسوية يدوية', req.user?.id]
                 );
                 
                 results.push({ stock_id: stockId, quantity });
