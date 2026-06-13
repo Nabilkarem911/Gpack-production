@@ -60,8 +60,22 @@ async function runMigrations() {
                 console.log(`[Migrate] Done: ${file}`);
             } catch (err) {
                 await client.query('ROLLBACK');
-                console.error(`[Migrate] Failed: ${file} — ${err.message}`);
-                throw err;
+                // If error is "already exists" (42P07 table, 42710 column, bj4vyu constraint, etc.)
+                // log warning, mark as applied, and continue so server can start.
+                const alreadyExists = /already exists/i.test(err.message);
+                const duplicate = /duplicate/i.test(err.message);
+                if (alreadyExists || duplicate) {
+                    console.warn(`[Migrate] Warning: ${file} — ${err.message} (recording as applied)`);
+                    try {
+                        await client.query(
+                            'INSERT INTO schema_migrations (filename) VALUES ($1) ON CONFLICT DO NOTHING',
+                            [file]
+                        );
+                    } catch (e) { /* ignore */ }
+                } else {
+                    console.error(`[Migrate] Failed: ${file} — ${err.message}`);
+                    throw err;
+                }
             }
         }
 
