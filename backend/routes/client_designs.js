@@ -78,6 +78,18 @@ router.get('/', authenticate, async (req, res) => {
         if (!client_id) {
             return error(res, 'client_id is required', 400);
         }
+
+        // Ownership check for sales_rep
+        const isSalesRep = req.user.role === 'sales_rep';
+        if (isSalesRep) {
+            const clientCheck = await db.query(
+                'SELECT created_by FROM clients WHERE id = $1 LIMIT 1',
+                [client_id]
+            );
+            if (!clientCheck.rows.length || clientCheck.rows[0].created_by !== req.user.id) {
+                return error(res, 'غير مصرح لك بعرض تصاميم هذا العميل.', 403);
+            }
+        }
         
         let query = `
             SELECT 
@@ -132,6 +144,18 @@ router.get('/', authenticate, async (req, res) => {
 router.get('/:client_id/:variant_id', authenticate, async (req, res) => {
     try {
         const { client_id, variant_id } = req.params;
+
+        // Ownership check for sales_rep
+        const isSalesRep = req.user.role === 'sales_rep';
+        if (isSalesRep) {
+            const clientCheck = await db.query(
+                'SELECT created_by FROM clients WHERE id = $1 LIMIT 1',
+                [client_id]
+            );
+            if (!clientCheck.rows.length || clientCheck.rows[0].created_by !== req.user.id) {
+                return error(res, 'غير مصرح لك بعرض تصاميم هذا العميل.', 403);
+            }
+        }
         
         const designsResult = await db.query(
             `SELECT 
@@ -272,6 +296,18 @@ router.get('/by-id/:design_id', authenticate, async (req, res) => {
         if (designResult.rowCount === 0) {
             return error(res, 'Design not found', 404);
         }
+
+        // Ownership check for sales_rep
+        const isSalesRep = req.user.role === 'sales_rep';
+        if (isSalesRep) {
+            const clientCheck = await db.query(
+                'SELECT created_by FROM clients WHERE id = $1 LIMIT 1',
+                [designResult.rows[0].client_id]
+            );
+            if (!clientCheck.rows.length || clientCheck.rows[0].created_by !== req.user.id) {
+                return error(res, 'غير مصرح لك بعرض هذا التصميم.', 403);
+            }
+        }
         
         const filesResult = await db.query(
             `SELECT * FROM client_design_files WHERE design_id = $1`,
@@ -301,12 +337,26 @@ router.get('/download/:file_id', authenticate, async (req, res) => {
         const { file_id } = req.params;
         
         const fileResult = await db.query(
-            `SELECT * FROM client_design_files WHERE id = $1`,
+            `SELECT f.*, d.client_id FROM client_design_files f
+             JOIN client_designs d ON d.id = f.design_id
+             WHERE f.id = $1`,
             [file_id]
         );
         
         if (fileResult.rowCount === 0) {
             return res.status(404).json({ success: false, error: 'File not found' });
+        }
+
+        // Ownership check for sales_rep
+        const isSalesRep = req.user.role === 'sales_rep';
+        if (isSalesRep) {
+            const clientCheck = await db.query(
+                'SELECT created_by FROM clients WHERE id = $1 LIMIT 1',
+                [fileResult.rows[0].client_id]
+            );
+            if (!clientCheck.rows.length || clientCheck.rows[0].created_by !== req.user.id) {
+                return res.status(403).json({ success: false, error: 'غير مصرح لك بتحميل هذا الملف.' });
+            }
         }
         
         const file = fileResult.rows[0];
@@ -343,6 +393,18 @@ router.delete('/:design_id', authenticate, async (req, res) => {
         
         if (designResult.rowCount === 0) {
             return res.status(404).json({ success: false, error: 'Design not found' });
+        }
+
+        // Ownership check for sales_rep
+        const isSalesRep = req.user.role === 'sales_rep';
+        if (isSalesRep) {
+            const clientCheck = await db.query(
+                'SELECT created_by FROM clients WHERE id = $1 LIMIT 1',
+                [designResult.rows[0].client_id]
+            );
+            if (!clientCheck.rows.length || clientCheck.rows[0].created_by !== req.user.id) {
+                return error(res, 'غير مصرح لك بحذف هذا التصميم.', 403);
+            }
         }
         
         const design = designResult.rows[0];

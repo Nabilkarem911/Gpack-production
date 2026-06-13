@@ -11,12 +11,14 @@ const express = require('express');
 const router  = express.Router();
 const db      = require('../db');
 const { success } = require('../utils/response');
+const authorize = require('../middleware/authorize');
 
 // ── GET /api/vmi/clients ─────────────────────────────────────────────────────
 // Returns distinct clients who have warehouse_stock > 0, with their branches
 router.get('/clients', async (req, res) => {
     try {
-        const result = await db.query(`
+        const isSalesRep = req.user.role === 'sales_rep';
+        let query = `
             SELECT DISTINCT
                 c.id, c.name, c.parent_id,
                 pc.name AS parent_name
@@ -24,8 +26,13 @@ router.get('/clients', async (req, res) => {
             JOIN warehouse_stock ws ON ws.client_id = c.id
             LEFT JOIN clients pc ON pc.id = c.parent_id
             WHERE ws.quantity > 0
-            ORDER BY c.name
-        `);
+        `;
+        if (isSalesRep) {
+            query += ` AND c.created_by = '${req.user.id}'`;
+        }
+        query += ` ORDER BY c.name`;
+
+        const result = await db.query(query);
         res.json({ data: result.rows });
     } catch (err) {
         console.error('[VMI] GET /clients error:', err.message);
@@ -42,11 +49,17 @@ router.get('/stock', async (req, res) => {
 
         // Get the client + check if it has a parent
         const clientRes = await db.query(
-            'SELECT id, name, parent_id FROM clients WHERE id = $1',
+            'SELECT id, name, parent_id, created_by FROM clients WHERE id = $1',
             [client_id]
         );
         if (!clientRes.rows.length) return res.status(404).json({ error: 'Client not found' });
         const client = clientRes.rows[0];
+
+        // Ownership check for sales_rep
+        const isSalesRep = req.user.role === 'sales_rep';
+        if (isSalesRep && client.created_by !== req.user.id) {
+            return res.status(403).json({ error: 'غير مصرح لك بعرض مخزون هذا العميل.' });
+        }
 
         // Stock owned by this client (in any warehouse)
         const stockRes = await db.query(`
@@ -90,6 +103,18 @@ router.get('/branches', async (req, res) => {
         const { parent_id } = req.query;
         if (!parent_id) return res.status(400).json({ error: 'parent_id required' });
 
+        // Ownership check for sales_rep
+        const isSalesRep = req.user.role === 'sales_rep';
+        if (isSalesRep) {
+            const parentCheck = await db.query(
+                'SELECT created_by FROM clients WHERE id = $1',
+                [parent_id]
+            );
+            if (!parentCheck.rows.length || parentCheck.rows[0].created_by !== req.user.id) {
+                return res.status(403).json({ error: 'غير مصرح لك بعرض فروع هذا العميل.' });
+            }
+        }
+
         const result = await db.query(`
             SELECT id, name, parent_id
             FROM clients
@@ -113,7 +138,7 @@ router.get('/branches', async (req, res) => {
 //   with_invoice     — boolean (default false)
 //   notes            — optional string
 //   delivery_date    — optional ISO date
-router.post('/dispatch', async (req, res) => {
+router.post('/dispatch', authorize(['admin', 'manager', 'super_admin', 'warehouse', 'warehouse_keeper']), async (req, res) => {
     const client = await db.pool.connect();
     try {
         const {

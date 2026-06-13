@@ -3,8 +3,11 @@
 const express = require('express');
 const db = require('../db');
 const { success, error: errorResponse } = require('../utils/response');
+const authorize = require('../middleware/authorize');
 
 const router = express.Router();
+const restrictToWarehouseAdmin = authorize(['admin', 'manager', 'super_admin', 'warehouse', 'warehouse_keeper']);
+router.use(restrictToWarehouseAdmin);
 
 // =============================================================================
 // TEMP: Migration endpoint to add tax_rate column

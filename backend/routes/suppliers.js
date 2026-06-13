@@ -2,6 +2,7 @@
 
 const express = require('express');
 const db = require('../db');
+const authorize = require('../middleware/authorize');
 
 const router = express.Router();
 
@@ -258,7 +259,7 @@ router.get('/purchase-invoices/:invoiceId', async (req, res) => {
 // Creates a new supplier.
 // =============================================================================
 
-router.post('/', async (req, res) => {
+router.post('/', authorize(['super_admin', 'admin', 'manager']), async (req, res) => {
     const {
         company_name,
         contact_person,
@@ -307,7 +308,7 @@ router.post('/', async (req, res) => {
 // Updates supplier details.
 // =============================================================================
 
-router.patch('/:id', async (req, res) => {
+router.patch('/:id', authorize(['super_admin', 'admin', 'manager']), async (req, res) => {
     const { id } = req.params;
     const {
         name,
@@ -390,7 +391,7 @@ router.patch('/:id', async (req, res) => {
 // Soft delete — sets status to 'inactive' if has orders, otherwise hard delete.
 // =============================================================================
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', authorize(['super_admin', 'admin', 'manager']), async (req, res) => {
     const { id } = req.params;
 
     try {

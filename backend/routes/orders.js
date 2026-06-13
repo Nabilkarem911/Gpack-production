@@ -375,6 +375,7 @@ router.get('/price-history', async (req, res) => {
 router.get('/:id/details', async (req, res) => {
     try {
         const { id } = req.params;
+        const isSalesRep = req.user.role === 'sales_rep';
 
         // Get order header
         const orderResult = await db.query(
@@ -385,6 +386,7 @@ router.get('/:id/details', async (req, res) => {
                 o.order_date,
                 o.grand_total,
                 o.client_id,
+                o.created_by,
                 c.name as client_name
              FROM orders o
              LEFT JOIN clients c ON c.id = o.client_id
@@ -397,6 +399,9 @@ router.get('/:id/details', async (req, res) => {
         }
 
         const order = orderResult.rows[0];
+        if (isSalesRep && order.created_by !== req.user.id) {
+            return res.status(403).json({ error: 'غير مصرح لك بعرض هذا الطلب.' });
+        }
 
         // Get order items with product details
         const itemsResult = await db.query(
@@ -604,6 +609,21 @@ router.post('/', async (req, res) => {
     }
 
     try {
+        // Sales rep can only create orders for their own clients
+        const isSalesRep = req.user.role === 'sales_rep';
+        if (isSalesRep) {
+            const clientCheck = await db.query(
+                'SELECT id, created_by FROM clients WHERE id = $1 LIMIT 1',
+                [client_id]
+            );
+            if (clientCheck.rowCount === 0) {
+                throw new Error('العميل المحدد غير موجود.');
+            }
+            if (clientCheck.rows[0].created_by !== req.user.id) {
+                throw new Error('غير مصرح لك بإنشاء طلب لهذا العميل.');
+            }
+        }
+
         const result = await db.withTransaction(async (client) => {
 
             // Verify client exists
@@ -894,6 +914,12 @@ router.patch('/:id/status', async (req, res) => {
         return res.status(400).json({ error: `الحالة غير صالحة. القيم المقبولة: ${VALID_STATUSES.join(', ')}.` });
     }
 
+    // Non-admin roles cannot change order status
+    const isAdmin = ['super_admin', 'admin', 'manager'].includes(req.user.role);
+    if (!isAdmin) {
+        return res.status(403).json({ error: 'غير مصرح لك بتغيير حالة الطلب.' });
+    }
+
     try {
         const result = await db.query(
             `UPDATE orders SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING id, status`,
@@ -945,7 +971,7 @@ router.post('/:id/convert-to-production', async (req, res) => {
 
             // ── 1. Fetch & validate order (lock row, no JOIN for FOR UPDATE) ──
             const orderRes = await client.query(
-                `SELECT id, order_number, status, client_id, grand_total, paid_amount
+                `SELECT id, order_number, status, client_id, grand_total, paid_amount, created_by
                  FROM orders
                  WHERE id = $1
                  FOR UPDATE`,
@@ -957,6 +983,13 @@ router.post('/:id/convert-to-production', async (req, res) => {
             }
 
             const order = orderRes.rows[0];
+
+            // Role check: sales_rep can only convert their own orders
+            const isAdmin = ['super_admin', 'admin', 'manager'].includes(req.user.role);
+            const isSalesRep = req.user.role === 'sales_rep';
+            if (isSalesRep && order.created_by !== req.user.id) {
+                throw new Error('غير مصرح لك بتحويل هذا الطلب.');
+            }
 
             // Fetch client name separately
             const clientRes = await client.query(
@@ -1192,13 +1225,18 @@ router.get('/:id/financial', async (req, res) => {
     try {
         const orderRes = await db.query(
             `SELECT o.id, o.order_number, o.grand_total, o.paid_amount, o.status,
-                    c.name AS client_name
+                    o.created_by, c.name AS client_name
              FROM orders o
              LEFT JOIN clients c ON c.id = o.client_id
              WHERE o.id = $1`,
             [id]
         );
         if (orderRes.rowCount === 0) return res.status(404).json({ error: 'الطلب غير موجود.' });
+
+        const isSalesRep = req.user.role === 'sales_rep';
+        if (isSalesRep && orderRes.rows[0].created_by !== req.user.id) {
+            return res.status(403).json({ error: 'غير مصرح لك بعرض البيانات المالية لهذا الطلب.' });
+        }
 
         const invoicesRes = await db.query(
             `SELECT i.id, i.invoice_number, i.invoice_date, i.grand_total, i.status,
@@ -1238,6 +1276,10 @@ router.get('/:id/financial', async (req, res) => {
 // =============================================================================
 
 router.post('/:id/invoice', async (req, res) => {
+    const isAdmin = ['super_admin', 'admin', 'manager'].includes(req.user.role);
+    if (!isAdmin) {
+        return res.status(403).json({ error: 'غير مصرح لك بإصدار الفواتير.' });
+    }
     const { id } = req.params;
     const { type = 'proforma', items = [], additional_expenses = 0, notes = '' } = req.body;
 
@@ -1352,6 +1394,10 @@ router.post('/:id/invoice', async (req, res) => {
 // =============================================================================
 
 router.post('/:id/payment', async (req, res) => {
+    const isAdmin = ['super_admin', 'admin', 'manager'].includes(req.user.role);
+    if (!isAdmin) {
+        return res.status(403).json({ error: 'غير مصرح لك بتسجيل الدفعات.' });
+    }
     const { id } = req.params;
     const { amount, payment_method = 'cash', notes = '', cash_box, bank_account, bank_ref, pos_terminal, pos_ref } = req.body;
 
@@ -1419,6 +1465,10 @@ router.post('/:id/payment', async (req, res) => {
 // =============================================================================
 // DELETE /api/orders/:id
 router.delete('/:id', async (req, res) => {
+    const isAdmin = ['super_admin', 'admin', 'manager'].includes(req.user.role);
+    if (!isAdmin) {
+        return res.status(403).json({ error: 'غير مصرح لك بحذف الطلبات.' });
+    }
     const { id } = req.params;
 
     try {

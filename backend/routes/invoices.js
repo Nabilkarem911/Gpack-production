@@ -11,6 +11,7 @@ const express = require('express');
 const router  = express.Router();
 const db      = require('../db');
 const { success, created } = require('../utils/response');
+const authorize = require('../middleware/authorize');
 
 // ── GET /api/invoices ───────────────────────────────────────────────────────
 // Query params: client_id, status, from, to, search, limit, offset
@@ -21,6 +22,13 @@ router.get('/', async (req, res) => {
         let where = ['i.id IS NOT NULL']; // always true base
         const params = [];
         let paramIdx = 1;
+
+        // DATA SCOPING: sales_rep sees only invoices for orders they created
+        const isSalesRep = req.user.role === 'sales_rep';
+        if (isSalesRep) {
+            where.push(`o.created_by = $${paramIdx++}`);
+            params.push(req.user.id);
+        }
 
         if (client_id) {
             where.push(`i.client_id = $${paramIdx++}`);
@@ -113,6 +121,18 @@ router.get('/:id', async (req, res) => {
 
         const invoice = invRes.rows[0];
 
+        // DATA SCOPING: sales_rep can only view invoices for their own orders
+        const isSalesRep = req.user.role === 'sales_rep';
+        if (isSalesRep) {
+            const orderCheck = await db.query(
+                'SELECT created_by FROM orders WHERE id = $1',
+                [invoice.order_id]
+            );
+            if (!orderCheck.rows.length || orderCheck.rows[0].created_by !== req.user.id) {
+                return res.status(403).json({ error: 'غير مصرح لك بعرض هذه الفاتورة.' });
+            }
+        }
+
         // Invoice items
         const itemsRes = await db.query(`
             SELECT
@@ -149,6 +169,10 @@ router.get('/:id', async (req, res) => {
 // Create new sales invoice
 // Body: client_id, invoice_date, due_date, items[], tax_rate, notes, order_id (optional)
 router.post('/', async (req, res) => {
+    const isAdmin = ['super_admin', 'admin', 'manager'].includes(req.user.role);
+    if (!isAdmin) {
+        return res.status(403).json({ error: 'غير مصرح لك بإنشاء الفواتير.' });
+    }
     const client = await db.pool.connect();
     try {
         const {
@@ -237,6 +261,10 @@ router.post('/', async (req, res) => {
 // When status = 'paid', automatically creates a client_transaction receipt record.
 // طلبات التعديل على حالة الفاتورة
 router.patch('/:id/status', async (req, res) => {
+    const isAdmin = ['super_admin', 'admin', 'manager'].includes(req.user.role);
+    if (!isAdmin) {
+        return res.status(403).json({ error: 'غير مصرح لك بتعديل حالة الفاتورة.' });
+    }
     const client = await db.pool.connect();
     try {
         const { id } = req.params;

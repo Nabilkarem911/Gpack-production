@@ -9,8 +9,11 @@ const express = require('express');
 const router  = express.Router();
 const db      = require('../db');
 const { authenticate } = require('../middleware/authMiddleware');
+const authorize = require('../middleware/authorize');
 
 router.use(authenticate);
+const restrictToAdmin = authorize(['admin', 'manager', 'super_admin']);
+router.use(restrictToAdmin);
 
 // =============================================================================
 // GET /api/purchase-invoices

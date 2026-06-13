@@ -23,6 +23,11 @@ const UPLOADS_DIR = path.join(__dirname, '../uploads');
 // Generates and streams a PDF for the manufacturer order
 // =============================================================================
 router.get('/:id/print-pdf', authenticate, async (req, res) => {
+    // Restrict to admin/manager/warehouse roles
+    const allowedRoles = ['super_admin', 'admin', 'manager', 'warehouse', 'warehouse_keeper'];
+    if (!allowedRoles.includes(req.user.role)) {
+        return res.status(403).json({ error: 'غير مصرح لك بطباعة أوامر التصنيع.' });
+    }
     try {
         const { id } = req.params;
 

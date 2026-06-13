@@ -36,6 +36,18 @@ router.get('/', authenticate, async (req, res) => {
         const { client_id } = req.query;
         if (!client_id) return error(res, 'client_id is required', 400);
 
+        // Ownership check for sales_rep
+        const isSalesRep = req.user.role === 'sales_rep';
+        if (isSalesRep) {
+            const clientCheck = await db.query(
+                'SELECT created_by FROM clients WHERE id = $1 LIMIT 1',
+                [client_id]
+            );
+            if (!clientCheck.rows.length || clientCheck.rows[0].created_by !== req.user.id) {
+                return error(res, 'غير مصرح لك بعرض ألوان هذا العميل.', 403);
+            }
+        }
+
         const result = await db.query(
             `SELECT * FROM client_pantone_colors
              WHERE client_id = $1
@@ -55,6 +67,18 @@ router.post('/', authenticate, async (req, res) => {
     try {
         const { client_id, color_code, color_name, hex_value, notes, sort_order } = req.body;
         if (!client_id || !color_code) return error(res, 'client_id and color_code are required', 400);
+
+        // Ownership check for sales_rep
+        const isSalesRep = req.user.role === 'sales_rep';
+        if (isSalesRep) {
+            const clientCheck = await db.query(
+                'SELECT created_by FROM clients WHERE id = $1 LIMIT 1',
+                [client_id]
+            );
+            if (!clientCheck.rows.length || clientCheck.rows[0].created_by !== req.user.id) {
+                return error(res, 'غير مصرح لك بإضافة ألوان لهذا العميل.', 403);
+            }
+        }
 
         // Prevent duplicate color_code per client
         const dup = await db.query(
@@ -83,6 +107,24 @@ router.patch('/:id', authenticate, async (req, res) => {
         const { id } = req.params;
         const { color_code, color_name, hex_value, notes, sort_order } = req.body;
 
+        // Ownership check for sales_rep
+        const isSalesRep = req.user.role === 'sales_rep';
+        if (isSalesRep) {
+            const colorCheck = await db.query(
+                'SELECT client_id FROM client_pantone_colors WHERE id = $1 LIMIT 1',
+                [id]
+            );
+            if (colorCheck.rows.length) {
+                const clientCheck = await db.query(
+                    'SELECT created_by FROM clients WHERE id = $1 LIMIT 1',
+                    [colorCheck.rows[0].client_id]
+                );
+                if (!clientCheck.rows.length || clientCheck.rows[0].created_by !== req.user.id) {
+                    return error(res, 'غير مصرح لك بتعديل هذا اللون.', 403);
+                }
+            }
+        }
+
         const result = await db.query(
             `UPDATE client_pantone_colors
              SET color_code  = COALESCE($1, color_code),
@@ -107,6 +149,25 @@ router.patch('/:id', authenticate, async (req, res) => {
 router.delete('/:id', authenticate, async (req, res) => {
     try {
         const { id } = req.params;
+
+        // Ownership check for sales_rep
+        const isSalesRep = req.user.role === 'sales_rep';
+        if (isSalesRep) {
+            const colorCheck = await db.query(
+                'SELECT client_id FROM client_pantone_colors WHERE id = $1 LIMIT 1',
+                [id]
+            );
+            if (colorCheck.rows.length) {
+                const clientCheck = await db.query(
+                    'SELECT created_by FROM clients WHERE id = $1 LIMIT 1',
+                    [colorCheck.rows[0].client_id]
+                );
+                if (!clientCheck.rows.length || clientCheck.rows[0].created_by !== req.user.id) {
+                    return error(res, 'غير مصرح لك بحذف هذا اللون.', 403);
+                }
+            }
+        }
+
         const result = await db.query(
             `DELETE FROM client_pantone_colors WHERE id = $1 RETURNING id`,
             [id]

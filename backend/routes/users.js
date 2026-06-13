@@ -4,15 +4,17 @@ const express = require('express');
 const db = require('../db');
 const bcrypt = require('bcrypt');
 const { success, error: errorResponse, created } = require('../utils/response');
+const authorize = require('../middleware/authorize');
 
 const router = express.Router();
+const restrictToAdmin = authorize(['admin', 'manager', 'super_admin']);
 
 // =============================================================================
 // GET /api/users
 // Returns all users with their roles
 // =============================================================================
 
-router.get('/', async (req, res) => {
+router.get('/', restrictToAdmin, async (req, res) => {
     try {
         const result = await db.query(
             `SELECT u.id, u.email, u.name, u.status, u.created_at, u.updated_at,
@@ -33,7 +35,7 @@ router.get('/', async (req, res) => {
 // Returns all available roles
 // =============================================================================
 
-router.get('/roles', async (req, res) => {
+router.get('/roles', restrictToAdmin, async (req, res) => {
     try {
         const result = await db.query(
             'SELECT id, role_name, description, permissions FROM roles ORDER BY role_name'
@@ -50,7 +52,7 @@ router.get('/roles', async (req, res) => {
 // Returns single user details
 // =============================================================================
 
-router.get('/:id', async (req, res) => {
+router.get('/:id', restrictToAdmin, async (req, res) => {
     try {
         const { id } = req.params;
         const result = await db.query(
@@ -76,7 +78,7 @@ router.get('/:id', async (req, res) => {
 // Create new user
 // =============================================================================
 
-router.post('/', async (req, res) => {
+router.post('/', restrictToAdmin, async (req, res) => {
     const { email, name, password, role_id, status = 'active' } = req.body;
 
     if (!email || !name || !password) {
@@ -112,7 +114,7 @@ router.post('/', async (req, res) => {
 // Update user
 // =============================================================================
 
-router.put('/:id', async (req, res) => {
+router.put('/:id', restrictToAdmin, async (req, res) => {
     const { id } = req.params;
     const { name, email, role_id, status, password } = req.body;
 
@@ -172,7 +174,7 @@ router.put('/:id', async (req, res) => {
 // Delete user (soft delete by setting inactive)
 // =============================================================================
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', restrictToAdmin, async (req, res) => {
     const { id } = req.params;
 
     try {
@@ -204,7 +206,7 @@ router.delete('/:id', async (req, res) => {
 // Create new role
 // =============================================================================
 
-router.post('/roles', async (req, res) => {
+router.post('/roles', restrictToAdmin, async (req, res) => {
     const { role_name, description, permissions } = req.body;
 
     if (!role_name) {
@@ -234,7 +236,7 @@ router.post('/roles', async (req, res) => {
 // Update user permissions (creates or updates user's role)
 // =============================================================================
 
-router.put('/:id/permissions', async (req, res) => {
+router.put('/:id/permissions', restrictToAdmin, async (req, res) => {
     try {
         const { id } = req.params;
         const { permissions } = req.body;
@@ -297,7 +299,7 @@ router.put('/:id/permissions', async (req, res) => {
 // Update existing role
 // =============================================================================
 
-router.put('/roles/:id', async (req, res) => {
+router.put('/roles/:id', restrictToAdmin, async (req, res) => {
     try {
         const { id } = req.params;
         const { role_name, description, permissions } = req.body;
@@ -342,7 +344,7 @@ router.put('/roles/:id', async (req, res) => {
 // Delete role (only if no users are assigned)
 // =============================================================================
 
-router.delete('/roles/:id', async (req, res) => {
+router.delete('/roles/:id', restrictToAdmin, async (req, res) => {
     try {
         const { id } = req.params;
 

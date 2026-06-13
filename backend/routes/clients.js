@@ -3,6 +3,7 @@
 const express = require('express');
 const db = require('../db');
 const { authenticate } = require('../middleware/authMiddleware');
+const authorize = require('../middleware/authorize');
 
 const router = express.Router();
 
@@ -91,7 +92,13 @@ router.get('/:id', async (req, res) => {
             return res.status(404).json({ error: 'Client not found.' });
         }
 
-        return res.status(200).json({ data: result.rows[0] });
+        const client = result.rows[0];
+        const isSalesRep = req.user.role === 'sales_rep';
+        if (isSalesRep && client.created_by !== req.user.id) {
+            return res.status(403).json({ error: 'غير مصرح لك بعرض هذا العميل.' });
+        }
+
+        return res.status(200).json({ data: client });
     } catch (err) {
         console.error('[Clients] GET /:id error:', err.message);
         return res.status(500).json({ error: 'Internal server error.' });
@@ -116,6 +123,12 @@ router.get('/:id/profile', async (req, res) => {
         );
         if (clientRes.rowCount === 0) return res.status(404).json({ error: 'العميل غير موجود.' });
         const client = clientRes.rows[0];
+
+        // Ownership check for sales_rep
+        const isSalesRep = req.user.role === 'sales_rep';
+        if (isSalesRep && client.created_by !== req.user.id) {
+            return res.status(403).json({ error: 'غير مصرح لك بعرض ملف هذا العميل.' });
+        }
 
         // 2. Branches (if this is a main client)
         const branchesRes = await db.query(

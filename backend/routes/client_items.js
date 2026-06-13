@@ -18,6 +18,18 @@ router.get('/', async (req, res) => {
     const { client_id, months } = req.query;
     if (!client_id) return res.status(400).json({ error: 'client_id مطلوب' });
 
+    // Ownership check for sales_rep
+    const isSalesRep = req.user.role === 'sales_rep';
+    if (isSalesRep) {
+        const clientCheck = await db.query(
+            'SELECT created_by FROM clients WHERE id = $1 LIMIT 1',
+            [client_id]
+        );
+        if (!clientCheck.rows.length || clientCheck.rows[0].created_by !== req.user.id) {
+            return res.status(403).json({ error: 'غير مصرح لك بعرض أصناف هذا العميل.' });
+        }
+    }
+
     const lookbackMonths = parseInt(months) || 12;
 
     try {

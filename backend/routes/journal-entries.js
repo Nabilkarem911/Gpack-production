@@ -9,6 +9,10 @@
 const express = require('express');
 const router  = express.Router();
 const db      = require('../db');
+const authorize = require('../middleware/authorize');
+
+const restrictToAdmin = authorize(['admin', 'manager', 'super_admin']);
+router.use(restrictToAdmin);
 
 // =============================================================================
 // GET /api/journal-entries

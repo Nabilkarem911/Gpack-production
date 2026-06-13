@@ -6,6 +6,10 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
+const authorize = require('../middleware/authorize');
+
+const restrictToWarehouseAdmin = authorize(['admin', 'manager', 'super_admin', 'warehouse', 'warehouse_keeper']);
+router.use(restrictToWarehouseAdmin);
 
 // =============================================================================
 // GET /api/delivery-notes
