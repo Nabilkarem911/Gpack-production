@@ -2,7 +2,7 @@
 // G.PACK 2.0 - AI Demand Forecasting View
 // =============================================================================
 
-const forecastView = {
+var forecastView = {
     chart: null,
     currentData: null,
 
@@ -20,12 +20,22 @@ const forecastView = {
         const select = document.getElementById('forecast-client');
         select.innerHTML = '<option value="">جارٍ التحميل...</option>';
 
+        if (typeof api === 'undefined' || !api.get) {
+            select.innerHTML = '<option value="">API غير متاح</option>';
+            return;
+        }
+
         try {
             const res = await api.get('/clients');
             const clients = res.data || res;
+            if (!clients || !clients.length) {
+                select.innerHTML = '<option value="">مفيش عملاء</option>';
+                return;
+            }
             select.innerHTML = '<option value="">اختر عميل...</option>' +
                 clients.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
-        } catch {
+        } catch (err) {
+            console.error('[Forecast] loadClients error:', err);
             select.innerHTML = '<option value="">خطأ في تحميل العملاء</option>';
         }
     },
