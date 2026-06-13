@@ -14,6 +14,8 @@ const usersView = (() => {
         { key: 'quotations',  label: 'عروض الأسعار' },
         { key: 'orders',      label: 'الطلبات' },
         { key: 'clients',     label: 'العملاء' },
+        { key: 'sales',       label: 'فواتير المبيعات' },
+        { key: 'purchasing',  label: 'المشتريات' },
         { key: 'products',    label: 'المنتجات' },
         { key: 'inventory',   label: 'المخزون' },
         { key: 'warehouses',  label: 'المستودعات' },
