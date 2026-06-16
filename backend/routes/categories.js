@@ -2,6 +2,7 @@
 
 const express = require('express');
 const db      = require('../db');
+const authorize = require('../middleware/authorize');
 const router  = express.Router();
 
 // =============================================================================
@@ -26,7 +27,7 @@ router.get('/', async (req, res) => {
 // POST /api/categories
 // Creates a new category.
 // =============================================================================
-router.post('/', async (req, res) => {
+router.post('/', authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
     const { name, parent_id, description } = req.body;
     if (!name || !name.trim()) {
         return res.status(400).json({ error: 'اسم الفئة مطلوب.' });
@@ -49,7 +50,7 @@ router.post('/', async (req, res) => {
 // PUT /api/categories/:id
 // Updates name and description of a category.
 // =============================================================================
-router.put('/:id', async (req, res) => {
+router.put('/:id', authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
     const { id } = req.params;
     const { name, description } = req.body;
 
@@ -81,7 +82,7 @@ router.put('/:id', async (req, res) => {
 // DELETE /api/categories/:id
 // Deletes a category. Blocked if linked to products (FK violation).
 // =============================================================================
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
     const { id } = req.params;
 
     try {

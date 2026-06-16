@@ -12,6 +12,7 @@ const router  = express.Router();
 const db      = require('../db');
 const { success, created } = require('../utils/response');
 const authorize = require('../middleware/authorize');
+const { getVatRate } = require('../utils/settings');
 
 // ── GET /api/invoices ───────────────────────────────────────────────────────
 // Query params: client_id, status, from, to, search, limit, offset
@@ -89,7 +90,7 @@ router.get('/', async (req, res) => {
 
     } catch (err) {
         console.error('[Invoices] GET / error:', err.message);
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: 'Internal server error.' });
     }
 });
 
@@ -161,7 +162,35 @@ router.get('/:id', async (req, res) => {
 
     } catch (err) {
         console.error('[Invoices] GET /:id error:', err.message);
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: 'Internal server error.' });
+    }
+});
+
+// ── POST /api/invoices/:id/share
+// Generate a public share token for an invoice
+router.post('/:id/share', authenticate, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const expiresDays = parseInt(req.body.expires_days || 30);
+
+        const token = require('crypto').randomBytes(32).toString('hex');
+        const expiresAt = new Date(Date.now() + expiresDays * 24 * 60 * 60 * 1000);
+
+        await db.query(
+            `UPDATE invoices SET share_token = $1, token_expires_at = $2 WHERE id = $3`,
+            [token, expiresAt, id]
+        );
+
+        const baseUrl = `${req.protocol}://${req.get('host')}`;
+        res.json({
+            success: true,
+            url: `${baseUrl}/public-invoice.html?token=${token}`,
+            token,
+            expires_at: expiresAt
+        });
+    } catch (err) {
+        console.error('[Invoices] POST /:id/share error:', err.message);
+        res.status(500).json({ error: 'Internal server error.' });
     }
 });
 
@@ -181,10 +210,12 @@ router.post('/', async (req, res) => {
             invoice_date,
             due_date,
             items = [],
-            tax_rate = 0.15,
+            tax_rate,
             additional_expenses = 0,
             notes = '',
         } = req.body;
+
+        const effectiveTaxRate = tax_rate ?? await getVatRate();
 
         if (!client_id || !items.length) {
             return res.status(400).json({ error: 'client_id and items[] required' });
@@ -204,7 +235,7 @@ router.post('/', async (req, res) => {
             subtotal += lineTotal;
         }
 
-        const taxAmount = parseFloat((subtotal * tax_rate).toFixed(2));
+        const taxAmount = parseFloat((subtotal * effectiveTaxRate).toFixed(2));
         const grandTotal = parseFloat((subtotal + taxAmount + parseFloat(additional_expenses)).toFixed(2));
 
         // Insert invoice
@@ -216,7 +247,7 @@ router.post('/', async (req, res) => {
             RETURNING id, invoice_number
         `, [
             client_id, order_id, invoice_date || new Date().toISOString().split('T')[0],
-            due_date, subtotal, tax_rate, taxAmount,
+            due_date, subtotal, effectiveTaxRate, taxAmount,
             additional_expenses, grandTotal, notes, userId,
         ]);
 
@@ -250,7 +281,7 @@ router.post('/', async (req, res) => {
     } catch (err) {
         await client.query('ROLLBACK');
         console.error('[Invoices] POST / error:', err.message);
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: 'Internal server error.' });
     } finally {
         client.release();
     }
@@ -331,7 +362,7 @@ router.patch('/:id/status', async (req, res) => {
     } catch (err) {
         await client.query('ROLLBACK');
         console.error('[Invoices] PATCH /:id/status error:', err.message);
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: 'Internal server error.' });
     } finally {
         client.release();
     }

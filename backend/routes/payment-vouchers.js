@@ -96,7 +96,7 @@ router.get('/', async (req, res) => {
 
     } catch (err) {
         console.error('[PaymentVouchers] GET / error:', err.message);
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: 'Internal server error.' });
     }
 });
 
@@ -151,7 +151,7 @@ router.get('/:id', async (req, res) => {
 
     } catch (err) {
         console.error('[PaymentVouchers] GET /:id error:', err.message);
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: 'Internal server error.' });
     }
 });
 
@@ -266,7 +266,7 @@ router.post('/', async (req, res) => {
 
     } catch (err) {
         console.error('[PaymentVouchers] POST / error:', err.message);
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: 'Internal server error.' });
     }
 });
 
@@ -330,7 +330,7 @@ router.post('/:id/cancel', async (req, res) => {
 
     } catch (err) {
         console.error('[PaymentVouchers] POST /:id/cancel error:', err.message);
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: 'Internal server error.' });
     }
 });
 
@@ -349,7 +349,7 @@ router.get('/meta/accounts', async (req, res) => {
         res.json({ data: result.rows });
     } catch (err) {
         console.error('[PaymentVouchers] GET /meta/accounts error:', err.message);
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: 'Internal server error.' });
     }
 });
 

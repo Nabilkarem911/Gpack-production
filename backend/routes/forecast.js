@@ -90,4 +90,31 @@ router.post('/variant/:variantId', async (req, res) => {
     }
 });
 
+// =============================================================================
+// GET /api/forecast/insights/rfm
+// RFM customer segmentation
+// =============================================================================
+router.get('/insights/rfm', async (req, res) => {
+    try {
+        const data = await aiRequest('/insights/rfm');
+        res.json(data);
+    } catch (err) {
+        res.status(500).json({ error: 'خطأ في تحليل العملاء', detail: err.message });
+    }
+});
+
+// =============================================================================
+// GET /api/forecast/insights/churn
+// Churn alerts — inactive clients
+// =============================================================================
+router.get('/insights/churn', async (req, res) => {
+    const days = parseInt(req.query.days) || 30;
+    try {
+        const data = await aiRequest(`/insights/churn?days=${days}`);
+        res.json(data);
+    } catch (err) {
+        res.status(500).json({ error: 'خطأ في جلب التنبيهات', detail: err.message });
+    }
+});
+
 module.exports = router;

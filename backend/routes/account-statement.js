@@ -141,7 +141,7 @@ router.get('/client/:clientId', async (req, res) => {
 
     } catch (err) {
         console.error('[AccountStatement] GET /client/:clientId error:', err.message);
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: 'Internal server error.' });
     }
 });
 
@@ -237,7 +237,7 @@ router.get('/supplier/:supplierId', async (req, res) => {
             FROM (
                 SELECT 'invoice' as doc_type, grand_total as amount 
                 FROM purchase_invoices 
-                WHERE supplier_id = $1 AND status != 'cancelled' ${dateFilter}
+                WHERE supplier_id = $1 AND status != 'cancelled' ${dateFilter.replace(/date/g, 'invoice_date')}
                 UNION ALL
                 SELECT 'payment' as doc_type, avl.debit as amount
                 FROM accounting_vouchers av
@@ -268,7 +268,7 @@ router.get('/supplier/:supplierId', async (req, res) => {
 
     } catch (err) {
         console.error('[AccountStatement] GET /supplier/:supplierId error:', err.message);
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: 'Internal server error.' });
     }
 });
 
@@ -303,7 +303,7 @@ router.get('/lookup', async (req, res) => {
 
     } catch (err) {
         console.error('[AccountStatement] GET /lookup error:', err.message);
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: 'Internal server error.' });
     }
 });
 

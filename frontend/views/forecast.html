@@ -1,96 +1,231 @@
 <!-- =============================================================================
-     G.PACK 2.0 - AI Demand Forecasting View
-     Predicts future demand using historical order data
+     G.PACK 2.0 - AI Intelligence Center
+     RFM Segmentation, Churn Alerts, Demand Forecasting
 ============================================================================= -->
 
+<!-- Header -->
 <div class="mb-6">
     <h1 class="text-2xl font-extrabold text-slate-800">
         <i class="fa-solid fa-brain text-purple-600 ml-2"></i>
-        توقع الطلب بالذكاء الاصطناعي
+        مركز الذكاء الاصطناعي
     </h1>
-    <p class="text-slate-500 text-sm mt-1">يتنبأ تلقائياً بالكميات المطلوبة بناءً على تاريخ المبيعات</p>
+    <p class="text-slate-500 text-sm mt-1">تحليلات ذكية لمساعدتك في اتخاذ القرارات: تصنيف العملاء، التنبيهات، والتوقعات</p>
 </div>
 
-<!-- Controls -->
-<div class="bg-white rounded-xl p-5 border border-slate-200 shadow-sm mb-6">
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+<!-- ================================================================ -->
+<!-- SECTION 1: RFM Customer Segmentation -->
+<!-- ================================================================ -->
+<div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mb-6">
+    <div class="px-5 py-4 border-b border-slate-200 bg-gradient-to-r from-purple-50 to-indigo-50 flex justify-between items-center">
         <div>
-            <label class="block text-sm font-medium text-slate-700 mb-1">العميل</label>
-            <select id="forecast-client" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
-                <option value="">اختر عميل...</option>
-            </select>
+            <h2 class="text-base font-bold text-slate-800"><i class="fa-solid fa-users-viewfinder ml-1 text-purple-600"></i> تصنيف العملاء (RFM)</h2>
+            <p class="text-xs text-slate-500 mt-0.5">ذكاء اصطناعي يقسم عملاءك لأربع فئات بناءً على نشاطهم وقيمتهم</p>
         </div>
-        <div>
-            <label class="block text-sm font-medium text-slate-700 mb-1">مدة التوقع (يوم)</label>
-            <select id="forecast-periods" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
-                <option value="7">7 أيام</option>
-                <option value="14">14 يوم</option>
-                <option value="30" selected>30 يوم</option>
-                <option value="60">60 يوم</option>
-                <option value="90">90 يوم</option>
-            </select>
+        <button id="rfm-refresh" class="text-xs bg-white border border-slate-300 rounded-lg px-3 py-1.5 hover:bg-slate-50 transition-colors">
+            <i class="fa-solid fa-rotate ml-1"></i> تحديث
+        </button>
+    </div>
+
+    <div id="rfm-loading" class="p-8 text-center text-slate-400 text-sm hidden">
+        <i class="fa-solid fa-circle-notch fa-spin text-xl mb-2 block"></i>
+        جارٍ التحليل...
+    </div>
+
+    <div id="rfm-content" class="p-5">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+            <!-- VIP -->
+            <div class="bg-gradient-to-br from-amber-50 to-yellow-50 rounded-xl p-4 border border-amber-200 cursor-pointer hover:shadow-md transition-shadow" onclick="forecastView.toggleRfmSegment('vip')">
+                <div class="flex items-center justify-between mb-2">
+                    <span class="text-xs font-bold text-amber-700 bg-amber-100 rounded-full px-2 py-0.5">VIP</span>
+                    <i class="fa-solid fa-crown text-amber-500"></i>
+                </div>
+                <p class="text-2xl font-bold text-amber-900" id="rfm-vip-count">0</p>
+                <p class="text-xs text-amber-600">أكثر العملاء قيمة</p>
+            </div>
+            <!-- Active -->
+            <div class="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl p-4 border border-emerald-200 cursor-pointer hover:shadow-md transition-shadow" onclick="forecastView.toggleRfmSegment('active')">
+                <div class="flex items-center justify-between mb-2">
+                    <span class="text-xs font-bold text-emerald-700 bg-emerald-100 rounded-full px-2 py-0.5">نشط</span>
+                    <i class="fa-solid fa-bolt text-emerald-500"></i>
+                </div>
+                <p class="text-2xl font-bold text-emerald-900" id="rfm-active-count">0</p>
+                <p class="text-xs text-emerald-600">يطلبون بانتظام</p>
+            </div>
+            <!-- At Risk -->
+            <div class="bg-gradient-to-br from-orange-50 to-amber-50 rounded-xl p-4 border border-orange-200 cursor-pointer hover:shadow-md transition-shadow" onclick="forecastView.toggleRfmSegment('at_risk')">
+                <div class="flex items-center justify-between mb-2">
+                    <span class="text-xs font-bold text-orange-700 bg-orange-100 rounded-full px-2 py-0.5">مُهدد</span>
+                    <i class="fa-solid fa-triangle-exclamation text-orange-500"></i>
+                </div>
+                <p class="text-2xl font-bold text-orange-900" id="rfm-at_risk-count">0</p>
+                <p class="text-xs text-orange-600">بدأوا يتباطؤوا</p>
+            </div>
+            <!-- Dormant -->
+            <div class="bg-gradient-to-br from-red-50 to-rose-50 rounded-xl p-4 border border-red-200 cursor-pointer hover:shadow-md transition-shadow" onclick="forecastView.toggleRfmSegment('dormant')">
+                <div class="flex items-center justify-between mb-2">
+                    <span class="text-xs font-bold text-red-700 bg-red-100 rounded-full px-2 py-0.5">نائم</span>
+                    <i class="fa-solid fa-bed text-red-500"></i>
+                </div>
+                <p class="text-2xl font-bold text-red-900" id="rfm-dormant-count">0</p>
+                <p class="text-xs text-red-600">ماطلبوش من فترة</p>
+            </div>
         </div>
-        <div>
-            <button id="forecast-btn" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg px-4 py-2 text-sm transition-colors">
-                <i class="fa-solid fa-wand-magic-sparkles ml-1"></i>
-                شغل التوقع
-            </button>
+
+        <!-- RFM detail table -->
+        <div id="rfm-detail-panel" class="hidden">
+            <div class="border-t border-slate-200 pt-4">
+                <h4 class="text-sm font-bold text-slate-700 mb-3" id="rfm-detail-title">التفاصيل</h4>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-slate-50 text-slate-600 font-medium">
+                            <tr>
+                                <th class="px-4 py-2 text-right">العميل</th>
+                                <th class="px-4 py-2 text-right">آخر طلب</th>
+                                <th class="px-4 py-2 text-right">عدد الطلبات</th>
+                                <th class="px-4 py-2 text-right">إجمالي المبيعات</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rfm-detail-body" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     </div>
 </div>
 
-<!-- Status / Loading -->
-<div id="forecast-status" class="hidden mb-6 rounded-lg p-4 text-sm"></div>
-
-<!-- Results -->
-<div id="forecast-results" class="hidden">
-    <!-- Summary Cards -->
-    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-        <div class="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-xl p-5 border border-purple-100">
-            <p class="text-xs text-purple-700 font-medium">إجمالي التوقع</p>
-            <p class="text-2xl font-bold text-purple-900" id="forecast-total">0</p>
-            <p class="text-xs text-purple-600">كمية متوقعة</p>
+<!-- ================================================================ -->
+<!-- SECTION 2: Churn Alerts -->
+<!-- ================================================================ -->
+<div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mb-6">
+    <div class="px-5 py-4 border-b border-slate-200 bg-gradient-to-r from-red-50 to-rose-50 flex justify-between items-center">
+        <div>
+            <h2 class="text-base font-bold text-slate-800"><i class="fa-solid fa-bell ml-1 text-red-500"></i> تنبيهات التقاعس</h2>
+            <p class="text-xs text-slate-500 mt-0.5">عملاء ماطلبوش من 30 يوم — يستحقون متابعة</p>
         </div>
-        <div class="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-xl p-5 border border-blue-100">
-            <p class="text-xs text-blue-700 font-medium">المتوسط اليومي</p>
-            <p class="text-2xl font-bold text-blue-900" id="forecast-avg">0</p>
-            <p class="text-xs text-blue-600">كمية / يوم</p>
-        </div>
-        <div class="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl p-5 border border-emerald-100">
-            <p class="text-xs text-emerald-700 font-medium">الطلبات السابقة</p>
-            <p class="text-2xl font-bold text-emerald-900" id="forecast-history">0</p>
-            <p class="text-xs text-emerald-600">طلب مسجل</p>
-        </div>
+        <button id="churn-refresh" class="text-xs bg-white border border-slate-300 rounded-lg px-3 py-1.5 hover:bg-slate-50 transition-colors">
+            <i class="fa-solid fa-rotate ml-1"></i> تحديث
+        </button>
     </div>
 
-    <!-- Chart -->
-    <div class="bg-white rounded-xl p-5 border border-slate-200 shadow-sm mb-6">
-        <h3 class="text-lg font-bold text-slate-800 mb-4">منحنى التوقع</h3>
-        <canvas id="forecast-chart" height="120"></canvas>
+    <div id="churn-loading" class="p-8 text-center text-slate-400 text-sm hidden">
+        <i class="fa-solid fa-circle-notch fa-spin text-xl mb-2 block"></i>
+        جارٍ التحليل...
     </div>
 
-    <!-- Table -->
-    <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div class="px-5 py-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
-            <h3 class="text-sm font-bold text-slate-700">تفاصيل التوقع اليومي</h3>
-            <button id="forecast-export" class="text-xs bg-white border border-slate-300 rounded-lg px-3 py-1 hover:bg-slate-50 transition-colors">
-                <i class="fa-solid fa-download ml-1"></i> تصدير CSV
-            </button>
-        </div>
+    <div id="churn-content">
         <div class="overflow-x-auto">
             <table class="w-full text-sm">
                 <thead class="bg-slate-50 text-slate-600 font-medium">
                     <tr>
-                        <th class="px-4 py-3 text-right">التاريخ</th>
-                        <th class="px-4 py-3 text-right">الكمية المتوقعة</th>
-                        <th class="px-4 py-3 text-right">التراكمي</th>
-                        <th class="px-4 py-3 text-right">الحالة</th>
+                        <th class="px-4 py-3 text-right">العميل</th>
+                        <th class="px-4 py-3 text-right">آخر طلب</th>
+                        <th class="px-4 py-3 text-right">أيام التوقف</th>
+                        <th class="px-4 py-3 text-right">إجمالي الطلبات</th>
+                        <th class="px-4 py-3 text-right">القيمة التاريخية</th>
                     </tr>
                 </thead>
-                <tbody id="forecast-table-body" class="divide-y divide-slate-100"></tbody>
+                <tbody id="churn-table-body" class="divide-y divide-slate-100">
+                    <tr><td colspan="5" class="px-4 py-6 text-center text-slate-400 text-sm">جارٍ التحميل...</td></tr>
+                </tbody>
             </table>
+        </div>
+        <div id="churn-empty" class="hidden px-5 py-6 text-center text-emerald-600 text-sm">
+            <i class="fa-solid fa-check-circle text-xl mb-1 block"></i>
+            كل العملاء نشطين! مفيش تنبيهات دلوقتي.
         </div>
     </div>
 </div>
 
-<script src="/js/views/forecast.js"></script>
+<!-- ================================================================ -->
+<!-- SECTION 3: Demand Forecast -->
+<!-- ================================================================ -->
+<div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mb-6">
+    <div class="px-5 py-4 border-b border-slate-200 bg-gradient-to-r from-blue-50 to-indigo-50">
+        <h2 class="text-base font-bold text-slate-800"><i class="fa-solid fa-chart-line ml-1 text-blue-600"></i> توقع الطلب</h2>
+        <p class="text-xs text-slate-500 mt-0.5">يتنبأ بالكميات المطلوبة بناءً على تاريخ المبيعات</p>
+    </div>
+
+    <div class="p-5">
+        <!-- Controls -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end mb-4">
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">العميل</label>
+                <select id="forecast-client" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+                    <option value="">اختر عميل...</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">مدة التوقع (يوم)</label>
+                <select id="forecast-periods" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+                    <option value="7">7 أيام</option>
+                    <option value="14">14 يوم</option>
+                    <option value="30" selected>30 يوم</option>
+                    <option value="60">60 يوم</option>
+                    <option value="90">90 يوم</option>
+                </select>
+            </div>
+            <div>
+                <button id="forecast-btn" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg px-4 py-2 text-sm transition-colors">
+                    <i class="fa-solid fa-wand-magic-sparkles ml-1"></i>
+                    شغل التوقع
+                </button>
+            </div>
+        </div>
+
+        <!-- Status -->
+        <div id="forecast-status" class="hidden mb-4 rounded-lg p-4 text-sm"></div>
+
+        <!-- Results -->
+        <div id="forecast-results" class="hidden">
+            <!-- Summary Cards -->
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+                <div class="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-xl p-4 border border-purple-100">
+                    <p class="text-xs text-purple-700 font-medium">إجمالي التوقع</p>
+                    <p class="text-2xl font-bold text-purple-900" id="forecast-total">0</p>
+                    <p class="text-xs text-purple-600">كمية متوقعة</p>
+                </div>
+                <div class="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-xl p-4 border border-blue-100">
+                    <p class="text-xs text-blue-700 font-medium">المتوسط اليومي</p>
+                    <p class="text-2xl font-bold text-blue-900" id="forecast-avg">0</p>
+                    <p class="text-xs text-blue-600">كمية / يوم</p>
+                </div>
+                <div class="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl p-4 border border-emerald-100">
+                    <p class="text-xs text-emerald-700 font-medium">الطلبات السابقة</p>
+                    <p class="text-2xl font-bold text-emerald-900" id="forecast-history">0</p>
+                    <p class="text-xs text-emerald-600">طلب مسجل</p>
+                </div>
+            </div>
+
+            <!-- Chart -->
+            <div class="bg-slate-50 rounded-xl p-4 border border-slate-200 mb-4">
+                <h3 class="text-sm font-bold text-slate-700 mb-3">منحنى التوقع</h3>
+                <div id="forecast-chart" class="flex items-end gap-1 h-40 overflow-x-auto px-2 pb-4"></div>
+            </div>
+
+            <!-- Table -->
+            <div class="border border-slate-200 rounded-xl overflow-hidden">
+                <div class="px-4 py-3 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+                    <h3 class="text-sm font-bold text-slate-700">تفاصيل التوقع اليومي</h3>
+                    <button id="forecast-export" class="text-xs bg-white border border-slate-300 rounded-lg px-3 py-1 hover:bg-slate-50 transition-colors">
+                        <i class="fa-solid fa-download ml-1"></i> تصدير CSV
+                    </button>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-slate-50 text-slate-600 font-medium">
+                            <tr>
+                                <th class="px-4 py-3 text-right">التاريخ</th>
+                                <th class="px-4 py-3 text-right">الكمية المتوقعة</th>
+                                <th class="px-4 py-3 text-right">التراكمي</th>
+                                <th class="px-4 py-3 text-right">الحالة</th>
+                            </tr>
+                        </thead>
+                        <tbody id="forecast-table-body" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="/js/views/forecast.js?v=202506134"></script>

@@ -12,9 +12,11 @@
 
 const express = require('express');
 const db      = require('../db');
+const { authenticate } = require('../middleware/authMiddleware');
+const authorize = require('../middleware/authorize');
 const router  = express.Router();
 
-router.get('/', async (req, res) => {
+router.get('/', authenticate, authorize(['admin', 'manager', 'super_admin', 'sales_rep']), async (req, res) => {
     const { client_id, months } = req.query;
     if (!client_id) return res.status(400).json({ error: 'client_id مطلوب' });
 

@@ -10,6 +10,7 @@
 const express = require('express');
 const router  = express.Router();
 const db      = require('../db');
+const { getVatRate } = require('../utils/settings');
 const { success } = require('../utils/response');
 const authorize = require('../middleware/authorize');
 
@@ -36,7 +37,7 @@ router.get('/clients', async (req, res) => {
         res.json({ data: result.rows });
     } catch (err) {
         console.error('[VMI] GET /clients error:', err.message);
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: 'Internal server error.' });
     }
 });
 
@@ -92,7 +93,7 @@ router.get('/stock', async (req, res) => {
         });
     } catch (err) {
         console.error('[VMI] GET /stock error:', err.message);
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: 'Internal server error.' });
     }
 });
 
@@ -125,7 +126,7 @@ router.get('/branches', async (req, res) => {
         res.json({ data: result.rows });
     } catch (err) {
         console.error('[VMI] GET /branches error:', err.message);
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: 'Internal server error.' });
     }
 });
 
@@ -230,7 +231,7 @@ router.post('/dispatch', authorize(['admin', 'manager', 'super_admin', 'warehous
         if (with_invoice) {
             const validItems = items.filter(i => parseFloat(i.quantity) > 0);
             const subtotal   = validItems.reduce((sum, i) => sum + parseFloat(i.quantity) * parseFloat(i.unit_price || 0), 0);
-            const taxRate    = 0.15;
+            const taxRate    = await getVatRate();
             const taxAmount  = parseFloat((subtotal * taxRate).toFixed(2));
             const grandTotal = parseFloat((subtotal + taxAmount).toFixed(2));
 
@@ -282,7 +283,7 @@ router.post('/dispatch', authorize(['admin', 'manager', 'super_admin', 'warehous
     } catch (err) {
         await client.query('ROLLBACK');
         console.error('[VMI] POST /dispatch error:', err.message);
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: 'Internal server error.' });
     } finally {
         client.release();
     }

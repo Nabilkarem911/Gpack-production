@@ -8,6 +8,7 @@ const express = require('express');
 const router  = express.Router();
 const db      = require('../db');
 const { authenticate } = require('../middleware/authMiddleware');
+const authorize = require('../middleware/authorize');
 const { success, error, created } = require('../utils/response');
 
 // ── Auto-create table if not exists (idempotent) ──────────────────────────────
@@ -31,7 +32,7 @@ async function ensureTable() {
 ensureTable().catch(e => console.error('[PantoneColors] Table init error:', e.message));
 
 // ── GET /api/client-pantone-colors?client_id=xxx ─────────────────────────────
-router.get('/', authenticate, async (req, res) => {
+router.get('/', authenticate, authorize(['admin', 'manager', 'super_admin', 'sales_rep']), async (req, res) => {
     try {
         const { client_id } = req.query;
         if (!client_id) return error(res, 'client_id is required', 400);
@@ -57,13 +58,13 @@ router.get('/', authenticate, async (req, res) => {
         return success(res, result.rows);
     } catch (err) {
         console.error('[PantoneColors] GET error:', err.message);
-        return error(res, err.message, 500);
+        return error(res, 'Internal server error.', 500);
     }
 });
 
 // ── POST /api/client-pantone-colors ──────────────────────────────────────────
 // Body: { client_id, color_code, color_name, hex_value, notes, sort_order }
-router.post('/', authenticate, async (req, res) => {
+router.post('/', authenticate, authorize(['admin', 'manager', 'super_admin', 'sales_rep']), async (req, res) => {
     try {
         const { client_id, color_code, color_name, hex_value, notes, sort_order } = req.body;
         if (!client_id || !color_code) return error(res, 'client_id and color_code are required', 400);
@@ -97,12 +98,12 @@ router.post('/', authenticate, async (req, res) => {
         return created(res, result.rows[0], 'تم إضافة اللون بنجاح');
     } catch (err) {
         console.error('[PantoneColors] POST error:', err.message);
-        return error(res, err.message, 500);
+        return error(res, 'Internal server error.', 500);
     }
 });
 
 // ── PATCH /api/client-pantone-colors/:id ─────────────────────────────────────
-router.patch('/:id', authenticate, async (req, res) => {
+router.patch('/:id', authenticate, authorize(['admin', 'manager', 'super_admin', 'sales_rep']), async (req, res) => {
     try {
         const { id } = req.params;
         const { color_code, color_name, hex_value, notes, sort_order } = req.body;
@@ -141,12 +142,12 @@ router.patch('/:id', authenticate, async (req, res) => {
         return res.status(200).json({ success: true, data: result.rows[0], message: 'تم التحديث بنجاح' });
     } catch (err) {
         console.error('[PantoneColors] PATCH error:', err.message);
-        return error(res, err.message, 500);
+        return error(res, 'Internal server error.', 500);
     }
 });
 
 // ── DELETE /api/client-pantone-colors/:id ────────────────────────────────────
-router.delete('/:id', authenticate, async (req, res) => {
+router.delete('/:id', authenticate, authorize(['admin', 'manager', 'super_admin', 'sales_rep']), async (req, res) => {
     try {
         const { id } = req.params;
 
@@ -176,7 +177,7 @@ router.delete('/:id', authenticate, async (req, res) => {
         return res.status(200).json({ success: true, data: { id }, message: 'تم حذف اللون بنجاح' });
     } catch (err) {
         console.error('[PantoneColors] DELETE error:', err.message);
-        return error(res, err.message, 500);
+        return error(res, 'Internal server error.', 500);
     }
 });
 

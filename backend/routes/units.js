@@ -2,6 +2,7 @@
 
 const express = require('express');
 const db      = require('../db');
+const authorize = require('../middleware/authorize');
 const router  = express.Router();
 
 // =============================================================================
@@ -26,7 +27,7 @@ router.get('/', async (req, res) => {
 // POST /api/units
 // Creates a new unit.
 // =============================================================================
-router.post('/', async (req, res) => {
+router.post('/', authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
     const { name, abbreviation, base_unit_id, conversion_factor } = req.body;
     if (!name || !name.trim()) {
         return res.status(400).json({ error: 'اسم الوحدة مطلوب.' });
@@ -54,7 +55,7 @@ router.post('/', async (req, res) => {
 // PUT /api/units/:id
 // Updates name and abbreviation of a unit.
 // =============================================================================
-router.put('/:id', async (req, res) => {
+router.put('/:id', authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
     const { id } = req.params;
     const { name, abbreviation } = req.body;
 
@@ -86,7 +87,7 @@ router.put('/:id', async (req, res) => {
 // DELETE /api/units/:id
 // Deletes a unit. Blocked if linked to product variants (FK violation).
 // =============================================================================
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
     const { id } = req.params;
 
     try {

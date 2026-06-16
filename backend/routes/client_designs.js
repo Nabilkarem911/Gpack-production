@@ -10,6 +10,7 @@ const path = require('path');
 const fs = require('fs');
 const db = require('../db');
 const { authenticate } = require('../middleware/authMiddleware');
+const authorize = require('../middleware/authorize');
 const { success, error } = require('../utils/response');
 
 // ============================================================================
@@ -25,10 +26,12 @@ if (!fs.existsSync(UPLOAD_BASE)) {
 const storage = multer.diskStorage({
     destination: async (req, file, cb) => {
         const { client_id, design_id } = req.body;
-        if (!client_id) return cb(new Error('client_id required'), null);
+        if (!client_id || !validateUuid(client_id)) {
+            return cb(new Error('client_id must be a valid UUID'), null);
+        }
         
         const clientDir = path.join(UPLOAD_BASE, client_id);
-        const designDir = path.join(clientDir, design_id || 'temp');
+        const designDir = path.join(clientDir, (design_id && validateUuid(design_id)) ? design_id : 'temp');
         
         fs.mkdirSync(designDir, { recursive: true });
         cb(null, designDir);
@@ -57,6 +60,10 @@ const upload = multer({
 // ============================================================================
 // Helper: Generate next design number for client+variant
 // ============================================================================
+function validateUuid(value) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
+
 async function getNextDesignNumber(clientId, variantId) {
     const result = await db.query(
         `SELECT COALESCE(MAX(design_number), 0) + 1 as next_num 
@@ -71,7 +78,7 @@ async function getNextDesignNumber(clientId, variantId) {
 // GET /api/client-designs?client_id=xxx&variant_id=yyy
 // List designs by client_id (optional variant_id filter)
 // ============================================================================
-router.get('/', authenticate, async (req, res) => {
+router.get('/', authenticate, authorize(['admin', 'manager', 'super_admin', 'sales_rep']), async (req, res) => {
     try {
         const { client_id, variant_id } = req.query;
         
@@ -132,7 +139,7 @@ router.get('/', authenticate, async (req, res) => {
         
     } catch (err) {
         console.error('[ClientDesigns] List error:', err);
-        return error(res, err.message, 500);
+        return error(res, 'Internal server error.', 500);
     }
 });
 
@@ -141,7 +148,7 @@ router.get('/', authenticate, async (req, res) => {
 // List all designs for a specific client + variant
 // Returns designs with thumbnail URLs
 // ============================================================================
-router.get('/:client_id/:variant_id', authenticate, async (req, res) => {
+router.get('/:client_id/:variant_id', authenticate, authorize(['admin', 'manager', 'super_admin', 'sales_rep']), async (req, res) => {
     try {
         const { client_id, variant_id } = req.params;
 
@@ -190,7 +197,7 @@ router.get('/:client_id/:variant_id', authenticate, async (req, res) => {
         
     } catch (err) {
         console.error('[ClientDesigns] List error:', err);
-        return error(res, err.message, 500);
+        return error(res, 'Internal server error.', 500);
     }
 });
 
@@ -200,7 +207,7 @@ router.get('/:client_id/:variant_id', authenticate, async (req, res) => {
 // Body: client_id, variant_id, design_name, description, is_active
 // Files: thumbnail (image), pdf, ai, psd (optional)
 // ============================================================================
-router.post('/', authenticate, upload.fields([
+router.post('/', authenticate, authorize(['admin', 'manager', 'super_admin', 'sales_rep']), upload.fields([
     { name: 'thumbnail', maxCount: 1 },
     { name: 'pdf', maxCount: 1 },
     { name: 'ai', maxCount: 1 },
@@ -227,6 +234,9 @@ router.post('/', authenticate, upload.fields([
         );
         
         const design = designResult.rows[0];
+        if (!validateUuid(client_id)) {
+            return error(res, 'Invalid client_id', 400);
+        }
         const designDir = path.join(UPLOAD_BASE, client_id, design.id);
         fs.mkdirSync(designDir, { recursive: true });
         
@@ -276,7 +286,7 @@ router.post('/', authenticate, upload.fields([
         console.error('[ClientDesigns] Stack:', err.stack);
         console.error('[ClientDesigns] Request body:', req.body);
         console.error('[ClientDesigns] User:', req.user);
-        return error(res, err.message, 500);
+        return error(res, 'Internal server error.', 500);
     }
 });
 
@@ -284,7 +294,7 @@ router.post('/', authenticate, upload.fields([
 // GET /api/client-designs/by-id/:design_id
 // Get single design details with all files
 // ============================================================================
-router.get('/by-id/:design_id', authenticate, async (req, res) => {
+router.get('/by-id/:design_id', authenticate, authorize(['admin', 'manager', 'super_admin', 'sales_rep']), async (req, res) => {
     try {
         const { design_id } = req.params;
         
@@ -324,7 +334,7 @@ router.get('/by-id/:design_id', authenticate, async (req, res) => {
         
     } catch (err) {
         console.error('[ClientDesigns] Get error:', err);
-        return error(res, err.message, 500);
+        return error(res, 'Internal server error.', 500);
     }
 });
 
@@ -332,7 +342,7 @@ router.get('/by-id/:design_id', authenticate, async (req, res) => {
 // GET /api/client-designs/download/:file_id
 // Download a design file
 // ============================================================================
-router.get('/download/:file_id', authenticate, async (req, res) => {
+router.get('/download/:file_id', authenticate, authorize(['admin', 'manager', 'super_admin', 'sales_rep']), async (req, res) => {
     try {
         const { file_id } = req.params;
         
@@ -373,7 +383,7 @@ router.get('/download/:file_id', authenticate, async (req, res) => {
         
     } catch (err) {
         console.error('[ClientDesigns] Download error:', err);
-        return error(res, err.message, 500);
+        return error(res, 'Internal server error.', 500);
     }
 });
 
@@ -381,7 +391,7 @@ router.get('/download/:file_id', authenticate, async (req, res) => {
 // DELETE /api/client-designs/:design_id
 // Delete design and all its files
 // ============================================================================
-router.delete('/:design_id', authenticate, async (req, res) => {
+router.delete('/:design_id', authenticate, authorize(['admin', 'manager', 'super_admin', 'sales_rep']), async (req, res) => {
     try {
         const { design_id } = req.params;
         
@@ -425,7 +435,7 @@ router.delete('/:design_id', authenticate, async (req, res) => {
         
     } catch (err) {
         console.error('[ClientDesigns] Delete error:', err);
-        return error(res, err.message, 500);
+        return error(res, 'Internal server error.', 500);
     }
 });
 

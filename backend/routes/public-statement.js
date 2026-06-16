@@ -17,6 +17,16 @@ const db      = require('../db');
 router.get('/client-statement/:clientId', async (req, res) => {
     try {
         const { clientId } = req.params;
+        const { t } = req.query;
+
+        // Verify access token is present and valid (base64url encoding of clientId)
+        if (!t) {
+            return res.status(400).json({ error: 'Access token required' });
+        }
+        const decodedToken = Buffer.from(t.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
+        if (decodedToken !== clientId) {
+            return res.status(403).json({ error: 'Invalid access token' });
+        }
 
         // Verify client exists and is active (status = 'active')
         const clientRes = await db.query(
@@ -40,14 +50,15 @@ router.get('/client-statement/:clientId', async (req, res) => {
                     i.grand_total as debit,
                     0 as credit,
                     i.status as status,
-                    COALESCE(i.notes, '') as notes
+                    COALESCE(i.notes, '') as notes,
+                    i.share_token as invoice_share_token
                 FROM invoices i
                 WHERE i.client_id = $1 AND i.status != 'cancelled'
                 
                 UNION ALL
                 
-                -- Receipt Vouchers (Credit - له) - Link via client_id in description or reference
-                SELECT 
+                -- Receipt Vouchers (Credit - له)
+                SELECT
                     av.id::text as transaction_id,
                     av.voucher_date as trans_date,
                     'سند قبض' as document_type,
@@ -57,12 +68,10 @@ router.get('/client-statement/:clientId', async (req, res) => {
                     av.status as status,
                     COALESCE(av.description, '') as notes
                 FROM accounting_vouchers av
-                WHERE av.voucher_type = 'receipt' 
+                WHERE av.voucher_type = 'receipt'
                     AND av.status = 'posted'
-                    AND (
-                        av.description ILIKE '%' || (SELECT name FROM clients WHERE id = $1) || '%'
-                        OR av.reference_type = 'client' AND av.reference_id = $1
-                    )
+                    AND av.reference_type = 'client'
+                    AND av.reference_id = $1
             ) transactions
             ORDER BY trans_date ASC, document_number ASC
             LIMIT 500
@@ -82,21 +91,20 @@ router.get('/client-statement/:clientId', async (req, res) => {
 
         // Get summary
         const summaryRes = await db.query(`
-            SELECT 
+            SELECT
                 COALESCE(SUM(CASE WHEN doc_type = 'invoice' THEN amount ELSE 0 END), 0) as total_invoices,
                 COALESCE(SUM(CASE WHEN doc_type = 'payment' THEN amount ELSE 0 END), 0) as total_payments
             FROM (
-                SELECT 'invoice' as doc_type, grand_total as amount 
-                FROM invoices 
+                SELECT 'invoice' as doc_type, grand_total as amount
+                FROM invoices
                 WHERE client_id = $1 AND status != 'cancelled'
                 UNION ALL
-                SELECT 'payment' as doc_type, avl.credit as amount
+                SELECT 'payment' as doc_type, av.total_amount as amount
                 FROM accounting_vouchers av
-                JOIN accounting_voucher_lines avl ON avl.voucher_id = av.id
-                JOIN accounts a ON a.id = avl.account_id
-                WHERE av.voucher_type = 'receipt' 
+                WHERE av.voucher_type = 'receipt'
                     AND av.status = 'posted'
-                    AND a.name LIKE '%' || (SELECT name FROM clients WHERE id = $1) || '%'
+                    AND av.reference_type = 'client'
+                    AND av.reference_id = $1
             ) totals
         `, [clientId]);
 

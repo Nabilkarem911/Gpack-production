@@ -23,3 +23,7 @@ Thumbs.db
 # Scripts created during dev
 fix-all.ps1
 backend/scripts/run-migration.js
+
+
+#Ignore vscode AI rules
+.github\instructions\codacy.instructions.md

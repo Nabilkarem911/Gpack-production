@@ -5,6 +5,7 @@ const db = require('../db');
 const { success, error } = require('../utils/response');
 const { authenticate } = require('../middleware/authMiddleware');
 const authorize = require('../middleware/authorize');
+const { getVatRate } = require('../utils/settings');
 
 const router = express.Router();
 
@@ -546,17 +547,19 @@ router.put('/pending-pricing/:id', authenticate, authorize(['admin', 'manager', 
             }
         }
 
+        const fallbackVatRate = await getVatRate();
+
         // Recalculate order totals
         await db.query(
-            `UPDATE orders 
+            `UPDATE orders
              SET subtotal = (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE order_id = $1),
-                 tax_amount = (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE order_id = $1) * COALESCE(tax_rate, 0.15),
-                 grand_total = (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE order_id = $1) * (1 + COALESCE(tax_rate, 0.15)),
+                 tax_amount = (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE order_id = $1) * COALESCE(tax_rate, $3),
+                 grand_total = (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE order_id = $1) * (1 + COALESCE(tax_rate, $3)),
                  pricing_status = 'priced',
                  pricing_notes = COALESCE($2, pricing_notes),
                  updated_at = NOW()
              WHERE id = $1`,
-            [id, pricing_notes || null]
+            [id, pricing_notes || null, fallbackVatRate]
         );
 
         await db.query('COMMIT');

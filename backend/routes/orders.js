@@ -3,6 +3,7 @@
 const express = require('express');
 const db      = require('../db');
 const { success, created, paginated } = require('../utils/response');
+const { getVatRate } = require('../utils/settings');
 
 const router = express.Router();
 
@@ -10,7 +11,6 @@ const router = express.Router();
 // FINANCIAL RULE: subtotal, tax_amount (15%), and grand_total are calculated
 // SERVER-SIDE only. Client payload values for these fields are IGNORED.
 
-const VAT_RATE = 0.15;
 
 // =============================================================================
 // GET /api/orders
@@ -283,7 +283,7 @@ router.get('/ready-for-invoice', async (req, res) => {
 
     } catch (err) {
         console.error('[Orders] GET /ready-for-invoice error:', err.message);
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: 'Internal server error.' });
     }
 });
 
@@ -588,6 +588,8 @@ router.post('/', async (req, res) => {
         return res.status(400).json({ error: 'العميل مطلوب.' });
     }
 
+    const vatRate = await getVatRate();
+
     if (!Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ error: 'يجب إضافة صنف واحد على الأقل.' });
     }
@@ -663,7 +665,7 @@ router.post('/', async (req, res) => {
                     return { ...item, qty, price, lineTotal };
                 });
                 subtotal            = Math.round(subtotal * 100) / 100;
-                tax_amount          = Math.round(subtotal * VAT_RATE * 100) / 100;
+                tax_amount          = Math.round(subtotal * vatRate * 100) / 100;
                 grand_total         = Math.round((subtotal + tax_amount) * 100) / 100;
             }
 
@@ -758,6 +760,8 @@ router.put('/:id', async (req, res) => {
         items,
     } = req.body;
 
+    const vatRate = await getVatRate();
+
     try {
         const existing = await db.query(
             'SELECT id, status, created_by FROM orders WHERE id = $1 LIMIT 1',
@@ -816,7 +820,7 @@ router.put('/:id', async (req, res) => {
                     return { ...item, qty, price, lineTotal };
                 });
                 subtotal          = Math.round(subtotal * 100) / 100;
-                tax_amount        = Math.round(subtotal * VAT_RATE * 100) / 100;
+                tax_amount        = Math.round(subtotal * vatRate * 100) / 100;
                 grand_total       = Math.round((subtotal + tax_amount) * 100) / 100;
             }
 
@@ -1283,6 +1287,8 @@ router.post('/:id/invoice', async (req, res) => {
     const { id } = req.params;
     const { type = 'proforma', items = [], additional_expenses = 0, notes = '' } = req.body;
 
+    const vatRate = await getVatRate();
+
     if (!['proforma', 'final'].includes(type)) {
         return res.status(400).json({ error: 'نوع الفاتورة غير صحيح. يجب أن يكون proforma أو final.' });
     }
@@ -1335,7 +1341,7 @@ router.post('/:id/invoice', async (req, res) => {
                 subtotal += parseFloat(item.unit_price || 0) * parseFloat(item.qty || 0);
             }
             subtotal = Math.round(subtotal * 100) / 100;
-            const taxAmount = Math.round(subtotal * VAT_RATE * 100) / 100;
+            const taxAmount = Math.round(subtotal * vatRate * 100) / 100;
             const addExp = Math.round(parseFloat(additional_expenses || 0) * 100) / 100;
             const grandTotal = Math.round((subtotal + taxAmount + addExp) * 100) / 100;
 
@@ -1345,7 +1351,7 @@ router.post('/:id/invoice', async (req, res) => {
                                        additional_expenses, grand_total, status, notes)
                  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                  RETURNING id, invoice_number`,
-                [id, order.client_id, subtotal, VAT_RATE, taxAmount, addExp, grandTotal,
+                [id, order.client_id, subtotal, vatRate, taxAmount, addExp, grandTotal,
                  type === 'final' ? 'issued' : 'draft', notes || null]
             );
             const invoice = invRes.rows[0];

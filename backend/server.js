@@ -4,6 +4,7 @@ require('dotenv').config();
 
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const path = require('path');
 const fs = require('fs');
 const rateLimit = require('express-rate-limit');
@@ -133,6 +134,8 @@ const publicLimiter = rateLimit({
 // Global Middleware
 // =============================================================================
 
+app.use(helmet());
+
 app.use(cors({
   origin: process.env.CORS_ORIGIN || 'http://localhost',
   credentials: true,
@@ -186,9 +189,10 @@ app.get('/api/health', async (req, res) => {
 });
 
 // =============================================================================
-// TEMP: Public Migration Endpoint (No Auth Required)
+// Protected Migration Endpoint (super_admin only)
 // =============================================================================
-app.get('/api/migrate-tax-rate', async (req, res) => {
+const authorize = require('./middleware/authorize');
+app.get('/api/migrate-tax-rate', authenticate, authorize(['super_admin']), async (req, res) => {
     try {
         await db.query(`
             ALTER TABLE manufacturer_orders 
@@ -197,7 +201,7 @@ app.get('/api/migrate-tax-rate', async (req, res) => {
         res.json({ success: true, message: 'tax_rate column added successfully' });
     } catch (err) {
         console.error('[Migration] Error:', err.message);
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error.' });
     }
 });
 

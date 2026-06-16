@@ -234,7 +234,7 @@ router.get('/:id/print-pdf', authenticate, async (req, res) => {
 
     } catch (err) {
         console.error('[ManufacturerPrint] PDF error:', err);
-        return res.status(500).json({ error: err.message });
+        return res.status(500).json({ error: 'Internal server error.' });
     }
 });
 

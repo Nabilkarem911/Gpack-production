@@ -10,27 +10,51 @@ const db = require('../db');
 
 // ── GET /api/public/invoice/:id ─────────────────────────────────────────────
 // Public invoice details (view only, no auth required)
-router.get('/:id', async (req, res) => {
+router.get('/:identifier', async (req, res) => {
     try {
-        const { id } = req.params;
+        const { identifier } = req.params;
 
-        // Invoice header
-        const invRes = await db.query(`
+        // Try lookup by share_token first (secure links)
+        let invRes = await db.query(`
             SELECT
                 i.id, i.invoice_number, i.invoice_date, i.due_date,
                 i.status, i.subtotal, i.tax_amount, i.additional_expenses, i.grand_total,
-                i.notes, i.created_at,
+                i.notes, i.created_at, i.share_token, i.token_expires_at,
                 c.id AS client_id, c.name AS client_name, c.phone AS client_phone
             FROM invoices i
             LEFT JOIN clients c ON c.id = i.client_id
-            WHERE i.id = $1 AND i.status != 'cancelled'
-        `, [id]);
+            WHERE i.share_token = $1 AND i.status != 'cancelled'
+        `, [identifier]);
+
+        let viaToken = false;
+        if (invRes.rows.length > 0) {
+            viaToken = true;
+        } else {
+            // Fallback to ID lookup for backward compatibility
+            invRes = await db.query(`
+                SELECT
+                    i.id, i.invoice_number, i.invoice_date, i.due_date,
+                    i.status, i.subtotal, i.tax_amount, i.additional_expenses, i.grand_total,
+                    i.notes, i.created_at, i.share_token, i.token_expires_at,
+                    c.id AS client_id, c.name AS client_name, c.phone AS client_phone
+                FROM invoices i
+                LEFT JOIN clients c ON c.id = i.client_id
+                WHERE i.id = $1 AND i.status != 'cancelled'
+            `, [identifier]);
+        }
 
         if (!invRes.rows.length) {
             return res.status(404).json({ error: 'Invoice not found' });
         }
 
         const invoice = invRes.rows[0];
+
+        // If accessed via share_token, check expiry
+        if (viaToken && invoice.token_expires_at && new Date(invoice.token_expires_at) < new Date()) {
+            return res.status(410).json({ error: 'انتهت صلاحية هذا الرابط.' });
+        }
+
+        const id = invoice.id;
 
         // Invoice items
         const itemsRes = await db.query(`
@@ -58,7 +82,7 @@ router.get('/:id', async (req, res) => {
 
     } catch (err) {
         console.error('[PublicInvoice] GET error:', err.message);
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: 'Internal server error.' });
     }
 });
 

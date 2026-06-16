@@ -1,34 +1,47 @@
 // =============================================================================
-// G.PACK 2.0 - AI Demand Forecasting View
+// G.PACK 2.0 - AI Intelligence Center View
+// RFM Segmentation + Churn Alerts + Demand Forecasting
 // =============================================================================
 
 var forecastView = {
     chart: null,
     currentData: null,
+    rfmData: null,
+    churnData: null,
 
     init() {
         this.loadClients();
+        this.loadRFM();
+        this.loadChurn();
         this.bindEvents();
     },
 
     bindEvents() {
         document.getElementById('forecast-btn').addEventListener('click', () => this.runForecast());
         document.getElementById('forecast-export').addEventListener('click', () => this.exportCSV());
+        const rfmRefresh = document.getElementById('rfm-refresh');
+        if (rfmRefresh) rfmRefresh.addEventListener('click', () => this.loadRFM());
+        const churnRefresh = document.getElementById('churn-refresh');
+        if (churnRefresh) churnRefresh.addEventListener('click', () => this.loadChurn());
     },
 
     async loadClients() {
         const select = document.getElementById('forecast-client');
         select.innerHTML = '<option value="">جارٍ التحميل...</option>';
 
-        if (typeof api === 'undefined' || !api.get) {
+        if (typeof window.apiFetch !== 'function') {
+            console.error('[Forecast] window.apiFetch not available');
             select.innerHTML = '<option value="">API غير متاح</option>';
             return;
         }
 
         try {
-            const res = await api.get('/clients');
-            const clients = res.data || res;
-            if (!clients || !clients.length) {
+            console.log('[Forecast] Loading clients...');
+            const res = await window.apiFetch('/api/clients');
+            console.log('[Forecast] Clients response:', res);
+            const clients = res.data || res || [];
+            console.log('[Forecast] Clients count:', clients.length);
+            if (!clients.length) {
                 select.innerHTML = '<option value="">مفيش عملاء</option>';
                 return;
             }
@@ -53,7 +66,7 @@ var forecastView = {
         document.getElementById('forecast-results').classList.add('hidden');
 
         try {
-            const data = await api.post(`/forecast/client/${clientId}`, { periods });
+            const data = await window.apiFetch(`/api/forecast/client/${clientId}`, { method: 'POST', body: { periods } });
             this.currentData = data;
 
             if (!data.ready) {
@@ -83,52 +96,24 @@ var forecastView = {
     },
 
     renderChart(forecast) {
-        const ctx = document.getElementById('forecast-chart').getContext('2d');
+        const container = document.getElementById('forecast-chart');
+        if (!container) return;
 
-        if (this.chart) {
-            this.chart.destroy();
-        }
+        const maxQty = Math.max(...forecast.map(f => f.qty), 1);
+        const step = Math.ceil(forecast.length / 20);
+        const displayPoints = forecast.filter((_, i) => i % step === 0 || i === forecast.length - 1);
 
-        const labels = forecast.map(f => {
+        container.innerHTML = displayPoints.map(f => {
+            const height = Math.round((f.qty / maxQty) * 100);
             const d = new Date(f.date);
-            return d.toLocaleDateString('ar-SA', { month: 'short', day: 'numeric' });
-        });
-        const values = forecast.map(f => f.qty);
-
-        this.chart = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels,
-                datasets: [{
-                    label: 'الكمية المتوقعة',
-                    data: values,
-                    borderColor: '#7c3aed',
-                    backgroundColor: 'rgba(124, 58, 237, 0.1)',
-                    borderWidth: 2,
-                    fill: true,
-                    tension: 0.4,
-                    pointRadius: 2,
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: { display: false }
-                },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        grid: { color: '#f1f5f9' },
-                        ticks: { font: { size: 10 } }
-                    },
-                    x: {
-                        grid: { display: false },
-                        ticks: { font: { size: 10 }, maxTicksLimit: 10 }
-                    }
-                }
-            }
-        });
+            const label = d.getDate();
+            return `
+                <div class="flex flex-col items-center flex-shrink-0" style="width: 24px;" title="${f.date}: ${Math.round(f.qty).toLocaleString()}">
+                    <div class="w-3 rounded-t bg-purple-500 hover:bg-purple-600 transition-colors" style="height: ${height}px; min-height: 2px;"></div>
+                    <span class="text-[9px] text-slate-400 mt-1">${label}</span>
+                </div>
+            `;
+        }).join('');
     },
 
     renderTable(forecast) {
@@ -169,8 +154,114 @@ var forecastView = {
         link.click();
     },
 
+    // ── RFM Segmentation ─────────────────────────────────────────────────────
+    async loadRFM() {
+        const loading = document.getElementById('rfm-loading');
+        const content = document.getElementById('rfm-content');
+        if (loading) loading.classList.remove('hidden');
+        if (content) content.classList.add('hidden');
+
+        try {
+            const data = await window.apiFetch('/api/forecast/insights/rfm');
+            this.rfmData = data;
+            this.renderRFM(data);
+        } catch (err) {
+            console.error('[AI] RFM error:', err);
+        } finally {
+            if (loading) loading.classList.add('hidden');
+            if (content) content.classList.remove('hidden');
+        }
+    },
+
+    renderRFM(data) {
+        const counts = data.counts || {};
+        const elVip = document.getElementById('rfm-vip-count');
+        const elActive = document.getElementById('rfm-active-count');
+        const elRisk = document.getElementById('rfm-at_risk-count');
+        const elDormant = document.getElementById('rfm-dormant-count');
+        if (elVip) elVip.textContent = counts.vip || 0;
+        if (elActive) elActive.textContent = counts.active || 0;
+        if (elRisk) elRisk.textContent = counts.at_risk || 0;
+        if (elDormant) elDormant.textContent = counts.dormant || 0;
+    },
+
+    toggleRfmSegment(segment) {
+        if (!this.rfmData || !this.rfmData.segments) return;
+        const panel = document.getElementById('rfm-detail-panel');
+        const title = document.getElementById('rfm-detail-title');
+        const tbody = document.getElementById('rfm-detail-body');
+        if (!panel || !title || !tbody) return;
+
+        const clients = this.rfmData.segments[segment] || [];
+        const labels = { vip: 'العملاء VIP', active: 'العملاء النشطين', at_risk: 'العملاء المُهددين', dormant: 'العملاء النائمين' };
+        title.textContent = labels[segment] || 'التفاصيل';
+
+        if (!clients.length) {
+            tbody.innerHTML = '<tr><td colspan="4" class="px-4 py-4 text-center text-slate-400 text-sm">مفيش عملاء في الفئة دي</td></tr>';
+        } else {
+            tbody.innerHTML = clients.map(c => `
+                <tr class="hover:bg-slate-50 transition-colors cursor-pointer" onclick="window.navigateTo('client-profile?id=${c.id}')">
+                    <td class="px-4 py-2 text-slate-800 font-medium">${c.name}</td>
+                    <td class="px-4 py-2 text-slate-600">${c.last_order || '—'}</td>
+                    <td class="px-4 py-2 text-slate-600">${c.frequency}</td>
+                    <td class="px-4 py-2 text-slate-800 font-bold">${Number(c.monetary).toLocaleString()} ج.م</td>
+                </tr>
+            `).join('');
+        }
+        panel.classList.remove('hidden');
+    },
+
+    // ── Churn Alerts ─────────────────────────────────────────────────────────
+    async loadChurn() {
+        const loading = document.getElementById('churn-loading');
+        const content = document.getElementById('churn-content');
+        const empty = document.getElementById('churn-empty');
+        if (loading) loading.classList.remove('hidden');
+        if (content) content.classList.add('hidden');
+        if (empty) empty.classList.add('hidden');
+
+        try {
+            const data = await window.apiFetch('/api/forecast/insights/churn?days=30');
+            this.churnData = data;
+            this.renderChurn(data);
+        } catch (err) {
+            console.error('[AI] Churn error:', err);
+        } finally {
+            if (loading) loading.classList.add('hidden');
+            if (content) content.classList.remove('hidden');
+        }
+    },
+
+    renderChurn(data) {
+        const tbody = document.getElementById('churn-table-body');
+        const empty = document.getElementById('churn-empty');
+        const clients = data.clients || [];
+        if (!tbody) return;
+
+        if (!clients.length) {
+            tbody.innerHTML = '';
+            if (empty) empty.classList.remove('hidden');
+            return;
+        }
+        if (empty) empty.classList.add('hidden');
+
+        tbody.innerHTML = clients.map(c => {
+            const daysClass = c.inactive_days > 60 ? 'text-red-600 font-bold' : (c.inactive_days > 45 ? 'text-orange-600 font-bold' : 'text-slate-700');
+            return `
+                <tr class="hover:bg-slate-50 transition-colors cursor-pointer" onclick="window.navigateTo('client-profile?id=${c.id}')">
+                    <td class="px-4 py-3 text-slate-800 font-medium">${c.name}</td>
+                    <td class="px-4 py-3 text-slate-600">${c.last_order || '—'}</td>
+                    <td class="px-4 py-3 ${daysClass}">${c.inactive_days === 999 ? 'ماطلبوش قبل كدا' : c.inactive_days + ' يوم'}</td>
+                    <td class="px-4 py-3 text-slate-600">${c.total_orders}</td>
+                    <td class="px-4 py-3 text-slate-800 font-bold">${Number(c.total_value).toLocaleString()} ج.م</td>
+                </tr>
+            `;
+        }).join('');
+    },
+
     showStatus(msg, type) {
         const el = document.getElementById('forecast-status');
+        if (!el) return;
         el.classList.remove('hidden', 'bg-amber-50', 'text-amber-700', 'bg-red-50', 'text-red-700', 'bg-emerald-50', 'text-emerald-700', 'bg-purple-50', 'text-purple-700');
         el.classList.remove('border', 'border-amber-200', 'border-red-200', 'border-emerald-200', 'border-purple-200');
 

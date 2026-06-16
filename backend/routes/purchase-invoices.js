@@ -10,6 +10,7 @@ const router  = express.Router();
 const db      = require('../db');
 const { authenticate } = require('../middleware/authMiddleware');
 const authorize = require('../middleware/authorize');
+const { getVatRate } = require('../utils/settings');
 
 router.use(authenticate);
 const restrictToAdmin = authorize(['admin', 'manager', 'super_admin']);
@@ -88,7 +89,7 @@ router.get('/', async (req, res) => {
 
     } catch (err) {
         console.error('[PurchaseInvoices] GET / error:', err.message);
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: 'Internal server error.' });
     }
 });
 
@@ -141,7 +142,7 @@ router.get('/:id', async (req, res) => {
 
     } catch (err) {
         console.error('[PurchaseInvoices] GET /:id error:', err.message);
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: 'Internal server error.' });
     }
 });
 
@@ -160,10 +161,12 @@ router.post('/', async (req, res) => {
             invoice_date,
             due_date,
             supplier_invoice_ref,
-            tax_rate = 0.15,
+            tax_rate,
             notes,
             items,
         } = req.body;
+
+        const effectiveTaxRate = tax_rate ?? await getVatRate();
 
         // Validate
         if (!supplier_id || !items?.length) {
@@ -177,7 +180,7 @@ router.post('/', async (req, res) => {
             const lineTotal = (item.quantity || 0) * (item.unit_price || 0);
             subtotal += lineTotal;
         }
-        const taxAmount = subtotal * tax_rate;
+        const taxAmount = subtotal * effectiveTaxRate;
         const grandTotal = subtotal + taxAmount;
 
         // Generate invoice number
@@ -202,7 +205,7 @@ router.post('/', async (req, res) => {
             due_date || null,
             supplier_invoice_ref || null,
             subtotal,
-            tax_rate,
+            effectiveTaxRate,
             taxAmount,
             grandTotal,
             'unpaid', // unpaid, paid, partially_paid, cancelled
@@ -237,7 +240,7 @@ router.post('/', async (req, res) => {
     } catch (err) {
         await client.query('ROLLBACK');
         console.error('[PurchaseInvoices] POST / error:', err.message);
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: 'Internal server error.' });
     } finally {
         client.release();
     }
@@ -278,7 +281,7 @@ router.get('/suppliers/:supplierId/orders-ready', async (req, res) => {
 
     } catch (err) {
         console.error('[PurchaseInvoices] GET /orders-ready error:', err.message);
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: 'Internal server error.' });
     }
 });
 

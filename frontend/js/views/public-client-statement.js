@@ -143,9 +143,11 @@
     // ── Helpers ─────────────────────────────────────────────────────────────────
     function _getDocLink(t) {
         if (t.document_type.includes('مبيعات')) {
-            const invoiceUrl = `${window.location.origin}/public-invoice.html?id=${t.transaction_id}`;
+            const invoiceUrl = t.invoice_share_token
+                ? `${window.location.origin}/public-invoice.html?token=${t.invoice_share_token}`
+                : `${window.location.origin}/public-invoice.html?id=${t.transaction_id}`;
             return `<a href="${invoiceUrl}" target="_blank" rel="noopener noreferrer"
-                class="inline-flex items-center gap-1.5 font-mono text-blue-600 hover:text-blue-800 hover:underline transition-colors" 
+                class="inline-flex items-center gap-1.5 font-mono text-blue-600 hover:text-blue-800 hover:underline transition-colors"
                 title="فتح الفاتورة في صفحة جديدة">
                 <i class="fa-solid fa-file-invoice text-blue-500"></i>
                 #${esc(t.document_number)}

@@ -215,17 +215,23 @@
         }
 
         async function _init() {
-            // Get invoice ID from query string: ?id=UUID
+            // Get invoice identifier from query string: ?token=TOKEN or ?id=UUID
             const params = new URLSearchParams(window.location.search);
+            const token = params.get('token');
             const invoiceId = params.get('id');
 
-            if (!invoiceId) {
+            let url;
+            if (token) {
+                url = '/api/public/invoice/' + encodeURIComponent(token);
+            } else if (invoiceId) {
+                url = '/api/public/invoice/' + encodeURIComponent(invoiceId);
+            } else {
                 _showError();
                 return;
             }
 
             try {
-                const res = await fetch('/api/public/invoice/' + invoiceId);
+                const res = await fetch(url);
                 if (!res.ok) throw new Error('Not found');
                 const json = await res.json();
                 _render(json.data);

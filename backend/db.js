@@ -19,13 +19,16 @@ const pool = new Pool({
   connectionTimeoutMillis: 5000,
 });
 
-pool.on('connect', () => {
+pool.on('connect', (client) => {
   console.log('[DB] New client connected to PostgreSQL pool.');
+  client.query('SET statement_timeout = 30000').catch(err => {
+    console.error('[DB] Failed to set statement_timeout:', err.message);
+  });
 });
 
 pool.on('error', (err) => {
   console.error('[DB] Unexpected error on idle client:', err.message);
-  process.exit(1);
+  // Do NOT process.exit(1) here — let the pool recover idle clients gracefully.
 });
 
 // =============================================================================
