@@ -11,8 +11,11 @@ const express = require('express');
 const router  = express.Router();
 const db      = require('../db');
 const { success, created } = require('../utils/response');
+const { authenticate } = require('../middleware/authMiddleware');
 const authorize = require('../middleware/authorize');
 const { getVatRate } = require('../utils/settings');
+const { encryptToken, hashToken } = require('../utils/crypto');
+const { invoiceCreate, validateBody } = require('../utils/validators');
 
 // ── GET /api/invoices ───────────────────────────────────────────────────────
 // Query params: client_id, status, from, to, search, limit, offset
@@ -173,19 +176,21 @@ router.post('/:id/share', authenticate, async (req, res) => {
         const { id } = req.params;
         const expiresDays = parseInt(req.body.expires_days || 30);
 
-        const token = require('crypto').randomBytes(32).toString('hex');
-        const expiresAt = new Date(Date.now() + expiresDays * 24 * 60 * 60 * 1000);
+        const plainToken = require('crypto').randomBytes(32).toString('hex');
+        const encrypted  = encryptToken(plainToken);
+        const tokenHash  = hashToken(plainToken);
+        const expiresAt  = new Date(Date.now() + expiresDays * 24 * 60 * 60 * 1000);
 
         await db.query(
-            `UPDATE invoices SET share_token = $1, token_expires_at = $2 WHERE id = $3`,
-            [token, expiresAt, id]
+            `UPDATE invoices SET share_token = $1, share_token_hash = $2, token_expires_at = $3 WHERE id = $4`,
+            [encrypted, tokenHash, expiresAt, id]
         );
 
         const baseUrl = `${req.protocol}://${req.get('host')}`;
         res.json({
             success: true,
-            url: `${baseUrl}/public-invoice.html?token=${token}`,
-            token,
+            url: `${baseUrl}/public-invoice.html?token=${plainToken}`,
+            token: plainToken,
             expires_at: expiresAt
         });
     } catch (err) {
@@ -196,7 +201,7 @@ router.post('/:id/share', authenticate, async (req, res) => {
 
 // ── POST /api/invoices ──────────────────────────────────────────────────────
 // Create new sales invoice
-// Body: client_id, invoice_date, due_date, items[], tax_rate, notes, order_id (optional)
+// Body: client_ivalidateBody(invoiceCreate), d, invoice_date, due_date, items[], tax_rate, notes, order_id (optional)
 router.post('/', async (req, res) => {
     const isAdmin = ['super_admin', 'admin', 'manager'].includes(req.user.role);
     if (!isAdmin) {

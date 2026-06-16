@@ -4,6 +4,7 @@ const express = require('express');
 const db = require('../db');
 const { authenticate } = require('../middleware/authMiddleware');
 const authorize = require('../middleware/authorize');
+const { clientCreate, validateBody } = require('../utils/validators');
 
 const router = express.Router();
 
@@ -227,7 +228,7 @@ router.get('/:id/profile', async (req, res) => {
 // - parent_id: null = Main Client, UUID = Franchise Branch
 // - created_by is always set to the authenticated user's ID.
 // =============================================================================
-
+validateBody(clientCreate), 
 router.post('/', async (req, res) => {
     const {
         name,

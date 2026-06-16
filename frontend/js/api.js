@@ -52,6 +52,12 @@ window.showToast = function (message, type = 'info') {
 
     container.appendChild(toast);
 
+    // Cap max visible toasts to prevent DOM accumulation (R-006)
+    const MAX_TOASTS = 6;
+    while (container.children.length > MAX_TOASTS) {
+        container.firstElementChild.remove();
+    }
+
     setTimeout(() => {
         toast.style.opacity = '0';
         toast.style.transform = 'translateX(2rem)';
@@ -97,6 +103,8 @@ window.apiFetch = async function (endpoint, options = {}) {
         ...(options.headers || {}),
     };
 
+    // Backward-compat: still attach Authorization header if token is in localStorage
+    // during the transition period to HttpOnly cookies.
     const token = localStorage.getItem('gpack_token');
     if (token) {
         headers['Authorization'] = `Bearer ${token}`;
@@ -106,6 +114,7 @@ window.apiFetch = async function (endpoint, options = {}) {
     try {
         response = await fetch(url, {
             ...options,
+            credentials: 'include',
             headers,
             body: options.body ? (typeof options.body === 'string' ? options.body : JSON.stringify(options.body)) : undefined,
         });

@@ -15,12 +15,8 @@ const router = express.Router();
 // bcrypt.compare() prevents timing attacks on password comparison.
 // =============================================================================
 
-router.post('/login', async (req, res) => {
+router.post('/login', validateBody(loginBody), async (req, res) => {
   const { email, password } = req.body;
-
-  if (!email || !password) {
-    return res.status(400).json({ error: 'Email and password are required.' });
-  }
 
   try {
     const result = await db.query(
@@ -70,8 +66,17 @@ router.post('/login', async (req, res) => {
       issuer: 'gpack-2.0',
     });
 
+    // Set JWT as an HttpOnly cookie (prevents XSS token theft)
+    const isProduction = process.env.NODE_ENV === 'production';
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: isProduction,         // HTTPS only in production
+      sameSite: isProduction ? 'strict' : 'lax',
+      maxAge: 8 * 60 * 60 * 1000,   // 8 hours
+    });
+
     return res.status(200).json({
-      token,
+      token, // Included for backward-compat during transition; remove once frontend fully migrated
       user: {
         id: user.id,
         email: user.email,
@@ -139,7 +144,12 @@ router.get('/me', authenticate, async (req, res) => {
     console.error('[Auth] /me error:', err.message);
     return res.status(500).json({ error: 'Internal server error.' });
   }
-});
+});s.clearCookie('token', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+  });
+  re
 
 // =============================================================================
 // POST /api/auth/logout
@@ -151,4 +161,5 @@ router.post('/logout', authenticate, (req, res) => {
   return res.status(200).json({ message: 'Logged out successfully.' });
 });
 
+module.exports = router;
 module.exports = router;

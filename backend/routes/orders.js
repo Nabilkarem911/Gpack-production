@@ -4,6 +4,8 @@ const express = require('express');
 const db      = require('../db');
 const { success, created, paginated } = require('../utils/response');
 const { getVatRate } = require('../utils/settings');
+const { decryptShareToken } = require('../utils/crypto');
+const { orderCreate, validateBody } = require('../utils/validators');
 
 const router = express.Router();
 
@@ -137,6 +139,7 @@ router.get('/', async (req, res) => {
         const total = result.rows.length > 0 ? parseInt(result.rows[0].total_count) : 0;
         const orders = result.rows.map(row => {
             const { total_count, ...order } = row;
+            if (order.share_token) order.share_token = decryptShareToken(order.share_token);
             return order;
         });
 
@@ -512,6 +515,7 @@ router.get('/:id', async (req, res) => {
         }
 
         const order = orderResult.rows[0];
+        if (order.share_token) order.share_token = decryptShareToken(order.share_token);
 
         if (isSalesRep && order.created_by !== req.user.id) {
             return res.status(403).json({ error: 'غير مصرح لك بعرض هذا الطلب.' });
@@ -569,7 +573,7 @@ router.get('/:id', async (req, res) => {
 //     items: [{ product_variant_id, quantity, unit_price, notes }]
 //   }
 // =============================================================================
-
+validateBody(orderCreate), 
 router.post('/', async (req, res) => {
     const {
         client_id,

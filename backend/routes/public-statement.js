@@ -8,6 +8,7 @@
 const express = require('express');
 const router  = express.Router();
 const db      = require('../db');
+const { decryptShareToken } = require('../utils/crypto');
 
 // =============================================================================
 // GET /api/public/client-statement/:clientId
@@ -83,7 +84,9 @@ router.get('/client-statement/:clientId', async (req, res) => {
             const debit = parseFloat(t.debit || 0);
             const credit = parseFloat(t.credit || 0);
             runningBalance += debit - credit;
-            return { ...t, running_balance: runningBalance };
+            const row = { ...t, running_balance: runningBalance };
+            if (row.invoice_share_token) row.invoice_share_token = decryptShareToken(row.invoice_share_token);
+            return row;
         });
 
         // Reverse to show newest first (DESC) for display

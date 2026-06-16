@@ -10,6 +10,16 @@
     const fmt = (n) => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const esc = (s) => { if (!s) return ''; return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); };
 
+    // Decode URL-safe base64 to UTF-8 string (replaces manual replace/escape/atob anti-pattern)
+    function _decodeBase64Url(token) {
+        let base64 = token.replace(/-/g, '+').replace(/_/g, '/');
+        while (base64.length % 4) base64 += '=';
+        const binary = atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        return new TextDecoder().decode(bytes);
+    }
+
     // ── Init ───────────────────────────────────────────────────────────────────
     function _init() {
         console.log('[PublicStatement] Initializing...');
@@ -30,14 +40,8 @@
 
         // Decode token to get client ID (URL-safe base64)
         try {
-            // Restore padding and decode
-            let base64 = token.replace(/-/g, '+').replace(/_/g, '/');
-            while (base64.length % 4) base64 += '=';
-            console.log('[PublicStatement] Base64:', base64);
-            
-            const clientId = decodeURIComponent(escape(atob(base64)));
+            const clientId = _decodeBase64Url(token);
             console.log('[PublicStatement] Decoded clientId:', clientId);
-            
             _loadClientStatement(clientId);
         } catch (err) {
             console.error('[PublicStatement] Invalid token:', err);

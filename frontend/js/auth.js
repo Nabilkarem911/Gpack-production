@@ -143,12 +143,10 @@ function _showLoginError(message) {
 // Exported to window so layout.js can call it from the sidebar button.
 // =============================================================================
 window.logout = function () {
-    // Fire-and-forget — stateless JWT, no server round-trip needed
-    const token = localStorage.getItem('gpack_token');
-    if (token) {
-        window.apiFetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
-    }
+    // Call backend to clear the HttpOnly cookie
+    window.apiFetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
 
+    // Clean up any legacy localStorage token and user data
     localStorage.removeItem('gpack_token');
     localStorage.removeItem('gpack_user');
     window.GpackUser  = null;
@@ -168,34 +166,30 @@ window.logout = function () {
 // Checks for an existing stored session and restores it, or shows login.
 // =============================================================================
 window.initAuth = async function () {
-    const token     = localStorage.getItem('gpack_token');
-    const userStr   = localStorage.getItem('gpack_user');
+    const userStr = localStorage.getItem('gpack_user');
 
-    if (token && userStr) {
-        try {
-            // Validate the token is still accepted by the server
-            const data = await window.apiFetch('/api/auth/me');
-            _applySession(data.user);
+    // Attempt to validate session via the HttpOnly cookie (sent automatically with credentials:include)
+    try {
+        const data = await window.apiFetch('/api/auth/me');
+        _applySession(data.user);
 
-            // Update stored user in case permissions changed
-            localStorage.setItem('gpack_user', JSON.stringify(data.user));
+        // Update stored user in case permissions changed
+        localStorage.setItem('gpack_user', JSON.stringify(data.user));
 
-            window.showAppLayout();
+        window.showAppLayout();
 
-            if (typeof window.initLayout === 'function') {
-                window.initLayout();
-            }
-            if (typeof window.navigateTo === 'function') {
-                window.navigateTo('dashboard');
-            }
-        } catch (err) {
-            // Token invalid/expired — clear and show login
-            localStorage.removeItem('gpack_token');
-            localStorage.removeItem('gpack_user');
-            window.showLoginView();
-            await _renderLoginView();
+        if (typeof window.initLayout === 'function') {
+            window.initLayout();
         }
-    } else {
+        if (typeof window.navigateTo === 'function') {
+            window.navigateTo('dashboard');
+        }
+    } catch (err) {
+        // Cookie missing / invalid / expired — clear any legacy state and show login
+        localStorage.removeItem('gpack_token');
+        localStorage.removeItem('gpack_user');
+        window.GpackUser  = null;
+        window.GpackPerms = {};
         window.showLoginView();
         await _renderLoginView();
     }

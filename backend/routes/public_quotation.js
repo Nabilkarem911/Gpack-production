@@ -7,6 +7,7 @@ const fs       = require('fs');
 const multer   = require('multer');
 const db       = require('../db');
 const { success } = require('../utils/response');
+const { encryptToken, hashToken } = require('../utils/crypto');
 const router   = express.Router();
 
 // =============================================================================
@@ -57,15 +58,17 @@ router.post('/quotations/:id/share', require('../middleware/authMiddleware').aut
         if (check.rowCount === 0) return res.status(404).json({ error: 'العرض غير موجود.' });
         if (check.rows[0].status !== 'quote') return res.status(400).json({ error: 'يمكن مشاركة عروض الأسعار فقط.' });
 
-        const token     = crypto.randomBytes(32).toString('hex');
-        const expiresAt = new Date(Date.now() + expiresDays * 24 * 60 * 60 * 1000);
+        const plainToken = crypto.randomBytes(32).toString('hex');
+        const encrypted  = encryptToken(plainToken);
+        const tokenHash  = hashToken(plainToken);
+        const expiresAt  = new Date(Date.now() + expiresDays * 24 * 60 * 60 * 1000);
 
         await db.query(
-            `UPDATE orders SET share_token = $1, token_expires_at = $2, updated_at = NOW() WHERE id = $3`,
-            [token, expiresAt, id]
+            `UPDATE orders SET share_token = $1, share_token_hash = $2, token_expires_at = $3, updated_at = NOW() WHERE id = $4`,
+            [encrypted, tokenHash, expiresAt, id]
         );
 
-        return success(res, { token, expires_at: expiresAt });
+        return success(res, { token: plainToken, expires_at: expiresAt });
     } catch (err) {
         console.error('[PublicQuotation] share error:', err.message);
         return res.status(500).json({ error: 'Internal server error.' });
@@ -79,7 +82,8 @@ router.post('/quotations/:id/share', require('../middleware/authMiddleware').aut
 router.get('/quotation/:token', async (req, res) => {
     const { token } = req.params;
     try {
-        const result = await db.query(
+        const tokenHash = hashToken(token);
+        let result = await db.query(
             `SELECT
                 o.id, o.order_number, o.order_date, o.valid_until, o.status,
                 o.subtotal, o.tax_rate, o.tax_amount, o.grand_total,
@@ -92,9 +96,29 @@ router.get('/quotation/:token', async (req, res) => {
                 c.email AS client_email
              FROM orders o
              LEFT JOIN clients c ON c.id = o.client_id
-             WHERE o.share_token = $1`,
-            [token]
+             WHERE o.share_token_hash = $1`,
+            [tokenHash]
         );
+
+        // Backward-compatible fallback: plaintext token stored before migration
+        if (result.rowCount === 0) {
+            result = await db.query(
+                `SELECT
+                    o.id, o.order_number, o.order_date, o.valid_until, o.status,
+                    o.subtotal, o.tax_rate, o.tax_amount, o.grand_total,
+                    o.client_notes, o.terms_conditions, o.custom_terms,
+                    o.down_payment_required,
+                    o.client_response, o.rejection_reason, o.responded_at,
+                    o.token_expires_at,
+                    c.name  AS client_name,
+                    c.phone AS client_phone,
+                    c.email AS client_email
+                 FROM orders o
+                 LEFT JOIN clients c ON c.id = o.client_id
+                 WHERE o.share_token = $2`,
+                [tokenHash, token]
+            );
+        }
 
         if (result.rowCount === 0) return res.status(404).json({ error: 'الرابط غير صالح.' });
 
@@ -144,10 +168,18 @@ router.post('/quotation/:token/respond', upload.single('receipt'), async (req, r
     }
 
     try {
-        const result = await db.query(
-            `SELECT id, status, client_response, token_expires_at FROM orders WHERE share_token = $1`,
-            [token]
+        const tokenHash = hashToken(token);
+        let result = await db.query(
+            `SELECT id, status, client_response, token_expires_at FROM orders WHERE share_token_hash = $1`,
+            [tokenHash]
         );
+        // Backward-compatible fallback
+        if (result.rowCount === 0) {
+            result = await db.query(
+                `SELECT id, status, client_response, token_expires_at FROM orders WHERE share_token = $1`,
+                [token]
+            );
+        }
         if (result.rowCount === 0) return res.status(404).json({ error: 'الرابط غير صالح.' });
 
         const order = result.rows[0];
