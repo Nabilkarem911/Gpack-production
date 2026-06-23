@@ -16,16 +16,11 @@ services:
       PORT: 3000
     expose:
       - "3000"
-    volumes:
-      - ./backend:/app
-      - /app/node_modules
 
   frontend:
-    image: nginx:alpine
+    build: .
+    dockerfile: frontend/Dockerfile
     restart: unless-stopped
-    volumes:
-      - ./frontend:/usr/share/nginx/html
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
     expose:
       - "80"
     depends_on:
@@ -43,9 +38,6 @@ services:
       MCP_PORT: 3001
     expose:
       - "3001"
-    volumes:
-      - ./mcp-server:/app
-      - /app/node_modules
 
   ai-service:
     build: ./ai-service
