@@ -1,9 +1,6 @@
-version: '3.8'
-
 services:
   backend:
     build: ./backend
-    container_name: gpack_backend
     restart: unless-stopped
     environment:
       DATABASE_HOST: ${DATABASE_HOST}
@@ -25,7 +22,6 @@ services:
 
   frontend:
     image: nginx:alpine
-    container_name: gpack_frontend
     restart: unless-stopped
     volumes:
       - ./frontend:/usr/share/nginx/html
@@ -37,7 +33,6 @@ services:
 
   mcp-server:
     build: ./mcp-server
-    container_name: gpack_mcp_server
     restart: unless-stopped
     environment:
       DATABASE_HOST: ${DATABASE_HOST}
@@ -54,7 +49,6 @@ services:
 
   ai-service:
     build: ./ai-service
-    container_name: gpack_ai
     restart: unless-stopped
     environment:
       DB_HOST: ${DATABASE_HOST}
