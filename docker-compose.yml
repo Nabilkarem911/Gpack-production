@@ -16,6 +16,9 @@ services:
       PORT: 3000
     expose:
       - "3000"
+    networks:
+      - default
+      - dokploy-network
 
   frontend:
     build:
@@ -26,6 +29,9 @@ services:
       - "80"
     depends_on:
       - backend
+    networks:
+      - default
+      - dokploy-network
 
   mcp-server:
     build: ./mcp-server
@@ -39,6 +45,9 @@ services:
       MCP_PORT: 3001
     expose:
       - "3001"
+    networks:
+      - default
+      - dokploy-network
 
   ai-service:
     build: ./ai-service
@@ -57,3 +66,11 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+    networks:
+      - default
+      - dokploy-network
+
+networks:
+  dokploy-network:
+    external: true
+    name: dokploy-network
