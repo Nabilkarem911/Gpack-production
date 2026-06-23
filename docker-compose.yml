@@ -18,8 +18,9 @@ services:
       - "3000"
 
   frontend:
-    build: .
-    dockerfile: frontend/Dockerfile
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
     restart: unless-stopped
     expose:
       - "80"
