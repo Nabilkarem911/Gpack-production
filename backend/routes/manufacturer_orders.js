@@ -10,22 +10,6 @@ const restrictToWarehouseAdmin = authorize(['admin', 'manager', 'super_admin', '
 router.use(restrictToWarehouseAdmin);
 
 // =============================================================================
-// TEMP: Migration endpoint to add tax_rate column
-// =============================================================================
-router.get('/migrate-tax-rate', async (req, res) => {
-    try {
-        await db.query(`
-            ALTER TABLE manufacturer_orders 
-            ADD COLUMN IF NOT EXISTS tax_rate DECIMAL(5,4) DEFAULT 0
-        `);
-        return success(res, null);
-    } catch (err) {
-        console.error('[Migration] Error:', err.message);
-        return errorResponse(res, err.message, 500);
-    }
-});
-
-// =============================================================================
 // GET /api/manufacturer-orders
 // Returns manufacturer orders with supplier info and item counts.
 // Query params:
@@ -335,13 +319,15 @@ router.post('/', async (req, res) => {
                 throw new Error('لا يمكن إنشاء أمر تشغيل إلا للطلبات في حالة الإنتاج أو قيد التنفيذ.');
             }
 
-            // Generate PO number if not provided
-            let finalPoNumber = po_number;
-            if (!finalPoNumber) {
-                const poSeq = await client.query(
+            // Generate MO number if not provided (INTEGER from sequence)
+            let finalMoNumber = po_number;
+            if (!finalMoNumber) {
+                const moSeq = await client.query(
                     `SELECT nextval('manufacturer_order_number_seq') as num`
                 );
-                finalPoNumber = `MO-${String(poSeq.rows[0].num).padStart(5, '0')}`;
+                finalMoNumber = parseInt(moSeq.rows[0].num, 10);
+            } else {
+                finalMoNumber = parseInt(finalMoNumber, 10);
             }
 
             // Create manufacturer order
@@ -354,7 +340,7 @@ router.post('/', async (req, res) => {
                 [
                     order_id,
                     supplier_id,
-                    finalPoNumber,
+                    finalMoNumber,
                     expected_delivery || null,
                     notes || null,
                     req.user ? req.user.id : null

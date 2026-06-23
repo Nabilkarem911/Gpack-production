@@ -41,8 +41,8 @@ router.get('/stats', authenticate, async (req, res) => {
         if (isSalesRep) {
             ordersWhere = ' AND created_by = $2';
             ordersParams.push(userId);
-            pendingOrdersWhere = ` AND created_by = '${userId}'`;
-            quotationsWhere = ` AND created_by = '${userId}'`;
+            pendingOrdersWhere = ' AND created_by = $1';
+            quotationsWhere = ' AND created_by = $1';
         }
 
         // 1. Total Orders This Month
@@ -56,16 +56,19 @@ router.get('/stats', authenticate, async (req, res) => {
 
         // 2. Active Clients Count (visible to admin/manager; sales_rep sees their own)
         let clientsQuery = `SELECT COUNT(*) as total_clients FROM clients WHERE status = 'active'`;
+        let clientsParams = [];
         if (isSalesRep) {
-            clientsQuery += ` AND created_by = '${userId}'`;
+            clientsQuery += ` AND created_by = $1`;
+            clientsParams.push(userId);
         }
-        const clientsResult = await db.query(clientsQuery);
+        const clientsResult = await db.query(clientsQuery, clientsParams);
 
         // 3. Pending Orders Count
         const pendingResult = await db.query(
             `SELECT COUNT(*) as pending_orders
              FROM orders
-             WHERE status IN ('quote', 'confirmed', 'processing')${pendingOrdersWhere}`
+             WHERE status IN ('quote', 'confirmed', 'processing')${pendingOrdersWhere}`,
+            isSalesRep ? [userId] : []
         );
 
         // 4. Low Stock Items Count
@@ -97,7 +100,8 @@ router.get('/stats', authenticate, async (req, res) => {
 
         // 7. Quotations Count
         const quotationsResult = await db.query(
-            `SELECT COUNT(*) as quotations_count FROM orders WHERE status = 'quote'${quotationsWhere}`
+            `SELECT COUNT(*) as quotations_count FROM orders WHERE status = 'quote'${quotationsWhere}`,
+            isSalesRep ? [userId] : []
         );
 
         // 8. Outstanding Receivables (financial — hide from non-admin)
@@ -156,9 +160,10 @@ router.get('/alerts', authenticate, async (req, res) => {
                  JOIN clients c ON o.client_id = c.id
                  WHERE o.status IN ('pending', 'confirmed')
                  AND o.created_at < NOW() - INTERVAL '3 days'
-                 ${isSalesRep ? `AND o.created_by = '${userId}'` : ''}
+                 ${isSalesRep ? `AND o.created_by = $1` : ''}
                  ORDER BY o.created_at ASC
-                 LIMIT 5`
+                 LIMIT 5`,
+                isSalesRep ? [userId] : []
             );
 
             pendingOrdersResult.rows.forEach(row => {
@@ -374,12 +379,12 @@ router.get('/chart-data', authenticate, async (req, res) => {
              JOIN orders o ON oi.order_id = o.id
              WHERE o.status != 'cancelled'
              AND o.created_at >= NOW() - INTERVAL '30 days'
-             ${isSalesRep ? `AND o.created_by = '${userId}'` : ''}
+             ${isSalesRep ? `AND o.created_by = $1` : ''}
              GROUP BY p.name
              ORDER BY total_quantity DESC
              LIMIT 5`;
 
-        const topProductsResult = await db.query(topProductsQuery);
+        const topProductsResult = await db.query(topProductsQuery, isSalesRep ? [userId] : []);
 
         const topProducts = topProductsResult.rows.map(row => ({
             product_name: row.product_name,

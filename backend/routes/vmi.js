@@ -28,12 +28,14 @@ router.get('/clients', async (req, res) => {
             LEFT JOIN clients pc ON pc.id = c.parent_id
             WHERE ws.quantity > 0
         `;
+        const params = [];
         if (isSalesRep) {
-            query += ` AND c.created_by = '${req.user.id}'`;
+            query += ` AND c.created_by = $1`;
+            params.push(req.user.id);
         }
         query += ` ORDER BY c.name`;
 
-        const result = await db.query(query);
+        const result = await db.query(query, params);
         res.json({ data: result.rows });
     } catch (err) {
         console.error('[VMI] GET /clients error:', err.message);

@@ -29,7 +29,7 @@ router.get('/', async (req, res) => {
 
         if (type && type !== 'both') {
             params.push(type);
-            conditions.push(`type = $${params.length}`);
+            conditions.push(`supplier_type = $${params.length}`);
         }
 
         if (search) {
@@ -55,6 +55,7 @@ router.get('/', async (req, res) => {
                 tax_id,
                 payment_terms,
                 status,
+                supplier_type,
                 created_at,
                 updated_at
              FROM suppliers
@@ -92,6 +93,7 @@ router.get('/:id', async (req, res) => {
                 tax_id,
                 payment_terms,
                 status,
+                supplier_type,
                 created_at,
                 updated_at
              FROM suppliers
@@ -112,7 +114,7 @@ router.get('/:id', async (req, res) => {
                 COUNT(*)::int as total_orders,
                 COALESCE(SUM(total_cost), 0)::numeric as total_value
              FROM manufacturer_orders
-             WHERE supplier_id = $1 AND status != 'cancelled'`,
+             WHERE manufacturer_id = $1 AND status != 'cancelled'`,
             [id]
         );
 
@@ -141,7 +143,7 @@ router.get('/:id/profile', async (req, res) => {
         const supplierRes = await db.query(
             `SELECT id, company_name AS name, contact_person, phone, email,
                     address, city, commercial_register, tax_id, payment_terms,
-                    status, type, created_at
+                    status, supplier_type, created_at
              FROM suppliers WHERE id = $1 LIMIT 1`,
             [id]
         );
@@ -277,11 +279,13 @@ router.post('/', authorize(['super_admin', 'admin', 'manager']), async (req, res
     }
 
     try {
+        const supplier_type = req.body.supplier_type || req.body.type || 'supplier';
+
         const result = await db.query(
             `INSERT INTO suppliers (
                 company_name, contact_person, phone, email, address, city,
-                commercial_register, tax_id, payment_terms, status, created_at, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', NOW(), NOW())
+                commercial_register, tax_id, payment_terms, supplier_type, status, created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'active', NOW(), NOW())
             RETURNING *, company_name AS name`,
             [
                 company_name,
@@ -292,7 +296,8 @@ router.post('/', authorize(['super_admin', 'admin', 'manager']), async (req, res
                 city || null,
                 commercial_register || null,
                 tax_id || null,
-                payment_terms || null
+                payment_terms || null,
+                supplier_type
             ]
         );
 
@@ -311,13 +316,16 @@ router.post('/', authorize(['super_admin', 'admin', 'manager']), async (req, res
 router.patch('/:id', authorize(['super_admin', 'admin', 'manager']), async (req, res) => {
     const { id } = req.params;
     const {
-        name,
-        type,
+        company_name,
         contact_person,
         phone,
         email,
         address,
-        notes,
+        city,
+        commercial_register,
+        tax_id,
+        payment_terms,
+        supplier_type,
         status
     } = req.body;
 
@@ -365,6 +373,10 @@ router.patch('/:id', authorize(['super_admin', 'admin', 'manager']), async (req,
             updates.push(`status = $${params.length + 1}`);
             params.push(status);
         }
+        if (supplier_type !== undefined) {
+            updates.push(`supplier_type = $${params.length + 1}`);
+            params.push(supplier_type);
+        }
 
         params.push(id);
         const result = await db.query(
@@ -397,7 +409,7 @@ router.delete('/:id', authorize(['super_admin', 'admin', 'manager']), async (req
     try {
         // Check if supplier has manufacturer orders
         const checkResult = await db.query(
-            `SELECT COUNT(*)::int as count FROM manufacturer_orders WHERE supplier_id = $1`,
+            `SELECT COUNT(*)::int as count FROM manufacturer_orders WHERE manufacturer_id = $1`,
             [id]
         );
 

@@ -7,6 +7,11 @@ const { z } = require('zod');
 
 const idParam = z.string().uuid('Invalid UUID format');
 
+const loginBody = z.object({
+    email: z.string().email('Valid email is required').max(255),
+    password: z.string().min(1, 'Password is required').max(255),
+});
+
 const paginationQuery = z.object({
     limit: z.coerce.number().int().min(1).max(500).optional().default(50),
     offset: z.coerce.number().int().min(0).optional().default(0),

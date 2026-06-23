@@ -5,6 +5,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const db = require('../db');
 const { authenticate } = require('../middleware/authMiddleware');
+const { loginBody, validateBody } = require('../utils/validators');
 
 const router = express.Router();
 
@@ -144,12 +145,7 @@ router.get('/me', authenticate, async (req, res) => {
     console.error('[Auth] /me error:', err.message);
     return res.status(500).json({ error: 'Internal server error.' });
   }
-});s.clearCookie('token', {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
-  });
-  re
+});
 
 // =============================================================================
 // POST /api/auth/logout
@@ -158,8 +154,13 @@ router.get('/me', authenticate, async (req, res) => {
 // =============================================================================
 
 router.post('/logout', authenticate, (req, res) => {
+  const isProduction = process.env.NODE_ENV === 'production';
+  res.clearCookie('token', {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? 'strict' : 'lax',
+  });
   return res.status(200).json({ message: 'Logged out successfully.' });
 });
 
-module.exports = router;
 module.exports = router;
