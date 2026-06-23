@@ -14,8 +14,8 @@ services:
       AI_SERVICE_URL: http://ai-service:8000
       NODE_ENV: production
       PORT: 3000
-    ports:
-      - "3003:3000"
+    expose:
+      - "3000"
     volumes:
       - ./backend:/app
       - /app/node_modules
@@ -26,8 +26,8 @@ services:
     volumes:
       - ./frontend:/usr/share/nginx/html
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf
-    ports:
-      - "80:80"
+    expose:
+      - "80"
     depends_on:
       - backend
 
@@ -41,8 +41,8 @@ services:
       DATABASE_USER: ${DATABASE_USER}
       DATABASE_PASSWORD: ${DATABASE_PASSWORD}
       MCP_PORT: 3001
-    ports:
-      - "3001:3001"
+    expose:
+      - "3001"
     volumes:
       - ./mcp-server:/app
       - /app/node_modules
@@ -56,8 +56,8 @@ services:
       DB_NAME: ${DATABASE_NAME}
       DB_USER: ${DATABASE_USER}
       DB_PASSWORD: ${DATABASE_PASSWORD}
-    ports:
-      - "3004:8000"
+    expose:
+      - "8000"
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\" || exit 1"]
       interval: 30s
