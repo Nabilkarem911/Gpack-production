@@ -771,27 +771,27 @@ ON CONFLICT (role_name) DO NOTHING;
 -- =============================================================================
 
 INSERT INTO accounts (code, name, account_type, parent_id) VALUES
-('1000', 'Current Assets', 'asset', NULL),
-('1100', 'Cash on Hand', 'asset', NULL),
-('1200', 'Bank Accounts', 'asset', NULL),
-('1300', 'Accounts Receivable', 'asset', NULL),
-('1400', 'Inventory Asset', 'asset', NULL),
-('2000', 'Current Liabilities', 'liability', NULL),
-('2100', 'Accounts Payable', 'liability', NULL),
-('2200', 'VAT Payable', 'liability', NULL),
-('3000', 'Equity', 'equity', NULL),
-('3100', 'Owner Equity', 'equity', NULL),
-('3200', 'Retained Earnings', 'equity', NULL),
-('4000', 'Revenue', 'revenue', NULL),
-('4100', 'Sales Revenue', 'revenue', NULL),
-('4200', 'Service Revenue', 'revenue', NULL),
-('5000', 'Cost of Goods Sold', 'expense', NULL),
-('5100', 'Direct Material Cost', 'expense', NULL),
-('5200', 'Manufacturer Purchase Cost', 'expense', NULL),
-('6000', 'Operating Expenses', 'expense', NULL),
-('6100', 'Shipping & Logistics', 'expense', NULL),
-('6200', 'Administrative Fees', 'expense', NULL),
-('6300', 'Salaries & Wages', 'expense', NULL)
+('1000', 'الأصول المتداولة', 'asset', NULL),
+('1100', 'النقدية بالصندوق', 'asset', NULL),
+('1200', 'الحسابات البنكية', 'asset', NULL),
+('1300', 'الذمم المدينة (العملاء)', 'asset', NULL),
+('1400', 'المخزون', 'asset', NULL),
+('2000', 'الخصوم المتداولة', 'liability', NULL),
+('2100', 'الذمم الدائنة (الموردون)', 'liability', NULL),
+('2200', 'ضريبة القيمة المضافة', 'liability', NULL),
+('3000', 'حقوق الملكية', 'equity', NULL),
+('3100', 'رأس المال', 'equity', NULL),
+('3200', 'الأرباح المرحّلة', 'equity', NULL),
+('4000', 'الإيرادات', 'revenue', NULL),
+('4100', 'إيرادات المبيعات', 'revenue', NULL),
+('4200', 'إيرادات الخدمات', 'revenue', NULL),
+('5000', 'تكلفة البضاعة المباعة', 'expense', NULL),
+('5100', 'تكلفة المواد المباشرة', 'expense', NULL),
+('5200', 'تكلفة التصنيع', 'expense', NULL),
+('6000', 'المصاريف التشغيلية', 'expense', NULL),
+('6100', 'الشحن واللوجستيات', 'expense', NULL),
+('6200', 'الرسوم الإدارية', 'expense', NULL),
+('6300', 'الرواتب والأجور', 'expense', NULL)
 ON CONFLICT (code) DO NOTHING;
 
 -- =============================================================================
