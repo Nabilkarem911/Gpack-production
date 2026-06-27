@@ -66,7 +66,7 @@ var NAV_ITEMS = [ // var allows re-declaration if script loads more than once in
     { section: 'المستودعات' },
     { view: 'warehouses',        label: 'المخازن',           icon: 'fa-warehouse',              permission: null      }, // ✅ warehouses.html
     { view: 'inventory',         label: 'إدارة المخزون',     icon: 'fa-boxes-stacked',          permission: 'inventory' }, // ✅ inventory.html
-    { view: 'products',            label: 'المنتجات',          icon: 'fa-box-open',             permission: 'products' }, // ✅ products.html (نُقل من المبيعات)
+    { view: 'products',            label: 'الأصناف',          icon: 'fa-box-open',             permission: 'products' }, // ✅ products.html (نُقل من المبيعات)
     { view: 'product-movements',   label: 'حركات الأصناف',    icon: 'fa-arrow-right-arrow-left', permission: 'products', hidden: true }, // ✅ product-movements.html
     { view: 'vmi-dispatch',       label: 'سندات التسليم',     icon: 'fa-truck-fast',             permission: 'inventory' }, // ✅ vmi-dispatch.html
     { view: 'receiving-vouchers', label: 'سندات الاستلام',     icon: 'fa-clipboard-check', permission: 'inventory' }, // ✅ receiving-vouchers.html
