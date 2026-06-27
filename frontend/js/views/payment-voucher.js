@@ -89,6 +89,11 @@
         _el('pv-modal-submit').addEventListener('click', _submitVoucher);
         _el('pv-amount').addEventListener('input', _updatePreview);
 
+        // Payment method change → filter accounts
+        _el('pv-payment-method').addEventListener('change', (e) => {
+            _filterAccountsByMethod(e.target.value);
+        });
+
         _el('pv-detail-close').addEventListener('click', _closeDetailModal);
         _el('pv-detail-close-btn').addEventListener('click', _closeDetailModal);
         _el('pv-detail-backdrop').addEventListener('click', _closeDetailModal);
@@ -97,15 +102,28 @@
     }
 
     // ── Load Accounts ─────────────────────────────────────────────────────────
+    let _allCashAccounts = [];
+
     async function _loadAccounts() {
         try {
             const res = await window.apiFetch('/api/payment-vouchers/meta/accounts');
-            const select = _el('pv-cash-account');
-            select.innerHTML = res.data.map(a =>
-                `<option value="${a.id}">${a.code} — ${a.name}</option>`
-            ).join('');
+            _allCashAccounts = res.data || [];
+            _filterAccountsByMethod('cash');
         } catch (err) {
             console.error('[PaymentVoucher] Failed to load accounts:', err);
+        }
+    }
+
+    function _filterAccountsByMethod(method) {
+        const select = _el('pv-cash-account');
+        const parentCode = method === 'bank_transfer' ? '1200' : '1100';
+        const filtered = _allCashAccounts.filter(a => a.parent_code === parentCode);
+        if (filtered.length === 0) {
+            select.innerHTML = '<option value="">لا توجد حسابات متاحة</option>';
+        } else {
+            select.innerHTML = filtered.map(a =>
+                `<option value="${a.id}">${a.code} — ${a.name}</option>`
+            ).join('');
         }
     }
 

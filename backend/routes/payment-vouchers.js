@@ -392,10 +392,14 @@ router.post('/:id/cancel', async (req, res) => {
 router.get('/meta/accounts', async (req, res) => {
     try {
         const result = await db.query(`
-            SELECT id, code, name, account_type
-            FROM accounts
-            WHERE code IN ('1100', '1200') AND is_active = true
-            ORDER BY code
+            SELECT
+                child.id, child.code, child.name, child.account_type,
+                parent.code AS parent_code
+            FROM accounts AS child
+            JOIN accounts AS parent ON parent.id = child.parent_id
+            WHERE parent.code IN ('1100', '1200')
+              AND child.is_active = true
+            ORDER BY parent.code, child.code
         `);
         res.json({ data: result.rows });
     } catch (err) {

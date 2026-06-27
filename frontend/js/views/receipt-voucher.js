@@ -95,6 +95,11 @@
         // Amount preview update
         _el('rv-amount').addEventListener('input', _updatePreview);
 
+        // Payment method change → filter accounts
+        _el('rv-payment-method').addEventListener('change', (e) => {
+            _filterAccountsByMethod(e.target.value);
+        });
+
         // Detail modal
         _el('rv-detail-close').addEventListener('click', _closeDetailModal);
         _el('rv-detail-close-btn').addEventListener('click', _closeDetailModal);
@@ -104,15 +109,28 @@
     }
 
     // ── Load Accounts (Cash / Bank) ───────────────────────────────────────────
+    let _allCashAccounts = [];
+
     async function _loadAccounts() {
         try {
             const res = await window.apiFetch('/api/receipt-vouchers/meta/accounts');
-            const select = _el('rv-cash-account');
-            select.innerHTML = res.data.map(a =>
-                `<option value="${a.id}">${a.code} — ${a.name}</option>`
-            ).join('');
+            _allCashAccounts = res.data || [];
+            _filterAccountsByMethod('cash');
         } catch (err) {
             console.error('[ReceiptVoucher] Failed to load accounts:', err);
+        }
+    }
+
+    function _filterAccountsByMethod(method) {
+        const select = _el('rv-cash-account');
+        const parentCode = method === 'bank_transfer' ? '1200' : '1100';
+        const filtered = _allCashAccounts.filter(a => a.parent_code === parentCode);
+        if (filtered.length === 0) {
+            select.innerHTML = '<option value="">لا توجد حسابات متاحة</option>';
+        } else {
+            select.innerHTML = filtered.map(a =>
+                `<option value="${a.id}">${a.code} — ${a.name}</option>`
+            ).join('');
         }
     }
 
