@@ -307,4 +307,130 @@ router.get('/lookup', async (req, res) => {
     }
 });
 
+// =============================================================================
+// GET /api/account-statement/accounts-tree
+// Returns parent accounts (no parent_id) and their children
+// =============================================================================
+router.get('/accounts-tree', async (req, res) => {
+    try {
+        const parentsRes = await db.query(`
+            SELECT id, code, name, account_type
+            FROM accounts
+            WHERE parent_id IS NULL AND is_active = true
+            ORDER BY code
+        `);
+
+        const childrenRes = await db.query(`
+            SELECT id, code, name, account_type, parent_id
+            FROM accounts
+            WHERE parent_id IS NOT NULL AND is_active = true
+            ORDER BY code
+        `);
+
+        res.json({
+            parents: parentsRes.rows,
+            children: childrenRes.rows
+        });
+    } catch (err) {
+        console.error('[AccountStatement] GET /accounts-tree error:', err.message);
+        res.status(500).json({ error: 'Internal server error.' });
+    }
+});
+
+// =============================================================================
+// GET /api/account-statement/account/:accountId
+// Ledger statement for a specific account from chart of accounts
+// =============================================================================
+router.get('/account/:accountId', async (req, res) => {
+    try {
+        const { accountId } = req.params;
+        const { from, to } = req.query;
+
+        // Verify account exists
+        const accRes = await db.query(
+            'SELECT id, code, name, account_type, parent_id FROM accounts WHERE id = $1',
+            [accountId]
+        );
+        if (accRes.rows.length === 0) {
+            return res.status(404).json({ error: 'Account not found' });
+        }
+        const account = accRes.rows[0];
+
+        // Build date filter
+        let dateFilter = '';
+        const params = [accountId];
+        if (from) {
+            params.push(from);
+            dateFilter += ` AND av.voucher_date >= $${params.length}`;
+        }
+        if (to) {
+            params.push(to);
+            dateFilter += ` AND av.voucher_date <= $${params.length}`;
+        }
+
+        // Get all voucher lines for this account
+        const linesRes = await db.query(`
+            SELECT 
+                avl.id::text as line_id,
+                av.id::text as voucher_id,
+                av.voucher_number::text as document_number,
+                av.voucher_date as trans_date,
+                av.voucher_type as document_type,
+                av.description as notes,
+                avl.debit,
+                avl.credit,
+                av.status
+            FROM accounting_voucher_lines avl
+            JOIN accounting_vouchers av ON av.id = avl.voucher_id
+            WHERE avl.account_id = $1
+                AND av.status = 'posted'
+                ${dateFilter}
+            ORDER BY av.voucher_date ASC, av.voucher_number ASC
+        `, params);
+
+        // Calculate running balance
+        let runningBalance = 0;
+        const withBalance = linesRes.rows.map(t => {
+            const debit = parseFloat(t.debit || 0);
+            const credit = parseFloat(t.credit || 0);
+            runningBalance += debit - credit;
+            return { ...t, running_balance: runningBalance };
+        });
+
+        // Reverse for display (newest first)
+        const transactions = withBalance.reverse();
+
+        // Summary
+        const totalDebit = withBalance.reduce((sum, t) => sum + parseFloat(t.debit || 0), 0);
+        const totalCredit = withBalance.reduce((sum, t) => sum + parseFloat(t.credit || 0), 0);
+
+        // Map voucher_type to Arabic
+        const typeMap = {
+            'receipt': 'سند قبض',
+            'payment': 'سند صرف',
+            'journal': 'قيد يومية',
+            'sales_invoice': 'فاتورة مبيعات',
+            'purchase_invoice': 'فاتورة مشتريات',
+            'production_order': 'أمر إنتاج'
+        };
+        transactions.forEach(t => {
+            t.document_type = typeMap[t.document_type] || t.document_type;
+        });
+
+        res.json({
+            account: account,
+            transactions: transactions,
+            summary: {
+                total_debit: totalDebit,
+                total_credit: totalCredit,
+                balance: runningBalance
+            }
+        });
+
+    } catch (err) {
+        console.error('[AccountStatement] GET /account/:accountId error:', err.message);
+        res.status(500).json({ error: 'Internal server error.' });
+    }
+});
+
 module.exports = router;
