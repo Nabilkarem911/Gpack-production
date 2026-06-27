@@ -177,7 +177,7 @@ function _buildSidebarUser() {
 
     container.innerHTML = `
         <div class="flex items-center gap-3 mb-3">
-            <div class="w-9 h-9 rounded-full bg-brand-600 flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
+            <div class="w-9 h-9 rounded-full bg-brand-700 flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
                 ${initials}
             </div>
             <div class="sidebar-logo-text min-w-0">
@@ -220,7 +220,7 @@ function _setActiveNavItem(viewName) {
     document.querySelectorAll('.nav-item[data-view]').forEach(el => {
         const isActive = el.getAttribute('data-view') === viewName;
         el.classList.toggle('active', isActive);
-        el.classList.toggle('bg-brand-600',   isActive);
+        el.classList.toggle('bg-brand-700',   isActive);
         el.classList.toggle('text-white',      isActive);
         el.classList.toggle('text-slate-300',  !isActive);
 
@@ -312,7 +312,7 @@ window.navigateTo = async function (viewName) {
                 <p class="text-lg font-semibold text-slate-500">غير مصرح</p>
                 <p class="text-sm mt-1">ليس لديك صلاحية الوصول إلى هذه الصفحة</p>
                 <button onclick="window.navigateTo('dashboard')"
-                    class="mt-5 px-5 py-2 bg-brand-600 text-white rounded-lg text-sm hover:bg-brand-700 transition-colors">
+                    class="mt-5 px-5 py-2 bg-brand-700 text-white rounded-lg text-sm hover:bg-brand-800 transition-colors">
                     العودة للوحة التحكم
                 </button>
             </div>`;
@@ -374,7 +374,7 @@ window.navigateTo = async function (viewName) {
                 <p class="text-lg font-semibold text-slate-500">تعذّر تحميل الصفحة</p>
                 <p class="text-sm mt-1">${err.message}</p>
                 <button onclick="window.navigateTo('dashboard')"
-                    class="mt-5 px-5 py-2 bg-brand-600 text-white rounded-lg text-sm hover:bg-brand-700 transition-colors">
+                    class="mt-5 px-5 py-2 bg-brand-700 text-white rounded-lg text-sm hover:bg-brand-800 transition-colors">
                     العودة للوحة التحكم
                 </button>
             </div>`;
