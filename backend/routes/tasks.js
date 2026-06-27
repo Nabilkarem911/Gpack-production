@@ -8,8 +8,14 @@
 const express = require('express');
 const db = require('../db');
 const { authenticate } = require('../middleware/authMiddleware');
+const authorize = require('../middleware/authorize');
 
 const router = express.Router();
+
+// All task routes require authentication. Most routes are accessible to all
+// authenticated users (they see/manage their own tasks). Only DELETE is admin-only.
+router.use(authorize('tasks', 'view'));
+const restrictDelete = authorize(['admin', 'manager', 'super_admin']);
 
 // =============================================================================
 // GET /api/tasks
@@ -319,18 +325,10 @@ router.put('/:id', authenticate, async (req, res) => {
 // Delete task
 // ROLE-BASED: Only admins can delete tasks
 // =============================================================================
-router.delete('/:id', authenticate, async (req, res) => {
+router.delete('/:id', authenticate, restrictDelete, async (req, res) => {
     const { id } = req.params;
     
     try {
-        // Check user permissions
-        const userRole = req.user.role?.toLowerCase() || '';
-        const isAdmin = ['super_admin', 'admin', 'manager'].includes(userRole);
-        
-        if (!isAdmin) {
-            return res.status(403).json({ error: 'Only administrators can delete tasks' });
-        }
-        
         const result = await db.query('DELETE FROM tasks WHERE id = $1 RETURNING id', [id]);
         
         if (result.rowCount === 0) {

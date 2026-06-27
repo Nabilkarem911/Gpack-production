@@ -8,8 +8,12 @@
 const express = require('express');
 const router  = express.Router();
 const http    = require('http');
+const authorize = require('../middleware/authorize');
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://ai-service:8000';
+
+// View permission: users with 'forecast' view can access AI insights
+router.use(authorize('forecast', 'view'));
 
 function aiRequest(path, method = 'GET', body = null) {
     return new Promise((resolve, reject) => {

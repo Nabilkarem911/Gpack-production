@@ -2,12 +2,20 @@
 
 const express = require('express');
 const db = require('../db');
+const authorize = require('../middleware/authorize');
 
 const router = express.Router();
 
 // All routes are protected by the authenticate middleware mounted in server.js.
 // SCHEMA RULE: warehouse_stock is strictly tied to client_id (VMI / Franchise logic).
 // Stock is NEVER fetched globally — always scoped by client unless the caller has all_access.
+
+// View permission: all authenticated users with 'inventory' view can list/get
+router.use(authorize('inventory', 'view'));
+
+// Write permission: users with 'inventory' create/edit
+const restrictWrite = authorize('inventory', 'create');
+const restrictEdit  = authorize('inventory', 'edit');
 
 // =============================================================================
 // GET /api/inventory/warehouses
@@ -102,7 +110,7 @@ router.get('/warehouses/:id', async (req, res) => {
 // Creates a new warehouse.
 // =============================================================================
 
-router.post('/warehouses', async (req, res) => {
+router.post('/warehouses', restrictWrite, async (req, res) => {
     const { name, location, client_id, status } = req.body;
 
     if (!name || !name.trim()) {
@@ -129,7 +137,7 @@ router.post('/warehouses', async (req, res) => {
 // Updates a warehouse.
 // =============================================================================
 
-router.put('/warehouses/:id', async (req, res) => {
+router.put('/warehouses/:id', restrictEdit, async (req, res) => {
     const { name, location, client_id, status } = req.body;
 
     if (!name || !name.trim()) {
@@ -300,7 +308,7 @@ router.get('/stock/:clientId/summary', async (req, res) => {
 // This does NOT create a VMI production order — it is a direct correction.
 // =============================================================================
 
-router.post('/stock/adjust', async (req, res) => {
+router.post('/stock/adjust', restrictEdit, async (req, res) => {
     const { stock_id, adjustment, reason, items } = req.body;
 
     // Support both single adjustment and batch items

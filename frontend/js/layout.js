@@ -27,7 +27,7 @@ var NAV_ITEMS = [ // var allows re-declaration if script loads more than once in
     // 1. الرئيسية
     // ─────────────────────────────────────────────────────────────────────────────
     { section: 'الرئيسية' },
-    { view: 'dashboard',     label: 'لوحة التحكم',     icon: 'fa-gauge-high',    permission: null       }, // ✅ dashboard.html
+    { view: 'dashboard',     label: 'لوحة التحكم',     icon: 'fa-gauge-high',    permission: 'dashboard' }, // ✅ dashboard.html
 
     // ─────────────────────────────────────────────────────────────────────────────
     // 2. المبيعات
@@ -37,16 +37,16 @@ var NAV_ITEMS = [ // var allows re-declaration if script loads more than once in
     { view: 'client-profile',   label: 'ملف العميل',       icon: 'fa-id-card',       permission: 'clients', hidden: true }, // ✅ client-profile.html
     { view: 'sales-invoices',   label: 'فواتير المبيعات',  icon: 'fa-file-invoice-dollar', permission: 'sales'   }, // ✅ sales-invoices.html
     { view: 'sales-invoice-detail', label: 'تفاصيل الفاتورة', icon: 'fa-file-invoice', permission: 'sales', hidden: true }, // ✅ sales-invoice-detail.html
-    { view: 'quotations',       label: 'عروض الأسعار',     icon: 'fa-file-lines',    permission: null      }, // ✅ quotations.html
-    { view: 'production_orders', label: 'أوامر التشغيل',    icon: 'fa-industry',      permission: null      }, // ✅ production_orders.html
-    { view: 'forecast',            label: 'مركز الذكاء (AI)',  icon: 'fa-brain',         permission: null      }, // ✅ forecast.html
+    { view: 'quotations',       label: 'عروض الأسعار',     icon: 'fa-file-lines',    permission: 'quotations' }, // ✅ quotations.html
+    { view: 'production_orders', label: 'أوامر التشغيل',    icon: 'fa-industry',      permission: 'quotations' }, // ✅ production_orders.html
+    { view: 'forecast',            label: 'مركز الذكاء (AI)',  icon: 'fa-brain',         permission: 'forecast' }, // ✅ forecast.html
 
     // ─────────────────────────────────────────────────────────────────────────────
     // 3. المشتريات
     // ─────────────────────────────────────────────────────────────────────────────
     { section: 'المشتريات' },
-    { view: 'suppliers',           label: 'الموردين',           icon: 'fa-truck',          permission: null      }, // ✅ suppliers.html (نُقل من المبيعات)
-    { view: 'supplier-profile',    label: 'ملف المورد',         icon: 'fa-id-card',        permission: null, hidden: true }, // ✅ supplier-profile.html
+    { view: 'suppliers',           label: 'الموردين',           icon: 'fa-truck',          permission: 'suppliers' }, // ✅ suppliers.html
+    { view: 'supplier-profile',    label: 'ملف المورد',         icon: 'fa-id-card',        permission: 'suppliers', hidden: true }, // ✅ supplier-profile.html
     { view: 'purchase-invoices',   label: 'فواتير المشتريات',   icon: 'fa-file-invoice',   permission: 'purchasing' }, // ✅ purchase-invoices.html
     { view: 'purchase-returns',    label: 'مرتجع المشتريات',   icon: 'fa-rotate-left',    permission: 'purchasing' }, // ✅ Phase 3
 
@@ -64,7 +64,7 @@ var NAV_ITEMS = [ // var allows re-declaration if script loads more than once in
     // 5. المستودعات
     // ─────────────────────────────────────────────────────────────────────────────
     { section: 'المستودعات' },
-    { view: 'warehouses',        label: 'المخازن',           icon: 'fa-warehouse',              permission: null      }, // ✅ warehouses.html
+    { view: 'warehouses',        label: 'المخازن',           icon: 'fa-warehouse',              permission: 'warehouses' }, // ✅ warehouses.html
     { view: 'inventory',         label: 'إدارة المخزون',     icon: 'fa-boxes-stacked',          permission: 'inventory' }, // ✅ inventory.html
     { view: 'products',            label: 'الأصناف',          icon: 'fa-box-open',             permission: 'products' }, // ✅ products.html (نُقل من المبيعات)
     { view: 'product-movements',   label: 'حركات الأصناف',    icon: 'fa-arrow-right-arrow-left', permission: 'products', hidden: true }, // ✅ product-movements.html
@@ -76,8 +76,8 @@ var NAV_ITEMS = [ // var allows re-declaration if script loads more than once in
     // ─────────────────────────────────────────────────────────────────────────────
     { section: 'الإدارة' },
     { view: 'users',         label: 'المستخدمون',       icon: 'fa-user-gear',     permission: 'users'    }, // ✅ users.html
-    { view: 'tasks',         label: 'المهام',           icon: 'fa-list-check',    permission: null       }, // ✅ tasks.html
-    { view: 'settings',      label: 'الإعدادات',        icon: 'fa-gear',          permission: null       }, // ✅ settings.html
+    { view: 'tasks',         label: 'المهام',           icon: 'fa-list-check',    permission: 'tasks'     }, // ✅ tasks.html
+    { view: 'settings',      label: 'الإعدادات',        icon: 'fa-gear',          permission: 'settings'  }, // ✅ settings.html
 
     // ─────────────────────────────────────────────────────────────────────────────
     // Public Pages (no login required)

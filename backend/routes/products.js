@@ -2,12 +2,19 @@
 
 const express = require('express');
 const db = require('../db');
+const authorize = require('../middleware/authorize');
 
 const router = express.Router();
 
 // All routes are protected by the authenticate middleware mounted in server.js.
 // SCHEMA RULE: products and product_variants are GENERAL — never tied to a client_id.
 // Client-specific inventory lives exclusively in warehouse_stock.
+
+// View permission: all authenticated users with 'products' view can list/get
+router.use(authorize('products', 'view'));
+
+// Write/Delete permissions: only admin/manager/super_admin (enforced via authorize role check)
+const restrictWrite = authorize(['admin', 'manager', 'super_admin']);
 
 // =============================================================================
 // GET /api/products
@@ -346,7 +353,7 @@ router.get('/:id', async (req, res) => {
 // SCHEMA RULE: No client_id anywhere in this route.
 // =============================================================================
 
-router.post('/', async (req, res) => {
+router.post('/', restrictWrite, async (req, res) => {
     const { name, description, category_id, sku, barcode, status, variants } = req.body;
 
     if (!name || !name.trim()) {
@@ -426,7 +433,7 @@ router.post('/', async (req, res) => {
 // Updates a product's core fields (not variants — managed separately).
 // =============================================================================
 
-router.put('/:id', async (req, res) => {
+router.put('/:id', restrictWrite, async (req, res) => {
     const { id } = req.params;
     const { name, description, category_id, sku, barcode, status } = req.body;
 
@@ -477,7 +484,7 @@ router.put('/:id', async (req, res) => {
 // SCHEMA RULE: No client_id — variants are general.
 // =============================================================================
 
-router.post('/:id/variants', async (req, res) => {
+router.post('/:id/variants', restrictWrite, async (req, res) => {
     const { id } = req.params;
     const { size_name, sku, barcode, unit_id, selling_price, cost_price,
             min_stock_level, max_stock_level, weight, dimensions, status } = req.body;
@@ -531,7 +538,7 @@ router.post('/:id/variants', async (req, res) => {
 // Updates a single variant.
 // =============================================================================
 
-router.put('/:id/variants/:variantId', async (req, res) => {
+router.put('/:id/variants/:variantId', restrictWrite, async (req, res) => {
     const { variantId } = req.params;
     const { size_name, sku, barcode, unit_id, selling_price, cost_price,
             min_stock_level, max_stock_level, weight, dimensions, status } = req.body;
@@ -594,7 +601,7 @@ router.put('/:id/variants/:variantId', async (req, res) => {
 // and return a 400 with an Arabic error message.
 // =============================================================================
 
-router.delete('/:id/variants/:variantId', async (req, res) => {
+router.delete('/:id/variants/:variantId', restrictWrite, async (req, res) => {
     const { variantId } = req.params;
 
     try {

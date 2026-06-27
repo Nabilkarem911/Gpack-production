@@ -17,6 +17,13 @@ const { getVatRate } = require('../utils/settings');
 const { encryptToken, hashToken } = require('../utils/crypto');
 const { invoiceCreate, validateBody } = require('../utils/validators');
 
+// View permission: all authenticated users with 'sales' view can list/get
+router.use(authorize('sales', 'view'));
+
+// Write/Edit permissions
+const restrictWrite = authorize('sales', 'create');
+const restrictEdit  = authorize('sales', 'edit');
+
 // ── GET /api/invoices ───────────────────────────────────────────────────────
 // Query params: client_id, status, from, to, search, limit, offset
 router.get('/', async (req, res) => {
@@ -202,11 +209,7 @@ router.post('/:id/share', authenticate, async (req, res) => {
 // ── POST /api/invoices ──────────────────────────────────────────────────────
 // Create new sales invoice
 // Body: client_ivalidateBody(invoiceCreate), d, invoice_date, due_date, items[], tax_rate, notes, order_id (optional)
-router.post('/', async (req, res) => {
-    const isAdmin = ['super_admin', 'admin', 'manager'].includes(req.user.role);
-    if (!isAdmin) {
-        return res.status(403).json({ error: 'غير مصرح لك بإنشاء الفواتير.' });
-    }
+router.post('/', restrictWrite, async (req, res) => {
     const client = await db.pool.connect();
     try {
         const {
@@ -296,11 +299,7 @@ router.post('/', async (req, res) => {
 // Update invoice status (paid, overdue, cancelled, archived).
 // When status = 'paid', automatically creates a client_transaction receipt record.
 // طلبات التعديل على حالة الفاتورة
-router.patch('/:id/status', async (req, res) => {
-    const isAdmin = ['super_admin', 'admin', 'manager'].includes(req.user.role);
-    if (!isAdmin) {
-        return res.status(403).json({ error: 'غير مصرح لك بتعديل حالة الفاتورة.' });
-    }
+router.patch('/:id/status', restrictEdit, async (req, res) => {
     const client = await db.pool.connect();
     try {
         const { id } = req.params;

@@ -6,6 +6,11 @@ const authorize = require('../middleware/authorize');
 
 const router = express.Router();
 
+// View permission: all authenticated users with 'suppliers' view can list/get
+router.use(authorize('suppliers', 'view'));
+
+// Write/Delete permissions (already defined per-route below)
+
 // =============================================================================
 // GET /api/suppliers
 // Returns list of suppliers (manufacturers/vendors).
@@ -261,7 +266,7 @@ router.get('/purchase-invoices/:invoiceId', async (req, res) => {
 // Creates a new supplier.
 // =============================================================================
 
-router.post('/', authorize(['super_admin', 'admin', 'manager']), async (req, res) => {
+router.post('/', authorize('suppliers', 'create'), async (req, res) => {
     const {
         company_name,
         contact_person,
@@ -313,7 +318,7 @@ router.post('/', authorize(['super_admin', 'admin', 'manager']), async (req, res
 // Updates supplier details.
 // =============================================================================
 
-router.patch('/:id', authorize(['super_admin', 'admin', 'manager']), async (req, res) => {
+router.patch('/:id', authorize('suppliers', 'edit'), async (req, res) => {
     const { id } = req.params;
     const {
         company_name,
@@ -403,7 +408,7 @@ router.patch('/:id', authorize(['super_admin', 'admin', 'manager']), async (req,
 // Soft delete — sets status to 'inactive' if has orders, otherwise hard delete.
 // =============================================================================
 
-router.delete('/:id', authorize(['super_admin', 'admin', 'manager']), async (req, res) => {
+router.delete('/:id', authorize('suppliers', 'delete'), async (req, res) => {
     const { id } = req.params;
 
     try {

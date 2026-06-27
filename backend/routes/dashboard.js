@@ -9,6 +9,9 @@ const { getVatRate } = require('../utils/settings');
 
 const router = express.Router();
 
+// View permission: users with 'dashboard' view can access
+router.use(authorize('dashboard', 'view'));
+
 // =============================================================================
 // Role Helpers
 // =============================================================================

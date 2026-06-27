@@ -6,12 +6,23 @@ const { success, created, paginated } = require('../utils/response');
 const { getVatRate } = require('../utils/settings');
 const { decryptShareToken } = require('../utils/crypto');
 const { orderCreate, validateBody } = require('../utils/validators');
+const authorize = require('../middleware/authorize');
 
 const router = express.Router();
 
 // All routes are protected by the authenticate middleware mounted in server.js.
 // FINANCIAL RULE: subtotal, tax_amount (15%), and grand_total are calculated
 // SERVER-SIDE only. Client payload values for these fields are IGNORED.
+
+// View permission: all authenticated users with 'quotations' view can list/get
+router.use(authorize('quotations', 'view'));
+
+// Write permission: users with 'quotations' create/edit can POST/PUT
+const restrictWrite = authorize('quotations', 'create');
+const restrictEdit  = authorize('quotations', 'edit');
+const restrictDelete = authorize('quotations', 'delete');
+// Admin-only operations (status change, convert to production, invoicing)
+const restrictAdmin = authorize(['admin', 'manager', 'super_admin']);
 
 
 // =============================================================================
@@ -574,7 +585,7 @@ router.get('/:id', async (req, res) => {
 //   }
 // =============================================================================
 validateBody(orderCreate), 
-router.post('/', async (req, res) => {
+router.post('/', restrictWrite, async (req, res) => {
     const {
         client_id,
         status,
@@ -749,7 +760,7 @@ router.post('/', async (req, res) => {
 // DATA SCOPING: sales_rep can only edit their own orders.
 // =============================================================================
 
-router.put('/:id', async (req, res) => {
+router.put('/:id', restrictEdit, async (req, res) => {
     const { id } = req.params;
     const {
         client_id,
@@ -912,7 +923,7 @@ router.put('/:id', async (req, res) => {
 // Non-sales_rep roles only.
 // =============================================================================
 
-router.patch('/:id/status', async (req, res) => {
+router.patch('/:id/status', restrictAdmin, async (req, res) => {
     const { id }     = req.params;
     const { status } = req.body;
 
@@ -956,7 +967,7 @@ router.patch('/:id/status', async (req, res) => {
 //   CREDIT accounts_receivable    (code '1300', sub_account = client)
 // =============================================================================
 
-router.post('/:id/convert-to-production', async (req, res) => {
+router.post('/:id/convert-to-production', restrictAdmin, async (req, res) => {
     const { id } = req.params;
     const {
         down_payment_amount,
@@ -1283,11 +1294,7 @@ router.get('/:id/financial', async (req, res) => {
 // 'final' invoice deducts from warehouse_stock via delivery_notes logic.
 // =============================================================================
 
-router.post('/:id/invoice', async (req, res) => {
-    const isAdmin = ['super_admin', 'admin', 'manager'].includes(req.user.role);
-    if (!isAdmin) {
-        return res.status(403).json({ error: 'غير مصرح لك بإصدار الفواتير.' });
-    }
+router.post('/:id/invoice', restrictAdmin, async (req, res) => {
     const { id } = req.params;
     const { type = 'proforma', items = [], additional_expenses = 0, notes = '' } = req.body;
 
@@ -1403,11 +1410,7 @@ router.post('/:id/invoice', async (req, res) => {
 // Creates client_transaction of type 'payment'.
 // =============================================================================
 
-router.post('/:id/payment', async (req, res) => {
-    const isAdmin = ['super_admin', 'admin', 'manager'].includes(req.user.role);
-    if (!isAdmin) {
-        return res.status(403).json({ error: 'غير مصرح لك بتسجيل الدفعات.' });
-    }
+router.post('/:id/payment', restrictAdmin, async (req, res) => {
     const { id } = req.params;
     const { amount, payment_method = 'cash', notes = '', cash_box, bank_account, bank_ref, pos_terminal, pos_ref } = req.body;
 
@@ -1474,11 +1477,7 @@ router.post('/:id/payment', async (req, res) => {
 
 // =============================================================================
 // DELETE /api/orders/:id
-router.delete('/:id', async (req, res) => {
-    const isAdmin = ['super_admin', 'admin', 'manager'].includes(req.user.role);
-    if (!isAdmin) {
-        return res.status(403).json({ error: 'غير مصرح لك بحذف الطلبات.' });
-    }
+router.delete('/:id', restrictDelete, async (req, res) => {
     const { id } = req.params;
 
     try {
@@ -1526,7 +1525,7 @@ router.get('/:id/notes', async (req, res) => {
 // Adds a new chat note to an order.
 // Body: { message: string }
 // =============================================================================
-router.post('/:id/notes', async (req, res) => {
+router.post('/:id/notes', restrictWrite, async (req, res) => {
     try {
         const { id } = req.params;
         const { message } = req.body;
@@ -1558,7 +1557,7 @@ router.post('/:id/notes', async (req, res) => {
 // Release order for delivery by reserving stock from warehouse
 // Business Logic: Moves stock from available to reserved state
 // =============================================================================
-router.post('/:id/release', async (req, res) => {
+router.post('/:id/release', restrictAdmin, async (req, res) => {
     const { id } = req.params;
     const { warehouse_id } = req.body;
     

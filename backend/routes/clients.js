@@ -11,6 +11,14 @@ const router = express.Router();
 // All routes in this file are already protected by the authenticate middleware
 // mounted in server.js. `req.user` is guaranteed to be populated.
 
+// View permission: all authenticated users with 'clients' view can list/get
+router.use(authorize('clients', 'view'));
+
+// Write/Delete permissions
+const restrictWrite  = authorize('clients', 'create');
+const restrictEdit   = authorize('clients', 'edit');
+const restrictDelete = authorize('clients', 'delete');
+
 // =============================================================================
 // GET /api/clients
 // Returns all clients with parent name (self-join for franchise display).
@@ -229,7 +237,7 @@ router.get('/:id/profile', async (req, res) => {
 // - created_by is always set to the authenticated user's ID.
 // =============================================================================
 validateBody(clientCreate), 
-router.post('/', async (req, res) => {
+router.post('/', restrictWrite, async (req, res) => {
     const {
         name,
         parent_id,
@@ -295,7 +303,7 @@ router.post('/', async (req, res) => {
 // DATA SCOPING: sales_rep can only update clients they created.
 // =============================================================================
 
-router.put('/:id', async (req, res) => {
+router.put('/:id', restrictEdit, async (req, res) => {
     const { id } = req.params;
 
     try {
@@ -384,7 +392,7 @@ router.put('/:id', async (req, res) => {
 // Hard delete is intentionally NOT implemented to preserve order/invoice history.
 // =============================================================================
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', restrictDelete, async (req, res) => {
     const { id } = req.params;
 
     try {
