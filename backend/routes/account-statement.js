@@ -327,9 +327,60 @@ router.get('/accounts-tree', async (req, res) => {
             ORDER BY code
         `);
 
+        // Find receivable account (code 1300) and payable account (code 2100)
+        const receivableAcc = parentsRes.rows.find(a => a.code === '1300');
+        const payableAcc = parentsRes.rows.find(a => a.code === '2100');
+
+        const virtualChildren = [];
+
+        // Add clients as virtual children of Accounts Receivable (1300)
+        if (receivableAcc) {
+            const clientsRes = await db.query(`
+                SELECT id, name, phone, city
+                FROM clients
+                WHERE status = 'active' OR status IS NULL
+                ORDER BY name
+            `);
+            clientsRes.rows.forEach(c => {
+                virtualChildren.push({
+                    id: c.id,
+                    code: c.id.substring(0, 8),
+                    name: c.name,
+                    account_type: 'asset',
+                    parent_id: receivableAcc.id,
+                    sub_account_type: 'client',
+                    sub_account_id: c.id,
+                    phone: c.phone,
+                    city: c.city
+                });
+            });
+        }
+
+        // Add suppliers as virtual children of Accounts Payable (2100)
+        if (payableAcc) {
+            const suppliersRes = await db.query(`
+                SELECT id, company_name as name, phone, city
+                FROM suppliers
+                ORDER BY company_name
+            `);
+            suppliersRes.rows.forEach(s => {
+                virtualChildren.push({
+                    id: s.id,
+                    code: s.id.substring(0, 8),
+                    name: s.name,
+                    account_type: 'liability',
+                    parent_id: payableAcc.id,
+                    sub_account_type: 'supplier',
+                    sub_account_id: s.id,
+                    phone: s.phone,
+                    city: s.city
+                });
+            });
+        }
+
         res.json({
             parents: parentsRes.rows,
-            children: childrenRes.rows
+            children: [...childrenRes.rows, ...virtualChildren]
         });
     } catch (err) {
         console.error('[AccountStatement] GET /accounts-tree error:', err.message);
@@ -344,7 +395,7 @@ router.get('/accounts-tree', async (req, res) => {
 router.get('/account/:accountId', async (req, res) => {
     try {
         const { accountId } = req.params;
-        const { from, to } = req.query;
+        const { from, to, subAccountId, subAccountType } = req.query;
 
         // Verify account exists
         const accRes = await db.query(
@@ -358,6 +409,7 @@ router.get('/account/:accountId', async (req, res) => {
 
         // Build date filter
         let dateFilter = '';
+        let subFilter = '';
         const params = [accountId];
         if (from) {
             params.push(from);
@@ -367,8 +419,20 @@ router.get('/account/:accountId', async (req, res) => {
             params.push(to);
             dateFilter += ` AND av.voucher_date <= $${params.length}`;
         }
+        if (subAccountId) {
+            params.push(subAccountId);
+            subFilter += ` AND avl.sub_account_id = $${params.length}`;
+        }
 
         // Get all voucher lines for this account
+        // When subAccountId is provided, match by sub_account_id (with or without account_id)
+        let accountCondition;
+        if (subAccountId) {
+            accountCondition = `(avl.account_id = $1 OR avl.sub_account_id = $${params.length})`;
+        } else {
+            accountCondition = `avl.account_id = $1`;
+        }
+
         const linesRes = await db.query(`
             SELECT 
                 avl.id::text as line_id,
@@ -382,7 +446,7 @@ router.get('/account/:accountId', async (req, res) => {
                 av.status
             FROM accounting_voucher_lines avl
             JOIN accounting_vouchers av ON av.id = avl.voucher_id
-            WHERE avl.account_id = $1
+            WHERE ${accountCondition}
                 AND av.status = 'posted'
                 ${dateFilter}
             ORDER BY av.voucher_date ASC, av.voucher_number ASC

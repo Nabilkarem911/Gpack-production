@@ -129,23 +129,31 @@
         if (accounts.length === 0) {
             html += '<div class="px-4 py-3 text-sm text-slate-400 text-center">لا توجد حسابات فرعية</div>';
         } else {
-            html += accounts.map(a => `
-                <div onclick="window.asSelectChild('${esc(a.id)}', '${esc(a.code)}', '${esc(a.name)}')"
+            html += accounts.map(a => {
+                const isVirtual = a.sub_account_type === 'client' || a.sub_account_type === 'supplier';
+                const icon = a.sub_account_type === 'client' ? 'fa-user' : a.sub_account_type === 'supplier' ? 'fa-truck' : '';
+                const subInfo = isVirtual ? ` data-sub-id="${esc(a.sub_account_id)}" data-sub-type="${esc(a.sub_account_type)}"` : '';
+                const subDetail = a.phone || a.city ? `<span class="text-xs text-slate-400 block mt-0.5">${esc(a.phone || '')} ${a.city ? '• ' + esc(a.city) : ''}</span>` : '';
+                return `
+                <div onclick="window.asSelectChild('${esc(a.id)}', '${esc(a.code)}', '${esc(a.name)}', ${isVirtual ? `'${esc(a.sub_account_id)}'` : 'null'}, ${isVirtual ? `'${esc(a.sub_account_type)}'` : 'null'})"
                      class="px-4 py-2.5 hover:bg-brand-50 cursor-pointer border-b border-slate-50 last:border-0 flex items-center gap-3">
-                    <span class="font-mono text-xs text-slate-400 w-12">${esc(a.code)}</span>
-                    <span class="text-sm text-slate-700 flex-1">${esc(a.name)}</span>
-                </div>
-            `).join('');
+                    ${icon ? `<i class="fa-solid ${icon} text-slate-400 text-xs w-12 text-center"></i>` : `<span class="font-mono text-xs text-slate-400 w-12">${esc(a.code)}</span>`}
+                    <div class="flex-1">
+                        <span class="text-sm text-slate-700">${esc(a.name)}</span>
+                        ${subDetail}
+                    </div>
+                </div>`;
+            }).join('');
         }
         container.innerHTML = html;
     }
 
-    window.asSelectChild = function(id, code, name) {
+    window.asSelectChild = function(id, code, name, subAccountId, subAccountType) {
         if (id === 'all') {
-            _selectedChild = { id: _selectedParent.id, code: _selectedParent.code, name: _selectedParent.name, isParent: true };
+            _selectedChild = { id: _selectedParent.id, code: _selectedParent.code, name: _selectedParent.name, isParent: true, subAccountId: null, subAccountType: null };
             _el('as-child-label').textContent = 'كل الحسابات الفرعية';
         } else {
-            _selectedChild = { id, code, name, isParent: false };
+            _selectedChild = { id, code, name, isParent: false, subAccountId: subAccountId || null, subAccountType: subAccountType || null };
             _el('as-child-label').textContent = `${code} — ${name}`;
         }
         _el('as-child-label').classList.remove('text-slate-400');
@@ -167,6 +175,10 @@
             const params = [];
             if (fromDate) params.push(`from=${fromDate}`);
             if (toDate) params.push(`to=${toDate}`);
+            if (_selectedChild.subAccountId) {
+                params.push(`subAccountId=${_selectedChild.subAccountId}`);
+                params.push(`subAccountType=${_selectedChild.subAccountType}`);
+            }
             const url = `/api/account-statement/account/${_selectedChild.id}` + (params.length > 0 ? '?' + params.join('&') : '');
 
             const res = await window.apiFetch(url);
