@@ -20,37 +20,29 @@
     const LIMIT = 20;
     let _page   = 0;
     let _total  = 0;
-    let _allAccounts = [];
-    let _allClients   = [];
-    let _allSuppliers = [];
+    let _treeParents   = [];
+    let _treeChildren  = [];
     let _activeDetailId = null;
 
-    // حسابات تستدعي sub-account
-    const SUB_ACCOUNT_MAP = {
-        '1300': 'client',
-        '2100': 'supplier',
-    };
-
     // ─────────────────────────────────────────────────────────────────────────
-    // Load accounts, clients, suppliers for selects
+    // Load accounts tree (parents + children including virtual clients/suppliers)
     // ─────────────────────────────────────────────────────────────────────────
     async function _loadAccounts() {
         try {
-            const [accRes, cliRes, supRes] = await Promise.all([
-                window.apiFetch('/api/accounts?active=true'),
-                window.apiFetch('/api/clients?limit=500'),
-                window.apiFetch('/api/suppliers?limit=500'),
-            ]);
-            _allAccounts  = accRes.data || [];
-            _allClients   = cliRes.data || [];
-            _allSuppliers = supRes.data || [];
+            const res = await window.apiFetch('/api/account-statement/accounts-tree');
+            _treeParents  = res.parents || [];
+            _treeChildren = res.children || [];
         } catch (_) {}
     }
 
-    function _accountOptions(selectedId) {
-        return _allAccounts.map(a =>
-            `<option value="${a.id}" ${a.id === selectedId ? 'selected' : ''}>${a.code} — ${esc(a.name)}</option>`
+    function _parentOptions() {
+        return _treeParents.map(a =>
+            `<option value="${a.id}">${a.code} — ${esc(a.name)}</option>`
         ).join('');
+    }
+
+    function _childrenOf(parentId) {
+        return _treeChildren.filter(c => c.parent_id === parentId);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -173,15 +165,15 @@
         tr.className = 'border-b border-slate-100';
         tr.innerHTML = `
             <td class="py-2 px-3">
-                <select id="je-line-acc-${idx}" onchange="window.jeAccountChanged(${idx})"
+                <select id="je-line-parent-${idx}" onchange="window.jeParentChanged(${idx})"
                         class="w-full px-2 py-2 border border-slate-200 rounded-lg text-xs focus:border-brand-500 outline-none bg-white">
-                    <option value="">— اختر الحساب —</option>
-                    ${_accountOptions()}
+                    <option value="">— الحساب الرئيسي —</option>
+                    ${_parentOptions()}
                 </select>
-                <div id="je-line-sub-${idx}" class="hidden mt-1">
-                    <select id="je-line-subid-${idx}"
+                <div id="je-line-child-wrap-${idx}" class="hidden mt-1">
+                    <select id="je-line-child-${idx}" onchange="window.jeChildChanged(${idx})"
                             class="w-full px-2 py-2 border border-brand-200 bg-brand-50 rounded-lg text-xs focus:border-brand-500 outline-none">
-                        <option value="">— اختر —</option>
+                        <option value="">— الحساب الفرعي —</option>
                     </select>
                 </div>
             </td>
@@ -208,27 +200,55 @@
         _el('je-lines-tbody').appendChild(tr);
     };
 
-    // Called when account select changes — show/hide sub-account dropdown
-    window.jeAccountChanged = function (idx) {
-        const accSel   = _el(`je-line-acc-${idx}`);
-        const subWrap  = _el(`je-line-sub-${idx}`);
-        const subSel   = _el(`je-line-subid-${idx}`);
-        if (!accSel || !subWrap || !subSel) return;
+    // Called when parent account changes — populate child dropdown
+    window.jeParentChanged = function (idx) {
+        const parentSel = _el(`je-line-parent-${idx}`);
+        const childWrap = _el(`je-line-child-wrap-${idx}`);
+        const childSel  = _el(`je-line-child-${idx}`);
+        if (!parentSel || !childWrap || !childSel) return;
 
-        const selectedCode = _allAccounts.find(a => a.id === accSel.value)?.code || '';
-        const subType      = SUB_ACCOUNT_MAP[selectedCode];
+        const parentId = parentSel.value;
+        if (!parentId) {
+            childWrap.classList.add('hidden');
+            childSel.innerHTML = '<option value="">— الحساب الفرعي —</option>';
+            delete childSel.dataset.accountId;
+            delete childSel.dataset.subAccountType;
+            delete childSel.dataset.subAccountId;
+            window.jeRecalc();
+            return;
+        }
 
-        if (subType) {
-            const items = subType === 'client' ? _allClients : _allSuppliers;
-            const nameKey = 'name';
-            subSel.innerHTML = `<option value="">— اختر ${subType === 'client' ? 'العميل' : 'المورد'} —</option>` +
-                items.map(x => `<option value="${x.id}">${esc(x[nameKey])}</option>`).join('');
-            subWrap.classList.remove('hidden');
-            subSel.dataset.subType = subType;
+        const children = _childrenOf(parentId);
+        if (children.length === 0) {
+            childWrap.classList.add('hidden');
+            childSel.innerHTML = '<option value="">— الحساب الفرعي —</option>';
+            delete childSel.dataset.accountId;
+            delete childSel.dataset.subAccountType;
+            delete childSel.dataset.subAccountId;
         } else {
-            subWrap.classList.add('hidden');
-            subSel.value = '';
-            delete subSel.dataset.subType;
+            childSel.innerHTML = '<option value="">— الحساب الفرعي —</option>' +
+                children.map(c => {
+                    const icon = c.sub_account_type === 'client' ? '👤' : c.sub_account_type === 'supplier' ? '🏢' : '';
+                    return `<option value="${c.id}" data-sub-type="${c.sub_account_type || ''}" data-sub-id="${c.sub_account_id || ''}">${icon} ${c.code} — ${esc(c.name)}</option>`;
+                }).join('');
+            childWrap.classList.remove('hidden');
+        }
+        window.jeRecalc();
+    };
+
+    // Called when child account changes — store account/sub-account info
+    window.jeChildChanged = function (idx) {
+        const childSel = _el(`je-line-child-${idx}`);
+        if (!childSel) return;
+        const opt = childSel.options[childSel.selectedIndex];
+        if (opt && opt.value) {
+            childSel.dataset.accountId = opt.value;
+            childSel.dataset.subAccountType = opt.dataset.subType || '';
+            childSel.dataset.subAccountId = opt.dataset.subId || '';
+        } else {
+            delete childSel.dataset.accountId;
+            delete childSel.dataset.subAccountType;
+            delete childSel.dataset.subAccountId;
         }
         window.jeRecalc();
     };
@@ -295,14 +315,29 @@
         const lines = [];
         for (let i = 1; i <= _lineCount; i++) {
             if (!_el(`je-line-${i}`)) continue;
-            const account_id       = _el(`je-line-acc-${i}`)?.value;
-            const debit            = parseFloat(_el(`je-line-debit-${i}`)?.value  || 0);
-            const credit           = parseFloat(_el(`je-line-credit-${i}`)?.value || 0);
-            const desc             = _el(`je-line-desc-${i}`)?.value.trim() || '';
-            const subSel           = _el(`je-line-subid-${i}`);
-            const sub_account_id   = subSel?.value   || null;
-            const sub_account_type = subSel?.dataset?.subType || null;
+            const parentSel  = _el(`je-line-parent-${i}`);
+            const childSel   = _el(`je-line-child-${i}`);
+            const childWrap  = _el(`je-line-child-wrap-${i}`);
+            const debit      = parseFloat(_el(`je-line-debit-${i}`)?.value  || 0);
+            const credit     = parseFloat(_el(`je-line-credit-${i}`)?.value || 0);
+            const desc       = _el(`je-line-desc-${i}`)?.value.trim() || '';
+
+            let account_id       = null;
+            let sub_account_type = null;
+            let sub_account_id   = null;
+
+            if (childSel && childWrap && !childWrap.classList.contains('hidden') && childSel.value) {
+                // Child selected — use child account as the line account
+                account_id       = childSel.value;
+                sub_account_type = childSel.dataset.subAccountType || null;
+                sub_account_id   = childSel.dataset.subAccountId || null;
+            } else if (parentSel && parentSel.value) {
+                // No child selected (or no children) — use parent account directly
+                account_id = parentSel.value;
+            }
+
             if (!account_id && debit === 0 && credit === 0) continue;
+            if (!account_id) continue;
             lines.push({ account_id, debit, credit, description: desc, sub_account_type, sub_account_id });
         }
 
