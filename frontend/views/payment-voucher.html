@@ -146,36 +146,46 @@
 
         <div class="px-6 py-5 space-y-4 overflow-y-auto flex-1">
 
-            <!-- Payee Type Toggle -->
-            <div class="flex gap-2 p-1 bg-slate-100 rounded-xl">
-                <button id="pv-type-supplier" data-type="supplier"
-                    class="pv-type-btn flex-1 py-2 text-sm font-semibold rounded-lg bg-white text-slate-800 shadow-sm transition-all">
-                    <i class="fa-solid fa-truck ml-1 text-slate-500"></i> مورد
-                </button>
-                <button id="pv-type-client" data-type="client"
-                    class="pv-type-btn flex-1 py-2 text-sm font-semibold rounded-lg text-slate-500 transition-all hover:bg-white/60">
-                    <i class="fa-solid fa-user ml-1"></i> عميل
-                </button>
+            <!-- Parent Account Dropdown -->
+            <div>
+                <label class="block text-sm font-semibold text-slate-700 mb-1.5">الحساب الرئيسي <span class="text-red-500">*</span></label>
+                <div class="relative flex-1">
+                    <button type="button" id="pv-parent-btn" onclick="window.pvToggleParentDropdown()"
+                        class="w-full flex items-center justify-between px-3 py-2.5 text-sm rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white">
+                        <span id="pv-parent-label" class="text-slate-400">اختر الحساب الرئيسي...</span>
+                        <i class="fa-solid fa-chevron-down text-slate-400 text-xs"></i>
+                    </button>
+                    <div id="pv-parent-dropdown" class="hidden absolute top-full right-0 left-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-30 max-h-60 overflow-hidden flex flex-col">
+                        <div class="p-2 border-b border-slate-100">
+                            <input type="text" id="pv-parent-search" oninput="window.pvFilterParent(this.value)"
+                                placeholder="بحث بالاسم أو الكود..." autocomplete="off"
+                                class="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                        </div>
+                        <div id="pv-parent-list" class="overflow-y-auto max-h-44"></div>
+                    </div>
+                </div>
             </div>
 
-            <!-- Payee Search -->
+            <!-- Child Account Dropdown -->
             <div>
-                <label id="pv-payee-label" class="block text-sm font-semibold text-slate-700 mb-1.5">المورد <span class="text-red-500">*</span></label>
-                <div class="relative">
-                    <i id="pv-payee-icon" class="fa-solid fa-truck absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
-                    <input id="pv-supplier-search" type="text" placeholder="ابحث باسم المورد..."
-                        class="w-full pr-9 pl-3 py-2.5 text-sm rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
-                        autocomplete="off" />
-                    <div id="pv-supplier-dropdown" class="hidden absolute top-full right-0 left-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-30 max-h-48 overflow-y-auto"></div>
+                <label class="block text-sm font-semibold text-slate-700 mb-1.5">الحساب الفرعي <span class="text-red-500">*</span></label>
+                <div class="relative flex-1">
+                    <button type="button" id="pv-child-btn" onclick="window.pvToggleChildDropdown()" disabled
+                        class="w-full flex items-center justify-between px-3 py-2.5 text-sm rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white disabled:opacity-50 disabled:cursor-not-allowed">
+                        <span id="pv-child-label" class="text-slate-400">اختر الحساب الرئيسي أولاً...</span>
+                        <i class="fa-solid fa-chevron-down text-slate-400 text-xs"></i>
+                    </button>
+                    <div id="pv-child-dropdown" class="hidden absolute top-full right-0 left-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-30 max-h-60 overflow-hidden flex flex-col">
+                        <div class="p-2 border-b border-slate-100">
+                            <input type="text" id="pv-child-search" oninput="window.pvFilterChild(this.value)"
+                                placeholder="بحث بالاسم أو الكود..." autocomplete="off"
+                                class="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                        </div>
+                        <div id="pv-child-list" class="overflow-y-auto max-h-44"></div>
+                    </div>
                 </div>
                 <input type="hidden" id="pv-supplier-id" />
-                <div id="pv-supplier-selected" class="hidden mt-2 items-center gap-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg text-sm">
-                    <i class="fa-solid fa-circle-check text-emerald-600"></i>
-                    <span id="pv-supplier-selected-name" class="font-semibold text-emerald-700 flex-1"></span>
-                    <button type="button" id="pv-supplier-clear" class="text-slate-400 hover:text-red-500 transition-colors text-xs">
-                        <i class="fa-solid fa-times"></i> تغيير
-                    </button>
-                </div>
+                <input type="hidden" id="pv-payee-type" />
             </div>
 
             <!-- Unpaid Purchase Invoices (shown only for supplier type) -->

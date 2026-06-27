@@ -157,6 +157,7 @@ router.post('/', async (req, res) => {
     try {
         const {
             client_id,
+            client_type = 'client',
             amount,
             payment_method = 'cash',
             cash_account_id,
@@ -173,16 +174,81 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ error: 'Amount must be a positive number' });
         }
 
-        // Pre-flight checks outside transaction
-        const clientRes = await db.query('SELECT id, name FROM clients WHERE id = $1', [client_id]);
-        if (!clientRes.rows.length) return res.status(404).json({ error: 'Client not found' });
-        const clientName = clientRes.rows[0].name;
-
         const cashAccRes = await db.query('SELECT id, name FROM accounts WHERE id = $1 AND is_active = true', [cash_account_id]);
         if (!cashAccRes.rows.length) return res.status(404).json({ error: 'Cash/Bank account not found' });
 
-        const arAccRes = await db.query("SELECT id FROM accounts WHERE code = '1300' LIMIT 1");
-        if (!arAccRes.rows.length) return res.status(500).json({ error: 'Accounts Receivable account (1300) not found in chart of accounts' });
+        // Resolve payee name, contra account, and sub-account info based on type
+        let payeeName, contraAccountCode, subAccountType, subAccountId, referenceType, referenceId;
+
+        if (client_type === 'client') {
+            const clientRes = await db.query('SELECT id, name FROM clients WHERE id = $1', [client_id]);
+            if (!clientRes.rows.length) return res.status(404).json({ error: 'Client not found' });
+            payeeName        = clientRes.rows[0].name;
+            contraAccountCode = '1300';
+            subAccountType   = 'client';
+            subAccountId     = client_id;
+            referenceType    = 'client';
+            referenceId      = client_id;
+        } else if (client_type === 'supplier') {
+            const supplierRes = await db.query('SELECT id, company_name FROM suppliers WHERE id = $1', [client_id]);
+            if (!supplierRes.rows.length) return res.status(404).json({ error: 'Supplier not found' });
+            payeeName        = supplierRes.rows[0].company_name;
+            contraAccountCode = '2100';
+            subAccountType   = 'supplier';
+            subAccountId     = client_id;
+            referenceType    = 'supplier';
+            referenceId      = client_id;
+        } else {
+            // 'account' type — use the selected account directly as the contra account
+            const accRes = await db.query('SELECT id, code, name FROM accounts WHERE id = $1 AND is_active = true', [client_id]);
+            if (!accRes.rows.length) return res.status(404).json({ error: 'Account not found' });
+            payeeName        = accRes.rows[0].name;
+            subAccountType   = null;
+            subAccountId     = null;
+            referenceType    = 'account';
+            referenceId      = client_id;
+            // Skip contra account lookup — we'll use the selected account directly
+            const contraAccountId = accRes.rows[0].id;
+
+            const result = await db.withTransaction(async (txClient) => {
+                const voucherRes = await txClient.query(`
+                    INSERT INTO accounting_vouchers
+                        (voucher_type, voucher_date, description, total_amount, status, reference_type, reference_id, created_by)
+                    VALUES ('receipt', $1, $2, $3, 'posted', $4, $5, $6)
+                    RETURNING id, voucher_number
+                `, [
+                    voucher_date,
+                    description || `سند قبض - ${payeeName}`,
+                    parsedAmount,
+                    referenceType,
+                    referenceId,
+                    req.user?.id || null
+                ]);
+
+                const voucherId     = voucherRes.rows[0].id;
+                const voucherNumber = voucherRes.rows[0].voucher_number;
+
+                // Line 1: DR Cash/Bank account
+                await txClient.query(`
+                    INSERT INTO accounting_voucher_lines (voucher_id, account_id, debit, credit, sub_account_type, sub_account_id, description)
+                    VALUES ($1, $2, $3, 0, NULL, NULL, $4)
+                `, [voucherId, cash_account_id, parsedAmount, `قبض - ${payeeName}`]);
+
+                // Line 2: CR selected account directly
+                await txClient.query(`
+                    INSERT INTO accounting_voucher_lines (voucher_id, account_id, debit, credit, sub_account_type, sub_account_id, description)
+                    VALUES ($1, $2, 0, $3, NULL, NULL, $4)
+                `, [voucherId, contraAccountId, parsedAmount, `ذمة - ${payeeName}`]);
+
+                return { id: voucherId, voucher_number: voucherNumber };
+            });
+
+            return res.status(201).json({ message: 'Receipt voucher created successfully', data: result });
+        }
+
+        // For client/supplier types: look up the contra account (1300 or 2100)
+        const arAccRes = await db.query(`SELECT id FROM accounts WHERE code = '${contraAccountCode}' LIMIT 1`);
+        if (!arAccRes.rows.length) return res.status(500).json({ error: `Account ${contraAccountCode} not found in chart of accounts` });
         const arAccountId = arAccRes.rows[0].id;
 
         const result = await db.withTransaction(async (txClient) => {
@@ -190,13 +256,14 @@ router.post('/', async (req, res) => {
             const voucherRes = await txClient.query(`
                 INSERT INTO accounting_vouchers
                     (voucher_type, voucher_date, description, total_amount, status, reference_type, reference_id, created_by)
-                VALUES ('receipt', $1, $2, $3, 'posted', 'client', $4, $5)
-                RETURNING id, voucher_number
+                    VALUES ('receipt', $1, $2, $3, 'posted', $4, $5, $6)
+                    RETURNING id, voucher_number
             `, [
                 voucher_date,
-                description || `سند قبض - ${clientName}`,
+                description || `سند قبض - ${payeeName}`,
                 parsedAmount,
-                client_id,
+                referenceType,
+                referenceId,
                 req.user?.id || null
             ]);
 
@@ -206,14 +273,14 @@ router.post('/', async (req, res) => {
             // Line 1: DR Cash/Bank account
             await txClient.query(`
                 INSERT INTO accounting_voucher_lines (voucher_id, account_id, debit, credit, sub_account_type, sub_account_id, description)
-                VALUES ($1, $2, $3, 0, 'client', $4, $5)
-            `, [voucherId, cash_account_id, parsedAmount, client_id, `قبض من ${clientName}`]);
+                VALUES ($1, $2, $3, 0, $4, $5, $6)
+            `, [voucherId, cash_account_id, parsedAmount, subAccountType, subAccountId, `قبض من ${payeeName}`]);
 
-            // Line 2: CR Accounts Receivable (1300)
+            // Line 2: CR contra account (1300 for clients, 2100 for suppliers)
             await txClient.query(`
                 INSERT INTO accounting_voucher_lines (voucher_id, account_id, debit, credit, sub_account_type, sub_account_id, description)
-                VALUES ($1, $2, 0, $3, 'client', $4, $5)
-            `, [voucherId, arAccountId, parsedAmount, client_id, `ذمة ${clientName}`]);
+                VALUES ($1, $2, 0, $3, $4, $5, $6)
+            `, [voucherId, arAccountId, parsedAmount, subAccountType, subAccountId, `ذمة ${payeeName}`]);
 
             return { id: voucherId, voucher_number: voucherNumber };
         });

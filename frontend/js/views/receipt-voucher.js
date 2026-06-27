@@ -23,14 +23,47 @@
         selectedVoucherId: null,
     };
 
+    let _accountsTree = { parents: [], children: [] };
+    let _selectedParent = null;
+    let _selectedChild = null;
+
+    const _typeLabels = {
+        'asset': 'أصول',
+        'liability': 'خصوم',
+        'equity': 'حقوق ملكية',
+        'revenue': 'إيرادات',
+        'expense': 'مصاريف'
+    };
+
     // ── Init ──────────────────────────────────────────────────────────────────
-    function _init() {
+    async function _init() {
         _bindEvents();
         _loadAccounts();
         _loadVouchers();
         // Set default date to today
         const today = new Date().toISOString().split('T')[0];
         _el('rv-date').value = today;
+
+        // Load accounts tree for dropdowns
+        try {
+            const data = await window.apiFetch('/api/account-statement/accounts-tree');
+            _accountsTree = data;
+            _renderParentList(data.parents);
+        } catch (err) {
+            console.error('[ReceiptVoucher] Failed to load accounts tree:', err);
+        }
+
+        // Click outside to close dropdowns
+        document.addEventListener('click', (e) => {
+            const parentWrap = _el('rv-parent-btn')?.closest('.flex-1');
+            if (parentWrap && !parentWrap.contains(e.target)) {
+                _el('rv-parent-dropdown').classList.add('hidden');
+            }
+            const childWrap = _el('rv-child-btn')?.closest('.flex-1');
+            if (childWrap && !childWrap.contains(e.target)) {
+                _el('rv-child-dropdown').classList.add('hidden');
+            }
+        });
     }
 
     // ── Bind Events ───────────────────────────────────────────────────────────
@@ -61,14 +94,6 @@
 
         // Amount preview update
         _el('rv-amount').addEventListener('input', _updatePreview);
-
-        // Client search with debounce
-        let _clientTimer = null;
-        _el('rv-client-search').addEventListener('input', () => {
-            clearTimeout(_clientTimer);
-            _clientTimer = setTimeout(() => _searchClients(_el('rv-client-search').value.trim()), 300);
-        });
-        _el('rv-client-clear').addEventListener('click', _clearClientSelection);
 
         // Detail modal
         _el('rv-detail-close').addEventListener('click', _closeDetailModal);
@@ -197,48 +222,117 @@
         _el('rv-btn-next').disabled = end >= _state.total;
     }
 
-    // ── Client Search ─────────────────────────────────────────────────────────
-    async function _searchClients(q) {
-        const dropdown = _el('rv-client-dropdown');
-        if (!q || q.length < 2) { dropdown.classList.add('hidden'); return; }
-        try {
-            const res = await window.apiFetch(`/api/account-statement/lookup?search=${encodeURIComponent(q)}`);
-            const clients = res.clients || [];
-            if (!clients.length) {
-                dropdown.innerHTML = '<div class="px-3 py-2 text-slate-400 text-sm">لا توجد نتائج</div>';
-            } else {
-                dropdown.innerHTML = clients.map(c => `
-                    <div class="rv-client-option px-3 py-2.5 hover:bg-brand-50 cursor-pointer text-sm border-b border-slate-50 last:border-0"
-                         data-id="${c.id}" data-name="${esc(c.name)}">
-                        <div class="font-semibold text-slate-800">${esc(c.name)}</div>
-                        <div class="text-xs text-slate-400">${esc(c.phone || '')}</div>
-                    </div>`).join('');
-                dropdown.querySelectorAll('.rv-client-option').forEach(opt => {
-                    opt.addEventListener('click', () => _selectClient(opt.dataset.id, opt.dataset.name));
-                });
-            }
-            dropdown.classList.remove('hidden');
-        } catch (err) {
-            console.error('[ReceiptVoucher] Client search error:', err);
+    // ── Parent Account Dropdown ────────────────────────────────────────────────
+    window.rvToggleParentDropdown = function() {
+        const dd = _el('rv-parent-dropdown');
+        dd.classList.toggle('hidden');
+        if (!dd.classList.contains('hidden')) {
+            _el('rv-parent-search').value = '';
+            _renderParentList(_accountsTree.parents);
+            _el('rv-parent-search').focus();
+            _el('rv-child-dropdown').classList.add('hidden');
         }
+    };
+
+    window.rvFilterParent = function(query) {
+        const q = (query || '').toLowerCase();
+        const filtered = _accountsTree.parents.filter(a =>
+            a.name.toLowerCase().includes(q) || a.code.toLowerCase().includes(q)
+        );
+        _renderParentList(filtered);
+    };
+
+    function _renderParentList(accounts) {
+        const container = _el('rv-parent-list');
+        if (accounts.length === 0) {
+            container.innerHTML = '<div class="px-4 py-3 text-sm text-slate-400 text-center">لا توجد نتائج</div>';
+            return;
+        }
+        container.innerHTML = accounts.map(a => `
+            <div onclick="window.rvSelectParent('${esc(a.id)}', '${esc(a.code)}', '${esc(a.name)}', '${esc(a.account_type)}')"
+                 class="px-4 py-2.5 hover:bg-brand-50 cursor-pointer border-b border-slate-50 last:border-0 flex items-center gap-3">
+                <span class="font-mono text-xs text-slate-400 w-12">${esc(a.code)}</span>
+                <span class="text-sm text-slate-700 flex-1">${esc(a.name)}</span>
+                <span class="text-xs text-slate-400">${_typeLabels[a.account_type] || a.account_type}</span>
+            </div>
+        `).join('');
     }
 
-    function _selectClient(id, name) {
-        _el('rv-client-id').value = id;
-        _el('rv-client-search').value = '';
-        _el('rv-client-dropdown').classList.add('hidden');
-        _el('rv-client-selected-name').textContent = name;
-        _el('rv-client-selected').classList.remove('hidden');
-        _el('rv-client-search').classList.add('hidden');
+    window.rvSelectParent = function(id, code, name, type) {
+        _selectedParent = { id, code, name, type };
+        _selectedChild = null;
+
+        _el('rv-parent-label').textContent = `${code} — ${name}`;
+        _el('rv-parent-label').classList.remove('text-slate-400');
+        _el('rv-parent-label').classList.add('text-slate-700');
+        _el('rv-parent-dropdown').classList.add('hidden');
+
+        _el('rv-child-btn').disabled = false;
+        _el('rv-child-label').textContent = 'اختر الحساب الفرعي...';
+        _el('rv-child-label').classList.remove('text-slate-400');
+        _el('rv-child-label').classList.add('text-slate-700');
+
+        const children = _accountsTree.children.filter(c => c.parent_id === id);
+        _renderChildList(children);
+    };
+
+    // ── Child Account Dropdown ─────────────────────────────────────────────────
+    window.rvToggleChildDropdown = function() {
+        if (!_selectedParent) return;
+        const dd = _el('rv-child-dropdown');
+        dd.classList.toggle('hidden');
+        if (!dd.classList.contains('hidden')) {
+            _el('rv-child-search').value = '';
+            const children = _accountsTree.children.filter(c => c.parent_id === _selectedParent.id);
+            _renderChildList(children);
+            _el('rv-child-search').focus();
+        }
+    };
+
+    window.rvFilterChild = function(query) {
+        if (!_selectedParent) return;
+        const q = (query || '').toLowerCase();
+        const children = _accountsTree.children
+            .filter(c => c.parent_id === _selectedParent.id)
+            .filter(a => a.name.toLowerCase().includes(q) || a.code.toLowerCase().includes(q));
+        _renderChildList(children);
+    };
+
+    function _renderChildList(accounts) {
+        const container = _el('rv-child-list');
+        let html = '';
+        if (accounts.length === 0) {
+            html = '<div class="px-4 py-3 text-sm text-slate-400 text-center">لا توجد حسابات فرعية</div>';
+        } else {
+            html = accounts.map(a => {
+                const isVirtual = a.sub_account_type === 'client' || a.sub_account_type === 'supplier';
+                const icon = a.sub_account_type === 'client' ? 'fa-user' : a.sub_account_type === 'supplier' ? 'fa-truck' : '';
+                const subDetail = a.phone || a.city ? `<span class="text-xs text-slate-400 block mt-0.5">${esc(a.phone || '')} ${a.city ? '• ' + esc(a.city) : ''}</span>` : '';
+                return `
+                <div onclick="window.rvSelectChild('${esc(a.id)}', '${esc(a.code)}', '${esc(a.name)}', ${isVirtual ? `'${esc(a.sub_account_id)}'` : 'null'}, ${isVirtual ? `'${esc(a.sub_account_type)}'` : 'null'})"
+                     class="px-4 py-2.5 hover:bg-brand-50 cursor-pointer border-b border-slate-50 last:border-0 flex items-center gap-3">
+                    ${icon ? `<i class="fa-solid ${icon} text-slate-400 text-xs w-12 text-center"></i>` : `<span class="font-mono text-xs text-slate-400 w-12">${esc(a.code)}</span>`}
+                    <div class="flex-1">
+                        <span class="text-sm text-slate-700">${esc(a.name)}</span>
+                        ${subDetail}
+                    </div>
+                </div>`;
+            }).join('');
+        }
+        container.innerHTML = html;
     }
 
-    function _clearClientSelection() {
-        _el('rv-client-id').value = '';
-        _el('rv-client-selected').classList.add('hidden');
-        _el('rv-client-search').classList.remove('hidden');
-        _el('rv-client-search').value = '';
-        _el('rv-client-search').focus();
-    }
+    window.rvSelectChild = function(id, code, name, subAccountId, subAccountType) {
+        _selectedChild = { id, code, name, subAccountId: subAccountId || null, subAccountType: subAccountType || null };
+        _el('rv-child-label').textContent = `${code} — ${name}`;
+        _el('rv-child-label').classList.remove('text-slate-400');
+        _el('rv-child-label').classList.add('text-slate-700');
+        _el('rv-child-dropdown').classList.add('hidden');
+
+        // Set hidden fields for submission
+        _el('rv-client-id').value = subAccountId || id;
+        _el('rv-client-type').value = subAccountType || 'account';
+    };
 
     // ── Preview Update ────────────────────────────────────────────────────────
     function _updatePreview() {
@@ -258,11 +352,19 @@
     }
 
     function _clearNewForm() {
-        _el('rv-client-id').value   = '';
-        _el('rv-client-search').value = '';
-        _el('rv-client-search').classList.remove('hidden');
-        _el('rv-client-selected').classList.add('hidden');
-        _el('rv-client-dropdown').classList.add('hidden');
+        _selectedParent = null;
+        _selectedChild = null;
+        _el('rv-parent-label').textContent = 'اختر الحساب الرئيسي...';
+        _el('rv-parent-label').classList.add('text-slate-400');
+        _el('rv-parent-label').classList.remove('text-slate-700');
+        _el('rv-parent-dropdown').classList.add('hidden');
+        _el('rv-child-btn').disabled = true;
+        _el('rv-child-label').textContent = 'اختر الحساب الرئيسي أولاً...';
+        _el('rv-child-label').classList.add('text-slate-400');
+        _el('rv-child-label').classList.remove('text-slate-700');
+        _el('rv-child-dropdown').classList.add('hidden');
+        _el('rv-client-id').value = '';
+        _el('rv-client-type').value = '';
         _el('rv-amount').value      = '';
         _el('rv-description').value = '';
         _el('rv-date').value        = new Date().toISOString().split('T')[0];
@@ -273,13 +375,14 @@
     // ── Submit Voucher ────────────────────────────────────────────────────────
     async function _submitVoucher() {
         const clientId     = _el('rv-client-id').value;
+        const clientType   = _el('rv-client-type').value;
         const amount       = parseFloat(_el('rv-amount').value);
         const cashAccId    = _el('rv-cash-account').value;
         const voucherDate  = _el('rv-date').value;
         const description  = _el('rv-description').value.trim();
         const paymentMethod = _el('rv-payment-method').value;
 
-        if (!clientId)           return window.showToast('يجب اختيار العميل', 'warning');
+        if (!clientId)           return window.showToast('يجب اختيار الحساب الفرعي', 'warning');
         if (!amount || amount <= 0) return window.showToast('يجب إدخال مبلغ صحيح أكبر من صفر', 'warning');
         if (!cashAccId)          return window.showToast('يجب اختيار حساب الاستلام', 'warning');
         if (!voucherDate)        return window.showToast('يجب إدخال التاريخ', 'warning');
@@ -291,7 +394,7 @@
         try {
             await window.apiFetch('/api/receipt-vouchers', {
                 method: 'POST',
-                body: { client_id: clientId, amount, cash_account_id: cashAccId, voucher_date: voucherDate, description, payment_method: paymentMethod }
+                body: { client_id: clientId, client_type: clientType, amount, cash_account_id: cashAccId, voucher_date: voucherDate, description, payment_method: paymentMethod }
             });
             window.showToast('تم حفظ سند القبض بنجاح', 'success');
             _closeNewModal();

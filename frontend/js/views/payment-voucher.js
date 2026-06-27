@@ -24,12 +24,45 @@
         payeeType: 'supplier',
     };
 
+    let _accountsTree = { parents: [], children: [] };
+    let _selectedParent = null;
+    let _selectedChild = null;
+
+    const _typeLabels = {
+        'asset': 'أصول',
+        'liability': 'خصوم',
+        'equity': 'حقوق ملكية',
+        'revenue': 'إيرادات',
+        'expense': 'مصاريف'
+    };
+
     // ── Init ──────────────────────────────────────────────────────────────────
-    function _init() {
+    async function _init() {
         _bindEvents();
         _loadAccounts();
         _loadVouchers();
         _el('pv-date').value = new Date().toISOString().split('T')[0];
+
+        // Load accounts tree for dropdowns
+        try {
+            const data = await window.apiFetch('/api/account-statement/accounts-tree');
+            _accountsTree = data;
+            _renderParentList(data.parents);
+        } catch (err) {
+            console.error('[PaymentVoucher] Failed to load accounts tree:', err);
+        }
+
+        // Click outside to close dropdowns
+        document.addEventListener('click', (e) => {
+            const parentWrap = _el('pv-parent-btn')?.closest('.flex-1');
+            if (parentWrap && !parentWrap.contains(e.target)) {
+                _el('pv-parent-dropdown').classList.add('hidden');
+            }
+            const childWrap = _el('pv-child-btn')?.closest('.flex-1');
+            if (childWrap && !childWrap.contains(e.target)) {
+                _el('pv-child-dropdown').classList.add('hidden');
+            }
+        });
     }
 
     // ── Bind Events ───────────────────────────────────────────────────────────
@@ -55,18 +88,6 @@
         _el('pv-modal-backdrop').addEventListener('click', _closeNewModal);
         _el('pv-modal-submit').addEventListener('click', _submitVoucher);
         _el('pv-amount').addEventListener('input', _updatePreview);
-
-        let _supplierTimer = null;
-        _el('pv-supplier-search').addEventListener('input', () => {
-            clearTimeout(_supplierTimer);
-            _supplierTimer = setTimeout(() => _searchSuppliers(_el('pv-supplier-search').value.trim()), 300);
-        });
-        _el('pv-supplier-clear').addEventListener('click', _clearSupplierSelection);
-
-        // Payee type toggle
-        document.querySelectorAll('.pv-type-btn').forEach(btn => {
-            btn.addEventListener('click', () => _setPayeeType(btn.dataset.type));
-        });
 
         _el('pv-detail-close').addEventListener('click', _closeDetailModal);
         _el('pv-detail-close-btn').addEventListener('click', _closeDetailModal);
@@ -181,80 +202,135 @@
         _el('pv-btn-next').disabled = end >= _state.total;
     }
 
-    // ── Payee Type Toggle ─────────────────────────────────────────────────────
-    function _setPayeeType(type) {
-        _state.payeeType = type;
-        _el('pv-supplier-id').value = '';
-        _el('pv-supplier-search').value = '';
-        _el('pv-supplier-search').style.display = '';
-        _el('pv-supplier-dropdown').classList.add('hidden');
-        const badge = _el('pv-supplier-selected');
-        badge.classList.add('hidden');
-        badge.style.display = 'none';
-        document.querySelectorAll('.pv-type-btn').forEach(btn => {
-            const active = btn.dataset.type === type;
-            btn.classList.toggle('bg-white',    active);
-            btn.classList.toggle('text-slate-800', active);
-            btn.classList.toggle('shadow-sm',   active);
-            btn.classList.toggle('text-slate-500', !active);
-        });
-        if (type === 'supplier') {
-            _el('pv-payee-label').innerHTML = 'المورد <span class="text-red-500">*</span>';
-            _el('pv-payee-icon').className  = 'fa-solid fa-truck absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm';
-            _el('pv-supplier-search').placeholder = 'ابحث باسم المورد...';
-            _el('pv-preview-dr-label').innerHTML = '<i class="fa-solid fa-arrow-up text-emerald-500 text-xs"></i> مدين — ذمم الموردين (2100)';
+    // ── Parent Account Dropdown ────────────────────────────────────────────────
+    window.pvToggleParentDropdown = function() {
+        const dd = _el('pv-parent-dropdown');
+        dd.classList.toggle('hidden');
+        if (!dd.classList.contains('hidden')) {
+            _el('pv-parent-search').value = '';
+            _renderParentList(_accountsTree.parents);
+            _el('pv-parent-search').focus();
+            _el('pv-child-dropdown').classList.add('hidden');
+        }
+    };
+
+    window.pvFilterParent = function(query) {
+        const q = (query || '').toLowerCase();
+        const filtered = _accountsTree.parents.filter(a =>
+            a.name.toLowerCase().includes(q) || a.code.toLowerCase().includes(q)
+        );
+        _renderParentList(filtered);
+    };
+
+    function _renderParentList(accounts) {
+        const container = _el('pv-parent-list');
+        if (accounts.length === 0) {
+            container.innerHTML = '<div class="px-4 py-3 text-sm text-slate-400 text-center">لا توجد نتائج</div>';
+            return;
+        }
+        container.innerHTML = accounts.map(a => `
+            <div onclick="window.pvSelectParent('${esc(a.id)}', '${esc(a.code)}', '${esc(a.name)}', '${esc(a.account_type)}')"
+                 class="px-4 py-2.5 hover:bg-brand-50 cursor-pointer border-b border-slate-50 last:border-0 flex items-center gap-3">
+                <span class="font-mono text-xs text-slate-400 w-12">${esc(a.code)}</span>
+                <span class="text-sm text-slate-700 flex-1">${esc(a.name)}</span>
+                <span class="text-xs text-slate-400">${_typeLabels[a.account_type] || a.account_type}</span>
+            </div>
+        `).join('');
+    }
+
+    window.pvSelectParent = function(id, code, name, type) {
+        _selectedParent = { id, code, name, type };
+        _selectedChild = null;
+
+        _el('pv-parent-label').textContent = `${code} — ${name}`;
+        _el('pv-parent-label').classList.remove('text-slate-400');
+        _el('pv-parent-label').classList.add('text-slate-700');
+        _el('pv-parent-dropdown').classList.add('hidden');
+
+        _el('pv-child-btn').disabled = false;
+        _el('pv-child-label').textContent = 'اختر الحساب الفرعي...';
+        _el('pv-child-label').classList.remove('text-slate-400');
+        _el('pv-child-label').classList.add('text-slate-700');
+
+        const children = _accountsTree.children.filter(c => c.parent_id === id);
+        _renderChildList(children);
+    };
+
+    // ── Child Account Dropdown ─────────────────────────────────────────────────
+    window.pvToggleChildDropdown = function() {
+        if (!_selectedParent) return;
+        const dd = _el('pv-child-dropdown');
+        dd.classList.toggle('hidden');
+        if (!dd.classList.contains('hidden')) {
+            _el('pv-child-search').value = '';
+            const children = _accountsTree.children.filter(c => c.parent_id === _selectedParent.id);
+            _renderChildList(children);
+            _el('pv-child-search').focus();
+        }
+    };
+
+    window.pvFilterChild = function(query) {
+        if (!_selectedParent) return;
+        const q = (query || '').toLowerCase();
+        const children = _accountsTree.children
+            .filter(c => c.parent_id === _selectedParent.id)
+            .filter(a => a.name.toLowerCase().includes(q) || a.code.toLowerCase().includes(q));
+        _renderChildList(children);
+    };
+
+    function _renderChildList(accounts) {
+        const container = _el('pv-child-list');
+        let html = '';
+        if (accounts.length === 0) {
+            html = '<div class="px-4 py-3 text-sm text-slate-400 text-center">لا توجد حسابات فرعية</div>';
         } else {
-            _el('pv-payee-label').innerHTML = 'العميل <span class="text-red-500">*</span>';
-            _el('pv-payee-icon').className  = 'fa-solid fa-user absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm';
-            _el('pv-supplier-search').placeholder = 'ابحث باسم العميل...';
+            html = accounts.map(a => {
+                const isVirtual = a.sub_account_type === 'client' || a.sub_account_type === 'supplier';
+                const icon = a.sub_account_type === 'client' ? 'fa-user' : a.sub_account_type === 'supplier' ? 'fa-truck' : '';
+                const subDetail = a.phone || a.city ? `<span class="text-xs text-slate-400 block mt-0.5">${esc(a.phone || '')} ${a.city ? '• ' + esc(a.city) : ''}</span>` : '';
+                return `
+                <div onclick="window.pvSelectChild('${esc(a.id)}', '${esc(a.code)}', '${esc(a.name)}', ${isVirtual ? `'${esc(a.sub_account_id)}'` : 'null'}, ${isVirtual ? `'${esc(a.sub_account_type)}'` : 'null'})"
+                     class="px-4 py-2.5 hover:bg-brand-50 cursor-pointer border-b border-slate-50 last:border-0 flex items-center gap-3">
+                    ${icon ? `<i class="fa-solid ${icon} text-slate-400 text-xs w-12 text-center"></i>` : `<span class="font-mono text-xs text-slate-400 w-12">${esc(a.code)}</span>`}
+                    <div class="flex-1">
+                        <span class="text-sm text-slate-700">${esc(a.name)}</span>
+                        ${subDetail}
+                    </div>
+                </div>`;
+            }).join('');
+        }
+        container.innerHTML = html;
+    }
+
+    window.pvSelectChild = function(id, code, name, subAccountId, subAccountType) {
+        _selectedChild = { id, code, name, subAccountId: subAccountId || null, subAccountType: subAccountType || null };
+        _el('pv-child-label').textContent = `${code} — ${name}`;
+        _el('pv-child-label').classList.remove('text-slate-400');
+        _el('pv-child-label').classList.add('text-slate-700');
+        _el('pv-child-dropdown').classList.add('hidden');
+
+        // Set hidden fields for submission
+        _el('pv-supplier-id').value = subAccountId || id;
+        _el('pv-payee-type').value = subAccountType || 'account';
+
+        // Update preview DR label based on payee type
+        if (subAccountType === 'client') {
             _el('pv-preview-dr-label').innerHTML = '<i class="fa-solid fa-arrow-up text-emerald-500 text-xs"></i> مدين — ذمم العملاء (1300)';
+        } else if (subAccountType === 'supplier') {
+            _el('pv-preview-dr-label').innerHTML = '<i class="fa-solid fa-arrow-up text-emerald-500 text-xs"></i> مدين — ذمم الموردين (2100)';
         }
-    }
 
-    // ── Payee Search ──────────────────────────────────────────────────────────
-    async function _searchSuppliers(q) {
-        const dropdown = _el('pv-supplier-dropdown');
-        if (!q || q.length < 2) { dropdown.classList.add('hidden'); return; }
-        try {
-            let items = [];
-            if (_state.payeeType === 'supplier') {
-                const res = await window.apiFetch(`/api/suppliers?search=${encodeURIComponent(q)}&limit=10`);
-                items = (res.data || []).map(s => ({ id: s.id, name: s.company_name, sub: s.phone || '' }));
-            } else {
-                const res = await window.apiFetch(`/api/account-statement/lookup?search=${encodeURIComponent(q)}`);
-                items = (res.clients || []).map(c => ({ id: c.id, name: c.name, sub: c.phone || '' }));
-            }
-            if (!items.length) {
-                dropdown.innerHTML = '<div class="px-3 py-2 text-slate-400 text-sm">لا توجد نتائج</div>';
-            } else {
-                dropdown.innerHTML = items.map(s => `
-                    <div class="pv-supplier-option px-3 py-2.5 hover:bg-brand-50 cursor-pointer text-sm border-b border-slate-50 last:border-0"
-                         data-id="${s.id}" data-name="${esc(s.name)}">
-                        <div class="font-semibold text-slate-800">${esc(s.name)}</div>
-                        <div class="text-xs text-slate-400">${esc(s.sub)}</div>
-                    </div>`).join('');
-                dropdown.querySelectorAll('.pv-supplier-option').forEach(opt => {
-                    opt.addEventListener('click', () => _selectSupplier(opt.dataset.id, opt.dataset.name));
-                });
-            }
-            dropdown.classList.remove('hidden');
-        } catch (err) {
-            console.error('[PaymentVoucher] Payee search error:', err);
+        // Load unpaid invoices for suppliers
+        if (subAccountType === 'supplier') {
+            _loadSupplierInvoices(subAccountId);
+        } else {
+            _el('pv-invoices-section').classList.add('hidden');
+            _el('pv-purchase-invoice-id').value = '';
+            _el('pv-invoice-selected-info').classList.add('hidden');
         }
-    }
+    };
 
-    function _selectSupplier(id, name) {
-        _el('pv-supplier-id').value = id;
-        _el('pv-supplier-dropdown').classList.add('hidden');
-        _el('pv-supplier-selected-name').textContent = name;
-        _el('pv-supplier-search').style.display = 'none';
-        const badge = _el('pv-supplier-selected');
-        badge.classList.remove('hidden');
-        badge.style.display = 'flex';
-        // Load unpaid invoices for this supplier
-        if (_state.payeeType === 'supplier') _loadSupplierInvoices(id);
-    }
-
+    // ── Load Supplier Invoices ─────────────────────────────────────────────────
     async function _loadSupplierInvoices(supplierId) {
         const section = _el('pv-invoices-section');
         const list    = _el('pv-invoices-list');
@@ -314,19 +390,6 @@
         }
     }
 
-    function _clearSupplierSelection() {
-        _el('pv-supplier-id').value = '';
-        _el('pv-supplier-search').value = '';
-        _el('pv-supplier-search').style.display = '';
-        const badge = _el('pv-supplier-selected');
-        badge.classList.add('hidden');
-        badge.style.display = 'none';
-        _el('pv-invoices-section').classList.add('hidden');
-        _el('pv-purchase-invoice-id').value = '';
-        _el('pv-invoice-selected-info').classList.add('hidden');
-        _el('pv-supplier-search').focus();
-    }
-
     // ── Preview Update ────────────────────────────────────────────────────────
     function _updatePreview() {
         const v = parseFloat(_el('pv-amount').value) || 0;
@@ -339,15 +402,20 @@
     function _closeNewModal() { _el('pv-modal').classList.add('hidden'); }
 
     function _clearNewForm() {
+        _selectedParent = null;
+        _selectedChild = null;
         _state.payeeType = 'supplier';
-        _setPayeeType('supplier');
+        _el('pv-parent-label').textContent = 'اختر الحساب الرئيسي...';
+        _el('pv-parent-label').classList.add('text-slate-400');
+        _el('pv-parent-label').classList.remove('text-slate-700');
+        _el('pv-parent-dropdown').classList.add('hidden');
+        _el('pv-child-btn').disabled = true;
+        _el('pv-child-label').textContent = 'اختر الحساب الرئيسي أولاً...';
+        _el('pv-child-label').classList.add('text-slate-400');
+        _el('pv-child-label').classList.remove('text-slate-700');
+        _el('pv-child-dropdown').classList.add('hidden');
         _el('pv-supplier-id').value = '';
-        _el('pv-supplier-search').value = '';
-        _el('pv-supplier-search').style.display = '';
-        const badge = _el('pv-supplier-selected');
-        badge.classList.add('hidden');
-        badge.style.display = 'none';
-        _el('pv-supplier-dropdown').classList.add('hidden');
+        _el('pv-payee-type').value = '';
         _el('pv-invoices-section').classList.add('hidden');
         _el('pv-purchase-invoice-id').value = '';
         _el('pv-invoice-selected-info').classList.add('hidden');
@@ -355,19 +423,21 @@
         _el('pv-description').value = '';
         _el('pv-date').value        = new Date().toISOString().split('T')[0];
         _el('pv-payment-method').value = 'cash';
+        _el('pv-preview-dr-label').innerHTML = '<i class="fa-solid fa-arrow-up text-emerald-500 text-xs"></i> مدين — ذمم الموردين (2100)';
         _updatePreview();
     }
 
     // ── Submit Voucher ────────────────────────────────────────────────────────
     async function _submitVoucher() {
         const supplierId    = _el('pv-supplier-id').value;
+        const payeeType     = _el('pv-payee-type').value || 'supplier';
         const amount        = parseFloat(_el('pv-amount').value);
         const cashAccId     = _el('pv-cash-account').value;
         const voucherDate   = _el('pv-date').value;
         const description   = _el('pv-description').value.trim();
         const paymentMethod = _el('pv-payment-method').value;
 
-        if (!supplierId)         return window.showToast(_state.payeeType === 'supplier' ? 'يجب اختيار المورد' : 'يجب اختيار العميل', 'warning');
+        if (!supplierId)         return window.showToast('يجب اختيار الحساب الفرعي', 'warning');
         if (!amount || amount <= 0) return window.showToast('يجب إدخال مبلغ صحيح أكبر من صفر', 'warning');
         if (!cashAccId)          return window.showToast('يجب اختيار حساب الدفع', 'warning');
         if (!voucherDate)        return window.showToast('يجب إدخال التاريخ', 'warning');
@@ -380,7 +450,7 @@
             const purchaseInvoiceId = _el('pv-purchase-invoice-id')?.value || null;
             await window.apiFetch('/api/payment-vouchers', {
                 method: 'POST',
-                body: { payee_type: _state.payeeType, payee_id: supplierId, amount, cash_account_id: cashAccId, voucher_date: voucherDate, description, payment_method: paymentMethod, purchase_invoice_id: purchaseInvoiceId || undefined }
+                body: { payee_type: payeeType, payee_id: supplierId, amount, cash_account_id: cashAccId, voucher_date: voucherDate, description, payment_method: paymentMethod, purchase_invoice_id: purchaseInvoiceId || undefined }
             });
             window.showToast('تم حفظ سند الصرف بنجاح', 'success');
             _closeNewModal();

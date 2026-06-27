@@ -178,8 +178,8 @@ router.post('/', async (req, res) => {
         if (!payee_id || !amount || !cash_account_id || !voucher_date) {
             return res.status(400).json({ error: 'payee_id, amount, cash_account_id, voucher_date are required' });
         }
-        if (!['supplier', 'client'].includes(payee_type)) {
-            return res.status(400).json({ error: 'payee_type must be supplier or client' });
+        if (!['supplier', 'client', 'account'].includes(payee_type)) {
+            return res.status(400).json({ error: 'payee_type must be supplier, client, or account' });
         }
 
         const parsedAmount = parseFloat(amount);
@@ -188,17 +188,68 @@ router.post('/', async (req, res) => {
         }
 
         // Resolve payee name + contra account
-        let payeeName, contraAccountCode;
+        let payeeName, contraAccountCode, subAccountType, subAccountId;
         if (payee_type === 'supplier') {
             const r = await db.query('SELECT id, company_name FROM suppliers WHERE id = $1', [payee_id]);
             if (!r.rows.length) return res.status(404).json({ error: 'Supplier not found' });
             payeeName        = r.rows[0].company_name;
             contraAccountCode = '2100'; // ذمم الموردين
-        } else {
+            subAccountType   = 'supplier';
+            subAccountId     = payee_id;
+        } else if (payee_type === 'client') {
             const r = await db.query('SELECT id, name FROM clients WHERE id = $1', [payee_id]);
             if (!r.rows.length) return res.status(404).json({ error: 'Client not found' });
             payeeName        = r.rows[0].name;
             contraAccountCode = '1300'; // ذمم العملاء
+            subAccountType   = 'client';
+            subAccountId     = payee_id;
+        } else {
+            // 'account' type — use the selected account directly as the contra account
+            const r = await db.query('SELECT id, code, name FROM accounts WHERE id = $1 AND is_active = true', [payee_id]);
+            if (!r.rows.length) return res.status(404).json({ error: 'Account not found' });
+            payeeName        = r.rows[0].name;
+            subAccountType   = null;
+            subAccountId     = null;
+            // Use the account directly — skip the contra account lookup below
+            const contraAccountId = r.rows[0].id;
+
+            const cashAccRes = await db.query('SELECT id, name FROM accounts WHERE id = $1 AND is_active = true', [cash_account_id]);
+            if (!cashAccRes.rows.length) return res.status(404).json({ error: 'Cash/Bank account not found' });
+
+            const result = await db.withTransaction(async (txClient) => {
+                const voucherRes = await txClient.query(`
+                    INSERT INTO accounting_vouchers
+                        (voucher_type, voucher_date, description, total_amount, status, reference_type, reference_id, created_by)
+                    VALUES ('payment', $1, $2, $3, 'posted', $4, $5, $6)
+                    RETURNING id, voucher_number
+                `, [
+                    voucher_date,
+                    description || `سند صرف - ${payeeName}`,
+                    parsedAmount,
+                    'account',
+                    payee_id,
+                    req.user?.id || null
+                ]);
+
+                const voucherId     = voucherRes.rows[0].id;
+                const voucherNumber = voucherRes.rows[0].voucher_number;
+
+                // Line 1: DR selected account directly
+                await txClient.query(`
+                    INSERT INTO accounting_voucher_lines (voucher_id, account_id, debit, credit, sub_account_type, sub_account_id, description)
+                    VALUES ($1, $2, $3, 0, NULL, NULL, $4)
+                `, [voucherId, contraAccountId, parsedAmount, `صرف لـ ${payeeName}`]);
+
+                // Line 2: CR Cash/Bank account
+                await txClient.query(`
+                    INSERT INTO accounting_voucher_lines (voucher_id, account_id, debit, credit, sub_account_type, sub_account_id, description)
+                    VALUES ($1, $2, 0, $3, NULL, NULL, $4)
+                `, [voucherId, cash_account_id, parsedAmount, `دفع لـ ${payeeName}`]);
+
+                return { id: voucherId, voucher_number: voucherNumber };
+            });
+
+            return res.status(201).json({ message: 'Payment voucher created successfully', data: result });
         }
 
         const cashAccRes = await db.query('SELECT id, name FROM accounts WHERE id = $1 AND is_active = true', [cash_account_id]);
