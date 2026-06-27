@@ -252,6 +252,7 @@ CREATE TABLE IF NOT EXISTS order_items (
     released_qty DECIMAL(15,3) DEFAULT 0,
     delivered_qty DECIMAL(15,3) DEFAULT 0,
     design_status VARCHAR(50) DEFAULT 'new',
+    design_id UUID,
     notes TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
