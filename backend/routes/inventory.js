@@ -10,8 +10,17 @@ const router = express.Router();
 // SCHEMA RULE: warehouse_stock is strictly tied to client_id (VMI / Franchise logic).
 // Stock is NEVER fetched globally — always scoped by client unless the caller has all_access.
 
-// View permission: all authenticated users with 'inventory' view can list/get
-router.use(authorize('inventory', 'view'));
+// View permission: users with 'inventory' OR 'warehouses' view can access
+router.use((req, res, next) => {
+    const perms = req.user && req.user.permissions;
+    const role  = req.user && req.user.role;
+    if (role === 'super_admin' || role === 'admin') return next();
+    if (perms && perms.all_access === true) return next();
+    const hasInv  = perms && perms.inventory  && (perms.inventory.view  || perms.inventory  === true || (Array.isArray(perms.inventory)  && perms.inventory.includes('view')));
+    const hasWh   = perms && perms.warehouses && (perms.warehouses.view || perms.warehouses === true || (Array.isArray(perms.warehouses) && perms.warehouses.includes('view')));
+    if (hasInv || hasWh) return next();
+    return res.status(403).json({ error: 'Forbidden: No view permission on inventory or warehouses.' });
+});
 
 // Write permission: users with 'inventory' create/edit
 const restrictWrite = authorize('inventory', 'create');

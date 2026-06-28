@@ -11,8 +11,9 @@ const router  = express.Router();
 const db      = require('../db');
 const authorize = require('../middleware/authorize');
 
-const restrictToAdmin = authorize(['admin', 'manager', 'super_admin']);
-router.use(restrictToAdmin);
+router.use(authorize('journal_entry', 'view'));
+const restrictWrite  = authorize('journal_entry', 'create');
+const restrictDelete = authorize('journal_entry', 'delete');
 
 // =============================================================================
 // GET /api/journal-entries
@@ -117,7 +118,7 @@ router.get('/:id', async (req, res) => {
 //   - SUM(debit) must equal SUM(credit)
 //   - Each line: either debit > 0 OR credit > 0, not both, not zero
 // =============================================================================
-router.post('/', async (req, res) => {
+router.post('/', restrictWrite, async (req, res) => {
     const { voucher_date, description, lines } = req.body;
 
     // ── Validation ────────────────────────────────────────────────────────────
@@ -200,7 +201,7 @@ router.post('/', async (req, res) => {
 // DELETE /api/journal-entries/:id
 // Soft-delete by setting status = 'reversed' (accounting immutability rule)
 // =============================================================================
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', restrictDelete, async (req, res) => {
     try {
         const { id } = req.params;
 

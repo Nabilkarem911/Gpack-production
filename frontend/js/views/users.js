@@ -10,20 +10,34 @@ const usersView = (() => {
 
     // ?? Permission Modules (CRUD grid) ?????????????????????????????
     const _PERMISSION_MODULES = [
-        { key: 'dashboard',   label: 'لوحة التحكم' },
-        { key: 'clients',     label: 'العملاء' },
-        { key: 'sales',       label: 'فواتير المبيعات' },
-        { key: 'quotations',  label: 'عروض الأسعار' },
-        { key: 'suppliers',   label: 'الموردين' },
-        { key: 'purchasing',  label: 'المشتريات' },
-        { key: 'products',    label: 'المنتجات' },
-        { key: 'inventory',   label: 'المخزون' },
-        { key: 'warehouses',  label: 'المستودعات' },
-        { key: 'forecast',    label: 'مركز الذكاء (AI)' },
-        { key: 'accounting',  label: 'المحاسبة' },
-        { key: 'tasks',       label: 'المهام' },
-        { key: 'users',       label: 'المستخدمين' },
-        { key: 'settings',    label: 'الإعدادات' },
+        // ── الرئيسية ──────────────────────────────────
+        { key: 'dashboard',          label: 'لوحة التحكم' },
+        // ── المبيعات ──────────────────────────────────
+        { key: 'clients',            label: 'العملاء' },
+        { key: 'sales',              label: 'فواتير المبيعات' },
+        { key: 'quotations',         label: 'عروض الأسعار' },
+        { key: 'production_orders',  label: 'أوامر التشغيل' },
+        { key: 'forecast',           label: 'مركز الذكاء (AI)' },
+        // ── المشتريات ─────────────────────────────────
+        { key: 'suppliers',          label: 'الموردين' },
+        { key: 'purchasing',         label: 'فواتير المشتريات' },
+        { key: 'purchase_returns',   label: 'مرتجع المشتريات' },
+        // ── الحسابات ──────────────────────────────────
+        { key: 'account_statement',  label: 'كشف الحساب' },
+        { key: 'receipt_voucher',    label: 'سندات القبض' },
+        { key: 'payment_voucher',    label: 'سندات الصرف' },
+        { key: 'journal_entry',      label: 'قيد اليومية' },
+        { key: 'chart_of_accounts',  label: 'الدليل المحاسبي' },
+        // ── المستودعات ────────────────────────────────
+        { key: 'warehouses',         label: 'المخازن' },
+        { key: 'inventory',          label: 'إدارة المخزون' },
+        { key: 'products',           label: 'الأصناف' },
+        { key: 'vmi_dispatch',       label: 'سندات التسليم' },
+        { key: 'receiving',          label: 'سندات الاستلام' },
+        // ── الإدارة ───────────────────────────────────
+        { key: 'tasks',              label: 'المهام' },
+        { key: 'users',              label: 'المستخدمين' },
+        { key: 'settings',           label: 'الإعدادات' },
     ];
 
     // ?? Helpers ????????????????????????????????????????????????????

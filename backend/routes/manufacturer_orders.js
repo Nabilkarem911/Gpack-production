@@ -6,8 +6,10 @@ const { success, error: errorResponse } = require('../utils/response');
 const authorize = require('../middleware/authorize');
 
 const router = express.Router();
-const restrictToWarehouseAdmin = authorize(['admin', 'manager', 'super_admin', 'warehouse', 'warehouse_keeper']);
-router.use(restrictToWarehouseAdmin);
+router.use(authorize('production_orders', 'view'));
+const restrictWrite  = authorize('production_orders', 'create');
+const restrictEdit   = authorize('production_orders', 'edit');
+const restrictDelete = authorize('production_orders', 'delete');
 
 // =============================================================================
 // GET /api/manufacturer-orders
@@ -287,7 +289,7 @@ router.get('/:id', async (req, res) => {
 // Atomically updates order_items.manufacturer_po_qty for tracking.
 // =============================================================================
 
-router.post('/', async (req, res) => {
+router.post('/', restrictWrite, async (req, res) => {
     const {
         order_id,
         supplier_id,
@@ -394,7 +396,7 @@ router.post('/', async (req, res) => {
 // Valid transitions: pending -> ordered -> received
 // =============================================================================
 
-router.patch('/:id/status', async (req, res) => {
+router.patch('/:id/status', restrictEdit, async (req, res) => {
     const { id } = req.params;
     const { status, actual_delivery } = req.body;
 
@@ -479,7 +481,7 @@ router.patch('/:id/status', async (req, res) => {
 // Cannot edit if status is received or cancelled.
 // =============================================================================
 
-router.patch('/:id', async (req, res) => {
+router.patch('/:id', restrictEdit, async (req, res) => {
     const { id } = req.params;
     const { supplier_id, expected_delivery, notes } = req.body;
 
@@ -597,7 +599,7 @@ router.get('/:id/receipts', async (req, res) => {
 //   - Updates MO status
 // BLOCKED only if the parent ORDER status is completed/archived/cancelled.
 // =============================================================================
-router.delete('/:id/receipts/:sessionId', async (req, res) => {
+router.delete('/:id/receipts/:sessionId', restrictDelete, async (req, res) => {
     const { id, sessionId } = req.params;
 
     try {
@@ -756,7 +758,7 @@ const ACCOUNT_PAYABLE    = '3e118831-0022-47de-acfe-b06a1cd8b9d2'; // Accounts P
 const ACCOUNT_BANK       = 'c715d163-4bd7-41f4-8251-dcd8fed13297'; // Bank Accounts
 const ACCOUNT_VAT_INPUT  = 'a1b2c3d4-5678-9abc-def0-111222333444'; // VAT Input (Receivable)
 
-router.post('/:id/receive', async (req, res) => {
+router.post('/:id/receive', restrictEdit, async (req, res) => {
     const { id } = req.params;
     const {
         warehouse_id, items,
@@ -1076,7 +1078,7 @@ router.post('/:id/receive', async (req, res) => {
 // Reverts order_items manufacturer_po_qty.
 // =============================================================================
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', restrictDelete, async (req, res) => {
     const { id } = req.params;
 
     try {
@@ -1139,7 +1141,7 @@ router.delete('/:id', async (req, res) => {
 // Save/update purchase unit costs for received items (Manager only).
 // =============================================================================
 
-router.post('/:id/pricing', async (req, res) => {
+router.post('/:id/pricing', restrictEdit, async (req, res) => {
     const { id } = req.params;
     const { items } = req.body;
 
@@ -1219,7 +1221,7 @@ router.post('/:id/pricing', async (req, res) => {
 // ── POST /api/manufacturer-orders/by-order/:orderId/finalize ─────────────────
 // Manager confirms final receive — updates stock, wh_received_qty, and MO status.
 // Safe to call even if /receive was already called (uses delta = received_qty - wh_received_qty).
-router.post('/by-order/:orderId/finalize', async (req, res) => {
+router.post('/by-order/:orderId/finalize', restrictEdit, async (req, res) => {
     const { orderId } = req.params;
     const { tax_rate } = req.body;
 
@@ -1357,7 +1359,7 @@ router.post('/by-order/:orderId/finalize', async (req, res) => {
 // ── POST /api/manufacturer-orders/:id/revert-send ────────────────────────────
 // Revert send to supplier - change status from 'ordered' back to 'pending'
 // Only allowed if no items have been received yet
-router.post('/:id/revert-send', async (req, res) => {
+router.post('/:id/revert-send', restrictEdit, async (req, res) => {
     const { id } = req.params;
     
     const client = await db.getClient();
@@ -1416,7 +1418,7 @@ router.post('/:id/revert-send', async (req, res) => {
 // ── DELETE /api/manufacturer-orders/:id ───────────────────────────────────────
 // Cancel/Delete MO - only allowed if status is 'pending' or 'ordered' (not received)
 // Resets order items' manufacturer_po_qty to 0 (unassign them)
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', restrictDelete, async (req, res) => {
     const { id } = req.params;
     
     const client = await db.getClient();
@@ -1511,7 +1513,7 @@ router.delete('/:id', async (req, res) => {
 //   1. Delete all MOs and their items
 //   2. Reset manufacturer_po_qty = 0 on all order_items
 //   3. Set order status = 'archived'
-router.post('/revert-order/:orderId', async (req, res) => {
+router.post('/revert-order/:orderId', restrictDelete, async (req, res) => {
     const { orderId } = req.params;
 
     const client = await db.getClient();

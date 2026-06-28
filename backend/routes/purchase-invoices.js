@@ -13,8 +13,10 @@ const authorize = require('../middleware/authorize');
 const { getVatRate } = require('../utils/settings');
 
 router.use(authenticate);
-const restrictToAdmin = authorize(['admin', 'manager', 'super_admin']);
-router.use(restrictToAdmin);
+router.use(authorize('purchasing', 'view'));
+const restrictWrite  = authorize('purchasing', 'create');
+const restrictEdit   = authorize('purchasing', 'edit');
+const restrictDelete = authorize('purchasing', 'delete');
 
 // =============================================================================
 // GET /api/purchase-invoices
@@ -150,7 +152,7 @@ router.get('/:id', async (req, res) => {
 // POST /api/purchase-invoices
 // Create new purchase invoice
 // =============================================================================
-router.post('/', async (req, res) => {
+router.post('/', restrictWrite, async (req, res) => {
     const client = await db.getClient();
     try {
         await client.query('BEGIN');

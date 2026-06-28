@@ -11,8 +11,10 @@ const router  = express.Router();
 const db      = require('../db');
 const authorize = require('../middleware/authorize');
 
-const restrictToWarehouseAdmin = authorize(['admin', 'manager', 'super_admin', 'warehouse', 'warehouse_keeper']);
-router.use(restrictToWarehouseAdmin);
+router.use(authorize('purchase_returns', 'view'));
+const restrictWrite  = authorize('purchase_returns', 'create');
+const restrictEdit   = authorize('purchase_returns', 'edit');
+const restrictDelete = authorize('purchase_returns', 'delete');
 
 // =============================================================================
 // GET /api/purchase-returns
@@ -118,7 +120,7 @@ router.get('/:id', async (req, res) => {
 //   - Deduct from warehouse_stock
 //   - Create accounting voucher: Dr Inventory, Cr Accounts Payable
 // =============================================================================
-router.post('/', async (req, res) => {
+router.post('/', restrictWrite, async (req, res) => {
     const { return_date, supplier_id, purchase_invoice_id, notes, items } = req.body;
 
     // ── Validation ───────────────────────────────────────────────────────────
@@ -250,7 +252,7 @@ router.post('/', async (req, res) => {
 // DELETE /api/purchase-returns/:id
 // Cancel/void a return — reverse all effects
 // =============================================================================
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', restrictDelete, async (req, res) => {
     try {
         const { id } = req.params;
 

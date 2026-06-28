@@ -14,15 +14,24 @@ const router = express.Router();
 // FINANCIAL RULE: subtotal, tax_amount (15%), and grand_total are calculated
 // SERVER-SIDE only. Client payload values for these fields are IGNORED.
 
-// View permission: all authenticated users with 'quotations' view can list/get
-router.use(authorize('quotations', 'view'));
+// View permission: users with 'quotations' OR 'production_orders' view can list/get
+router.use((req, res, next) => {
+    const perms = req.user && req.user.permissions;
+    const role  = req.user && req.user.role;
+    if (role === 'super_admin' || role === 'admin') return next();
+    if (perms && perms.all_access === true) return next();
+    const hasQuotations      = perms && perms.quotations      && (perms.quotations.view      || perms.quotations      === true || (Array.isArray(perms.quotations)      && perms.quotations.includes('view')));
+    const hasProdOrders      = perms && perms.production_orders && (perms.production_orders.view || perms.production_orders === true || (Array.isArray(perms.production_orders) && perms.production_orders.includes('view')));
+    if (hasQuotations || hasProdOrders) return next();
+    return res.status(403).json({ error: 'Forbidden: No view permission on quotations or production_orders.' });
+});
 
 // Write permission: users with 'quotations' create/edit can POST/PUT
-const restrictWrite = authorize('quotations', 'create');
-const restrictEdit  = authorize('quotations', 'edit');
+const restrictWrite  = authorize('quotations', 'create');
+const restrictEdit   = authorize('quotations', 'edit');
 const restrictDelete = authorize('quotations', 'delete');
 // Admin-only operations (status change, convert to production, invoicing)
-const restrictAdmin = authorize(['admin', 'manager', 'super_admin']);
+const restrictAdmin  = authorize(['admin', 'manager', 'super_admin']);
 
 
 // =============================================================================

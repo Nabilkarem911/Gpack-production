@@ -11,8 +11,10 @@ const router  = express.Router();
 const db      = require('../db');
 const authorize = require('../middleware/authorize');
 
-const restrictToAdmin = authorize(['admin', 'manager', 'super_admin']);
-router.use(restrictToAdmin);
+router.use(authorize('payment_voucher', 'view'));
+const restrictWrite  = authorize('payment_voucher', 'create');
+const restrictEdit   = authorize('payment_voucher', 'edit');
+const restrictDelete = authorize('payment_voucher', 'delete');
 
 // =============================================================================
 // GET /api/payment-vouchers
@@ -162,7 +164,7 @@ router.get('/:id', async (req, res) => {
 // Double-entry for supplier: DR ذمم الموردين (2100) — CR نقدية/بنك
 // Double-entry for client:   DR ذمم العملاء  (1300) — CR نقدية/بنك  (إرجاع دفعة)
 // =============================================================================
-router.post('/', async (req, res) => {
+router.post('/', restrictWrite, async (req, res) => {
     try {
         const {
             payee_type = 'supplier',
@@ -325,7 +327,7 @@ router.post('/', async (req, res) => {
 // POST /api/payment-vouchers/:id/cancel
 // Cancel a posted payment voucher (IMMUTABILITY RULE: reverse + new cancellation)
 // =============================================================================
-router.post('/:id/cancel', async (req, res) => {
+router.post('/:id/cancel', restrictDelete, async (req, res) => {
     try {
         const { id } = req.params;
         const { reason } = req.body;

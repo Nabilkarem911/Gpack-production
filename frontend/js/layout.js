@@ -38,7 +38,7 @@ var NAV_ITEMS = [ // var allows re-declaration if script loads more than once in
     { view: 'sales-invoices',   label: 'فواتير المبيعات',  icon: 'fa-file-invoice-dollar', permission: 'sales'   }, // ✅ sales-invoices.html
     { view: 'sales-invoice-detail', label: 'تفاصيل الفاتورة', icon: 'fa-file-invoice', permission: 'sales', hidden: true }, // ✅ sales-invoice-detail.html
     { view: 'quotations',       label: 'عروض الأسعار',     icon: 'fa-file-lines',    permission: 'quotations' }, // ✅ quotations.html
-    { view: 'production_orders', label: 'أوامر التشغيل',    icon: 'fa-industry',      permission: 'quotations' }, // ✅ production_orders.html
+    { view: 'production_orders', label: 'أوامر التشغيل',    icon: 'fa-industry',      permission: 'production_orders' }, // ✅ production_orders.html
     { view: 'forecast',            label: 'مركز الذكاء (AI)',  icon: 'fa-brain',         permission: 'forecast' }, // ✅ forecast.html
 
     // ─────────────────────────────────────────────────────────────────────────────
@@ -48,17 +48,17 @@ var NAV_ITEMS = [ // var allows re-declaration if script loads more than once in
     { view: 'suppliers',           label: 'الموردين',           icon: 'fa-truck',          permission: 'suppliers' }, // ✅ suppliers.html
     { view: 'supplier-profile',    label: 'ملف المورد',         icon: 'fa-id-card',        permission: 'suppliers', hidden: true }, // ✅ supplier-profile.html
     { view: 'purchase-invoices',   label: 'فواتير المشتريات',   icon: 'fa-file-invoice',   permission: 'purchasing' }, // ✅ purchase-invoices.html
-    { view: 'purchase-returns',    label: 'مرتجع المشتريات',   icon: 'fa-rotate-left',    permission: 'purchasing' }, // ✅ Phase 3
+    { view: 'purchase-returns',    label: 'مرتجع المشتريات',   icon: 'fa-rotate-left',    permission: 'purchase_returns' }, // ✅ Phase 3
 
     // ─────────────────────────────────────────────────────────────────────────────
     // 4. الحسابات
     // ─────────────────────────────────────────────────────────────────────────────
     { section: 'الحسابات' },
-    { view: 'account-statement',   label: 'كشف الحساب',         icon: 'fa-chart-column',          permission: 'accounting' }, // ✅ Phase 4.1
-    { view: 'receipt-voucher',     label: 'سندات القبض',        icon: 'fa-hand-holding-dollar',  permission: 'accounting' }, // ✅ Phase 4.2
-    { view: 'payment-voucher',     label: 'سندات الصرف',        icon: 'fa-money-bill-transfer',   permission: 'accounting' }, // ✅ Phase 4.3
-    { view: 'journal-entry',       label: 'قيد اليومية',        icon: 'fa-book-journal-whills', permission: 'accounting' }, // ✅ Phase 4
-    { view: 'chart-of-accounts',   label: 'الدليل المحاسبي',    icon: 'fa-sitemap',           permission: 'accounting' }, // ✅ Phase 4
+    { view: 'account-statement',   label: 'كشف الحساب',         icon: 'fa-chart-column',          permission: 'account_statement' }, // ✅ Phase 4.1
+    { view: 'receipt-voucher',     label: 'سندات القبض',        icon: 'fa-hand-holding-dollar',  permission: 'receipt_voucher' }, // ✅ Phase 4.2
+    { view: 'payment-voucher',     label: 'سندات الصرف',        icon: 'fa-money-bill-transfer',   permission: 'payment_voucher' }, // ✅ Phase 4.3
+    { view: 'journal-entry',       label: 'قيد اليومية',        icon: 'fa-book-journal-whills', permission: 'journal_entry' }, // ✅ Phase 4
+    { view: 'chart-of-accounts',   label: 'الدليل المحاسبي',    icon: 'fa-sitemap',           permission: 'chart_of_accounts' }, // ✅ Phase 4
 
     // ─────────────────────────────────────────────────────────────────────────────
     // 5. المستودعات
@@ -68,8 +68,8 @@ var NAV_ITEMS = [ // var allows re-declaration if script loads more than once in
     { view: 'inventory',         label: 'إدارة المخزون',     icon: 'fa-boxes-stacked',          permission: 'inventory' }, // ✅ inventory.html
     { view: 'products',            label: 'الأصناف',          icon: 'fa-box-open',             permission: 'products' }, // ✅ products.html (نُقل من المبيعات)
     { view: 'product-movements',   label: 'حركات الأصناف',    icon: 'fa-arrow-right-arrow-left', permission: 'products', hidden: true }, // ✅ product-movements.html
-    { view: 'vmi-dispatch',       label: 'سندات التسليم',     icon: 'fa-truck-fast',             permission: 'inventory' }, // ✅ vmi-dispatch.html
-    { view: 'receiving-vouchers', label: 'سندات الاستلام',     icon: 'fa-clipboard-check', permission: 'inventory' }, // ✅ receiving-vouchers.html
+    { view: 'vmi-dispatch',       label: 'سندات التسليم',     icon: 'fa-truck-fast',             permission: 'vmi_dispatch' }, // ✅ vmi-dispatch.html
+    { view: 'receiving-vouchers', label: 'سندات الاستلام',     icon: 'fa-clipboard-check', permission: 'receiving' }, // ✅ receiving-vouchers.html
 
     // ─────────────────────────────────────────────────────────────────────────────
     // 6. الإدارة

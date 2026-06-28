@@ -11,8 +11,10 @@ const router  = express.Router();
 const db      = require('../db');
 const authorize = require('../middleware/authorize');
 
-const restrictToWarehouseAdmin = authorize(['admin', 'manager', 'super_admin', 'warehouse', 'warehouse_keeper']);
-router.use(restrictToWarehouseAdmin);
+router.use(authorize('receiving', 'view'));
+const restrictWrite  = authorize('receiving', 'create');
+const restrictEdit   = authorize('receiving', 'edit');
+const restrictDelete = authorize('receiving', 'delete');
 
 // =============================================================================
 // GET /api/receiving-vouchers
@@ -121,7 +123,7 @@ router.get('/:id', async (req, res) => {
 //   - Add to warehouse_stock
 //   - Create accounting voucher if purchase invoice exists
 // =============================================================================
-router.post('/', async (req, res) => {
+router.post('/', restrictWrite, async (req, res) => {
     const { receiving_date, supplier_id, purchase_invoice_id, manufacturer_order_id, warehouse_id, notes, items } = req.body;
 
     // ── Validation ───────────────────────────────────────────────────────────
@@ -234,7 +236,7 @@ router.post('/', async (req, res) => {
 // DELETE /api/receiving-vouchers/:id
 // Cancel/void a receiving voucher
 // =============================================================================
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', restrictDelete, async (req, res) => {
     try {
         const { id } = req.params;
 

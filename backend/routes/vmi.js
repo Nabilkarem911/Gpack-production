@@ -14,6 +14,10 @@ const { getVatRate } = require('../utils/settings');
 const { success } = require('../utils/response');
 const authorize = require('../middleware/authorize');
 
+// View permission: users with 'vmi_dispatch' view can access VMI routes
+router.use(authorize('vmi_dispatch', 'view'));
+const restrictWrite = authorize('vmi_dispatch', 'create');
+
 // ── GET /api/vmi/clients ─────────────────────────────────────────────────────
 // Returns distinct clients who have warehouse_stock > 0, with their branches
 router.get('/clients', async (req, res) => {
@@ -141,7 +145,7 @@ router.get('/branches', async (req, res) => {
 //   with_invoice     — boolean (default false)
 //   notes            — optional string
 //   delivery_date    — optional ISO date
-router.post('/dispatch', authorize(['admin', 'manager', 'super_admin', 'warehouse', 'warehouse_keeper']), async (req, res) => {
+router.post('/dispatch', restrictWrite, async (req, res) => {
     const client = await db.pool.connect();
     try {
         const {

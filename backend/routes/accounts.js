@@ -10,8 +10,9 @@ const router  = express.Router();
 const db      = require('../db');
 const authorize = require('../middleware/authorize');
 
-const restrictToAdmin = authorize(['admin', 'manager', 'super_admin']);
-router.use(restrictToAdmin);
+router.use(authorize('chart_of_accounts', 'view'));
+const restrictWrite = authorize('chart_of_accounts', 'create');
+const restrictEdit  = authorize('chart_of_accounts', 'edit');
 
 // =============================================================================
 // GET /api/accounts
@@ -106,7 +107,7 @@ router.get('/:id', async (req, res) => {
 // POST /api/accounts
 // Create a new account
 // =============================================================================
-router.post('/', async (req, res) => {
+router.post('/', restrictWrite, async (req, res) => {
     try {
         const { code, name, account_type, parent_id } = req.body;
 
@@ -140,7 +141,7 @@ router.post('/', async (req, res) => {
 // PUT /api/accounts/:id
 // Update account (name, parent_id, is_active only — code & type are immutable)
 // =============================================================================
-router.put('/:id', async (req, res) => {
+router.put('/:id', restrictEdit, async (req, res) => {
     try {
         const { id } = req.params;
         const { name, parent_id, is_active } = req.body;

@@ -13,8 +13,7 @@ const authorize = require('../middleware/authorize');
 
 router.use(authenticate);
 
-const restrictToAdmin = authorize(['admin', 'manager', 'super_admin']);
-router.use(restrictToAdmin);
+router.use(authorize('account_statement', 'view'));
 
 // =============================================================================
 // GET /api/account-statement/client/:clientId

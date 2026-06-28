@@ -8,8 +8,8 @@ const router = express.Router();
 const db = require('../db');
 const authorize = require('../middleware/authorize');
 
-const restrictToWarehouseAdmin = authorize(['admin', 'manager', 'super_admin', 'warehouse', 'warehouse_keeper']);
-router.use(restrictToWarehouseAdmin);
+router.use(authorize('vmi_dispatch', 'view'));
+const restrictWrite = authorize('vmi_dispatch', 'create');
 
 // =============================================================================
 // GET /api/delivery-notes
@@ -168,7 +168,7 @@ router.get('/:id', async (req, res) => {
 // Create new delivery note
 // =============================================================================
 
-router.post('/', async (req, res) => {
+router.post('/', restrictWrite, async (req, res) => {
     const { order_id, client_id, items, notes } = req.body;
     
     if (!order_id || !client_id || !items || !Array.isArray(items) || items.length === 0) {
@@ -224,7 +224,7 @@ router.post('/', async (req, res) => {
 // Body: { items: [{ item_id, quantity }], notes }
 // =============================================================================
 
-router.post('/:id/dispatch', async (req, res) => {
+router.post('/:id/dispatch', restrictWrite, async (req, res) => {
     const { id } = req.params;
     const { items, notes: deliveryNotes } = req.body;
 
@@ -366,7 +366,7 @@ router.post('/:id/dispatch', async (req, res) => {
 // POST /api/delivery-notes/:id/confirm  (kept for backward compat — redirects to dispatch logic)
 // =============================================================================
 
-router.post('/:id/confirm', async (req, res) => {
+router.post('/:id/confirm', restrictWrite, async (req, res) => {
     const { id } = req.params;
     const { items, notes: deliveryNotes } = req.body;
     
@@ -505,7 +505,7 @@ router.post('/:id/confirm', async (req, res) => {
 // Delete delivery note (only if pending)
 // =============================================================================
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', restrictWrite, async (req, res) => {
     const { id } = req.params;
     
     try {

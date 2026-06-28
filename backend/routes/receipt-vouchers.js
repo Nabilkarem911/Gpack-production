@@ -11,8 +11,10 @@ const router  = express.Router();
 const db      = require('../db');
 const authorize = require('../middleware/authorize');
 
-const restrictToAdmin = authorize(['admin', 'manager', 'super_admin']);
-router.use(restrictToAdmin);
+router.use(authorize('receipt_voucher', 'view'));
+const restrictWrite  = authorize('receipt_voucher', 'create');
+const restrictEdit   = authorize('receipt_voucher', 'edit');
+const restrictDelete = authorize('receipt_voucher', 'delete');
 
 // =============================================================================
 // GET /api/receipt-vouchers
@@ -153,7 +155,7 @@ router.get('/:id', async (req, res) => {
 //   DR  cash_account_id           amount   (debit - نقدية/بنك)
 //   CR  Accounts Receivable 1300  amount   (credit - ذمم العملاء)
 // =============================================================================
-router.post('/', async (req, res) => {
+router.post('/', restrictWrite, async (req, res) => {
     try {
         const {
             client_id,
@@ -297,7 +299,7 @@ router.post('/', async (req, res) => {
 // POST /api/receipt-vouchers/:id/cancel
 // Cancel a posted receipt voucher (IMMUTABILITY RULE: reverse + new cancellation)
 // =============================================================================
-router.post('/:id/cancel', async (req, res) => {
+router.post('/:id/cancel', restrictDelete, async (req, res) => {
     try {
         const { id } = req.params;
         const { reason } = req.body;
