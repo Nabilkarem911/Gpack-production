@@ -5,6 +5,9 @@ const db      = require('../db');
 const authorize = require('../middleware/authorize');
 const router  = express.Router();
 
+// Router-level view permission — units are managed under the products module
+router.use(authorize('products', 'view'));
+
 // =============================================================================
 // GET /api/units
 // Returns all measurement units ordered by name.
@@ -27,7 +30,7 @@ router.get('/', async (req, res) => {
 // POST /api/units
 // Creates a new unit.
 // =============================================================================
-router.post('/', authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
+router.post('/', authorize('products', 'create'), async (req, res) => {
     const { name, abbreviation, base_unit_id, conversion_factor } = req.body;
     if (!name || !name.trim()) {
         return res.status(400).json({ error: 'اسم الوحدة مطلوب.' });
@@ -55,7 +58,7 @@ router.post('/', authorize(['admin', 'manager', 'super_admin']), async (req, res
 // PUT /api/units/:id
 // Updates name and abbreviation of a unit.
 // =============================================================================
-router.put('/:id', authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
+router.put('/:id', authorize('products', 'edit'), async (req, res) => {
     const { id } = req.params;
     const { name, abbreviation } = req.body;
 
@@ -87,7 +90,7 @@ router.put('/:id', authorize(['admin', 'manager', 'super_admin']), async (req, r
 // DELETE /api/units/:id
 // Deletes a unit. Blocked if linked to product variants (FK violation).
 // =============================================================================
-router.delete('/:id', authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
+router.delete('/:id', authorize('products', 'delete'), async (req, res) => {
     const { id } = req.params;
 
     try {

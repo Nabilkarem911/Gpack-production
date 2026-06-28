@@ -897,6 +897,376 @@
     };
 
     // ==========================================================================
+    // TAB SWITCHING — Products / Categories / Units
+    // ==========================================================================
+    let _activeProductsTab = 'products';
+    let _editingCatTabId   = null;
+    let _editingUnitTabId  = null;
+
+    window.switchProductsTab = function (tab) {
+        _activeProductsTab = tab;
+
+        const panels = ['products', 'categories', 'units'];
+        panels.forEach(p => {
+            const panel = document.getElementById(`tab-${p}`);
+            if (panel) panel.classList.toggle('hidden', p !== tab);
+
+            const btn = document.getElementById(`tab-${p}-btn`);
+            if (btn) {
+                if (p === tab) {
+                    btn.classList.add('border-brand-600', 'text-brand-600');
+                    btn.classList.remove('border-transparent', 'text-slate-500');
+                } else {
+                    btn.classList.remove('border-brand-600', 'text-brand-600');
+                    btn.classList.add('border-transparent', 'text-slate-500');
+                }
+            }
+        });
+
+        if (tab === 'categories') _loadCategoriesTable();
+        else if (tab === 'units') _loadUnitsTable();
+    };
+
+    // ==========================================================================
+    // CATEGORIES TAB — Table rendering + CRUD
+    // ==========================================================================
+    function _renderCategoriesTable() {
+        const tbody = document.getElementById('categories-tbody');
+        const empty = document.getElementById('categories-empty');
+        if (!tbody) return;
+
+        if (!_categories || _categories.length === 0) {
+            tbody.innerHTML = '';
+            if (empty) empty.classList.remove('hidden');
+            return;
+        }
+        if (empty) empty.classList.add('hidden');
+
+        const perms  = window.GpackPerms || {};
+        const canEdit = perms.all_access || perms.products?.create || perms.products?.edit;
+
+        tbody.innerHTML = _categories.map(c => `
+            <tr class="border-b border-slate-100 hover:bg-slate-50/60 transition-colors">
+                <td class="py-3.5 px-4">
+                    <span class="font-semibold text-slate-800 text-sm">${c.name}</span>
+                </td>
+                <td class="py-3.5 px-4 hidden sm:table-cell text-sm text-slate-500">
+                    ${c.description || '<span class="text-slate-300">—</span>'}
+                </td>
+                <td class="py-3.5 px-4">
+                    <div class="flex items-center justify-end gap-1">
+                        ${canEdit ? `
+                        <button onclick="window.openCategoryEditModal('${c.id}')"
+                                title="تعديل"
+                                class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400
+                                       hover:text-brand-600 hover:bg-brand-50 transition-colors">
+                            <i class="fa-solid fa-pen-to-square text-sm"></i>
+                        </button>
+                        <button onclick="window.deleteCategoryEntry('${c.id}', '${c.name.replace(/'/g, "\\'")}')"
+                                title="حذف"
+                                class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400
+                                       hover:text-red-600 hover:bg-red-50 transition-colors">
+                            <i class="fa-solid fa-trash text-sm"></i>
+                        </button>` : ''}
+                    </div>
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    async function _loadCategoriesTable() {
+        const tbody = document.getElementById('categories-tbody');
+        if (tbody) {
+            tbody.innerHTML = `<tr><td colspan="3" class="py-10 text-center text-slate-400">
+                <i class="fa-solid fa-circle-notch fa-spin text-xl"></i></td></tr>`;
+        }
+        try {
+            const res = await window.apiFetch('/api/categories');
+            _categories = (res && res.data) ? res.data : [];
+            _renderCategoriesTable();
+        } catch (err) {
+            if (tbody) {
+                tbody.innerHTML = `<tr><td colspan="3" class="py-8 text-center text-red-400 text-sm">
+                    <i class="fa-solid fa-circle-exclamation ml-1"></i>
+                    فشل تحميل التصنيفات: ${err.message}</td></tr>`;
+            }
+        }
+    }
+
+    window.openCategoryEditModal = function (id = null) {
+        _editingCatTabId = id;
+        const errBox = document.getElementById('category-edit-error');
+        if (errBox) errBox.classList.add('hidden');
+
+        const nameEl  = document.getElementById('category-edit-name');
+        const descEl  = document.getElementById('category-edit-description');
+        const title   = document.getElementById('category-edit-modal-title');
+        const submitBtn = document.getElementById('category-edit-submit-btn');
+
+        if (id) {
+            const cat = _categories.find(c => c.id === id);
+            if (!cat) return;
+            if (title)      title.textContent       = 'تعديل التصنيف';
+            if (submitBtn)  submitBtn.textContent   = 'حفظ التعديلات';
+            if (nameEl)     nameEl.value            = cat.name || '';
+            if (descEl)     descEl.value            = cat.description || '';
+        } else {
+            if (title)      title.textContent       = 'إضافة تصنيف جديد';
+            if (submitBtn)  submitBtn.textContent   = 'إضافة';
+            if (nameEl)     nameEl.value            = '';
+            if (descEl)     descEl.value            = '';
+        }
+
+        _openQuickModal('category-edit-modal');
+        setTimeout(() => { if (nameEl) nameEl.focus(); }, 250);
+    };
+
+    window.closeCategoryEditModal = function () {
+        _closeQuickModal('category-edit-modal');
+        _editingCatTabId = null;
+    };
+
+    window.submitCategoryEditForm = async function () {
+        const errBox = document.getElementById('category-edit-error');
+        const span   = errBox ? errBox.querySelector('span') : null;
+        if (errBox) { if (span) span.textContent = ''; errBox.classList.add('hidden'); }
+
+        const submitBtn = document.getElementById('category-edit-submit-btn');
+        const name = (document.getElementById('category-edit-name')?.value || '').trim();
+
+        if (!name) {
+            if (errBox) { if (span) span.textContent = 'اسم التصنيف مطلوب.'; errBox.classList.remove('hidden'); }
+            return;
+        }
+
+        if (submitBtn) {
+            submitBtn.disabled  = true;
+            submitBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin ml-1"></i> جارٍ الحفظ...';
+        }
+
+        const payload = {
+            name,
+            description: (document.getElementById('category-edit-description')?.value || '').trim() || null,
+        };
+
+        try {
+            let res;
+            if (_editingCatTabId) {
+                res = await window.apiFetch(`/api/categories/${_editingCatTabId}`, {
+                    method: 'PUT',
+                    body:   payload,
+                });
+            } else {
+                res = await window.apiFetch('/api/categories', {
+                    method: 'POST',
+                    body:   payload,
+                });
+            }
+
+            if (res && (res.data || res.message)) {
+                window.showToast(
+                    _editingCatTabId ? 'تم تحديث التصنيف بنجاح.' : 'تمت إضافة التصنيف بنجاح.',
+                    'success'
+                );
+                window.closeCategoryEditModal();
+                await _loadCategoriesTable();
+                await _loadCategories();
+            }
+        } catch (err) {
+            if (errBox) { if (span) span.textContent = err.message || 'حدث خطأ غير متوقع.'; errBox.classList.remove('hidden'); }
+        } finally {
+            if (submitBtn) {
+                submitBtn.disabled    = false;
+                submitBtn.textContent = _editingCatTabId ? 'حفظ التعديلات' : 'إضافة';
+            }
+        }
+    };
+
+    window.deleteCategoryEntry = async function (id, name) {
+        if (!confirm(`هل أنت متأكد من حذف التصنيف "${name}"؟\nلا يمكن التراجع عن هذا الإجراء.`)) return;
+
+        try {
+            await window.apiFetch(`/api/categories/${id}`, { method: 'DELETE' });
+            window.showToast(`تم حذف التصنيف "${name}" بنجاح.`, 'success');
+            await _loadCategoriesTable();
+            await _loadCategories();
+        } catch (err) {
+            window.showToast(err.message || 'فشل حذف التصنيف.', 'error');
+        }
+    };
+
+    // ==========================================================================
+    // UNITS TAB — Table rendering + CRUD
+    // ==========================================================================
+    function _renderUnitsTable() {
+        const tbody = document.getElementById('units-tbody');
+        const empty = document.getElementById('units-empty');
+        if (!tbody) return;
+
+        if (!_units || _units.length === 0) {
+            tbody.innerHTML = '';
+            if (empty) empty.classList.remove('hidden');
+            return;
+        }
+        if (empty) empty.classList.add('hidden');
+
+        const perms   = window.GpackPerms || {};
+        const canEdit = perms.all_access || perms.products?.create || perms.products?.edit;
+
+        tbody.innerHTML = _units.map(u => `
+            <tr class="border-b border-slate-100 hover:bg-slate-50/60 transition-colors">
+                <td class="py-3.5 px-4">
+                    <span class="font-semibold text-slate-800 text-sm">${u.name}</span>
+                </td>
+                <td class="py-3.5 px-4 hidden sm:table-cell text-sm text-slate-500">
+                    ${u.abbreviation
+                        ? `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs
+                                        font-semibold bg-slate-100 text-slate-600">${u.abbreviation}</span>`
+                        : '<span class="text-slate-300">—</span>'}
+                </td>
+                <td class="py-3.5 px-4">
+                    <div class="flex items-center justify-end gap-1">
+                        ${canEdit ? `
+                        <button onclick="window.openUnitEditModal('${u.id}')"
+                                title="تعديل"
+                                class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400
+                                       hover:text-emerald-600 hover:bg-emerald-50 transition-colors">
+                            <i class="fa-solid fa-pen-to-square text-sm"></i>
+                        </button>
+                        <button onclick="window.deleteUnitEntry('${u.id}', '${u.name.replace(/'/g, "\\'")}')"
+                                title="حذف"
+                                class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400
+                                       hover:text-red-600 hover:bg-red-50 transition-colors">
+                            <i class="fa-solid fa-trash text-sm"></i>
+                        </button>` : ''}
+                    </div>
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    async function _loadUnitsTable() {
+        const tbody = document.getElementById('units-tbody');
+        if (tbody) {
+            tbody.innerHTML = `<tr><td colspan="3" class="py-10 text-center text-slate-400">
+                <i class="fa-solid fa-circle-notch fa-spin text-xl"></i></td></tr>`;
+        }
+        try {
+            const res = await window.apiFetch('/api/units');
+            _units = (res && res.data) ? res.data : [];
+            _renderUnitsTable();
+        } catch (err) {
+            if (tbody) {
+                tbody.innerHTML = `<tr><td colspan="3" class="py-8 text-center text-red-400 text-sm">
+                    <i class="fa-solid fa-circle-exclamation ml-1"></i>
+                    فشل تحميل الوحدات: ${err.message}</td></tr>`;
+            }
+        }
+    }
+
+    window.openUnitEditModal = function (id = null) {
+        _editingUnitTabId = id;
+        const errBox = document.getElementById('unit-edit-error');
+        if (errBox) errBox.classList.add('hidden');
+
+        const nameEl  = document.getElementById('unit-edit-name');
+        const abbrEl  = document.getElementById('unit-edit-abbreviation');
+        const title   = document.getElementById('unit-edit-modal-title');
+        const submitBtn = document.getElementById('unit-edit-submit-btn');
+
+        if (id) {
+            const unit = _units.find(u => u.id === id);
+            if (!unit) return;
+            if (title)      title.textContent       = 'تعديل وحدة القياس';
+            if (submitBtn)  submitBtn.textContent   = 'حفظ التعديلات';
+            if (nameEl)     nameEl.value            = unit.name || '';
+            if (abbrEl)     abbrEl.value            = unit.abbreviation || '';
+        } else {
+            if (title)      title.textContent       = 'إضافة وحدة قياس جديدة';
+            if (submitBtn)  submitBtn.textContent   = 'إضافة';
+            if (nameEl)     nameEl.value            = '';
+            if (abbrEl)     abbrEl.value            = '';
+        }
+
+        _openQuickModal('unit-edit-modal');
+        setTimeout(() => { if (nameEl) nameEl.focus(); }, 250);
+    };
+
+    window.closeUnitEditModal = function () {
+        _closeQuickModal('unit-edit-modal');
+        _editingUnitTabId = null;
+    };
+
+    window.submitUnitEditForm = async function () {
+        const errBox = document.getElementById('unit-edit-error');
+        const span   = errBox ? errBox.querySelector('span') : null;
+        if (errBox) { if (span) span.textContent = ''; errBox.classList.add('hidden'); }
+
+        const submitBtn = document.getElementById('unit-edit-submit-btn');
+        const name = (document.getElementById('unit-edit-name')?.value || '').trim();
+
+        if (!name) {
+            if (errBox) { if (span) span.textContent = 'اسم الوحدة مطلوب.'; errBox.classList.remove('hidden'); }
+            return;
+        }
+
+        if (submitBtn) {
+            submitBtn.disabled  = true;
+            submitBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin ml-1"></i> جارٍ الحفظ...';
+        }
+
+        const payload = {
+            name,
+            abbreviation: (document.getElementById('unit-edit-abbreviation')?.value || '').trim() || null,
+        };
+
+        try {
+            let res;
+            if (_editingUnitTabId) {
+                res = await window.apiFetch(`/api/units/${_editingUnitTabId}`, {
+                    method: 'PUT',
+                    body:   payload,
+                });
+            } else {
+                res = await window.apiFetch('/api/units', {
+                    method: 'POST',
+                    body:   payload,
+                });
+            }
+
+            if (res && (res.data || res.message)) {
+                window.showToast(
+                    _editingUnitTabId ? 'تم تحديث الوحدة بنجاح.' : 'تمت إضافة الوحدة بنجاح.',
+                    'success'
+                );
+                window.closeUnitEditModal();
+                await _loadUnitsTable();
+                await _loadUnits();
+            }
+        } catch (err) {
+            if (errBox) { if (span) span.textContent = err.message || 'حدث خطأ غير متوقع.'; errBox.classList.remove('hidden'); }
+        } finally {
+            if (submitBtn) {
+                submitBtn.disabled    = false;
+                submitBtn.textContent = _editingUnitTabId ? 'حفظ التعديلات' : 'إضافة';
+            }
+        }
+    };
+
+    window.deleteUnitEntry = async function (id, name) {
+        if (!confirm(`هل أنت متأكد من حذف الوحدة "${name}"؟\nلا يمكن التراجع عن هذا الإجراء.`)) return;
+
+        try {
+            await window.apiFetch(`/api/units/${id}`, { method: 'DELETE' });
+            window.showToast(`تم حذف الوحدة "${name}" بنجاح.`, 'success');
+            await _loadUnitsTable();
+            await _loadUnits();
+        } catch (err) {
+            window.showToast(err.message || 'فشل حذف الوحدة.', 'error');
+        }
+    };
+
+    // ==========================================================================
     // initProductsView()
     // Entry point — wires all event listeners then loads data.
     // Called at the bottom of this IIFE after all functions are defined.
@@ -957,6 +1327,48 @@
             variantsModal.addEventListener('click', (e) => {
                 if (e.target === variantsModal) window.closeVariantsModal();
             });
+        }
+
+        // Category tab add button
+        const addCatTabBtn = document.getElementById('add-category-tab-btn');
+        if (addCatTabBtn) addCatTabBtn.addEventListener('click', () => window.openCategoryEditModal());
+
+        // Category edit modal close buttons + backdrop
+        const catEditCloseBtn  = document.getElementById('category-edit-close-btn');
+        const catEditCancelBtn = document.getElementById('category-edit-cancel-btn');
+        if (catEditCloseBtn)  catEditCloseBtn.addEventListener('click',  window.closeCategoryEditModal);
+        if (catEditCancelBtn) catEditCancelBtn.addEventListener('click', window.closeCategoryEditModal);
+        const catEditModal = document.getElementById('category-edit-modal');
+        if (catEditModal) {
+            catEditModal.addEventListener('click', (e) => {
+                if (e.target === catEditModal) window.closeCategoryEditModal();
+            });
+        }
+
+        // Unit tab add button
+        const addUnitTabBtn = document.getElementById('add-unit-tab-btn');
+        if (addUnitTabBtn) addUnitTabBtn.addEventListener('click', () => window.openUnitEditModal());
+
+        // Unit edit modal close buttons + backdrop
+        const unitEditCloseBtn  = document.getElementById('unit-edit-close-btn');
+        const unitEditCancelBtn = document.getElementById('unit-edit-cancel-btn');
+        if (unitEditCloseBtn)  unitEditCloseBtn.addEventListener('click',  window.closeUnitEditModal);
+        if (unitEditCancelBtn) unitEditCancelBtn.addEventListener('click', window.closeUnitEditModal);
+        const unitEditModal = document.getElementById('unit-edit-modal');
+        if (unitEditModal) {
+            unitEditModal.addEventListener('click', (e) => {
+                if (e.target === unitEditModal) window.closeUnitEditModal();
+            });
+        }
+
+        // Gate tab add buttons based on write permissions
+        const perms   = window.GpackPerms || {};
+        const canEdit = perms.all_access || perms.products?.create || perms.products?.edit;
+        if (!canEdit) {
+            const catTabBtn = document.getElementById('add-category-tab-btn');
+            const unitTabBtn = document.getElementById('add-unit-tab-btn');
+            if (catTabBtn)  catTabBtn.classList.add('hidden');
+            if (unitTabBtn) unitTabBtn.classList.add('hidden');
         }
 
         // Load dropdowns and products in parallel

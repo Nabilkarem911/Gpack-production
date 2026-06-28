@@ -5,6 +5,9 @@ const db      = require('../db');
 const authorize = require('../middleware/authorize');
 const router  = express.Router();
 
+// Router-level view permission — categories are managed under the products module
+router.use(authorize('products', 'view'));
+
 // =============================================================================
 // GET /api/categories
 // Returns all categories ordered by name.
@@ -27,7 +30,7 @@ router.get('/', async (req, res) => {
 // POST /api/categories
 // Creates a new category.
 // =============================================================================
-router.post('/', authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
+router.post('/', authorize('products', 'create'), async (req, res) => {
     const { name, parent_id, description } = req.body;
     if (!name || !name.trim()) {
         return res.status(400).json({ error: 'اسم الفئة مطلوب.' });
@@ -50,7 +53,7 @@ router.post('/', authorize(['admin', 'manager', 'super_admin']), async (req, res
 // PUT /api/categories/:id
 // Updates name and description of a category.
 // =============================================================================
-router.put('/:id', authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
+router.put('/:id', authorize('products', 'edit'), async (req, res) => {
     const { id } = req.params;
     const { name, description } = req.body;
 
@@ -82,7 +85,7 @@ router.put('/:id', authorize(['admin', 'manager', 'super_admin']), async (req, r
 // DELETE /api/categories/:id
 // Deletes a category. Blocked if linked to products (FK violation).
 // =============================================================================
-router.delete('/:id', authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
+router.delete('/:id', authorize('products', 'delete'), async (req, res) => {
     const { id } = req.params;
 
     try {
