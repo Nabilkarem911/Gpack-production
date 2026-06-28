@@ -194,13 +194,17 @@ router.get('/stock', async (req, res) => {
     try {
         const { client_id, warehouse_id, product_id, low_stock } = req.query;
 
-        const isAllAccess = req.user.permissions && req.user.permissions.all_access === true;
+        const perms       = req.user.permissions || {};
+        const isAllAccess = perms.all_access === true;
         const isSalesRep  = req.user.role === 'sales_rep';
         const isAdmin     = ['admin', 'super_admin', 'manager', 'warehouse_keeper'].includes(req.user.role);
+        // Users with explicit inventory or warehouses view permission can also browse all stock
+        const _hasView = (key) => perms[key] && (perms[key].view === true || perms[key] === true);
+        const hasInventoryPerm = _hasView('inventory') || _hasView('warehouses') || _hasView('vmi_dispatch') || _hasView('receiving');
 
         // sales_rep must always be scoped to a client_id.
-        // admin/manager/warehouse_keeper can view all stock without client_id.
-        if (!isAllAccess && !isAdmin && !client_id) {
+        // admin/manager/warehouse_keeper/inventory-permission users can view all stock without client_id.
+        if (!isAllAccess && !isAdmin && !hasInventoryPerm && !client_id) {
             return res.status(400).json({ error: 'client_id مطلوب لتحديد نطاق المخزون.' });
         }
 

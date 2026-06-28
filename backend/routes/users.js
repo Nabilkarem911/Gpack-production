@@ -323,10 +323,10 @@ router.put('/roles/:id', restrictToAdmin, async (req, res) => {
             return errorResponse(res, 'اسم الدور موجود بالفعل', 409);
         }
 
-        // Update role
+        // Update role (roles table has no updated_at column)
         await db.query(
             `UPDATE roles 
-             SET role_name = $1, description = $2, permissions = $3, updated_at = NOW()
+             SET role_name = $1, description = $2, permissions = $3
              WHERE id = $4`,
             [role_name, description || '', JSON.stringify(permissions || {}), id]
         );

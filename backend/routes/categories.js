@@ -5,8 +5,17 @@ const db      = require('../db');
 const authorize = require('../middleware/authorize');
 const router  = express.Router();
 
-// Router-level view permission — categories are managed under the products module
-router.use(authorize('products', 'view'));
+// View permission: 'products', 'inventory', 'warehouses', 'vmi_dispatch', or 'receiving' can access
+// (inventory.js fetches categories for dropdowns)
+router.use((req, res, next) => {
+    const perms = req.user && req.user.permissions;
+    const role  = req.user && req.user.role;
+    if (role === 'super_admin' || role === 'admin') return next();
+    if (perms && perms.all_access === true) return next();
+    const _hasView = (key) => perms && perms[key] && (perms[key].view === true || perms[key] === true || (Array.isArray(perms[key]) && perms[key].includes('view')));
+    if (_hasView('products') || _hasView('inventory') || _hasView('warehouses') || _hasView('vmi_dispatch') || _hasView('receiving')) return next();
+    return res.status(403).json({ error: 'Forbidden: No view permission on products.' });
+});
 
 // =============================================================================
 // GET /api/categories

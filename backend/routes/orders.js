@@ -14,15 +14,15 @@ const router = express.Router();
 // FINANCIAL RULE: subtotal, tax_amount (15%), and grand_total are calculated
 // SERVER-SIDE only. Client payload values for these fields are IGNORED.
 
-// View permission: users with 'quotations' OR 'production_orders' view can list/get
+// View permission: users with 'quotations' OR 'production_orders' OR 'sales' view can access
+// (sales-invoices page calls /ready-for-invoice which lives here)
 router.use((req, res, next) => {
     const perms = req.user && req.user.permissions;
     const role  = req.user && req.user.role;
     if (role === 'super_admin' || role === 'admin') return next();
     if (perms && perms.all_access === true) return next();
-    const hasQuotations      = perms && perms.quotations      && (perms.quotations.view      || perms.quotations      === true || (Array.isArray(perms.quotations)      && perms.quotations.includes('view')));
-    const hasProdOrders      = perms && perms.production_orders && (perms.production_orders.view || perms.production_orders === true || (Array.isArray(perms.production_orders) && perms.production_orders.includes('view')));
-    if (hasQuotations || hasProdOrders) return next();
+    const _hasView = (key) => perms && perms[key] && (perms[key].view === true || perms[key] === true || (Array.isArray(perms[key]) && perms[key].includes('view')));
+    if (_hasView('quotations') || _hasView('production_orders') || _hasView('sales')) return next();
     return res.status(403).json({ error: 'Forbidden: No view permission on quotations or production_orders.' });
 });
 

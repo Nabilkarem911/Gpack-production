@@ -10,8 +10,17 @@ const router = express.Router();
 // SCHEMA RULE: products and product_variants are GENERAL — never tied to a client_id.
 // Client-specific inventory lives exclusively in warehouse_stock.
 
-// View permission: all authenticated users with 'products' view can list/get
-router.use(authorize('products', 'view'));
+// View permission: 'products', 'inventory', or 'warehouses' view can access
+// (inventory.js and warehouses pages fetch products for dropdowns)
+router.use((req, res, next) => {
+    const perms = req.user && req.user.permissions;
+    const role  = req.user && req.user.role;
+    if (role === 'super_admin' || role === 'admin') return next();
+    if (perms && perms.all_access === true) return next();
+    const _hasView = (key) => perms && perms[key] && (perms[key].view === true || perms[key] === true || (Array.isArray(perms[key]) && perms[key].includes('view')));
+    if (_hasView('products') || _hasView('inventory') || _hasView('warehouses') || _hasView('vmi_dispatch') || _hasView('receiving')) return next();
+    return res.status(403).json({ error: 'Forbidden: No view permission on products.' });
+});
 
 // Write/Delete permissions: only admin/manager/super_admin (enforced via authorize role check)
 const restrictWrite = authorize(['admin', 'manager', 'super_admin']);
