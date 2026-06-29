@@ -4,7 +4,7 @@ const express = require('express');
 const db = require('../db');
 const { authenticate } = require('../middleware/authMiddleware');
 const authorize = require('../middleware/authorize');
-const { clientCreate, validateBody } = require('../utils/validators');
+const { clientCreate, clientUpdate, validateBody } = require('../utils/validators');
 
 const router = express.Router();
 
@@ -236,8 +236,7 @@ router.get('/:id/profile', async (req, res) => {
 // - parent_id: null = Main Client, UUID = Franchise Branch
 // - created_by is always set to the authenticated user's ID.
 // =============================================================================
-validateBody(clientCreate), 
-router.post('/', restrictWrite, async (req, res) => {
+router.post('/', restrictWrite, validateBody(clientCreate), async (req, res) => {
     const {
         name,
         parent_id,
@@ -250,7 +249,7 @@ router.post('/', restrictWrite, async (req, res) => {
         tax_id,
         credit_limit,
         status,
-    } = req.body;
+    } = req.validatedBody;
 
     if (!name || !name.trim()) {
         return res.status(400).json({ error: 'اسم العميل مطلوب.' });
@@ -303,7 +302,7 @@ router.post('/', restrictWrite, async (req, res) => {
 // DATA SCOPING: sales_rep can only update clients they created.
 // =============================================================================
 
-router.put('/:id', restrictEdit, async (req, res) => {
+router.put('/:id', restrictEdit, validateBody(clientUpdate), async (req, res) => {
     const { id } = req.params;
 
     try {
@@ -335,7 +334,7 @@ router.put('/:id', restrictEdit, async (req, res) => {
             tax_id,
             credit_limit,
             status,
-        } = req.body;
+        } = req.validatedBody;
 
         if (!name || !name.trim()) {
             return res.status(400).json({ error: 'اسم العميل مطلوب.' });

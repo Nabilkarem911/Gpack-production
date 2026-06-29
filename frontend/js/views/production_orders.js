@@ -1100,9 +1100,8 @@
     // ── Download MO Print PDF ────────────────────────────────────────────────────
     async function _downloadMOPrint(moId) {
         try {
-            const token = localStorage.getItem('gpack_token');
             const response = await fetch(`/api/manufacturer-orders/${moId}/print-pdf`, {
-                headers: { 'Authorization': `Bearer ${token}` }
+                credentials: 'include'
             });
             if (!response.ok) {
                 const err = await response.json().catch(() => ({}));

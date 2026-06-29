@@ -3,6 +3,7 @@
 const express = require('express');
 const db      = require('../db');
 const authorize = require('../middleware/authorize');
+const { validateBody, unitCreate, unitUpdate } = require('../utils/validators');
 const router  = express.Router();
 
 // View permission: 'products', 'inventory', 'warehouses', 'vmi_dispatch', or 'receiving' can access
@@ -38,8 +39,8 @@ router.get('/', async (req, res) => {
 // POST /api/units
 // Creates a new unit.
 // =============================================================================
-router.post('/', authorize('products', 'create'), async (req, res) => {
-    const { name, abbreviation, base_unit_id, conversion_factor } = req.body;
+router.post('/', authorize('products', 'create'), validateBody(unitCreate), async (req, res) => {
+    const { name, abbreviation, base_unit_id, conversion_factor } = req.validatedBody;
     if (!name || !name.trim()) {
         return res.status(400).json({ error: 'اسم الوحدة مطلوب.' });
     }
@@ -66,9 +67,9 @@ router.post('/', authorize('products', 'create'), async (req, res) => {
 // PUT /api/units/:id
 // Updates name and abbreviation of a unit.
 // =============================================================================
-router.put('/:id', authorize('products', 'edit'), async (req, res) => {
+router.put('/:id', authorize('products', 'edit'), validateBody(unitUpdate), async (req, res) => {
     const { id } = req.params;
-    const { name, abbreviation } = req.body;
+    const { name, abbreviation } = req.validatedBody;
 
     if (!name || !name.trim()) {
         return res.status(400).json({ error: 'اسم الوحدة مطلوب.' });

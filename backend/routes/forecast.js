@@ -9,6 +9,7 @@ const express = require('express');
 const router  = express.Router();
 const http    = require('http');
 const authorize = require('../middleware/authorize');
+const { forecastQuery, validateBody } = require('../utils/validators');
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://ai-service:8000';
 
@@ -66,9 +67,9 @@ router.get('/health', async (req, res) => {
 // POST /api/forecast/client/:clientId
 // Forecast demand for a specific client
 // =============================================================================
-router.post('/client/:clientId', async (req, res) => {
+router.post('/client/:clientId', validateBody(forecastQuery), async (req, res) => {
     const { clientId } = req.params;
-    const { periods = 30 } = req.body || {};
+    const { periods = 30 } = req.validatedBody;
 
     try {
         const data = await aiRequest(`/forecast/client/${clientId}?periods=${periods}`, 'POST');
@@ -82,9 +83,9 @@ router.post('/client/:clientId', async (req, res) => {
 // POST /api/forecast/variant/:variantId
 // Forecast demand for a specific product variant
 // =============================================================================
-router.post('/variant/:variantId', async (req, res) => {
+router.post('/variant/:variantId', validateBody(forecastQuery), async (req, res) => {
     const { variantId } = req.params;
-    const { periods = 30 } = req.body || {};
+    const { periods = 30 } = req.validatedBody;
 
     try {
         const data = await aiRequest(`/forecast/variant/${variantId}?periods=${periods}`, 'POST');

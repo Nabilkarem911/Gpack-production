@@ -3,6 +3,7 @@
 const express = require('express');
 const db      = require('../db');
 const authorize = require('../middleware/authorize');
+const { validateBody, categoryCreate, categoryUpdate } = require('../utils/validators');
 const router  = express.Router();
 
 // View permission: 'products', 'inventory', 'warehouses', 'vmi_dispatch', or 'receiving' can access
@@ -39,8 +40,8 @@ router.get('/', async (req, res) => {
 // POST /api/categories
 // Creates a new category.
 // =============================================================================
-router.post('/', authorize('products', 'create'), async (req, res) => {
-    const { name, parent_id, description } = req.body;
+router.post('/', authorize('products', 'create'), validateBody(categoryCreate), async (req, res) => {
+    const { name, parent_id, description } = req.validatedBody;
     if (!name || !name.trim()) {
         return res.status(400).json({ error: 'اسم الفئة مطلوب.' });
     }
@@ -62,9 +63,9 @@ router.post('/', authorize('products', 'create'), async (req, res) => {
 // PUT /api/categories/:id
 // Updates name and description of a category.
 // =============================================================================
-router.put('/:id', authorize('products', 'edit'), async (req, res) => {
+router.put('/:id', authorize('products', 'edit'), validateBody(categoryUpdate), async (req, res) => {
     const { id } = req.params;
-    const { name, description } = req.body;
+    const { name, description } = req.validatedBody;
 
     if (!name || !name.trim()) {
         return res.status(400).json({ error: 'اسم الفئة مطلوب.' });

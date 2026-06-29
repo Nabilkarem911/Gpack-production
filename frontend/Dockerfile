@@ -1,6 +1,15 @@
-FROM nginx:alpine
+# Stage 1: Minify JS files
+FROM node:alpine AS builder
+WORKDIR /build
+RUN npm install -g terser@5
+COPY ./frontend /build/frontend
+RUN find /build/frontend/js -name "*.js" -type f | while read f; do \
+      terser --compress --mangle --output "$f" "$f" || true; \
+    done
 
-COPY ./frontend /usr/share/nginx/html
+# Stage 2: nginx serving minified files
+FROM nginx:alpine
+COPY --from=builder /build/frontend/ /usr/share/nginx/html/
 COPY ./nginx/nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80

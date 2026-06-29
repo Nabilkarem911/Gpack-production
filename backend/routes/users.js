@@ -5,6 +5,7 @@ const db = require('../db');
 const bcrypt = require('bcrypt');
 const { success, error: errorResponse, created } = require('../utils/response');
 const authorize = require('../middleware/authorize');
+const { validateBody, userCreate, userUpdate, roleCreate, roleUpdate, userPermissionsUpdate } = require('../utils/validators');
 
 const router = express.Router();
 const restrictToAdmin = authorize(['admin', 'manager', 'super_admin']);
@@ -36,8 +37,8 @@ router.get('/roles', restrictToAdmin, async (req, res) => {
 // Create new role
 // =============================================================================
 
-router.post('/roles', restrictToAdmin, async (req, res) => {
-    const { role_name, description, permissions } = req.body;
+router.post('/roles', restrictToAdmin, validateBody(roleCreate), async (req, res) => {
+    const { role_name, description, permissions } = req.validatedBody;
 
     if (!role_name) {
         return errorResponse(res, 'اسم الدور مطلوب', 400);
@@ -66,10 +67,10 @@ router.post('/roles', restrictToAdmin, async (req, res) => {
 // Update existing role
 // =============================================================================
 
-router.put('/roles/:id', restrictToAdmin, async (req, res) => {
+router.put('/roles/:id', restrictToAdmin, validateBody(roleUpdate), async (req, res) => {
     try {
         const { id } = req.params;
-        const { role_name, description, permissions } = req.body;
+        const { role_name, description, permissions } = req.validatedBody;
 
         if (!role_name) {
             return errorResponse(res, 'اسم الدور مطلوب', 400);
@@ -177,8 +178,8 @@ router.get('/', restrictToAdmin, async (req, res) => {
 // Create new user
 // =============================================================================
 
-router.post('/', restrictToAdmin, async (req, res) => {
-    const { email, name, password, role_id, status = 'active' } = req.body;
+router.post('/', restrictToAdmin, validateBody(userCreate), async (req, res) => {
+    const { email, name, password, role_id, status = 'active' } = req.validatedBody;
 
     if (!email || !name || !password) {
         return errorResponse(res, 'البريد والاسم وكلمة المرور مطلوبة', 400);
@@ -211,10 +212,10 @@ router.post('/', restrictToAdmin, async (req, res) => {
 // Update user permissions (creates or updates user's role)
 // =============================================================================
 
-router.put('/:id/permissions', restrictToAdmin, async (req, res) => {
+router.put('/:id/permissions', restrictToAdmin, validateBody(userPermissionsUpdate), async (req, res) => {
     try {
         const { id } = req.params;
-        const { permissions } = req.body;
+        const { permissions } = req.validatedBody;
 
         if (!permissions || typeof permissions !== 'object') {
             return errorResponse(res, 'الصلاحيات مطلوبة', 400);
@@ -294,9 +295,9 @@ router.get('/:id', restrictToAdmin, async (req, res) => {
 // Update user
 // =============================================================================
 
-router.put('/:id', restrictToAdmin, async (req, res) => {
+router.put('/:id', restrictToAdmin, validateBody(userUpdate), async (req, res) => {
     const { id } = req.params;
-    const { name, email, role_id, status, password } = req.body;
+    const { name, email, role_id, status, password } = req.validatedBody;
 
     try {
         const updates = [];

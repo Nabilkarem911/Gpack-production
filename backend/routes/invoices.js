@@ -15,7 +15,7 @@ const { authenticate } = require('../middleware/authMiddleware');
 const authorize = require('../middleware/authorize');
 const { getVatRate } = require('../utils/settings');
 const { encryptToken, hashToken } = require('../utils/crypto');
-const { invoiceCreate, validateBody } = require('../utils/validators');
+const { invoiceCreate, invoiceShare, invoiceStatusUpdate, validateBody } = require('../utils/validators');
 
 // View permission: all authenticated users with 'sales' view can list/get
 router.use(authorize('sales', 'view'));
@@ -178,10 +178,10 @@ router.get('/:id', async (req, res) => {
 
 // ── POST /api/invoices/:id/share
 // Generate a public share token for an invoice
-router.post('/:id/share', authenticate, async (req, res) => {
+router.post('/:id/share', authenticate, validateBody(invoiceShare), async (req, res) => {
     try {
         const { id } = req.params;
-        const expiresDays = parseInt(req.body.expires_days || 30);
+        const expiresDays = req.validatedBody.expires_days || 30;
 
         const plainToken = require('crypto').randomBytes(32).toString('hex');
         const encrypted  = encryptToken(plainToken);
@@ -208,8 +208,8 @@ router.post('/:id/share', authenticate, async (req, res) => {
 
 // ── POST /api/invoices ──────────────────────────────────────────────────────
 // Create new sales invoice
-// Body: client_ivalidateBody(invoiceCreate), d, invoice_date, due_date, items[], tax_rate, notes, order_id (optional)
-router.post('/', restrictWrite, async (req, res) => {
+// Body: client_id, invoice_date, due_date, items[], tax_rate, notes, order_id (optional)
+router.post('/', restrictWrite, validateBody(invoiceCreate), async (req, res) => {
     const client = await db.pool.connect();
     try {
         const {
@@ -221,7 +221,7 @@ router.post('/', restrictWrite, async (req, res) => {
             tax_rate,
             additional_expenses = 0,
             notes = '',
-        } = req.body;
+        } = req.validatedBody;
 
         const effectiveTaxRate = tax_rate ?? await getVatRate();
 
@@ -299,11 +299,11 @@ router.post('/', restrictWrite, async (req, res) => {
 // Update invoice status (paid, overdue, cancelled, archived).
 // When status = 'paid', automatically creates a client_transaction receipt record.
 // طلبات التعديل على حالة الفاتورة
-router.patch('/:id/status', restrictEdit, async (req, res) => {
+router.patch('/:id/status', restrictEdit, validateBody(invoiceStatusUpdate), async (req, res) => {
     const client = await db.pool.connect();
     try {
         const { id } = req.params;
-        const { status } = req.body;
+        const { status } = req.validatedBody;
 
         if (!status) {
             return res.status(400).json({ error: 'Status is required' });

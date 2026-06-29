@@ -3,6 +3,7 @@
 const express = require('express');
 const db      = require('../db');
 const authorize = require('../middleware/authorize');
+const { validateBody, termsCreate, termsUpdate } = require('../utils/validators');
 
 const router = express.Router();
 
@@ -58,8 +59,8 @@ router.get('/:id', async (req, res) => {
 // Body: { title, content, is_default }
 // =============================================================================
 
-router.post('/', authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
-    const { title, content, is_default } = req.body;
+router.post('/', authorize(['admin', 'manager', 'super_admin']), validateBody(termsCreate), async (req, res) => {
+    const { title, content, is_default } = req.validatedBody;
 
     if (!title || !title.trim()) {
         return res.status(400).json({ error: 'عنوان البند مطلوب.' });
@@ -89,9 +90,9 @@ router.post('/', authorize(['admin', 'manager', 'super_admin']), async (req, res
 // Body: { title, content, is_default, is_active }
 // =============================================================================
 
-router.put('/:id', authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
+router.put('/:id', authorize(['admin', 'manager', 'super_admin']), validateBody(termsUpdate), async (req, res) => {
     const { id } = req.params;
-    const { title, content, is_default, is_active } = req.body;
+    const { title, content, is_default, is_active } = req.validatedBody;
 
     if (!title || !title.trim()) {
         return res.status(400).json({ error: 'عنوان البند مطلوب.' });

@@ -3,6 +3,7 @@
 const express = require('express');
 const db = require('../db');
 const authorize = require('../middleware/authorize');
+const { warehouseCreate, warehouseUpdate, stockAdjust, validateBody } = require('../utils/validators');
 
 const router = express.Router();
 
@@ -119,8 +120,8 @@ router.get('/warehouses/:id', async (req, res) => {
 // Creates a new warehouse.
 // =============================================================================
 
-router.post('/warehouses', restrictWrite, async (req, res) => {
-    const { name, location, client_id, status } = req.body;
+router.post('/warehouses', restrictWrite, validateBody(warehouseCreate), async (req, res) => {
+    const { name, location, address, client_id, status } = req.validatedBody;
 
     if (!name || !name.trim()) {
         return res.status(400).json({ error: 'اسم المستودع مطلوب.' });
@@ -131,7 +132,7 @@ router.post('/warehouses', restrictWrite, async (req, res) => {
             `INSERT INTO warehouses (name, address, client_id, status)
              VALUES ($1, $2, $3, $4)
              RETURNING *`,
-            [name.trim(), req.body.address || null, client_id || null, status || 'active']
+            [name.trim(), address || location || null, client_id || null, status || 'active']
         );
 
         return res.status(201).json({ data: result.rows[0] });
@@ -146,8 +147,8 @@ router.post('/warehouses', restrictWrite, async (req, res) => {
 // Updates a warehouse.
 // =============================================================================
 
-router.put('/warehouses/:id', restrictEdit, async (req, res) => {
-    const { name, location, client_id, status } = req.body;
+router.put('/warehouses/:id', restrictEdit, validateBody(warehouseUpdate), async (req, res) => {
+    const { name, location, address, client_id, status } = req.validatedBody;
 
     if (!name || !name.trim()) {
         return res.status(400).json({ error: 'اسم المستودع مطلوب.' });
@@ -162,7 +163,7 @@ router.put('/warehouses/:id', restrictEdit, async (req, res) => {
                 status    = $4
              WHERE id = $5
              RETURNING *`,
-            [name.trim(), req.body.address || null, client_id || null, status || 'active', req.params.id]
+            [name.trim(), address || location || null, client_id || null, status || 'active', req.params.id]
         );
 
         if (result.rowCount === 0) {
@@ -321,8 +322,8 @@ router.get('/stock/:clientId/summary', async (req, res) => {
 // This does NOT create a VMI production order — it is a direct correction.
 // =============================================================================
 
-router.post('/stock/adjust', restrictEdit, async (req, res) => {
-    const { stock_id, adjustment, reason, items } = req.body;
+router.post('/stock/adjust', restrictEdit, validateBody(stockAdjust), async (req, res) => {
+    const { stock_id, adjustment, reason, items } = req.validatedBody;
 
     // Support both single adjustment and batch items
     if (items && Array.isArray(items) && items.length > 0) {

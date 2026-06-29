@@ -10,6 +10,7 @@ const db      = require('../db');
 const { authenticate } = require('../middleware/authMiddleware');
 const authorize = require('../middleware/authorize');
 const { success, error, created } = require('../utils/response');
+const { pantoneColorCreate, pantoneColorUpdate, validateBody } = require('../utils/validators');
 
 // ── Auto-create table if not exists (idempotent) ──────────────────────────────
 async function ensureTable() {
@@ -64,9 +65,9 @@ router.get('/', authenticate, authorize(['admin', 'manager', 'super_admin', 'sal
 
 // ── POST /api/client-pantone-colors ──────────────────────────────────────────
 // Body: { client_id, color_code, color_name, hex_value, notes, sort_order }
-router.post('/', authenticate, authorize(['admin', 'manager', 'super_admin', 'sales_rep']), async (req, res) => {
+router.post('/', authenticate, authorize(['admin', 'manager', 'super_admin', 'sales_rep']), validateBody(pantoneColorCreate), async (req, res) => {
     try {
-        const { client_id, color_code, color_name, hex_value, notes, sort_order } = req.body;
+        const { client_id, color_code, color_name, hex_value, notes, sort_order } = req.validatedBody;
         if (!client_id || !color_code) return error(res, 'client_id and color_code are required', 400);
 
         // Ownership check for sales_rep
@@ -103,10 +104,10 @@ router.post('/', authenticate, authorize(['admin', 'manager', 'super_admin', 'sa
 });
 
 // ── PATCH /api/client-pantone-colors/:id ─────────────────────────────────────
-router.patch('/:id', authenticate, authorize(['admin', 'manager', 'super_admin', 'sales_rep']), async (req, res) => {
+router.patch('/:id', authenticate, authorize(['admin', 'manager', 'super_admin', 'sales_rep']), validateBody(pantoneColorUpdate), async (req, res) => {
     try {
         const { id } = req.params;
-        const { color_code, color_name, hex_value, notes, sort_order } = req.body;
+        const { color_code, color_name, hex_value, notes, sort_order } = req.validatedBody;
 
         // Ownership check for sales_rep
         const isSalesRep = req.user.role === 'sales_rep';

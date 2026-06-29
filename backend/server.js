@@ -135,7 +135,11 @@ const publicLimiter = rateLimit({
 // Global Middleware
 // =============================================================================
 
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: false,  // CSP is set by nginx for frontend
+  crossOriginEmbedderPolicy: false,
+  hsts: false,                   // HSTS is set by nginx/Cloudflare
+}));
 
 app.use(cors({
   origin: process.env.CORS_ORIGIN || 'http://localhost',

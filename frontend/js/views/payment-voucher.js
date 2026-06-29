@@ -85,7 +85,6 @@
 
         _el('pv-modal-close').addEventListener('click', _closeNewModal);
         _el('pv-modal-cancel').addEventListener('click', _closeNewModal);
-        _el('pv-modal-backdrop').addEventListener('click', _closeNewModal);
         _el('pv-modal-submit').addEventListener('click', _submitVoucher);
         _el('pv-amount').addEventListener('input', _updatePreview);
 
@@ -96,7 +95,6 @@
 
         _el('pv-detail-close').addEventListener('click', _closeDetailModal);
         _el('pv-detail-close-btn').addEventListener('click', _closeDetailModal);
-        _el('pv-detail-backdrop').addEventListener('click', _closeDetailModal);
         _el('pv-detail-cancel-btn').addEventListener('click', _cancelVoucher);
         _el('pv-detail-print-btn').addEventListener('click', _printVoucher);
     }

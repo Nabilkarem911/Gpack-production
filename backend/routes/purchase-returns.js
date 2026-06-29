@@ -10,6 +10,7 @@ const express = require('express');
 const router  = express.Router();
 const db      = require('../db');
 const authorize = require('../middleware/authorize');
+const { validateBody, purchaseReturnCreate } = require('../utils/validators');
 
 router.use(authorize('purchase_returns', 'view'));
 const restrictWrite  = authorize('purchase_returns', 'create');
@@ -120,8 +121,8 @@ router.get('/:id', async (req, res) => {
 //   - Deduct from warehouse_stock
 //   - Create accounting voucher: Dr Inventory, Cr Accounts Payable
 // =============================================================================
-router.post('/', restrictWrite, async (req, res) => {
-    const { return_date, supplier_id, purchase_invoice_id, notes, items } = req.body;
+router.post('/', restrictWrite, validateBody(purchaseReturnCreate), async (req, res) => {
+    const { return_date, supplier_id, purchase_invoice_id, notes, items } = req.validatedBody;
 
     // ── Validation ───────────────────────────────────────────────────────────
     if (!return_date)              return res.status(400).json({ error: 'تاريخ المرتجع مطلوب.' });

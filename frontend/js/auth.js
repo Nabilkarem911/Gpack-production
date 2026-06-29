@@ -93,8 +93,7 @@ async function _handleLoginSubmit(event) {
             body: { email, password },
         });
 
-        // Persist session
-        localStorage.setItem('gpack_token', data.token);
+        // Persist non-sensitive user info for UI (token is in HttpOnly cookie)
         localStorage.setItem('gpack_user', JSON.stringify(data.user));
 
         // Hydrate globals
@@ -146,8 +145,7 @@ window.logout = function () {
     // Call backend to clear the HttpOnly cookie
     window.apiFetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
 
-    // Clean up any legacy localStorage token and user data
-    localStorage.removeItem('gpack_token');
+    // Clean up localStorage user data (token is cleared by backend via Set-Cookie expiry)
     localStorage.removeItem('gpack_user');
     window.GpackUser  = null;
     window.GpackPerms = {};
@@ -185,8 +183,7 @@ window.initAuth = async function () {
             window.navigateTo('dashboard');
         }
     } catch (err) {
-        // Cookie missing / invalid / expired — clear any legacy state and show login
-        localStorage.removeItem('gpack_token');
+        // Cookie missing / invalid / expired — clear stale state and show login
         localStorage.removeItem('gpack_user');
         window.GpackUser  = null;
         window.GpackPerms = {};

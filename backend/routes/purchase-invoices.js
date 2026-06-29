@@ -11,6 +11,7 @@ const db      = require('../db');
 const { authenticate } = require('../middleware/authMiddleware');
 const authorize = require('../middleware/authorize');
 const { getVatRate } = require('../utils/settings');
+const { validateBody, purchaseInvoiceCreate } = require('../utils/validators');
 
 router.use(authenticate);
 router.use(authorize('purchasing', 'view'));
@@ -152,7 +153,7 @@ router.get('/:id', async (req, res) => {
 // POST /api/purchase-invoices
 // Create new purchase invoice
 // =============================================================================
-router.post('/', restrictWrite, async (req, res) => {
+router.post('/', restrictWrite, validateBody(purchaseInvoiceCreate), async (req, res) => {
     const client = await db.getClient();
     try {
         await client.query('BEGIN');
@@ -166,7 +167,7 @@ router.post('/', restrictWrite, async (req, res) => {
             tax_rate,
             notes,
             items,
-        } = req.body;
+        } = req.validatedBody;
 
         const effectiveTaxRate = tax_rate ?? await getVatRate();
 

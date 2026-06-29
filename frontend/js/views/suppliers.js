@@ -331,16 +331,6 @@
             saveBtn.addEventListener('click', _saveSupplier);
         }
 
-        // Backdrop click to close
-        const modal = document.getElementById('supplier-modal');
-        if (modal) {
-            modal.addEventListener('click', (e) => {
-                if (e.target === modal) {
-                    _closeModal();
-                }
-            });
-        }
-
         // Enter key in form inputs
         const formInputs = document.querySelectorAll('#supplier-form input, #supplier-form select, #supplier-form textarea');
         formInputs.forEach(input => {

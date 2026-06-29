@@ -1971,11 +1971,6 @@
 
         if (cvCloseBtn)  cvCloseBtn.addEventListener('click',  window.closeConvertModal);
         if (cvCancelBtn) cvCancelBtn.addEventListener('click', window.closeConvertModal);
-        if (cvModal) {
-            cvModal.addEventListener('click', (e) => {
-                if (e.target === cvModal) window.closeConvertModal();
-            });
-        }
 
         // Quick-client modal
         const qcCloseBtn  = document.getElementById('quick-client-close-btn');
@@ -1984,11 +1979,6 @@
 
         if (qcCloseBtn)  qcCloseBtn.addEventListener('click',  _closeQuickClientModal);
         if (qcCancelBtn) qcCancelBtn.addEventListener('click', _closeQuickClientModal);
-        if (qcModal) {
-            qcModal.addEventListener('click', (e) => {
-                if (e.target === qcModal) _closeQuickClientModal();
-            });
-        }
 
         // Client history modal
         const chCloseBtn  = document.getElementById('client-history-close-btn');
@@ -1997,11 +1987,6 @@
 
         if (chCloseBtn)  chCloseBtn.addEventListener('click',  _closeClientHistoryModal);
         if (chCancelBtn) chCancelBtn.addEventListener('click', _closeClientHistoryModal);
-        if (chModal) {
-            chModal.addEventListener('click', (e) => {
-                if (e.target === chModal) _closeClientHistoryModal();
-            });
-        }
 
         // Quick product modal
         const qpCloseBtn  = document.getElementById('quick-product-close-btn');
@@ -2010,11 +1995,6 @@
 
         if (qpCloseBtn)  qpCloseBtn.addEventListener('click',  _closeQuickProductModal);
         if (qpCancelBtn) qpCancelBtn.addEventListener('click', _closeQuickProductModal);
-        if (qpModal) {
-            qpModal.addEventListener('click', (e) => {
-                if (e.target === qpModal) _closeQuickProductModal();
-            });
-        }
 
         // Quick size modal
         const qsCloseBtn  = document.getElementById('quick-size-close-btn');
@@ -2023,11 +2003,6 @@
 
         if (qsCloseBtn)  qsCloseBtn.addEventListener('click',  _closeQuickSizeModal);
         if (qsCancelBtn) qsCancelBtn.addEventListener('click', _closeQuickSizeModal);
-        if (qsModal) {
-            qsModal.addEventListener('click', (e) => {
-                if (e.target === qsModal) _closeQuickSizeModal();
-            });
-        }
     }
 
     // ==========================================================================
@@ -2946,17 +2921,9 @@
         formData.append('design_name', nameInput?.value || '');
         
         try {
-            const token = localStorage.getItem('gpack_token');
-            if (!token) {
-                alert('خطأ: لم يتم العثور على بيانات تسجيل الدخول. يرجى إعادة تسجيل الدخول.');
-                return;
-            }
-            
             const res = await fetch('/api/client-designs', {
                 method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                },
+                credentials: 'include',
                 body: formData
             });
             

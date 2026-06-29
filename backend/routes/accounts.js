@@ -9,6 +9,7 @@ const express = require('express');
 const router  = express.Router();
 const db      = require('../db');
 const authorize = require('../middleware/authorize');
+const { accountCreate, accountUpdate, validateBody } = require('../utils/validators');
 
 router.use(authorize('chart_of_accounts', 'view'));
 const restrictWrite = authorize('chart_of_accounts', 'create');
@@ -107,9 +108,9 @@ router.get('/:id', async (req, res) => {
 // POST /api/accounts
 // Create a new account
 // =============================================================================
-router.post('/', restrictWrite, async (req, res) => {
+router.post('/', restrictWrite, validateBody(accountCreate), async (req, res) => {
     try {
-        const { code, name, account_type, parent_id } = req.body;
+        const { code, name, account_type, parent_id } = req.validatedBody;
 
         if (!code || !name || !account_type) {
             return res.status(400).json({ error: 'code و name و account_type مطلوبة.' });
@@ -141,10 +142,10 @@ router.post('/', restrictWrite, async (req, res) => {
 // PUT /api/accounts/:id
 // Update account (name, parent_id, is_active only — code & type are immutable)
 // =============================================================================
-router.put('/:id', restrictEdit, async (req, res) => {
+router.put('/:id', restrictEdit, validateBody(accountUpdate), async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, parent_id, is_active } = req.body;
+        const { name, parent_id, is_active } = req.validatedBody;
 
         if (!name) return res.status(400).json({ error: 'اسم الحساب مطلوب.' });
 

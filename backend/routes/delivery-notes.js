@@ -7,6 +7,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const authorize = require('../middleware/authorize');
+const { validateBody, deliveryNoteCreate, deliveryNoteDispatch } = require('../utils/validators');
 
 router.use(authorize('vmi_dispatch', 'view'));
 const restrictWrite = authorize('vmi_dispatch', 'create');
@@ -168,8 +169,8 @@ router.get('/:id', async (req, res) => {
 // Create new delivery note
 // =============================================================================
 
-router.post('/', restrictWrite, async (req, res) => {
-    const { order_id, client_id, items, notes } = req.body;
+router.post('/', restrictWrite, validateBody(deliveryNoteCreate), async (req, res) => {
+    const { order_id, client_id, items, notes } = req.validatedBody;
     
     if (!order_id || !client_id || !items || !Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ error: 'order_id, client_id, and items array are required.' });
@@ -224,9 +225,9 @@ router.post('/', restrictWrite, async (req, res) => {
 // Body: { items: [{ item_id, quantity }], notes }
 // =============================================================================
 
-router.post('/:id/dispatch', restrictWrite, async (req, res) => {
+router.post('/:id/dispatch', restrictWrite, validateBody(deliveryNoteDispatch), async (req, res) => {
     const { id } = req.params;
-    const { items, notes: deliveryNotes } = req.body;
+    const { items, notes: deliveryNotes } = req.validatedBody;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ error: 'items array is required.' });
@@ -366,9 +367,9 @@ router.post('/:id/dispatch', restrictWrite, async (req, res) => {
 // POST /api/delivery-notes/:id/confirm  (kept for backward compat — redirects to dispatch logic)
 // =============================================================================
 
-router.post('/:id/confirm', restrictWrite, async (req, res) => {
+router.post('/:id/confirm', restrictWrite, validateBody(deliveryNoteDispatch), async (req, res) => {
     const { id } = req.params;
-    const { items, notes: deliveryNotes } = req.body;
+    const { items, notes: deliveryNotes } = req.validatedBody;
     
     if (!items || !Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ error: 'items array is required.' });

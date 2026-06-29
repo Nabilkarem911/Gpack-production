@@ -8,6 +8,7 @@
 const express = require('express');
 const db = require('../db');
 const { authenticate } = require('../middleware/authMiddleware');
+const { validateBody, taskCreate, taskUpdate, subtaskCreate, subtaskUpdate, taskCommentCreate } = require('../utils/validators');
 const authorize = require('../middleware/authorize');
 
 const router = express.Router();
@@ -183,8 +184,8 @@ router.get('/:id', authenticate, async (req, res) => {
 // POST /api/tasks
 // Create new task
 // =============================================================================
-router.post('/', authenticate, async (req, res) => {
-    const { title, description, assigned_to, due_date, priority = 'medium', subtasks = [] } = req.body;
+router.post('/', authenticate, validateBody(taskCreate), async (req, res) => {
+    const { title, description, assigned_to, due_date, priority = 'medium', subtasks = [] } = req.validatedBody;
     
     if (!title || !assigned_to || !due_date) {
         return res.status(400).json({ error: 'Title, assigned_to, and due_date are required' });
@@ -235,9 +236,9 @@ router.post('/', authenticate, async (req, res) => {
 // Update task
 // ROLE-BASED: Regular employees can only update status of their own tasks
 // =============================================================================
-router.put('/:id', authenticate, async (req, res) => {
+router.put('/:id', authenticate, validateBody(taskUpdate), async (req, res) => {
     const { id } = req.params;
-    const { title, description, assigned_to, due_date, priority, status, order_id, client_id } = req.body;
+    const { title, description, assigned_to, due_date, priority, status, order_id, client_id } = req.validatedBody;
     
     try {
         // Check user permissions
@@ -347,9 +348,9 @@ router.delete('/:id', authenticate, restrictDelete, async (req, res) => {
 // POST /api/tasks/:id/subtasks
 // Add subtask to task
 // =============================================================================
-router.post('/:id/subtasks', authenticate, async (req, res) => {
+router.post('/:id/subtasks', authenticate, validateBody(subtaskCreate), async (req, res) => {
     const { id } = req.params;
-    const { title, description, sort_order = 0 } = req.body;
+    const { title, description, sort_order = 0 } = req.validatedBody;
     
     if (!title) {
         return res.status(400).json({ error: 'Title is required' });
@@ -374,9 +375,9 @@ router.post('/:id/subtasks', authenticate, async (req, res) => {
 // PUT /api/tasks/:id/subtasks/:subtaskId
 // Update subtask (toggle completion)
 // =============================================================================
-router.put('/:id/subtasks/:subtaskId', authenticate, async (req, res) => {
+router.put('/:id/subtasks/:subtaskId', authenticate, validateBody(subtaskUpdate), async (req, res) => {
     const { id, subtaskId } = req.params;
-    const { is_completed, title, description } = req.body;
+    const { is_completed, title, description } = req.validatedBody;
     
     try {
         const updates = [];
@@ -453,9 +454,9 @@ router.delete('/:id/subtasks/:subtaskId', authenticate, async (req, res) => {
 // POST /api/tasks/:id/comments
 // Add comment to task
 // =============================================================================
-router.post('/:id/comments', authenticate, async (req, res) => {
+router.post('/:id/comments', authenticate, validateBody(taskCommentCreate), async (req, res) => {
     const { id } = req.params;
-    const { comment, subtask_id, attachments = [] } = req.body;
+    const { comment, subtask_id, attachments = [] } = req.validatedBody;
     
     if (!comment || !comment.trim()) {
         return res.status(400).json({ error: 'Comment is required' });

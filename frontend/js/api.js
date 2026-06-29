@@ -103,12 +103,8 @@ window.apiFetch = async function (endpoint, options = {}) {
         ...(options.headers || {}),
     };
 
-    // Backward-compat: still attach Authorization header if token is in localStorage
-    // during the transition period to HttpOnly cookies.
-    const token = localStorage.getItem('gpack_token');
-    if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-    }
+    // JWT is sent automatically via HttpOnly cookie (credentials: 'include' below).
+    // No need to manually attach Authorization header from localStorage.
 
     let response;
     try {
@@ -125,7 +121,6 @@ window.apiFetch = async function (endpoint, options = {}) {
 
     // 401 — session expired or invalid token
     if (response.status === 401) {
-        localStorage.removeItem('gpack_token');
         localStorage.removeItem('gpack_user');
         window.GpackUser    = null;
         window.GpackPerms   = {};

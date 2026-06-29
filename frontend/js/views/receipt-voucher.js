@@ -89,7 +89,6 @@
         // New voucher modal
         _el('rv-modal-close').addEventListener('click', _closeNewModal);
         _el('rv-modal-cancel').addEventListener('click', _closeNewModal);
-        _el('rv-modal-backdrop').addEventListener('click', _closeNewModal);
         _el('rv-modal-submit').addEventListener('click', _submitVoucher);
 
         // Amount preview update
@@ -103,7 +102,6 @@
         // Detail modal
         _el('rv-detail-close').addEventListener('click', _closeDetailModal);
         _el('rv-detail-close-btn').addEventListener('click', _closeDetailModal);
-        _el('rv-detail-backdrop').addEventListener('click', _closeDetailModal);
         _el('rv-detail-cancel-btn').addEventListener('click', _cancelVoucher);
         _el('rv-detail-print-btn').addEventListener('click', _printVoucher);
     }

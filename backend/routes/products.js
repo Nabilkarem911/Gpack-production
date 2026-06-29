@@ -3,6 +3,7 @@
 const express = require('express');
 const db = require('../db');
 const authorize = require('../middleware/authorize');
+const { validateBody, productCreate, productUpdate, variantCreate, variantUpdate } = require('../utils/validators');
 
 const router = express.Router();
 
@@ -362,8 +363,8 @@ router.get('/:id', async (req, res) => {
 // SCHEMA RULE: No client_id anywhere in this route.
 // =============================================================================
 
-router.post('/', restrictWrite, async (req, res) => {
-    const { name, description, category_id, sku, barcode, status, variants } = req.body;
+router.post('/', restrictWrite, validateBody(productCreate), async (req, res) => {
+    const { name, description, category_id, sku, barcode, status, variants } = req.validatedBody;
 
     if (!name || !name.trim()) {
         return res.status(400).json({ error: 'اسم المنتج مطلوب.' });
@@ -442,9 +443,9 @@ router.post('/', restrictWrite, async (req, res) => {
 // Updates a product's core fields (not variants — managed separately).
 // =============================================================================
 
-router.put('/:id', restrictWrite, async (req, res) => {
+router.put('/:id', restrictWrite, validateBody(productUpdate), async (req, res) => {
     const { id } = req.params;
-    const { name, description, category_id, sku, barcode, status } = req.body;
+    const { name, description, category_id, sku, barcode, status } = req.validatedBody;
 
     if (!name || !name.trim()) {
         return res.status(400).json({ error: 'اسم المنتج مطلوب.' });
@@ -493,10 +494,10 @@ router.put('/:id', restrictWrite, async (req, res) => {
 // SCHEMA RULE: No client_id — variants are general.
 // =============================================================================
 
-router.post('/:id/variants', restrictWrite, async (req, res) => {
+router.post('/:id/variants', restrictWrite, validateBody(variantCreate), async (req, res) => {
     const { id } = req.params;
     const { size_name, sku, barcode, unit_id, selling_price, cost_price,
-            min_stock_level, max_stock_level, weight, dimensions, status } = req.body;
+            min_stock_level, max_stock_level, weight, dimensions, status } = req.validatedBody;
 
     if (!size_name || !size_name.trim()) {
         return res.status(400).json({ error: 'اسم المقاس مطلوب.' });
@@ -547,10 +548,10 @@ router.post('/:id/variants', restrictWrite, async (req, res) => {
 // Updates a single variant.
 // =============================================================================
 
-router.put('/:id/variants/:variantId', restrictWrite, async (req, res) => {
+router.put('/:id/variants/:variantId', restrictWrite, validateBody(variantUpdate), async (req, res) => {
     const { variantId } = req.params;
     const { size_name, sku, barcode, unit_id, selling_price, cost_price,
-            min_stock_level, max_stock_level, weight, dimensions, status } = req.body;
+            min_stock_level, max_stock_level, weight, dimensions, status } = req.validatedBody;
 
     if (!size_name || !size_name.trim()) {
         return res.status(400).json({ error: 'اسم المقاس مطلوب.' });

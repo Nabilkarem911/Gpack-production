@@ -5,7 +5,7 @@ const db      = require('../db');
 const { success, created, paginated } = require('../utils/response');
 const { getVatRate } = require('../utils/settings');
 const { decryptShareToken } = require('../utils/crypto');
-const { orderCreate, validateBody } = require('../utils/validators');
+const { orderCreate, orderUpdate, orderStatusUpdate, orderConvertToProduction, orderInvoice, orderPayment, orderNote, orderRelease, validateBody } = require('../utils/validators');
 const authorize = require('../middleware/authorize');
 
 const router = express.Router();
@@ -593,8 +593,7 @@ router.get('/:id', async (req, res) => {
 //     items: [{ product_variant_id, quantity, unit_price, notes }]
 //   }
 // =============================================================================
-validateBody(orderCreate), 
-router.post('/', restrictWrite, async (req, res) => {
+router.post('/', restrictWrite, validateBody(orderCreate), async (req, res) => {
     const {
         client_id,
         status,
@@ -606,7 +605,7 @@ router.post('/', restrictWrite, async (req, res) => {
         custom_terms,
         down_payment_required,
         items,
-    } = req.body;
+    } = req.validatedBody;
 
     if (!client_id) {
         return res.status(400).json({ error: 'العميل مطلوب.' });
@@ -710,7 +709,7 @@ router.post('/', restrictWrite, async (req, res) => {
                 [
                     client_id,
                     status || 'quote',
-                    req.body.pricing_status || (isVmiOrder ? null : 'priced'),
+                    req.validatedBody.pricing_status || (isVmiOrder ? null : 'priced'),
                     order_date || new Date().toISOString().split('T')[0],
                     valid_until || null,
                     subtotal,    // NULL for VMI
@@ -769,7 +768,7 @@ router.post('/', restrictWrite, async (req, res) => {
 // DATA SCOPING: sales_rep can only edit their own orders.
 // =============================================================================
 
-router.put('/:id', restrictEdit, async (req, res) => {
+router.put('/:id', restrictEdit, validateBody(orderUpdate), async (req, res) => {
     const { id } = req.params;
     const {
         client_id,
@@ -782,7 +781,7 @@ router.put('/:id', restrictEdit, async (req, res) => {
         custom_terms,
         down_payment_required,
         items,
-    } = req.body;
+    } = req.validatedBody;
 
     const vatRate = await getVatRate();
 
@@ -889,7 +888,7 @@ router.put('/:id', restrictEdit, async (req, res) => {
                     customTermsJson,
                     isVmiOrder ? null : downPaymentAmount,
                     id,
-                    req.body.pricing_status || null,
+                    req.validatedBody.pricing_status || null,
                 ]
             );
 
@@ -932,9 +931,9 @@ router.put('/:id', restrictEdit, async (req, res) => {
 // Non-sales_rep roles only.
 // =============================================================================
 
-router.patch('/:id/status', restrictAdmin, async (req, res) => {
+router.patch('/:id/status', restrictAdmin, validateBody(orderStatusUpdate), async (req, res) => {
     const { id }     = req.params;
-    const { status } = req.body;
+    const { status } = req.validatedBody;
 
     const VALID_STATUSES = ['quote', 'confirmed', 'production', 'processing', 'completed', 'delivered', 'cancelled', 'archived'];
 
@@ -976,7 +975,7 @@ router.patch('/:id/status', restrictAdmin, async (req, res) => {
 //   CREDIT accounts_receivable    (code '1300', sub_account = client)
 // =============================================================================
 
-router.post('/:id/convert-to-production', restrictAdmin, async (req, res) => {
+router.post('/:id/convert-to-production', restrictAdmin, validateBody(orderConvertToProduction), async (req, res) => {
     const { id } = req.params;
     const {
         down_payment_amount,
@@ -986,7 +985,7 @@ router.post('/:id/convert-to-production', restrictAdmin, async (req, res) => {
         bank_ref,
         pos_terminal,
         pos_ref,
-    } = req.body;
+    } = req.validatedBody;
 
     const paymentAmt = parseFloat(down_payment_amount) || 0;
 
@@ -1303,9 +1302,9 @@ router.get('/:id/financial', async (req, res) => {
 // 'final' invoice deducts from warehouse_stock via delivery_notes logic.
 // =============================================================================
 
-router.post('/:id/invoice', restrictAdmin, async (req, res) => {
+router.post('/:id/invoice', restrictAdmin, validateBody(orderInvoice), async (req, res) => {
     const { id } = req.params;
-    const { type = 'proforma', items = [], additional_expenses = 0, notes = '' } = req.body;
+    const { type = 'proforma', items = [], additional_expenses = 0, notes = '' } = req.validatedBody;
 
     const vatRate = await getVatRate();
 
@@ -1419,9 +1418,9 @@ router.post('/:id/invoice', restrictAdmin, async (req, res) => {
 // Creates client_transaction of type 'payment'.
 // =============================================================================
 
-router.post('/:id/payment', restrictAdmin, async (req, res) => {
+router.post('/:id/payment', restrictAdmin, validateBody(orderPayment), async (req, res) => {
     const { id } = req.params;
-    const { amount, payment_method = 'cash', notes = '', cash_box, bank_account, bank_ref, pos_terminal, pos_ref } = req.body;
+    const { amount, payment_method = 'cash', notes = '', cash_box, bank_account, bank_ref, pos_terminal, pos_ref } = req.validatedBody;
 
     const payAmt = parseFloat(amount);
     if (!payAmt || payAmt <= 0) {
@@ -1534,10 +1533,10 @@ router.get('/:id/notes', async (req, res) => {
 // Adds a new chat note to an order.
 // Body: { message: string }
 // =============================================================================
-router.post('/:id/notes', restrictWrite, async (req, res) => {
+router.post('/:id/notes', restrictWrite, validateBody(orderNote), async (req, res) => {
     try {
         const { id } = req.params;
-        const { message } = req.body;
+        const { message } = req.validatedBody;
 
         if (!message || !message.trim()) {
             return res.status(400).json({ error: 'الرسالة مطلوبة.' });
@@ -1566,9 +1565,9 @@ router.post('/:id/notes', restrictWrite, async (req, res) => {
 // Release order for delivery by reserving stock from warehouse
 // Business Logic: Moves stock from available to reserved state
 // =============================================================================
-router.post('/:id/release', restrictAdmin, async (req, res) => {
+router.post('/:id/release', restrictAdmin, validateBody(orderRelease), async (req, res) => {
     const { id } = req.params;
-    const { warehouse_id } = req.body;
+    const { warehouse_id } = req.validatedBody;
     
     try {
         const result = await db.withTransaction(async (client) => {

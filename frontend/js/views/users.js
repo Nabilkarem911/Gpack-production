@@ -438,10 +438,6 @@ const usersView = (() => {
         el('btn-add-user')?.addEventListener('click', () => openUserModal());
         el('btn-add-role')?.addEventListener('click', () => openRoleModal());
 
-        // Close modals on backdrop click
-        el('user-modal')?.addEventListener('click', e => { if (e.target.id === 'user-modal') closeUserModal(); });
-        el('role-modal')?.addEventListener('click', e => { if (e.target.id === 'role-modal') closeRoleModal(); });
-
         loadAll();
     }
 

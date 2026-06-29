@@ -1979,7 +1979,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
             const res = await fetch('/api/client-designs', {
                 method: 'POST',
                 body: formData,
-                headers: { 'Authorization': `Bearer ${localStorage.getItem('gpack_token') || ''}` }
+                credentials: 'include'
             });
 
             if (!res.ok) {

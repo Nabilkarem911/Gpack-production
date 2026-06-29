@@ -17,7 +17,7 @@ const router = express.Router();
 // =============================================================================
 
 router.post('/login', validateBody(loginBody), async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password } = req.validatedBody;
 
   try {
     const result = await db.query(
@@ -77,7 +77,6 @@ router.post('/login', validateBody(loginBody), async (req, res) => {
     });
 
     return res.status(200).json({
-      token, // Included for backward-compat during transition; remove once frontend fully migrated
       user: {
         id: user.id,
         email: user.email,

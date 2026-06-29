@@ -3,6 +3,7 @@
 const express = require('express');
 const db = require('../db');
 const authorize = require('../middleware/authorize');
+const { validateBody, supplierCreate, supplierUpdate } = require('../utils/validators');
 
 const router = express.Router();
 
@@ -266,7 +267,7 @@ router.get('/purchase-invoices/:invoiceId', async (req, res) => {
 // Creates a new supplier.
 // =============================================================================
 
-router.post('/', authorize('suppliers', 'create'), async (req, res) => {
+router.post('/', authorize('suppliers', 'create'), validateBody(supplierCreate), async (req, res) => {
     const {
         company_name,
         contact_person,
@@ -277,14 +278,14 @@ router.post('/', authorize('suppliers', 'create'), async (req, res) => {
         commercial_register,
         tax_id,
         payment_terms
-    } = req.body;
+    } = req.validatedBody;
 
     if (!company_name) {
         return res.status(400).json({ error: 'اسم المورد مطلوب.' });
     }
 
     try {
-        const supplier_type = req.body.supplier_type || req.body.type || 'supplier';
+        const supplier_type = req.validatedBody.supplier_type || req.validatedBody.type || 'supplier';
 
         const result = await db.query(
             `INSERT INTO suppliers (
@@ -318,7 +319,7 @@ router.post('/', authorize('suppliers', 'create'), async (req, res) => {
 // Updates supplier details.
 // =============================================================================
 
-router.patch('/:id', authorize('suppliers', 'edit'), async (req, res) => {
+router.patch('/:id', authorize('suppliers', 'edit'), validateBody(supplierUpdate), async (req, res) => {
     const { id } = req.params;
     const {
         company_name,
@@ -332,7 +333,7 @@ router.patch('/:id', authorize('suppliers', 'edit'), async (req, res) => {
         payment_terms,
         supplier_type,
         status
-    } = req.body;
+    } = req.validatedBody;
 
     try {
         const updates = ['updated_at = NOW()'];

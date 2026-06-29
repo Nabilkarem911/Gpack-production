@@ -1285,50 +1285,21 @@
         if (closeBtn)  closeBtn.addEventListener('click',  window.closeProductModal);
         if (cancelBtn) cancelBtn.addEventListener('click', window.closeProductModal);
 
-        // Product modal backdrop click
-        const modal = document.getElementById('product-modal');
-        if (modal) {
-            modal.addEventListener('click', (e) => {
-                if (e.target === modal) window.closeProductModal();
-            });
-        }
-
         // Category quick-add modal close buttons + backdrop
         const catCloseBtn  = document.getElementById('category-modal-close-btn');
         const catCancelBtn = document.getElementById('category-modal-cancel-btn');
         if (catCloseBtn)  catCloseBtn.addEventListener('click',  window.closeCategoryModal);
         if (catCancelBtn) catCancelBtn.addEventListener('click', window.closeCategoryModal);
-        const catModal = document.getElementById('category-modal');
-        if (catModal) {
-            catModal.addEventListener('click', (e) => {
-                if (e.target === catModal) window.closeCategoryModal();
-            });
-        }
-
         // Unit quick-add modal close buttons + backdrop
         const unitCloseBtn  = document.getElementById('unit-modal-close-btn');
         const unitCancelBtn = document.getElementById('unit-modal-cancel-btn');
         if (unitCloseBtn)  unitCloseBtn.addEventListener('click',  window.closeUnitModal);
         if (unitCancelBtn) unitCancelBtn.addEventListener('click', window.closeUnitModal);
-        const unitModal = document.getElementById('unit-modal');
-        if (unitModal) {
-            unitModal.addEventListener('click', (e) => {
-                if (e.target === unitModal) window.closeUnitModal();
-            });
-        }
-
         // Variants modal close buttons + backdrop + done button
         const variantsCloseBtn = document.getElementById('variants-modal-close-btn');
         const variantsDoneBtn  = document.getElementById('variants-modal-done-btn');
         if (variantsCloseBtn) variantsCloseBtn.addEventListener('click', window.closeVariantsModal);
         if (variantsDoneBtn)  variantsDoneBtn.addEventListener('click',  window.closeVariantsModal);
-        const variantsModal = document.getElementById('variants-modal');
-        if (variantsModal) {
-            variantsModal.addEventListener('click', (e) => {
-                if (e.target === variantsModal) window.closeVariantsModal();
-            });
-        }
-
         // Category tab add button
         const addCatTabBtn = document.getElementById('add-category-tab-btn');
         if (addCatTabBtn) addCatTabBtn.addEventListener('click', () => window.openCategoryEditModal());
@@ -1338,13 +1309,6 @@
         const catEditCancelBtn = document.getElementById('category-edit-cancel-btn');
         if (catEditCloseBtn)  catEditCloseBtn.addEventListener('click',  window.closeCategoryEditModal);
         if (catEditCancelBtn) catEditCancelBtn.addEventListener('click', window.closeCategoryEditModal);
-        const catEditModal = document.getElementById('category-edit-modal');
-        if (catEditModal) {
-            catEditModal.addEventListener('click', (e) => {
-                if (e.target === catEditModal) window.closeCategoryEditModal();
-            });
-        }
-
         // Unit tab add button
         const addUnitTabBtn = document.getElementById('add-unit-tab-btn');
         if (addUnitTabBtn) addUnitTabBtn.addEventListener('click', () => window.openUnitEditModal());
@@ -1354,13 +1318,6 @@
         const unitEditCancelBtn = document.getElementById('unit-edit-cancel-btn');
         if (unitEditCloseBtn)  unitEditCloseBtn.addEventListener('click',  window.closeUnitEditModal);
         if (unitEditCancelBtn) unitEditCancelBtn.addEventListener('click', window.closeUnitEditModal);
-        const unitEditModal = document.getElementById('unit-edit-modal');
-        if (unitEditModal) {
-            unitEditModal.addEventListener('click', (e) => {
-                if (e.target === unitEditModal) window.closeUnitEditModal();
-            });
-        }
-
         // Gate tab add buttons based on write permissions
         const perms   = window.GpackPerms || {};
         const canEdit = perms.all_access || perms.products?.create || perms.products?.edit;

@@ -499,14 +499,6 @@
         const cancelBtn = document.getElementById('modal-cancel-btn');
         if (cancelBtn) cancelBtn.addEventListener('click', window.closeClientModal);
 
-        // Close modal on backdrop click
-        const modal = document.getElementById('client-modal');
-        if (modal) {
-            modal.addEventListener('click', (e) => {
-                if (e.target === modal) window.closeClientModal();
-            });
-        }
-
         await loadClients();
     }
 

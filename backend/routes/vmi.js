@@ -13,6 +13,7 @@ const db      = require('../db');
 const { getVatRate } = require('../utils/settings');
 const { success } = require('../utils/response');
 const authorize = require('../middleware/authorize');
+const { vmiDispatch, validateBody } = require('../utils/validators');
 
 // View permission: users with 'vmi_dispatch' view can access VMI routes
 router.use(authorize('vmi_dispatch', 'view'));
@@ -145,7 +146,7 @@ router.get('/branches', async (req, res) => {
 //   with_invoice     — boolean (default false)
 //   notes            — optional string
 //   delivery_date    — optional ISO date
-router.post('/dispatch', restrictWrite, async (req, res) => {
+router.post('/dispatch', restrictWrite, validateBody(vmiDispatch), async (req, res) => {
     const client = await db.pool.connect();
     try {
         const {
@@ -156,7 +157,7 @@ router.post('/dispatch', restrictWrite, async (req, res) => {
             with_invoice = false,
             notes        = '',
             delivery_date,
-        } = req.body;
+        } = req.validatedBody;
 
         if (!stock_client_id || !recipient_id || !warehouse_id || !Array.isArray(items) || !items.length) {
             return res.status(400).json({ error: 'stock_client_id, recipient_id, warehouse_id, items[] required' });

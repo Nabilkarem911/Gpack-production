@@ -6,6 +6,7 @@ const { success, error } = require('../utils/response');
 const { authenticate } = require('../middleware/authMiddleware');
 const authorize = require('../middleware/authorize');
 const { getVatRate } = require('../utils/settings');
+const { pendingPricingUpdate, validateBody } = require('../utils/validators');
 
 const router = express.Router();
 
@@ -534,9 +535,9 @@ router.get('/pending-pricing', authenticate, authorize(['admin', 'manager', 'sup
 // Body: { items: [{id, unit_price}], pricing_notes }
 // =============================================================================
 
-router.put('/pending-pricing/:id', authenticate, authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
+router.put('/pending-pricing/:id', authenticate, authorize(['admin', 'manager', 'super_admin']), validateBody(pendingPricingUpdate), async (req, res) => {
     const { id } = req.params;
-    const { items, pricing_notes } = req.body;
+    const { items, pricing_notes } = req.validatedBody;
 
     if (!Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ error: 'يجب إرسال قائمة الأسعار' });

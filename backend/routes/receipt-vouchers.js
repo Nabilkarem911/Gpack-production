@@ -10,6 +10,7 @@ const express = require('express');
 const router  = express.Router();
 const db      = require('../db');
 const authorize = require('../middleware/authorize');
+const { validateBody, receiptVoucherCreate, voucherCancel } = require('../utils/validators');
 
 router.use(authorize('receipt_voucher', 'view'));
 const restrictWrite  = authorize('receipt_voucher', 'create');
@@ -155,7 +156,7 @@ router.get('/:id', async (req, res) => {
 //   DR  cash_account_id           amount   (debit - نقدية/بنك)
 //   CR  Accounts Receivable 1300  amount   (credit - ذمم العملاء)
 // =============================================================================
-router.post('/', restrictWrite, async (req, res) => {
+router.post('/', restrictWrite, validateBody(receiptVoucherCreate), async (req, res) => {
     try {
         const {
             client_id,
@@ -165,7 +166,7 @@ router.post('/', restrictWrite, async (req, res) => {
             cash_account_id,
             voucher_date,
             description
-        } = req.body;
+        } = req.validatedBody;
 
         if (!client_id || !amount || !cash_account_id || !voucher_date) {
             return res.status(400).json({ error: 'client_id, amount, cash_account_id, voucher_date are required' });
@@ -299,12 +300,10 @@ router.post('/', restrictWrite, async (req, res) => {
 // POST /api/receipt-vouchers/:id/cancel
 // Cancel a posted receipt voucher (IMMUTABILITY RULE: reverse + new cancellation)
 // =============================================================================
-router.post('/:id/cancel', restrictDelete, async (req, res) => {
+router.post('/:id/cancel', restrictDelete, validateBody(voucherCancel), async (req, res) => {
     try {
         const { id } = req.params;
-        const { reason } = req.body;
-
-        // Pre-flight checks outside transaction
+        const { reason } = req.validatedBody;
         const origRes = await db.query(`
             SELECT av.*, c.name AS client_name
             FROM accounting_vouchers av

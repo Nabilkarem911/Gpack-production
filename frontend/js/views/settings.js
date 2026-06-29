@@ -288,9 +288,6 @@
         const termModal  = document.getElementById('settings-term-modal');
         if (termClose)  termClose.addEventListener('click',  window.closeSettingsTermModal);
         if (termCancel) termCancel.addEventListener('click', window.closeSettingsTermModal);
-        if (termModal)  termModal.addEventListener('click', (e) => {
-            if (e.target === termModal) window.closeSettingsTermModal();
-        });
     }
 
     // ==========================================================================

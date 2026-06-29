@@ -10,6 +10,7 @@ const express = require('express');
 const router  = express.Router();
 const db      = require('../db');
 const authorize = require('../middleware/authorize');
+const { validateBody, journalEntryCreate } = require('../utils/validators');
 
 router.use(authorize('journal_entry', 'view'));
 const restrictWrite  = authorize('journal_entry', 'create');
@@ -118,8 +119,8 @@ router.get('/:id', async (req, res) => {
 //   - SUM(debit) must equal SUM(credit)
 //   - Each line: either debit > 0 OR credit > 0, not both, not zero
 // =============================================================================
-router.post('/', restrictWrite, async (req, res) => {
-    const { voucher_date, description, lines } = req.body;
+router.post('/', restrictWrite, validateBody(journalEntryCreate), async (req, res) => {
+    const { voucher_date, description, lines } = req.validatedBody;
 
     // ── Validation ────────────────────────────────────────────────────────────
     if (!voucher_date)              return res.status(400).json({ error: 'تاريخ القيد مطلوب.' });

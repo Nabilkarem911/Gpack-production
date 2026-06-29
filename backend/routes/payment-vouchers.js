@@ -10,6 +10,7 @@ const express = require('express');
 const router  = express.Router();
 const db      = require('../db');
 const authorize = require('../middleware/authorize');
+const { validateBody, paymentVoucherCreate, voucherCancel } = require('../utils/validators');
 
 router.use(authorize('payment_voucher', 'view'));
 const restrictWrite  = authorize('payment_voucher', 'create');
@@ -164,7 +165,7 @@ router.get('/:id', async (req, res) => {
 // Double-entry for supplier: DR ذمم الموردين (2100) — CR نقدية/بنك
 // Double-entry for client:   DR ذمم العملاء  (1300) — CR نقدية/بنك  (إرجاع دفعة)
 // =============================================================================
-router.post('/', restrictWrite, async (req, res) => {
+router.post('/', restrictWrite, validateBody(paymentVoucherCreate), async (req, res) => {
     try {
         const {
             payee_type = 'supplier',
@@ -175,7 +176,7 @@ router.post('/', restrictWrite, async (req, res) => {
             voucher_date,
             description,
             purchase_invoice_id = null,
-        } = req.body;
+        } = req.validatedBody;
 
         if (!payee_id || !amount || !cash_account_id || !voucher_date) {
             return res.status(400).json({ error: 'payee_id, amount, cash_account_id, voucher_date are required' });
@@ -327,10 +328,10 @@ router.post('/', restrictWrite, async (req, res) => {
 // POST /api/payment-vouchers/:id/cancel
 // Cancel a posted payment voucher (IMMUTABILITY RULE: reverse + new cancellation)
 // =============================================================================
-router.post('/:id/cancel', restrictDelete, async (req, res) => {
+router.post('/:id/cancel', restrictDelete, validateBody(voucherCancel), async (req, res) => {
     try {
         const { id } = req.params;
-        const { reason } = req.body;
+        const { reason } = req.validatedBody;
 
         const origRes = await db.query(`
             SELECT av.*, s.company_name AS supplier_name

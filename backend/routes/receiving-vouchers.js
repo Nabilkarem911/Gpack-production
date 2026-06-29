@@ -10,6 +10,7 @@ const express = require('express');
 const router  = express.Router();
 const db      = require('../db');
 const authorize = require('../middleware/authorize');
+const { validateBody, receivingVoucherCreate } = require('../utils/validators');
 
 router.use(authorize('receiving', 'view'));
 const restrictWrite  = authorize('receiving', 'create');
@@ -123,8 +124,8 @@ router.get('/:id', async (req, res) => {
 //   - Add to warehouse_stock
 //   - Create accounting voucher if purchase invoice exists
 // =============================================================================
-router.post('/', restrictWrite, async (req, res) => {
-    const { receiving_date, supplier_id, purchase_invoice_id, manufacturer_order_id, warehouse_id, notes, items } = req.body;
+router.post('/', restrictWrite, validateBody(receivingVoucherCreate), async (req, res) => {
+    const { receiving_date, supplier_id, purchase_invoice_id, manufacturer_order_id, warehouse_id, notes, items } = req.validatedBody;
 
     // ── Validation ───────────────────────────────────────────────────────────
     if (!receiving_date) return res.status(400).json({ error: 'تاريخ الاستلام مطلوب.' });
