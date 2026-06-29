@@ -37,7 +37,7 @@ var tasksView = {
     // ─────────────────────────────────────────────────────────────────────────
     async _loadUsers() {
         try {
-            const response = await apiFetch('/api/users');
+            const response = await apiFetch('/api/users/list');
             this.users = response.data || response.users || [];
             this._populateUserDropdown();
         } catch (error) {

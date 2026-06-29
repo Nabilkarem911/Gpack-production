@@ -135,6 +135,23 @@ router.delete('/roles/:id', restrictToAdmin, async (req, res) => {
 });
 
 // =============================================================================
+// GET /api/users/list
+// Returns minimal user list (id + name only) for dropdowns — any authenticated user
+// =============================================================================
+
+router.get('/list', async (req, res) => {
+    try {
+        const result = await db.query(
+            `SELECT id, name FROM users WHERE status = 'active' ORDER BY name`
+        );
+        return success(res, result.rows);
+    } catch (error) {
+        console.error('Get users list error:', error);
+        return errorResponse(res, 'فشل في تحميل قائمة المستخدمين', 500);
+    }
+});
+
+// =============================================================================
 // GET /api/users
 // Returns all users with their roles
 // =============================================================================
