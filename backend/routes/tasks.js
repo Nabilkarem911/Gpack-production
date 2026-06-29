@@ -482,6 +482,14 @@ router.post('/:id/comments', authenticate, async (req, res) => {
 // =============================================================================
 router.get('/dashboard/summary', authenticate, async (req, res) => {
     try {
+        const userRole = req.user?.role?.toLowerCase() || '';
+        const isAdmin  = ['super_admin', 'admin', 'manager'].includes(userRole);
+        const userId   = req.user?.id;
+
+        const userFilter      = isAdmin ? '' : `WHERE assigned_to = $1`;
+        const userFilterAnd   = isAdmin ? '' : `AND t.assigned_to = $1`;
+        const filterParams    = isAdmin ? [] : [userId];
+
         // Get counts by status
         const countsResult = await db.query(`
             SELECT 
@@ -490,7 +498,8 @@ router.get('/dashboard/summary', authenticate, async (req, res) => {
                 COUNT(*) FILTER (WHERE status = 'pending' AND due_date < CURRENT_DATE) as overdue,
                 COUNT(*) as total
             FROM tasks
-        `);
+            ${userFilter}
+        `, filterParams);
         
         // Get today's and overdue tasks (max 5)
         const tasksResult = await db.query(`
@@ -501,12 +510,13 @@ router.get('/dashboard/summary', authenticate, async (req, res) => {
             LEFT JOIN users u ON u.id = t.assigned_to
             WHERE t.status = 'pending'
                 AND (t.due_date = CURRENT_DATE OR t.due_date < CURRENT_DATE)
+                ${userFilterAnd}
             ORDER BY 
                 CASE WHEN t.due_date < CURRENT_DATE THEN 0 ELSE 1 END,
                 t.priority = 'high' DESC,
                 t.due_date ASC
             LIMIT 5
-        `);
+        `, filterParams);
         
         res.json({
             counts: countsResult.rows[0],

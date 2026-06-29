@@ -18,9 +18,11 @@ router.use(authorize('dashboard', 'view'));
 function _getRoleInfo(req) {
     const userRole = req.user?.role?.toLowerCase() || '';
     const userId   = req.user?.id;
+    const perms    = req.user?.permissions || {};
     const isAdmin  = ['super_admin', 'admin', 'manager'].includes(userRole);
-    const isSalesRep = userRole === 'sales_rep';
-    const isWarehouse = userRole === 'warehouse';
+    const isSalesRep = userRole === 'sales_rep' || (!isAdmin && (perms.sales?.view === true));
+    const isWarehouse = ['warehouse', 'warehouse_keeper'].includes(userRole)
+        || (!isAdmin && !isSalesRep && (perms.warehouses?.view === true || perms.inventory?.view === true));
     return { userRole, userId, isAdmin, isSalesRep, isWarehouse };
 }
 
