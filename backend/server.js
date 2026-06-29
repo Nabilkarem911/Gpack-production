@@ -104,7 +104,7 @@ app.set('trust proxy', 1);
 // Login rate limiter - prevent brute force attacks
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: 50,
   message: { error: 'Too many login attempts. Please try again in 15 minutes.' },
   standardHeaders: true,
   legacyHeaders: false,
