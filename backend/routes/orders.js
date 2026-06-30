@@ -1533,7 +1533,7 @@ router.get('/:id/notes', async (req, res) => {
 // Adds a new chat note to an order.
 // Body: { message: string }
 // =============================================================================
-router.post('/:id/notes', restrictView, validateBody(orderNote), async (req, res) => {
+router.post('/:id/notes', validateBody(orderNote), async (req, res) => {
     try {
         const { id } = req.params;
         const { message } = req.validatedBody;
