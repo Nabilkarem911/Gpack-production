@@ -59,19 +59,29 @@ router.post('/quotations/:id/share', require('../middleware/authMiddleware').aut
         if (check.rows[0].status !== 'quote') return res.status(400).json({ error: 'يمكن مشاركة عروض الأسعار فقط.' });
 
         const plainToken = crypto.randomBytes(32).toString('hex');
-        const encrypted  = encryptToken(plainToken);
-        const tokenHash  = hashToken(plainToken);
         const expiresAt  = new Date(Date.now() + expiresDays * 24 * 60 * 60 * 1000);
+
+        let storedToken = plainToken;
+        let tokenHash;
+        try {
+            storedToken = encryptToken(plainToken);
+            tokenHash   = hashToken(plainToken);
+        } catch (cryptoErr) {
+            console.error('[PublicQuotation] Crypto error (SHARE_TOKEN_SECRET missing or invalid):', cryptoErr.message);
+            const hmac = crypto.createHmac('sha256', plainToken).digest('hex');
+            tokenHash   = hmac;
+            storedToken = plainToken;
+        }
 
         await db.query(
             `UPDATE orders SET share_token = $1, share_token_hash = $2, token_expires_at = $3, updated_at = NOW() WHERE id = $4`,
-            [encrypted, tokenHash, expiresAt, id]
+            [storedToken, tokenHash, expiresAt, id]
         );
 
         return success(res, { token: plainToken, expires_at: expiresAt });
     } catch (err) {
         console.error('[PublicQuotation] share error:', err.message);
-        return res.status(500).json({ error: 'Internal server error.' });
+        return res.status(500).json({ error: 'تعذّر إنشاء رابط المشاركة. تأكد من إعداد SHARE_TOKEN_SECRET في ملف .env' });
     }
 });
 
@@ -82,26 +92,11 @@ router.post('/quotations/:id/share', require('../middleware/authMiddleware').aut
 router.get('/quotation/:token', async (req, res) => {
     const { token } = req.params;
     try {
-        const tokenHash = hashToken(token);
-        let result = await db.query(
-            `SELECT
-                o.id, o.order_number, o.order_date, o.valid_until, o.status,
-                o.subtotal, o.tax_rate, o.tax_amount, o.grand_total,
-                o.client_notes, o.terms_conditions, o.custom_terms,
-                o.down_payment_required,
-                o.client_response, o.rejection_reason, o.responded_at,
-                o.token_expires_at,
-                c.name  AS client_name,
-                c.phone AS client_phone,
-                c.email AS client_email
-             FROM orders o
-             LEFT JOIN clients c ON c.id = o.client_id
-             WHERE o.share_token_hash = $1`,
-            [tokenHash]
-        );
+        let tokenHash = null;
+        try { tokenHash = hashToken(token); } catch (_e) { /* SECRET missing — fallback to plaintext */ }
 
-        // Backward-compatible fallback: plaintext token stored before migration
-        if (result.rowCount === 0) {
+        let result = null;
+        if (tokenHash) {
             result = await db.query(
                 `SELECT
                     o.id, o.order_number, o.order_date, o.valid_until, o.status,
@@ -115,8 +110,28 @@ router.get('/quotation/:token', async (req, res) => {
                     c.email AS client_email
                  FROM orders o
                  LEFT JOIN clients c ON c.id = o.client_id
-                 WHERE o.share_token = $2`,
-                [tokenHash, token]
+                 WHERE o.share_token_hash = $1`,
+                [tokenHash]
+            );
+        }
+
+        // Backward-compatible fallback: plaintext token stored before migration or when SECRET was missing
+        if (!result || result.rowCount === 0) {
+            result = await db.query(
+                `SELECT
+                    o.id, o.order_number, o.order_date, o.valid_until, o.status,
+                    o.subtotal, o.tax_rate, o.tax_amount, o.grand_total,
+                    o.client_notes, o.terms_conditions, o.custom_terms,
+                    o.down_payment_required,
+                    o.client_response, o.rejection_reason, o.responded_at,
+                    o.token_expires_at,
+                    c.name  AS client_name,
+                    c.phone AS client_phone,
+                    c.email AS client_email
+                 FROM orders o
+                 LEFT JOIN clients c ON c.id = o.client_id
+                 WHERE o.share_token = $1`,
+                [token]
             );
         }
 
@@ -168,13 +183,18 @@ router.post('/quotation/:token/respond', upload.single('receipt'), async (req, r
     }
 
     try {
-        const tokenHash = hashToken(token);
-        let result = await db.query(
-            `SELECT id, status, client_response, token_expires_at FROM orders WHERE share_token_hash = $1`,
-            [tokenHash]
-        );
+        let tokenHash = null;
+        try { tokenHash = hashToken(token); } catch (_e) { /* SECRET missing */ }
+
+        let result = null;
+        if (tokenHash) {
+            result = await db.query(
+                `SELECT id, status, client_response, token_expires_at FROM orders WHERE share_token_hash = $1`,
+                [tokenHash]
+            );
+        }
         // Backward-compatible fallback
-        if (result.rowCount === 0) {
+        if (!result || result.rowCount === 0) {
             result = await db.query(
                 `SELECT id, status, client_response, token_expires_at FROM orders WHERE share_token = $1`,
                 [token]

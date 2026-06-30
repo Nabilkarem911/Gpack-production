@@ -45,7 +45,7 @@
 
     const MO_STATUS_CFG = {
         pending:   { label: 'معلق',        cls: 'bg-amber-100 text-amber-700' },
-        ordered:   { label: 'مُرسل',       cls: 'bg-blue-100 text-blue-700' },
+        sent:      { label: 'مُرسل',       cls: 'bg-blue-100 text-blue-700' },
         received:  { label: 'مُستلم',      cls: 'bg-emerald-100 text-emerald-700' },
         cancelled: { label: 'ملغي',        cls: 'bg-red-100 text-red-600' },
     };
@@ -291,7 +291,7 @@
 
         // MO list
         const moListHTML = _hubMOs.map(mo => {
-            const canReceive = mo.status === 'ordered';
+            const canReceive = mo.status === 'sent';
             const canMarkOrdered = mo.status === 'pending';
             return `<div class="bg-white border border-slate-200 rounded-xl p-4">
                 <div class="flex items-center justify-between mb-2">
@@ -306,7 +306,7 @@
                                 title="تحميل ملف الطباعة">
                                 <i class="fa-solid fa-file-pdf"></i> ملف الطباعة
                         </button>
-                        ${canMarkOrdered ? `<button onclick="window.poView.updateMOStatus('${mo.id}','ordered')"
+                        ${canMarkOrdered ? `<button onclick="window.poView.updateMOStatus('${mo.id}','sent')"
                                 class="px-3 py-1.5 bg-blue-100 hover:bg-blue-200 text-blue-700 text-xs font-bold rounded-lg transition-all">
                                 <i class="fa-solid fa-paper-plane"></i> تم الإرسال
                             </button>` : ''}

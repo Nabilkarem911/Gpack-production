@@ -27,3 +27,16 @@ backend/scripts/run-migration.js
 
 #Ignore vscode AI rules
 .github\instructions\codacy.instructions.md
+_build_loan_pdf.js
+_gen_images.js
+_gen_standalone.js
+old site/ادوية.png
+old site/كراتين.png
+old site/صور المعدات/جهاز 1.png
+old site/صور المعدات/جهاز 2.png
+old site/صور المعدات/لقطة شاشة 2026-06-28 185550.png
+old site/صور المعدات/لقطة شاشة 2026-06-28 190010.png
+old site/صور المعدات/لقطة شاشة 2026-06-28 190125.png
+old site/صور المعدات/لقطة شاشة 2026-06-28 190156.png
+loan_editor.html
+loan_images.json

@@ -51,8 +51,8 @@
 
     const MO_STATUS_CFG = {
         pending:   { label: 'معلق',         cls: 'bg-amber-100 text-amber-700' },
-        ordered:   { label: 'مُرسل',        cls: 'bg-blue-100 text-blue-700' },
-        partial:   { label: 'استلام جزئي',  cls: 'bg-orange-100 text-orange-700' },
+        sent:      { label: 'مُرسل',        cls: 'bg-blue-100 text-blue-700' },
+        partially_received: { label: 'استلام جزئي',  cls: 'bg-orange-100 text-orange-700' },
         received:  { label: 'مُستلم بالكامل', cls: 'bg-emerald-100 text-emerald-700' },
         cancelled: { label: 'ملغي',         cls: 'bg-red-100 text-red-600' },
     };
@@ -161,8 +161,8 @@
         // Receiving status config
         const RECV_CFG = {
             none:    { label: '—',       cls: 'text-slate-400',         icon: '' },
-            ordered: { label: 'مُرسَل', cls: 'bg-amber-100 text-amber-700', icon: 'fa-paper-plane' },
-            partial: { label: 'جزئي',  cls: 'bg-blue-100 text-blue-700',   icon: 'fa-truck-ramp-box' },
+            sent:    { label: 'مُرسَل', cls: 'bg-amber-100 text-amber-700', icon: 'fa-paper-plane' },
+            partially_received: { label: 'جزئي',  cls: 'bg-blue-100 text-blue-700',   icon: 'fa-truck-ramp-box' },
             full:    { label: 'كامل',  cls: 'bg-emerald-100 text-emerald-700', icon: 'fa-check-circle' }
         };
 
@@ -378,11 +378,11 @@
         moEmptyEl?.classList.add('hidden');
 
         moListEl.innerHTML = _hubMOs.map(mo => {
-            const canReceive    = ['ordered','partial'].includes(mo.status);
+            const canReceive    = ['sent','partially_received'].includes(mo.status);
             const canMarkOrdered= mo.status === 'pending';
-            const canEditMO     = mo.status === 'pending'; // Can edit if pending
-            const canRevertSend = mo.status === 'ordered';
-            const canCancelMO   = ['pending', 'ordered'].includes(mo.status); // Can cancel if not received
+            const canEditMO     = mo.status === 'pending';
+            const canRevertSend = mo.status === 'sent';
+            const canCancelMO   = ['pending', 'sent'].includes(mo.status);
             
             // Calculate receive status color
             const totalQty = (mo.items || []).reduce((s, i) => s + parseFloat(i.mo_quantity || i.po_quantity || 0), 0);
@@ -443,7 +443,7 @@
                                </button>`
                             : ''}
                         ${canMarkOrdered
-                            ? `<button onclick="window.poView.updateMOStatus('${mo.id}','ordered')"
+                            ? `<button onclick="window.poView.updateMOStatus('${mo.id}','sent')"
                                        class="px-3 py-1.5 bg-blue-100 hover:bg-blue-200 text-blue-700 text-xs font-bold rounded-lg transition-all flex items-center gap-1">
                                    <i class="fa-solid fa-paper-plane"></i> تم الإرسال للمورد
                                </button>`
@@ -1074,7 +1074,7 @@
         if (!mo) { _toast('أمر المورد غير موجود', 'error'); return; }
         
         // Check if can cancel
-        if (!['pending', 'ordered'].includes(mo.status)) {
+        if (!['pending', 'sent'].includes(mo.status)) {
             _toast('لا يمكن الإلغاء إلا للأوامر المعلقة أو المرسلة', 'error');
             return;
         }
@@ -2730,6 +2730,59 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         if (searchEl) searchEl.addEventListener('input', _renderTable);
     }
 
+    // ── Quick Add Supplier ─────────────────────────────────────────────────────
+    function _openQuickSupplierModal() {
+        _setVal('qs-name', '');
+        _setVal('qs-type', 'manufacturer');
+        _setVal('qs-contact', '');
+        _setVal('qs-phone', '');
+        _showModal('po-quick-supplier-modal');
+    }
+
+    async function _saveQuickSupplier() {
+        const name    = _el('qs-name')?.value?.trim();
+        const type    = _el('qs-type')?.value || 'manufacturer';
+        const contact = _el('qs-contact')?.value?.trim() || null;
+        const phone   = _el('qs-phone')?.value?.trim() || null;
+
+        if (!name) { _toast('اسم المورد مطلوب', 'error'); return; }
+
+        try {
+            const res = await window.apiFetch('/api/suppliers', {
+                method: 'POST',
+                body: { name, type, contact_person: contact, phone },
+            });
+
+            if (res?.data) {
+                _suppliers.unshift(res.data);
+                const newId = res.data.id;
+
+                const assignSel = _el('assign-supplier-select');
+                if (assignSel) {
+                    const opt = document.createElement('option');
+                    opt.value = newId;
+                    opt.textContent = res.data.company_name || res.data.name;
+                    assignSel.appendChild(opt);
+                    assignSel.value = newId;
+                }
+
+                const bulkSel = _el('bulk-supplier-select');
+                if (bulkSel) {
+                    const opt = document.createElement('option');
+                    opt.value = newId;
+                    opt.textContent = res.data.company_name || res.data.name;
+                    bulkSel.appendChild(opt);
+                    bulkSel.value = newId;
+                }
+
+                _hideModal('po-quick-supplier-modal');
+                _toast('تم إضافة المورد بنجاح');
+            }
+        } catch (err) {
+            _toast(err.message || 'فشل إضافة المورد', 'error');
+        }
+    }
+
     // ── Public API ─────────────────────────────────────────────────────────────
     window.poView = {
         reload:             _loadOrders,
@@ -2791,6 +2844,10 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         _onDesignFileSelected: _onDesignFileSelected,
         _clearDesignFile:      _clearDesignFile,
         _uploadDesign:         _uploadDesign,
+        // Quick add supplier
+        openQuickSupplierModal:  _openQuickSupplierModal,
+        closeQuickSupplierModal: () => _hideModal('po-quick-supplier-modal'),
+        saveQuickSupplier:       _saveQuickSupplier,
     };
 
     _init();

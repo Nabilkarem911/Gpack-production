@@ -544,39 +544,37 @@ router.put('/pending-pricing/:id', authenticate, authorize(['admin', 'manager', 
     }
 
     try {
-        await db.query('BEGIN');
-
-        // Update each item price (line_total is GENERATED — auto-calculates)
-        for (const item of items) {
-            if (item.id && item.unit_price !== undefined) {
-                await db.query(
-                    `UPDATE order_items 
-                     SET unit_price = $1
-                     WHERE id = $2 AND order_id = $3`,
-                    [item.unit_price, item.id, id]
-                );
-            }
-        }
-
         const fallbackVatRate = await getVatRate();
 
-        // Recalculate order totals
-        await db.query(
-            `UPDATE orders
-             SET subtotal = (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE order_id = $1),
-                 tax_amount = (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE order_id = $1) * COALESCE(tax_rate, $3),
-                 grand_total = (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE order_id = $1) * (1 + COALESCE(tax_rate, $3)),
-                 pricing_status = 'priced',
-                 pricing_notes = COALESCE($2, pricing_notes),
-                 updated_at = NOW()
-             WHERE id = $1`,
-            [id, pricing_notes || null, fallbackVatRate]
-        );
+        await db.withTransaction(async (client) => {
+            // Update each item price (line_total is GENERATED — auto-calculates)
+            for (const item of items) {
+                if (item.id && item.unit_price !== undefined) {
+                    await client.query(
+                        `UPDATE order_items 
+                         SET unit_price = $1
+                         WHERE id = $2 AND order_id = $3`,
+                        [item.unit_price, item.id, id]
+                    );
+                }
+            }
 
-        await db.query('COMMIT');
+            // Recalculate order totals
+            await client.query(
+                `UPDATE orders
+                 SET subtotal = (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE order_id = $1),
+                     tax_amount = (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE order_id = $1) * COALESCE(tax_rate, $3),
+                     grand_total = (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE order_id = $1) * (1 + COALESCE(tax_rate, $3)),
+                     pricing_status = 'priced',
+                     pricing_notes = COALESCE($2, pricing_notes),
+                     updated_at = NOW()
+                 WHERE id = $1`,
+                [id, pricing_notes || null, fallbackVatRate]
+            );
+        });
+
         return success(res, { message: 'تم تحديث الأسعار بنجاح' });
     } catch (err) {
-        await db.query('ROLLBACK');
         console.error('Update pricing error:', err);
         return res.status(500).json({ error: 'فشل في تحديث الأسعار' });
     }

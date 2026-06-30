@@ -1429,24 +1429,14 @@
             }
         } else if (dpAmount > 0 && pmMethod === 'bank_transfer') {
             const bankAccount = document.getElementById('convert-bank-account')?.value || '';
-            const bankRef = document.getElementById('convert-bank-ref')?.value || '';
             if (!bankAccount) {
                 _showConvertError('يرجى اختيار الحساب البنكي.');
                 return;
             }
-            if (!bankRef) {
-                _showConvertError('يرجى إدخال رقم الحوالة / المرجع.');
-                return;
-            }
         } else if (dpAmount > 0 && pmMethod === 'pos') {
             const posTerminal = document.getElementById('convert-pos-terminal')?.value || '';
-            const posRef = document.getElementById('convert-pos-ref')?.value || '';
             if (!posTerminal) {
                 _showConvertError('يرجى اختيار جهاز نقاط البيع.');
-                return;
-            }
-            if (!posRef) {
-                _showConvertError('يرجى إدخال رقم عملية نقاط البيع.');
                 return;
             }
         }
@@ -1730,9 +1720,19 @@
 
             if (res && res.data) {
                 const savedId = res.data.id || _editingId;
+                const savedNumber = res.data.order_number;
+                if (savedNumber) {
+                    const numLabel = document.getElementById('quote-modal-number');
+                    if (numLabel) {
+                        numLabel.textContent = `#${savedNumber}`;
+                        numLabel.classList.remove('hidden');
+                    }
+                }
                 await loadQuotes();
                 window.openQuoteModal(savedId, true);
-                window.showToast('\u062a\u0645 \u0627\u0644\u062d\u0641\u0638 \u0628\u0646\u062c\u0627\u062d\u060c \u064a\u0645\u0643\u0646\u0643 \u0627\u0644\u0622\u0646 \u0637\u0628\u0627\u0639\u0629 \u0627\u0644\u0639\u0631\u0636.', 'success');
+                window.showToast(savedNumber
+                    ? `تم الحفظ بنجاح — رقم العرض: #${savedNumber}`
+                    : 'تم الحفظ بنجاح، يمكنك الآن طباعة العرض.', 'success');
             }
         } catch (err) {
             _showFormError(err.message || 'حدث خطأ غير متوقع. حاول مرة أخرى.');

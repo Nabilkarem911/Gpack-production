@@ -401,7 +401,7 @@ router.patch('/:id/status', restrictEdit, validateBody(manufacturerOrderStatusUp
     const { id } = req.params;
     const { status, actual_delivery } = req.validatedBody;
 
-    const VALID_STATUSES = ['pending', 'ordered', 'received', 'cancelled'];
+    const VALID_STATUSES = ['pending', 'sent', 'partially_received', 'received', 'cancelled'];
 
     if (!status || !VALID_STATUSES.includes(status)) {
         return res.status(400).json({
@@ -423,8 +423,9 @@ router.patch('/:id/status', restrictEdit, validateBody(manufacturerOrderStatusUp
 
             // Validate transition
             const validTransitions = {
-                'pending': ['ordered', 'cancelled'],
-                'ordered': ['received', 'cancelled'],
+                'pending': ['sent', 'cancelled'],
+                'sent': ['partially_received', 'received', 'cancelled'],
+                'partially_received': ['received', 'cancelled'],
                 'received': [],
                 'cancelled': ['pending']
             };
@@ -713,7 +714,7 @@ router.delete('/:id/receipts/:sessionId', restrictDelete, async (req, res) => {
                 [id]
             );
             const anyReceived = itemsStatusRes.rows.some(r => parseFloat(r.received_qty) > 0);
-            const newStatus = anyReceived ? 'partial' : 'ordered';
+            const newStatus = anyReceived ? 'partially_received' : 'sent';
             await client.query(
                 `UPDATE manufacturer_orders SET status = $1, updated_at = NOW() WHERE id = $2`,
                 [newStatus, id]
@@ -892,7 +893,7 @@ router.post('/:id/receive', restrictEdit, validateBody(manufacturerOrderReceive)
                 r => parseFloat(r.received_qty) >= parseFloat(r.mo_quantity)
             );
             const anyReceived = updatedItemsRes.rows.some(r => parseFloat(r.received_qty) > 0);
-            const newStatus = allFull ? 'received' : anyReceived ? 'partial' : mo.status;
+            const newStatus = allFull ? 'received' : anyReceived ? 'partially_received' : mo.status;
 
             await client.query(
                 `UPDATE manufacturer_orders SET status = $1, has_supplier_invoice = $2, updated_at = NOW() WHERE id = $3`,
@@ -1385,7 +1386,7 @@ router.post('/:id/revert-send', restrictEdit, async (req, res) => {
         const mo = moRes.rows[0];
         
         // Only allow revert if status is 'ordered'
-        if (mo.status !== 'ordered') {
+        if (mo.status !== 'sent') {
             await client.query('ROLLBACK');
             return res.status(400).json({ message: 'لا يمكن التراجع إلا إذا كان الأمر في حالة "تم الإرسال"' });
         }
@@ -1444,7 +1445,7 @@ router.delete('/:id', restrictDelete, async (req, res) => {
         const mo = moRes.rows[0];
         
         // Only allow cancel if status is 'pending' or 'ordered' AND nothing received
-        if (!['pending', 'ordered'].includes(mo.status)) {
+        if (!['pending', 'sent'].includes(mo.status)) {
             await client.query('ROLLBACK');
             return res.status(400).json({ message: 'لا يمكن الإلغاء إلا للأوامر المعلقة أو المرسلة' });
         }

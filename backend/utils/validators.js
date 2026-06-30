@@ -40,11 +40,13 @@ const orderCreate = z.object({
     valid_until: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     client_notes: z.string().max(2000).optional().nullable(),
     internal_notes: z.string().max(2000).optional().nullable(),
-    terms_conditions: z.string().max(5000).optional().nullable(),
-    custom_terms: z.string().max(5000).optional().nullable(),
-    down_payment_required: z.boolean().optional(),
+    terms_conditions: z.any().optional().nullable(),
+    custom_terms: z.any().optional().nullable(),
+    down_payment_required: z.any().optional(),
+    pricing_status: z.string().optional().nullable(),
     items: z.array(z.object({
-        variant_id: z.string().uuid(),
+        variant_id: z.string().uuid().optional(),
+        product_variant_id: z.string().uuid().optional(),
         quantity: z.coerce.number().int().positive(),
         unit_price: z.coerce.number().min(0).optional(),
         discount_percent: z.coerce.number().min(0).max(100).optional().default(0),
@@ -240,7 +242,7 @@ const manufacturerOrderCreate = z.object({
 }).passthrough();
 
 const manufacturerOrderStatusUpdate = z.object({
-    status: z.enum(['pending', 'ordered', 'received', 'cancelled']),
+    status: z.enum(['pending', 'sent', 'partially_received', 'received', 'cancelled']),
     actual_delivery: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
 });
 
@@ -487,11 +489,13 @@ const orderUpdate = z.object({
     valid_until: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
     client_notes: z.string().max(2000).optional().nullable(),
     internal_notes: z.string().max(2000).optional().nullable(),
-    terms_conditions: z.string().max(5000).optional().nullable(),
-    custom_terms: z.string().max(5000).optional().nullable(),
-    down_payment_required: z.boolean().optional(),
+    terms_conditions: z.any().optional().nullable(),
+    custom_terms: z.any().optional().nullable(),
+    down_payment_required: z.any().optional(),
+    pricing_status: z.string().optional().nullable(),
     items: z.array(z.object({
-        variant_id: z.string().uuid(),
+        variant_id: z.string().uuid().optional(),
+        product_variant_id: z.string().uuid().optional(),
         quantity: z.coerce.number().int().positive(),
         unit_price: z.coerce.number().min(0).optional(),
         discount_percent: z.coerce.number().min(0).max(100).optional().default(0),
