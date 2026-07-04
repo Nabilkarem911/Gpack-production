@@ -2707,7 +2707,7 @@
             previewImg.src = thumbnailUrl;
             previewImg.alt = isReprint ? 'آخر تصميم' : (selectedOption?.dataset?.name || '');
             previewImg.onerror = function() {
-                this.src = '/images/design-placeholder.png';
+                this.src = 'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 200 200\'%3E%3Crect fill=\'%23e2e8f0\' width=\'200\' height=\'200\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\' fill=\'%2394a3b8\' font-size=\'14\' font-family=\'sans-serif\'%3Eلا يوجد تصميم%3C/text%3E%3C/svg%3E';
             };
         }
         if (previewText) {
@@ -2778,7 +2778,7 @@
             designs.forEach((d, idx) => {
                 const isSelected = String(d.id) === String(currentDesignId);
                 const isLatest = idx === 0;
-                const thumbUrl = d.thumbnail_url || '/images/design-placeholder.png';
+                const thumbUrl = d.thumbnail_url || 'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 200 200\'%3E%3Crect fill=\'%23e2e8f0\' width=\'200\' height=\'200\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\' fill=\'%2394a3b8\' font-size=\'14\' font-family=\'sans-serif\'%3Eلا يوجد تصميم%3C/text%3E%3C/svg%3E';
                 const designName = d.design_name || `تصميم ${d.design_number || (idx + 1)}`;
                 const dateStr = d.created_at ? new Date(d.created_at).toLocaleDateString('en-GB') : '';
 
@@ -2793,7 +2793,7 @@
                     <div class="relative w-full h-32 bg-slate-100 overflow-hidden">
                         <img src="${thumbUrl}" alt="${designName}" 
                              class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                             onerror="this.src='/images/design-placeholder.png'">
+                             onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 200 200\'%3E%3Crect fill=\'%23e2e8f0\' width=\'200\' height=\'200\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\' fill=\'%2394a3b8\' font-size=\'14\' font-family=\'sans-serif\'%3Eلا يوجد تصميم%3C/text%3E%3C/svg%3E'">
                         ${isLatest ? '<span class="absolute top-2 left-2 px-2 py-0.5 bg-amber-500 text-white text-[9px] font-bold rounded-full shadow">الأحدث</span>' : ''}
                         ${isSelected ? '<span class="absolute top-2 right-2 w-6 h-6 bg-brand-500 text-white rounded-full flex items-center justify-center shadow"><i class="fa-solid fa-check text-xs"></i></span>' : ''}
                         <!-- Zoom overlay -->
