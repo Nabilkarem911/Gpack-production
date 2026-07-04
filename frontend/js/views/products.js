@@ -73,7 +73,7 @@
             if (el) el.value = '';
         });
 
-        const selFields = ['product-category', 'product-status', 'variant-unit'];
+        const selFields = ['product-category', 'product-status', 'product-unit'];
         selFields.forEach(id => {
             const el = document.getElementById(id);
             if (el) {
@@ -225,7 +225,7 @@
             _units = [];
         }
 
-        const sel = document.getElementById('variant-unit');
+        const sel = document.getElementById('product-unit');
         if (!sel) return;
         sel.innerHTML = '<option value="">— بدون وحدة —</option>';
         _units.forEach(u => {
@@ -460,6 +460,15 @@
 
         _resetVariantForm();
         _populateVfUnit();
+
+        // Auto-inherit unit_id from the product's first existing variant
+        if (product && Array.isArray(product.variants) && product.variants.length > 0) {
+            const inheritedUnitId = product.variants[0].unit_id || null;
+            if (inheritedUnitId) {
+                const vfUnit = document.getElementById('vf-unit');
+                if (vfUnit) vfUnit.value = inheritedUnitId;
+            }
+        }
 
         // Show modal immediately with spinner
         const modal = document.getElementById('variants-modal');
@@ -852,7 +861,7 @@
                 {
                     size_name:       sizeName,
                     sku:             (document.getElementById('variant-sku')?.value || '').trim() || null,
-                    unit_id:         document.getElementById('variant-unit')?.value          || null,
+                    unit_id:         document.getElementById('product-unit')?.value          || null,
                     cost_price:      parseFloat(document.getElementById('variant-cost-price')?.value)    || 0,
                     selling_price:   parseFloat(document.getElementById('variant-selling-price')?.value) || 0,
                     min_stock_level: parseInt(document.getElementById('variant-min-stock')?.value, 10)   || 0,
