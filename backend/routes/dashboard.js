@@ -191,13 +191,13 @@ router.get('/alerts', authenticate, async (req, res) => {
             const pendingReceivingResult = await db.query(
                 `SELECT
                     mo.id as mo_id,
-                    mo.po_number,
+                    mo.mo_number AS po_number,
                     mo.status,
                     mo.created_at,
-                    s.name as supplier_name,
+                    s.company_name AS supplier_name,
                     EXTRACT(DAY FROM NOW() - mo.created_at) as days_pending
                  FROM manufacturer_orders mo
-                 LEFT JOIN suppliers s ON mo.supplier_id = s.id
+                 LEFT JOIN suppliers s ON s.id = mo.manufacturer_id
                  WHERE mo.status IN ('sent', 'partially_received')
                  ORDER BY mo.created_at ASC
                  LIMIT 5`

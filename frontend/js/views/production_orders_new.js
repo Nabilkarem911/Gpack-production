@@ -2750,7 +2750,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         try {
             const res = await window.apiFetch('/api/suppliers', {
                 method: 'POST',
-                body: { name, type, contact_person: contact, phone },
+                body: { company_name: name, supplier_type: type, contact_person: contact, phone },
             });
 
             if (res?.data) {
