@@ -96,13 +96,13 @@ router.get('/stats', authenticate, async (req, res) => {
         let moQuery = `SELECT
                 COUNT(*) FILTER (WHERE status = 'pending') as pending_mo,
                 COUNT(*) FILTER (WHERE status = 'sent') as sent_mo,
-                COUNT(*) FILTER (WHERE status = 'received') as received_mo
-             FROM manufacturer_orders
-             WHERE created_at >= $1`;
-        if (isSalesRep || isWarehouse) {
-            moQuery = `SELECT 0 as pending_mo, 0 as sent_mo, 0 as received_mo`;
+                COUNT(*) FILTER (WHERE status = 'received') as received_mo,
+                COUNT(*) FILTER (WHERE status IN ('pending','sent','partially_received')) as awaiting_receiving
+             FROM manufacturer_orders`;
+        if (isSalesRep) {
+            moQuery = `SELECT 0 as pending_mo, 0 as sent_mo, 0 as received_mo, 0 as awaiting_receiving`;
         }
-        const manufacturerOrdersResult = await db.query(moQuery, isSalesRep || isWarehouse ? [] : [startOfMonthStr]);
+        const manufacturerOrdersResult = await db.query(moQuery, isSalesRep ? [] : []);
 
         // 7. Quotations Count
         const quotationsResult = await db.query(
@@ -131,7 +131,8 @@ router.get('/stats', authenticate, async (req, res) => {
             manufacturer_orders: {
                 pending: parseInt(manufacturerOrdersResult.rows[0]?.pending_mo || 0),
                 sent: parseInt(manufacturerOrdersResult.rows[0]?.sent_mo || 0),
-                received: parseInt(manufacturerOrdersResult.rows[0]?.received_mo || 0)
+                received: parseInt(manufacturerOrdersResult.rows[0]?.received_mo || 0),
+                awaiting_receiving: parseInt(manufacturerOrdersResult.rows[0]?.awaiting_receiving || 0)
             }
         };
 
@@ -184,8 +185,35 @@ router.get('/alerts', authenticate, async (req, res) => {
             });
         }
 
-        // Warehouse / Admin: low stock + out of stock
+        // Warehouse / Admin: low stock + out of stock + pending receiving
         if (isWarehouse || isAdmin) {
+            // 0. Pending Receiving (manufacturer orders sent to suppliers)
+            const pendingReceivingResult = await db.query(
+                `SELECT
+                    mo.id as mo_id,
+                    mo.po_number,
+                    mo.status,
+                    mo.created_at,
+                    s.name as supplier_name,
+                    EXTRACT(DAY FROM NOW() - mo.created_at) as days_pending
+                 FROM manufacturer_orders mo
+                 LEFT JOIN suppliers s ON mo.supplier_id = s.id
+                 WHERE mo.status IN ('sent', 'partially_received')
+                 ORDER BY mo.created_at ASC
+                 LIMIT 5`
+            );
+
+            pendingReceivingResult.rows.forEach(row => {
+                alerts.push({
+                    type: 'pending_receiving',
+                    severity: row.days_pending > 7 ? 'critical' : 'warning',
+                    title: `بضاعة منتظر استلامها: ${row.po_number || row.mo_id}`,
+                    message: `المورد: ${row.supplier_name || 'غير محدد'} - منذ ${Math.floor(row.days_pending)} يوم`,
+                    mo_id: row.mo_id,
+                    created_at: row.created_at
+                });
+            });
+
             // 1. Low Stock Alerts
             const lowStockResult = await db.query(
                 `SELECT

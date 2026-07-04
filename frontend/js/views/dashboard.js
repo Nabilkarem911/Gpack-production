@@ -74,13 +74,48 @@ const dashboardView = {
             this._updateStat('stat-orders', data.orders_count || 0);
             this._updateStat('stat-revenue', this._formatCurrency(data.total_revenue || 0));
             this._updateStat('stat-receivables', this._formatCurrency(data.outstanding_receivables || 0));
-            
+
+            const mo = data.manufacturer_orders || {};
+            const pendingReceiving = mo.awaiting_receiving || ((mo.sent || 0) + (mo.pending || 0));
+            this._updateStat('stat-pending-receiving', pendingReceiving);
+            this._renderReceivingAlertBanner(pendingReceiving);
+
             console.log('[Dashboard] Stats loaded successfully');
         } catch (error) {
             console.error('[Dashboard] Failed to load stats:', error);
             // Try to load basic counts from other endpoints
             await this._loadFallbackStats();
         }
+    },
+
+    _renderReceivingAlertBanner(pendingCount) {
+        const container = document.getElementById('receiving-alert-banner');
+        if (!container) return;
+
+        if (pendingCount === 0) {
+            container.innerHTML = '';
+            return;
+        }
+
+        container.innerHTML = `
+            <div class="bg-amber-500 rounded-2xl p-4 mb-6 text-white shadow-lg shadow-amber-200">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
+                            <i class="fa-solid fa-truck-ramp-box text-xl"></i>
+                        </div>
+                        <div>
+                            <h4 class="font-bold text-lg">${pendingCount} أمر تشغيل بانتظار الاستلام</h4>
+                            <p class="text-white/80 text-sm">يوجد بضاعة مرسلة للموردين بانتظار اعتماد الاستلام</p>
+                        </div>
+                    </div>
+                    <button onclick="window.navigateTo('receiving-vouchers')"
+                            class="px-4 py-2 bg-white text-slate-800 rounded-lg font-medium hover:bg-slate-100 transition-colors">
+                        استلام البضاعة
+                    </button>
+                </div>
+            </div>
+        `;
     },
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1089,8 +1124,12 @@ const dashboardView = {
             const icon = alert.severity === 'critical' ? 'fa-circle-exclamation' :
                           alert.severity === 'warning' ? 'fa-triangle-exclamation' : 'fa-info-circle';
 
+            const onClickAttr = alert.type === 'pending_receiving'
+                ? 'onclick="window.navigateTo(\'receiving-vouchers\')" style="cursor:pointer"'
+                : '';
+
             return `
-                <div class="p-3 rounded-xl border ${severityClass} flex items-start gap-3">
+                <div class="p-3 rounded-xl border ${severityClass} flex items-start gap-3" ${onClickAttr}>
                     <i class="fa-solid ${icon} mt-0.5 flex-shrink-0"></i>
                     <div class="flex-1 min-w-0">
                         <p class="text-sm font-semibold truncate">${alert.title}</p>
