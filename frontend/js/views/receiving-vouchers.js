@@ -17,7 +17,7 @@
     // Helpers
     // ─────────────────────────────────────────────────────────────────────────
     const _el  = id => document.getElementById(id);
-    const esc  = t  => (t || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const esc  = t  => String(t ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     const fmtD = d  => d ? new Date(d).toLocaleDateString('ar-SA-u-nu-latn') : '—';
 
     function showEl(id)  { const e = _el(id); if(e) { e.style.display=''; e.classList.remove('hidden'); } }
