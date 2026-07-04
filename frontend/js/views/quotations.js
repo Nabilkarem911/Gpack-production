@@ -15,6 +15,7 @@
     let _activeTab     = 'active'; // 'active' or 'archived'
     let _clients       = [];    // loaded once from /api/clients
     let _products      = [];    // loaded once from /api/products?include_variants=true
+    let _categories    = [];    // loaded once from /api/categories
     let _editingId     = null;  // null = add mode, UUID = edit mode
     let _convertingId  = null;  // order id currently in convert modal
     let _rowCounter    = 0;     // unique key for each dynamic item row
@@ -363,6 +364,28 @@
         } catch (_) {
             _products = [];
         }
+    }
+
+    // ==========================================================================
+    // _loadCategories() — loads categories for item row filter
+    // ==========================================================================
+    async function _loadCategories() {
+        try {
+            const res = await window.apiFetch('/api/categories');
+            _categories = (res && res.data) ? res.data : [];
+        } catch (_) {
+            _categories = [];
+        }
+    }
+
+    // ==========================================================================
+    // _buildCategoryOptions() — Returns <option> HTML for category dropdown
+    // ==========================================================================
+    function _buildCategoryOptions() {
+        return '<option value="">— كل التصنيفات —</option>' +
+            _categories.map(c =>
+                `<option value="${c.id}">${c.name}</option>`
+            ).join('');
     }
 
     // ==========================================================================
@@ -810,9 +833,12 @@
     // _buildProductOptions()
     // Returns <option> HTML for all active products.
     // ==========================================================================
-    function _buildProductOptions() {
+    function _buildProductOptions(categoryId) {
+        const filtered = categoryId
+            ? _products.filter(p => p.category_id === categoryId)
+            : _products;
         return '<option value="">— اختر المنتج —</option>' +
-            _products.map(p =>
+            filtered.map(p =>
                 `<option value="${p.id}">${p.name}</option>`
             ).join('');
     }
@@ -848,13 +874,22 @@
         const designVal = prefill.design_id || prefill.design_status || 'new';
 
         const row = document.createElement('div');
-        row.className = 'quote-item-row grid grid-cols-[2fr_2fr_1fr_1.2fr_1.2fr_1.2fr_auto] gap-2 items-start bg-white border border-slate-200 rounded-xl px-3 py-2.5';
+        row.className = 'quote-item-row grid grid-cols-[1.4fr_2fr_2fr_1fr_1.2fr_1.2fr_1.2fr_auto] gap-2 items-start bg-white border border-slate-200 rounded-xl px-3 py-2.5';
         row.dataset.rowId = rowId;
         row.dataset.clientId = document.getElementById('quote-client')?.value || '';
         row.dataset.variantId = prefill.product_variant_id || '';
         row.dataset.designId = prefill.design_id || '';
 
         row.innerHTML = `
+            <!-- Category Select -->
+            <div class="min-w-0">
+                <select class="row-category w-full px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-lg
+                               text-sm text-slate-800 outline-none focus:border-brand-500
+                               focus:ring-2 focus:ring-brand-500/20 transition-all appearance-none">
+                    ${_buildCategoryOptions()}
+                </select>
+            </div>
+
             <!-- Product Select -->
             <div class="min-w-0">
                 <select class="row-product w-full px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-lg
@@ -979,8 +1014,14 @@
         container.appendChild(row);
 
         // Wire change handlers via addEventListener (more reliable with searchable dropdown)
+        const cSel = row.querySelector('select.row-category');
         const pSel = row.querySelector('select.row-product');
         const vSel = row.querySelector('select.row-variant');
+        if (cSel) {
+            cSel.addEventListener('change', () => window._onRowCategoryChange(cSel));
+            const cs = _makeSearchable(cSel, '🔍 التصنيف...');
+            if (cs) cs.refresh();
+        }
         if (pSel) {
             pSel.addEventListener('change', () => window._onRowProductChange(pSel, rowId));
             const ps = _makeSearchable(pSel, '🔍 ابحث عن المنتج...');
@@ -1006,6 +1047,59 @@
             const qtyEl = row.querySelector('.row-qty');
             if (qtyEl) qtyEl.focus();
         }, 50);
+    };
+
+    // ==========================================================================
+    // window._onRowCategoryChange(selectEl)
+    // When category dropdown changes: repopulate product dropdown filtered by category.
+    // ==========================================================================
+    window._onRowCategoryChange = function (selectEl) {
+        const categoryId = selectEl.value;
+        const row        = selectEl.closest('.quote-item-row');
+        if (!row) return;
+
+        const productSel = row.querySelector('select.row-product');
+        const variantSel = row.querySelector('select.row-variant');
+        if (!productSel) return;
+
+        // Rebuild product options filtered by category
+        productSel.innerHTML = _buildProductOptions(categoryId);
+
+        // Reset variant dropdown
+        if (variantSel) {
+            variantSel.innerHTML = '<option value="">— اختر المقاس —</option>';
+        }
+
+        // Clear price
+        const priceInput = row.querySelector('.row-price');
+        if (priceInput) priceInput.value = '';
+        window.calculateOrderTotals();
+
+        // Refresh searchable dropdown if applicable
+        if (productSel.dataset.searchable) {
+            const wrap = productSel.closest('.searchable-wrap');
+            if (wrap) {
+                const input = wrap.querySelector('input[type="text"]');
+                const dd    = wrap.querySelector('.searchable-dd');
+                if (dd) {
+                    const opts = productSel.querySelectorAll('option');
+                    dd.innerHTML = '';
+                    opts.forEach(opt => {
+                        const div = document.createElement('div');
+                        div.className = 'searchable-item px-3 py-1.5 text-sm text-slate-700 hover:bg-brand-50 cursor-pointer';
+                        div.textContent = opt.textContent;
+                        div.dataset.value = opt.value;
+                        div.addEventListener('click', () => {
+                            productSel.value = opt.value;
+                            productSel.dispatchEvent(new Event('change'));
+                            if (input) input.value = opt.textContent;
+                            dd.classList.add('hidden');
+                        });
+                        dd.appendChild(div);
+                    });
+                }
+            }
+        }
     };
 
     // ==========================================================================
@@ -1527,6 +1621,7 @@
                         <td style="padding:5px 4px; border:1px solid #e8e0f5; text-align:center; color:#64748b; width:24px; font-size:8.5pt;">${i + 1}</td>
                         <td style="padding:5px 8px; border:1px solid #e8e0f5; font-weight:600; font-size:8.5pt;">${item.product_name || '\u2014'}</td>
                         <td style="padding:5px 8px; border:1px solid #e8e0f5; font-size:8.5pt;">${item.variant_name || '\u2014'}</td>
+                        <td style="padding:5px 4px; border:1px solid #e8e0f5; text-align:center; width:40px; font-size:8.5pt;">${item.unit_abbreviation || item.unit_name || '\u2014'}</td>
                         <td style="padding:5px 4px; border:1px solid #e8e0f5; text-align:center; width:46px; font-size:8.5pt;">${_fmtNum(item.quantity)}</td>
                         <td style="padding:5px 4px; border:1px solid #e8e0f5; text-align:center; font-family:monospace; white-space:nowrap; width:60px; font-size:8.5pt;">${_fmtNum(item.unit_price)}</td>
                         <td style="padding:5px 4px; border:1px solid #e8e0f5; text-align:center; font-family:monospace; font-weight:700; white-space:nowrap; width:68px; font-size:8.5pt;">${_fmtNum(item.line_total)}</td>
@@ -3019,6 +3114,7 @@
         await Promise.all([
             _loadClients(),
             _loadProducts(),
+            _loadCategories(),
             _loadTerms(),
             loadQuotes(),
         ]);
