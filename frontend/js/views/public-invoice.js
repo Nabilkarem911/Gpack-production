@@ -97,7 +97,6 @@
                 <tr class="hover:bg-slate-50/50">
                     <td class="py-3 px-4 font-medium text-slate-800">
                         ${esc(item.product_name)}
-                        ${item.isExpense ? '<span class="ml-2 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">مصاريف</span>' : ''}
                     </td>
                     <td class="py-3 px-4 text-center text-slate-600">${item.isExpense ? '' : esc(item.size_name || '-')}</td>
                     <td class="py-3 px-4 text-center font-semibold">

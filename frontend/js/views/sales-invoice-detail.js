@@ -123,7 +123,6 @@
                     <td class="py-3 px-4 text-slate-500">${idx + 1}</td>
                     <td class="py-3 px-4 font-semibold text-slate-800">
                         ${esc(item.product_name)}
-                        ${item.isExpense ? '<span class="ml-2 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">مصاريف</span>' : ''}
                     </td>
                     <td class="py-3 px-4 text-slate-600">${item.isExpense ? '' : esc(item.size_name || '-')}</td>
                     <td class="py-3 px-4 text-center font-mono text-slate-700">${item.isExpense ? 1 : item.quantity}</td>
@@ -200,7 +199,7 @@
         const itemsRows = [...(inv.items || []), ..._buildExpenseLineItems(inv)].map((item, idx) => `
             <tr>
                 <td style="padding:8px 10px;border:1px solid #e2e8f0;text-align:center;color:#94a3b8">${idx + 1}</td>
-                <td style="padding:8px 10px;border:1px solid #e2e8f0;font-weight:600">${esc(item.product_name)}${item.isExpense ? ' <span style="font-size:10px;background:#fef9c3;color:#92400e;padding:1px 6px;border-radius:6px;margin-right:6px">مصاريف</span>' : ''}</td>
+                <td style="padding:8px 10px;border:1px solid #e2e8f0;font-weight:600">${esc(item.product_name)}</td>
                 <td style="padding:8px 10px;border:1px solid #e2e8f0;color:#64748b">${item.isExpense ? '' : esc(item.size_name || '-')}</td>
                 <td style="padding:8px 10px;border:1px solid #e2e8f0;text-align:center;font-family:monospace">${item.isExpense ? 1 : item.quantity}</td>
                 <td style="padding:8px 10px;border:1px solid #e2e8f0;text-align:left;font-family:monospace">${fmt(item.unit_price)}</td>
