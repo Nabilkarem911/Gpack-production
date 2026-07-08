@@ -22,6 +22,67 @@
     let _standardTerms = [];    // loaded once from /api/terms
     let _viewingOrderId = null;  // tracks order ID when in view-only mode (for clone/back)
 
+    const DESIGN_IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'svg', 'gif', 'webp', 'bmp', 'tif', 'tiff']);
+    const DESIGN_PDF_EXTENSIONS   = new Set(['pdf']);
+    const DESIGN_VECTOR_EXTENSIONS = new Set(['ai', 'eps', 'ps', 'psd']);
+    const DESIGN_PREVIEW_VARIANTS = {
+        card: {
+            imageClass: 'w-full h-full object-cover transition-transform duration-300 group-hover:scale-105',
+            pdfClass: 'w-full h-full border-0 pointer-events-none rounded-lg bg-white',
+            fallbackClass: 'w-full h-full flex flex-col items-center justify-center bg-slate-100 text-slate-500 text-xs font-bold gap-0.5 text-center px-2'
+        },
+        chip: {
+            imageClass: 'w-8 h-8 rounded border border-slate-200 object-cover',
+            pdfClass: 'w-8 h-8 border border-slate-200 rounded bg-white pointer-events-none',
+            fallbackClass: 'w-8 h-8 rounded border border-slate-200 flex flex-col items-center justify-center bg-white text-[9px] font-bold text-slate-500 leading-tight text-center px-1'
+        },
+        modal: {
+            imageClass: 'max-w-full max-h-[85vh] object-contain',
+            pdfClass: 'w-full h-[85vh] border-0 bg-white',
+            fallbackClass: 'w-full h-[85vh] flex flex-col items-center justify-center bg-slate-900 text-white text-lg font-bold gap-2 text-center px-6'
+        }
+    };
+    const DESIGN_PLACEHOLDER_SVG = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"%3E%3Crect fill="%23e2e8f0" width="200" height="200"/%3E%3Ctext x="50%25" y="50%25" text-anchor="middle" dy=".3em" fill="%2394a3b8" font-size="14" font-family="sans-serif"%3Eلا يوجد تصميم%3C/text%3E%3C/svg%3E';
+
+    function _getFileExtension(url) {
+        if (!url) return '';
+        const clean = url.split('?')[0].split('#')[0];
+        const idx = clean.lastIndexOf('.');
+        return idx === -1 ? '' : clean.substring(idx + 1).toLowerCase();
+    }
+
+    function _escapeHtml(str) {
+        return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    function _escapeAttr(str) {
+        return _escapeHtml(str);
+    }
+
+    function _buildDesignPreviewHTML(url, name, options = {}) {
+        const variant = DESIGN_PREVIEW_VARIANTS[options.variant || 'card'] || DESIGN_PREVIEW_VARIANTS.card;
+        const safeName = _escapeHtml(name || 'تصميم');
+        const ext = (options.extensionOverride || _getFileExtension(url) || '').toLowerCase();
+        if (!url) {
+            return `<div class="${variant.fallbackClass}"><span>لا يوجد تصميم</span></div>`;
+        }
+
+        const safeUrl = _escapeAttr(url);
+        if (DESIGN_IMAGE_EXTENSIONS.has(ext)) {
+            return `<img src="${safeUrl}" alt="${safeName}" class="${variant.imageClass}" onerror="this.onerror=null; this.src='${DESIGN_PLACEHOLDER_SVG}'">`;
+        }
+
+        if (DESIGN_PDF_EXTENSIONS.has(ext)) {
+            return `<object data="${safeUrl}#toolbar=0&navpanes=0" type="application/pdf" class="${variant.pdfClass}" aria-label="${safeName}">`
+                + `<div class="${variant.fallbackClass}"><span>${ext.toUpperCase()}</span><span class="text-[9px] font-normal">${safeName}</span></div>`
+                + `</object>`;
+        }
+
+        const label = ext ? ext.toUpperCase() : 'FILE';
+        return `<div class="${variant.fallbackClass}"><span>${label}</span><span class="text-[9px] font-normal">${safeName}</span></div>`;
+    }
+
     // ==========================================================================
     // _makeSearchable(selectEl, placeholder)
     // Wraps a native <select> with a filterable text-input + dropdown list.
@@ -990,7 +1051,7 @@
                 <!-- Selected Design Info (small bar) -->
                 <div class="row-design-preview hidden flex items-center gap-2 bg-slate-100 rounded-lg p-1.5 cursor-pointer"
                      onclick="window.openDesignGallery(this)">
-                    <img src="" alt="" class="w-6 h-6 rounded object-cover border border-slate-200">
+                    <div class="design-preview-media w-8 h-8 rounded border border-slate-200 overflow-hidden bg-white flex items-center justify-center text-[9px] font-bold text-slate-500 pointer-events-none"></div>
                     <span class="text-[10px] text-slate-600 truncate flex-1"></span>
                 </div>
             </div>
@@ -2595,6 +2656,7 @@
                 option.textContent = `#${d.design_number} ${d.design_name || ''}`;
                 option.dataset.thumbnail = d.thumbnail_url || '';
                 option.dataset.name = d.design_name || `تصميم ${d.design_number}`;
+                option.dataset.extension = _getFileExtension(d.thumbnail_url || '');
                 designSelect.appendChild(option);
             });
             
@@ -2633,7 +2695,7 @@
     window.updateDesignPreview = function(row) {
         const designSelect = row.querySelector('.row-design-select');
         const previewDiv = row.querySelector('.row-design-preview');
-        const previewImg = previewDiv?.querySelector('img');
+        const previewMedia = previewDiv?.querySelector('.design-preview-media');
         const previewText = previewDiv?.querySelector('span');
         const uploadBtn = row.querySelector('.row-design-upload');
         
@@ -2679,10 +2741,12 @@
         
         // Get thumbnail - for reprint or existing design
         let thumbnailUrl = null;
+        let previewExt = selectedOption?.dataset?.extension || '';
         
         if (!isReprint && selectedOption?.dataset?.thumbnail) {
             // Regular design with thumbnail
             thumbnailUrl = selectedOption.dataset.thumbnail;
+            previewExt = selectedOption.dataset.extension || previewExt;
             console.log('[updateDesignPreview] Got thumbnail from selected:', thumbnailUrl);
         } else if (isReprint) {
             // For reprint, find first design with thumbnail
@@ -2692,6 +2756,7 @@
                 console.log(`[updateDesignPreview] Option ${i}: value=${opt.value}, thumbnail=${opt.dataset?.thumbnail}`);
                 if (opt.dataset?.thumbnail && opt.value !== 'new' && opt.value !== 'reprint') {
                     thumbnailUrl = opt.dataset.thumbnail;
+                    previewExt = opt.dataset.extension || previewExt;
                     console.log('[updateDesignPreview] Found thumbnail:', thumbnailUrl);
                     break;
                 }
@@ -2699,16 +2764,15 @@
         }
         
         console.log('[updateDesignPreview] Final thumbnailUrl:', thumbnailUrl);
-        console.log('[updateDesignPreview] previewImg found:', !!previewImg);
-        console.log('[updateDesignPreview] BEFORE IF - thumbnailUrl:', thumbnailUrl, 'type:', typeof thumbnailUrl);
-        
-        if (previewImg && thumbnailUrl) {
-            console.log('[updateDesignPreview] Setting src to:', thumbnailUrl);
-            previewImg.src = thumbnailUrl;
-            previewImg.alt = isReprint ? 'آخر تصميم' : (selectedOption?.dataset?.name || '');
-            previewImg.onerror = function() {
-                this.src = 'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 200 200\'%3E%3Crect fill=\'%23e2e8f0\' width=\'200\' height=\'200\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\' fill=\'%2394a3b8\' font-size=\'14\' font-family=\'sans-serif\'%3Eلا يوجد تصميم%3C/text%3E%3C/svg%3E';
-            };
+        if (previewMedia) {
+            previewMedia.innerHTML = _buildDesignPreviewHTML(
+                thumbnailUrl,
+                selectedOption?.dataset?.name || 'تصميم',
+                {
+                    variant: 'chip',
+                    extensionOverride: previewExt || _getFileExtension(thumbnailUrl)
+                }
+            );
         }
         if (previewText) {
             previewText.textContent = isReprint ? 'آخر تصميم' : (selectedOption?.dataset?.name || '');
@@ -2778,9 +2842,11 @@
             designs.forEach((d, idx) => {
                 const isSelected = String(d.id) === String(currentDesignId);
                 const isLatest = idx === 0;
-                const thumbUrl = d.thumbnail_url || 'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 200 200\'%3E%3Crect fill=\'%23e2e8f0\' width=\'200\' height=\'200\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\' fill=\'%2394a3b8\' font-size=\'14\' font-family=\'sans-serif\'%3Eلا يوجد تصميم%3C/text%3E%3C/svg%3E';
+                const thumbUrl = d.thumbnail_url || '';
                 const designName = d.design_name || `تصميم ${d.design_number || (idx + 1)}`;
                 const dateStr = d.created_at ? new Date(d.created_at).toLocaleDateString('en-GB') : '';
+                const fileExt = _getFileExtension(thumbUrl);
+                const previewMarkup = _buildDesignPreviewHTML(thumbUrl, designName, { variant: 'card', extensionOverride: fileExt });
 
                 const card = document.createElement('div');
                 card.className = `design-gallery-card relative group rounded-xl border-2 overflow-hidden cursor-pointer
@@ -2788,17 +2854,27 @@
                     ${isSelected ? 'border-brand-500 ring-2 ring-brand-500/20 bg-brand-50' : 'border-slate-200 hover:border-purple-300 bg-white'}`;
                 card.dataset.designId = d.id;
 
+                const dataUrlAttr = _escapeAttr(thumbUrl || '');
+                const dataNameAttr = _escapeAttr(designName);
+                const dataDateAttr = _escapeAttr(dateStr);
+                const dataExtAttr = _escapeAttr(fileExt);
+
                 card.innerHTML = `
-                    <!-- Image -->
+                    <!-- Preview -->
                     <div class="relative w-full h-32 bg-slate-100 overflow-hidden">
-                        <img src="${thumbUrl}" alt="${designName}" 
-                             class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                             onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 200 200\'%3E%3Crect fill=\'%23e2e8f0\' width=\'200\' height=\'200\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\' fill=\'%2394a3b8\' font-size=\'14\' font-family=\'sans-serif\'%3Eلا يوجد تصميم%3C/text%3E%3C/svg%3E'">
+                        <div class="absolute inset-0 pointer-events-none">
+                            ${previewMarkup}
+                        </div>
                         ${isLatest ? '<span class="absolute top-2 left-2 px-2 py-0.5 bg-amber-500 text-white text-[9px] font-bold rounded-full shadow">الأحدث</span>' : ''}
                         ${isSelected ? '<span class="absolute top-2 right-2 w-6 h-6 bg-brand-500 text-white rounded-full flex items-center justify-center shadow"><i class="fa-solid fa-check text-xs"></i></span>' : ''}
                         <!-- Zoom overlay -->
                         <div class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                            <button type="button" onclick="event.stopPropagation(); window.openDesignViewer('${thumbUrl}', '${designName.replace(/'/g, "\\'")}', '${dateStr}')"
+                            <button type="button"
+                                    data-url="${dataUrlAttr}"
+                                    data-name="${dataNameAttr}"
+                                    data-date="${dataDateAttr}"
+                                    data-ext="${dataExtAttr}"
+                                    onclick="event.stopPropagation(); window.openDesignViewer(this)"
                                     class="opacity-0 group-hover:opacity-100 w-10 h-10 bg-white/90 backdrop-blur-sm rounded-full
                                            flex items-center justify-center shadow-lg transition-all hover:bg-white">
                                 <i class="fa-solid fa-expand text-slate-700"></i>
@@ -2861,20 +2937,30 @@
     // Design Viewer (Full-size)
     // ==========================================================================
 
-    window.openDesignViewer = function(imageUrl, name, date) {
+    window.openDesignViewer = function(trigger, fallbackName, fallbackDate, fallbackExt) {
+        let fileUrl = '';
+        let designName = fallbackName || '';
+        let designDate = fallbackDate || '';
+        let designExt = fallbackExt || '';
+
+        if (trigger && trigger.dataset) {
+            fileUrl = trigger.dataset.url || '';
+            designName = trigger.dataset.name || designName;
+            designDate = trigger.dataset.date || designDate;
+            designExt = trigger.dataset.ext || designExt;
+        } else {
+            fileUrl = trigger || '';
+        }
+
         const modal = document.getElementById('design-viewer-modal');
-        const img = document.getElementById('design-viewer-img');
+        const content = document.getElementById('design-viewer-content');
         const nameEl = document.getElementById('design-viewer-name');
         const dateEl = document.getElementById('design-viewer-date');
-        if (!modal || !img) return;
+        if (!modal || !content) return;
 
-        img.src = imageUrl;
-        img.alt = name || '';
-        img.onerror = function() {
-            this.src = 'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 200 200\'%3E%3Crect fill=\'%23e2e8f0\' width=\'200\' height=\'200\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\' fill=\'%2394a3b8\' font-size=\'14\' font-family=\'sans-serif\'%3Eلا يوجد تصميم%3C/text%3E%3C/svg%3E';
-        };
-        if (nameEl) nameEl.textContent = name || '';
-        if (dateEl) dateEl.textContent = date || '';
+        content.innerHTML = _buildDesignPreviewHTML(fileUrl, designName, { variant: 'modal', extensionOverride: designExt });
+        if (nameEl) nameEl.textContent = designName || '';
+        if (dateEl) dateEl.textContent = designDate || '';
 
         modal.style.display = 'flex';
         setTimeout(() => {
@@ -3046,6 +3132,7 @@
                         option.textContent = newDesign.design_name || 'تصميم جديد';
                         option.dataset.thumbnail = newDesign.thumbnail_url || '';
                         option.dataset.name = newDesign.design_name || 'تصميم جديد';
+                        option.dataset.extension = _getFileExtension(newDesign.thumbnail_url || '');
                         console.log('[Upload] Created option:', option.dataset);
                         
                         // Add before the 'new' option (which should be last)
