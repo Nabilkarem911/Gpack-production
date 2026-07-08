@@ -125,8 +125,10 @@
                         ${esc(item.product_name)}
                         ${item.isExpense ? '<span class="ml-2 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">مصاريف</span>' : ''}
                     </td>
-                    <td class="py-3 px-4 text-slate-600">${item.isExpense ? item.unit_label : esc(item.size_name || '-')}</td>
-                    <td class="py-3 px-4 text-center font-mono text-slate-700">${item.isExpense ? 1 : item.quantity}</td>
+                    <td class="py-3 px-4 text-slate-600">${item.isExpense ? (item.unit_label || 'حبة') : esc(item.size_name || '-')}</td>
+                    <td class="py-3 px-4 text-center font-mono text-slate-700">
+                        ${item.isExpense ? `<div style='display:flex;flex-direction:column;align-items:center;line-height:1.1;font-size:12px;'><span>${item.quantity}</span><span style="font-size:10px;color:#94a3b8;">${item.unit_label || 'حبة'}</span></div>` : item.quantity}
+                    </td>
                     <td class="py-3 px-4 font-mono text-slate-700">${fmt(item.unit_price)}</td>
                     <td class="py-3 px-4 font-mono text-red-600">${item.discount_percent > 0 ? item.discount_percent + '%' : '-'}</td>
                     <td class="py-3 px-4 font-bold font-mono text-emerald-600">${fmt(item.line_total || (item.quantity * item.unit_price))}</td>

@@ -2468,13 +2468,19 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
                     ? unitPrice
                     : (item.line_total || parseFloat(item.quantity || 0) * parseFloat(item.unit_price || 0));
                 const nameCell = item.isExpense
-                    ? `<div class="flex flex-col gap-1"><div class="flex items-center gap-2"><span>${item.product_name || 'مصاريف إضافية'}</span><span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">مصاريف إضافية</span></div><span class="text-[11px] text-slate-500">الوحدة: ${item.unit_label || 'حبة'} • الكمية: 1</span></div>`
+                    ? `<div class="flex items-center gap-2 justify-end"><span>${item.product_name || 'مصاريف إضافية'}</span><span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">مصاريف إضافية</span></div>`
                     : `${item.product_name || '—'} ${item.size_name || ''}`;
+                const qtyCell = item.isExpense
+                    ? `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;line-height:1.2;">
+                            <span style="font-weight:700;">${qty}</span>
+                            <span style="font-size:11px;color:#94a3b8;">${item.unit_label || 'حبة'}</span>
+                       </div>`
+                    : qty;
                 return `
                 <tr>
                     <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; text-align:center; color:#64748b; font-size:13px;">${idx + 1}</td>
                     <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#1e293b; font-size:13px;">${nameCell}</td>
-                    <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; text-align:center; color:#334155; font-size:13px;">${qty}</td>
+                    <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; text-align:center; color:#334155; font-size:13px;">${qtyCell}</td>
                     <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; text-align:center; color:#334155; font-size:13px;">${_fmt(unitPrice)}</td>
                     <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; text-align:center; font-weight:700; color:#0f172a; font-size:13px;">${_fmt(lineTotal)}</td>
                 </tr>`;
