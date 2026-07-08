@@ -36,6 +36,26 @@
     };
     const DESIGN_PLACEHOLDER_SVG = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"%3E%3Crect fill="%23e2e8f0" width="200" height="200"/%3E%3Ctext x="50%25" y="50%25" text-anchor="middle" dy=".3em" fill="%2394a3b8" font-size="14" font-family="sans-serif"%3Eلا يوجد تصميم%3C/text%3E%3C/svg%3E';
 
+    let _logoBase64Cache;
+    async function _loadLogoBase64() {
+        if (_logoBase64Cache !== undefined) return _logoBase64Cache;
+        try {
+            const res = await fetch('/images/logo.png');
+            if (!res.ok) throw new Error('logo not found');
+            const blob = await res.blob();
+            _logoBase64Cache = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = () => reject(new Error('logo decode failed'));
+                reader.readAsDataURL(blob);
+            });
+        } catch (err) {
+            console.warn('Logo unavailable for print views', err);
+            _logoBase64Cache = null;
+        }
+        return _logoBase64Cache;
+    }
+
     function _getFileExt(url) {
         if (!url) return '';
         const clean = url.split('?')[0].split('#')[0];
@@ -1284,17 +1304,7 @@
             const mo  = res?.data;
             if (!mo) { _toast('فشل تحميل بيانات أمر المورد', 'error'); return; }
 
-            // Load logo as base64 so it works inside the print popup window
-            let logoBase64 = '';
-            try {
-                const logoRes = await fetch('/images/logo.png');
-                const blob    = await logoRes.blob();
-                logoBase64    = await new Promise(r => {
-                    const reader = new FileReader();
-                    reader.onload = () => r(reader.result);
-                    reader.readAsDataURL(blob);
-                });
-            } catch (_) { /* logo optional */ }
+            const logoBase64 = await _loadLogoBase64();
 
             // ── Build table rows ──
             const items = (mo.items || []).map(i => {
@@ -2457,6 +2467,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
             const payments = inv.payments || [];
             const totalPaid = payments.reduce((s, p) => s + parseFloat(p.amount || 0), 0);
             const remaining = Math.max(0, parseFloat(inv.grand_total || 0) - totalPaid);
+            const logoBase64 = await _loadLogoBase64();
             const isProforma = inv.status !== 'issued';
             const invoiceTitle = isProforma ? 'فاتورة أولية' : 'فاتورة نهائية';
             const PAY_M = { cash: 'نقدي', bank_transfer: 'تحويل بنكي', check: 'شيك', card: 'بطاقة' };
@@ -2500,8 +2511,10 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         @media print { body { padding:15px; } .no-print { display:none !important; } @page { margin:15mm; } }
         .invoice-container { max-width:800px; margin:0 auto; }
         .header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:30px; padding-bottom:20px; border-bottom:3px solid #4b0082; }
-        .logo-section h1 { font-size:24px; font-weight:900; color:#4b0082; margin-bottom:4px; }
-        .logo-section p { font-size:12px; color:#64748b; }
+        .logo-section { display:flex; align-items:center; gap:12px; }
+        .logo-section img { width:58px; height:58px; object-fit:contain; }
+        .logo-text h1 { font-size:24px; font-weight:900; color:#4b0082; margin-bottom:4px; }
+        .logo-text p { font-size:12px; color:#64748b; }
         .invoice-meta { text-align:left; }
         .invoice-meta .inv-number { font-size:22px; font-weight:900; color:#1e293b; }
         .invoice-meta .inv-date { font-size:13px; color:#64748b; margin-top:4px; }
@@ -2540,9 +2553,12 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
     <div class="invoice-container">
         <div class="header">
             <div class="logo-section">
-                <h1>G.PACK</h1>
-                <p>حلول التعبئة والتغليف</p>
-                <p>ينبع، المملكة العربية السعودية</p>
+                ${logoBase64 ? `<img src="${logoBase64}" alt="G.PACK Logo">` : ''}
+                <div class="logo-text">
+                    <h1>G.PACK</h1>
+                    <p>حلول التعبئة والتغليف</p>
+                    <p>ينبع، المملكة العربية السعودية</p>
+                </div>
             </div>
             <div class="invoice-meta">
                 <div class="inv-number">#${inv.invoice_number}</div>

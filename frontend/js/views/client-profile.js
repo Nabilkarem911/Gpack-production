@@ -27,6 +27,27 @@
         draft:       { label: 'مسودة',      cls: 'bg-slate-100 text-slate-500' },
     };
 
+    let _logoBase64Cache;
+
+    async function _loadLogoBase64() {
+        if (_logoBase64Cache !== undefined) return _logoBase64Cache;
+        try {
+            const res = await fetch('/images/logo.png');
+            if (!res.ok) throw new Error('logo missing');
+            const blob = await res.blob();
+            _logoBase64Cache = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = () => reject(new Error('logo decode failed'));
+                reader.readAsDataURL(blob);
+            });
+        } catch (err) {
+            console.warn('Logo unavailable for client profile print', err);
+            _logoBase64Cache = null;
+        }
+        return _logoBase64Cache;
+    }
+
     function _badge(status) {
         const s = STATUS_MAP[status] || { label: status || '—', cls: 'bg-slate-100 text-slate-500' };
         return `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${s.cls}">${s.label}</span>`;
@@ -1291,6 +1312,7 @@
             const remaining = Math.max(0, parseFloat(inv.grand_total || 0) - totalPaid);
             const isProforma = inv.status !== 'issued';
             const PAY_M = { cash: 'نقدي', bank_transfer: 'تحويل بنكي', check: 'شيك', card: 'بطاقة' };
+            const logoBase64 = await _loadLogoBase64();
 
             const itemRows = items.map((item, idx) => `
                 <tr>
@@ -1319,6 +1341,8 @@
   body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;background:#fff;color:#1e293b;padding:30px;}
   @media print{body{padding:15px;}.no-print{display:none!important;}@page{margin:15mm;}}
   .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:28px;padding-bottom:18px;border-bottom:3px solid #4b0082;}
+  .logo {display:flex;align-items:center;gap:12px;}
+  .logo img{width:58px;height:58px;object-fit:contain;}
   .logo h1{font-size:24px;font-weight:900;color:#4b0082;}
   .logo p{font-size:12px;color:#64748b;margin-top:3px;}
   .inv-meta{text-align:left;}
@@ -1349,7 +1373,13 @@
 </head>
 <body>
 <div class="header">
-  <div class="logo"><h1>G.PACK</h1><p>إدارة الإنتاج والمبيعات</p></div>
+  <div class="logo">
+    ${logoBase64 ? `<img src="${logoBase64}" alt="G.PACK">` : ''}
+    <div>
+      <h1>G.PACK</h1>
+      <p>إدارة الإنتاج والمبيعات</p>
+    </div>
+  </div>
   <div class="inv-meta">
     <div class="num">#${inv.invoice_number || '—'}</div>
     <div class="dt">${new Date(inv.created_at || Date.now()).toLocaleDateString('en-GB')}</div>

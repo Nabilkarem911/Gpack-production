@@ -13,6 +13,26 @@
     let _invoiceId = null;
     let _invoiceData = null;
     let _orderId = null;
+    let _logoBase64Cache;
+
+    async function _loadLogoBase64() {
+        if (_logoBase64Cache !== undefined) return _logoBase64Cache;
+        try {
+            const res = await fetch('/images/logo.png');
+            if (!res.ok) throw new Error('logo missing');
+            const blob = await res.blob();
+            _logoBase64Cache = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = () => reject(new Error('logo decode failed'));
+                reader.readAsDataURL(blob);
+            });
+        } catch (err) {
+            console.warn('Logo unavailable for SID print', err);
+            _logoBase64Cache = null;
+        }
+        return _logoBase64Cache;
+    }
 
     function _buildExpenseLineItems(inv) {
         return (inv?.expenses || []).map(exp => ({
@@ -185,7 +205,7 @@
     };
 
     // ── Print ────────────────────────────────────────────────────────────────────
-    window.sidPrint = function() {
+    window.sidPrint = async function() {
         const inv = _invoiceData;
         if (!inv) return;
 
@@ -241,10 +261,13 @@
 <body>
   <!-- Header -->
   <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px">
-    <div>
-      <div style="font-size:26px;font-weight:900;color:#2563eb">G.PACK</div>
-      <div style="font-size:20px;font-weight:800;margin-top:4px">فاتورة مبيعات</div>
-      <div style="font-size:11px;color:#64748b;margin-top:2px">Sales Invoice</div>
+    <div style="display:flex;align-items:center;gap:12px;">
+      ${logoBase64 ? `<img src="${logoBase64}" alt="G.PACK" style="width:60px;height:60px;object-fit:contain;">` : ''}
+      <div>
+        <div style="font-size:26px;font-weight:900;color:#2563eb">G.PACK</div>
+        <div style="font-size:20px;font-weight:800;margin-top:4px">فاتورة مبيعات</div>
+        <div style="font-size:11px;color:#64748b;margin-top:2px">Sales Invoice</div>
+      </div>
     </div>
     <div style="text-align:left">
       <div style="font-size:32px;font-weight:900;color:#2563eb;font-family:monospace">#${inv.invoice_number}</div>
