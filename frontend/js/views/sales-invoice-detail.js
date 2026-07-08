@@ -14,6 +14,20 @@
     let _invoiceData = null;
     let _orderId = null;
 
+    function _buildExpenseLineItems(inv) {
+        const unitLabel = 'حبة';
+        return (inv?.expenses || []).map(exp => ({
+            product_name: exp.description || 'مصاريف إضافية',
+            size_name: unitLabel,
+            quantity: 1,
+            unit_price: parseFloat(exp.amount || 0),
+            line_total: parseFloat(exp.amount || 0),
+            discount_percent: 0,
+            isExpense: true,
+            unit_label: unitLabel,
+        }));
+    }
+
     // ── Init ───────────────────────────────────────────────────────────────────
     function _init() {
         // Get invoice ID from URL hash query
@@ -101,16 +115,21 @@
 
         // Items
         const itemsTbody = _el('sid-items-tbody');
-        if (inv.items && inv.items.length > 0) {
-            itemsTbody.innerHTML = inv.items.map((item, idx) => `
+        const combinedItems = [...(inv.items || []), ..._buildExpenseLineItems(inv)];
+
+        if (combinedItems.length > 0) {
+            itemsTbody.innerHTML = combinedItems.map((item, idx) => `
                 <tr class="border-b border-slate-100">
                     <td class="py-3 px-4 text-slate-500">${idx + 1}</td>
-                    <td class="py-3 px-4 font-semibold text-slate-800">${esc(item.product_name)}</td>
-                    <td class="py-3 px-4 text-slate-600">${esc(item.size_name)}</td>
-                    <td class="py-3 px-4 text-center font-mono text-slate-700">${item.quantity}</td>
+                    <td class="py-3 px-4 font-semibold text-slate-800">
+                        ${esc(item.product_name)}
+                        ${item.isExpense ? '<span class="ml-2 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">مصاريف</span>' : ''}
+                    </td>
+                    <td class="py-3 px-4 text-slate-600">${item.isExpense ? item.unit_label : esc(item.size_name || '-')}</td>
+                    <td class="py-3 px-4 text-center font-mono text-slate-700">${item.isExpense ? 1 : item.quantity}</td>
                     <td class="py-3 px-4 font-mono text-slate-700">${fmt(item.unit_price)}</td>
                     <td class="py-3 px-4 font-mono text-red-600">${item.discount_percent > 0 ? item.discount_percent + '%' : '-'}</td>
-                    <td class="py-3 px-4 font-bold font-mono text-emerald-600">${fmt(item.line_total)}</td>
+                    <td class="py-3 px-4 font-bold font-mono text-emerald-600">${fmt(item.line_total || (item.quantity * item.unit_price))}</td>
                 </tr>
             `).join('');
         } else {
@@ -178,15 +197,15 @@
         const statusColor = statusColors[inv.status] || '#64748b';
         const statusBg    = statusBgs[inv.status] || '#f1f5f9';
 
-        const itemsRows = (inv.items || []).map((item, idx) => `
+        const itemsRows = [...(inv.items || []), ..._buildExpenseLineItems(inv)].map((item, idx) => `
             <tr>
                 <td style="padding:8px 10px;border:1px solid #e2e8f0;text-align:center;color:#94a3b8">${idx + 1}</td>
-                <td style="padding:8px 10px;border:1px solid #e2e8f0;font-weight:600">${esc(item.product_name)}</td>
-                <td style="padding:8px 10px;border:1px solid #e2e8f0;color:#64748b">${esc(item.size_name || '-')}</td>
-                <td style="padding:8px 10px;border:1px solid #e2e8f0;text-align:center;font-family:monospace">${item.quantity}</td>
+                <td style="padding:8px 10px;border:1px solid #e2e8f0;font-weight:600">${esc(item.product_name)}${item.isExpense ? ' <span style="font-size:10px;background:#fef9c3;color:#92400e;padding:1px 6px;border-radius:6px;margin-right:6px">مصاريف</span>' : ''}</td>
+                <td style="padding:8px 10px;border:1px solid #e2e8f0;color:#64748b">${item.isExpense ? (item.unit_label || 'حبة') : esc(item.size_name || '-')}</td>
+                <td style="padding:8px 10px;border:1px solid #e2e8f0;text-align:center;font-family:monospace">${item.isExpense ? 1 : item.quantity}</td>
                 <td style="padding:8px 10px;border:1px solid #e2e8f0;text-align:left;font-family:monospace">${fmt(item.unit_price)}</td>
                 <td style="padding:8px 10px;border:1px solid #e2e8f0;text-align:center;color:#dc2626;font-family:monospace">${item.discount_percent > 0 ? item.discount_percent + '%' : '-'}</td>
-                <td style="padding:8px 10px;border:1px solid #e2e8f0;text-align:left;font-family:monospace;font-weight:700;color:#15803d">${fmt(item.line_total)}</td>
+                <td style="padding:8px 10px;border:1px solid #e2e8f0;text-align:left;font-family:monospace;font-weight:700;color:#15803d">${fmt(item.line_total || (item.quantity * item.unit_price))}</td>
             </tr>`).join('');
 
         const expensesSection = (inv.expenses && inv.expenses.length > 0) ? `

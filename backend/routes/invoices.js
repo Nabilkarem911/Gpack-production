@@ -246,6 +246,7 @@ router.post('/', restrictWrite, validateBody(invoiceCreate), async (req, res) =>
             items = [],
             tax_rate,
             additional_expenses = 0,
+            additional_expense_label = null,
             notes = '',
         } = req.validatedBody;
 
@@ -297,6 +298,14 @@ router.post('/', restrictWrite, validateBody(invoiceCreate), async (req, res) =>
                 invoiceId, item.variant_id, item.order_item_id || null,
                 item.quantity, item.unit_price, item.discount_percent || 0,
             ]);
+        }
+
+        if (additional_expenses > 0) {
+            const label = (additional_expense_label || '').trim() || 'مصاريف إضافية';
+            await client.query(`
+                INSERT INTO invoice_expenses (invoice_id, expense_type, description, amount)
+                VALUES ($1, $2, $3, $4)
+            `, [invoiceId, 'additional', label, additional_expenses]);
         }
 
         // Client transaction record

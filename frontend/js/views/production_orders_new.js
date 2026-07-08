@@ -2239,6 +2239,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
     async function _saveInvoice() {
         const type      = _el('invoice-type')?.value || 'proforma';
         const extra     = parseFloat(_el('invoice-extra-expenses')?.value) || 0;
+        const extraDesc = (_el('invoice-extra-desc')?.value || '').trim();
         const notes     = _el('invoice-notes')?.value || '';
         const container = _el('invoice-items-container');
         if (!container) return;
@@ -2275,10 +2276,12 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         try {
             await window.apiFetch(`/api/orders/${_hubOrderId}/invoice`, {
                 method: 'POST',
-                body: { type, items, additional_expenses: extra, notes },
+                body: { type, items, additional_expenses: extra, additional_expense_label: extraDesc, notes },
             });
             _toast('تم إصدار الفاتورة بنجاح');
             _hideModal('po-invoice-modal');
+            _setVal('invoice-extra-expenses', '');
+            _setVal('invoice-extra-desc', '');
             // Reload order to get updated grand_total after final invoice sync
             if (type === 'final') {
                 const fresh = await window.apiFetch(`/api/orders/${_hubOrderId}`);
@@ -2439,6 +2442,18 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
             if (!inv) { _toast('تعذر تحميل بيانات الفاتورة', 'error'); return; }
 
             const items = inv.items || [];
+            const EXPENSE_UNIT = 'حبة';
+            const expenseItems = (inv.expenses || []).map(exp => ({
+                product_name: exp.description || 'مصاريف إضافية',
+                size_name: EXPENSE_UNIT,
+                quantity: 1,
+                unit_price: parseFloat(exp.amount || 0),
+                line_total: parseFloat(exp.amount || 0),
+                discount_percent: 0,
+                isExpense: true,
+                unit_label: EXPENSE_UNIT,
+            }));
+            const tableItems = [...items, ...expenseItems];
             const payments = inv.payments || [];
             const totalPaid = payments.reduce((s, p) => s + parseFloat(p.amount || 0), 0);
             const remaining = Math.max(0, parseFloat(inv.grand_total || 0) - totalPaid);
@@ -2446,14 +2461,24 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
             const invoiceTitle = isProforma ? 'فاتورة أولية (مسودة)' : 'فاتورة نهائية';
             const PAY_M = { cash: 'نقدي', bank_transfer: 'تحويل بنكي', check: 'شيك', card: 'بطاقة' };
 
-            const itemsRows = items.map((item, idx) => `
+            const itemsRows = tableItems.map((item, idx) => {
+                const qty = item.isExpense ? 1 : parseFloat(item.quantity || 0);
+                const unitPrice = item.isExpense ? item.unit_price : parseFloat(item.unit_price || 0);
+                const lineTotal = item.isExpense
+                    ? unitPrice
+                    : (item.line_total || parseFloat(item.quantity || 0) * parseFloat(item.unit_price || 0));
+                const nameCell = item.isExpense
+                    ? `<div class="flex flex-col gap-1"><div class="flex items-center gap-2"><span>${item.product_name || 'مصاريف إضافية'}</span><span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">مصاريف إضافية</span></div><span class="text-[11px] text-slate-500">الوحدة: ${item.unit_label || 'حبة'} • الكمية: 1</span></div>`
+                    : `${item.product_name || '—'} ${item.size_name || ''}`;
+                return `
                 <tr>
                     <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; text-align:center; color:#64748b; font-size:13px;">${idx + 1}</td>
-                    <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#1e293b; font-size:13px;">${item.product_name || '—'} ${item.size_name || ''}</td>
-                    <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; text-align:center; color:#334155; font-size:13px;">${parseFloat(item.quantity || 0)}</td>
-                    <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; text-align:center; color:#334155; font-size:13px;">${_fmt(item.unit_price)}</td>
-                    <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; text-align:center; font-weight:700; color:#0f172a; font-size:13px;">${_fmt(item.line_total || parseFloat(item.quantity)*parseFloat(item.unit_price))}</td>
-                </tr>`).join('');
+                    <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#1e293b; font-size:13px;">${nameCell}</td>
+                    <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; text-align:center; color:#334155; font-size:13px;">${qty}</td>
+                    <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; text-align:center; color:#334155; font-size:13px;">${_fmt(unitPrice)}</td>
+                    <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; text-align:center; font-weight:700; color:#0f172a; font-size:13px;">${_fmt(lineTotal)}</td>
+                </tr>`;
+            }).join('');
 
             const paymentRows = payments.length ? payments.map(p => `
                 <tr>

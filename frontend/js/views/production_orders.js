@@ -823,6 +823,8 @@
         if (notesEl) notesEl.value = '';
         const expEl = document.getElementById('invoice-extra-expenses');
         if (expEl) expEl.value = '';
+        const expDescEl = document.getElementById('invoice-extra-desc');
+        if (expDescEl) expDescEl.value = '';
         _calcInvoiceTotal();
         _showModal('po-invoice-modal');
     }
@@ -845,6 +847,7 @@
     async function _saveInvoice() {
         const type     = (document.getElementById('invoice-type')             ||{}).value || 'proforma';
         const extra    = parseFloat((document.getElementById('invoice-extra-expenses')||{}).value)||0;
+        const extraDesc= ((document.getElementById('invoice-extra-desc')||{}).value || '').trim();
         const notes    = (document.getElementById('invoice-notes')             ||{}).value || '';
         const container= document.getElementById('invoice-items-container');
         if (!container) return;
@@ -868,10 +871,14 @@
         try {
             await window.apiFetch(`/api/orders/${_hubOrderId}/invoice`, {
                 method: 'POST',
-                body: { type, items, additional_expenses: extra, notes },
+                body: { type, items, additional_expenses: extra, additional_expense_label: extraDesc, notes },
             });
             _toast('تم إصدار الفاتورة بنجاح');
             _hideModal('po-invoice-modal');
+            const expInput = document.getElementById('invoice-extra-expenses');
+            if (expInput) expInput.value = '';
+            const expDescInput = document.getElementById('invoice-extra-desc');
+            if (expDescInput) expDescInput.value = '';
             await _renderHubFinancial();
         } catch (err) {
             _toast(err.message || 'فشل إصدار الفاتورة', 'error');

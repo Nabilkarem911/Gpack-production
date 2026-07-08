@@ -1230,10 +1230,19 @@ router.get('/:orderId/invoice/:invoiceId', async (req, res) => {
             [orderId]
         );
 
+        const expensesRes = await db.query(
+            `SELECT id, expense_type, description, amount
+             FROM invoice_expenses
+             WHERE invoice_id = $1
+             ORDER BY created_at ASC`,
+            [invoiceId]
+        );
+
         return success(res, {
             ...invRes.rows[0],
             items: itemsRes.rows,
-            payments: paymentsRes.rows
+            payments: paymentsRes.rows,
+            expenses: expensesRes.rows,
         });
     } catch (err) {
         console.error('[Orders] GET /:orderId/invoice/:invoiceId error:', err.message);
@@ -1304,7 +1313,13 @@ router.get('/:id/financial', async (req, res) => {
 
 router.post('/:id/invoice', restrictAdmin, validateBody(orderInvoice), async (req, res) => {
     const { id } = req.params;
-    const { type = 'proforma', items = [], additional_expenses = 0, notes = '' } = req.validatedBody;
+    const {
+        type = 'proforma',
+        items = [],
+        additional_expenses = 0,
+        additional_expense_label = null,
+        notes = ''
+    } = req.validatedBody;
 
     const vatRate = await getVatRate();
 
@@ -1382,6 +1397,15 @@ router.post('/:id/invoice', restrictAdmin, validateBody(orderInvoice), async (re
                     `INSERT INTO invoice_items (invoice_id, variant_id, quantity, unit_price)
                      VALUES ($1, $2, $3, $4)`,
                     [invoice.id, item.variant_id, item.qty, item.unit_price]
+                );
+            }
+
+            if (addExp > 0) {
+                const label = (additional_expense_label || '').trim() || 'مصاريف إضافية';
+                await client.query(
+                    `INSERT INTO invoice_expenses (invoice_id, expense_type, description, amount)
+                     VALUES ($1, $2, $3, $4)`,
+                    [invoice.id, 'additional', label, addExp]
                 );
             }
 

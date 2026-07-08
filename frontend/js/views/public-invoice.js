@@ -81,15 +81,30 @@
         _el('pinv-status').textContent = st.label;
 
         // Items table
-        if (inv.items && inv.items.length > 0) {
-            _el('pinv-items').innerHTML = inv.items.map(item => `
+        const expenseItems = (inv.expenses || []).map(exp => ({
+            product_name: exp.description || 'مصاريف إضافية',
+            size_name: 'حبة',
+            quantity: 1,
+            unit_price: parseFloat(exp.amount || 0),
+            line_total: parseFloat(exp.amount || 0),
+            discount_percent: 0,
+            isExpense: true,
+            unit_label: 'حبة',
+        }));
+        const combinedItems = [...(inv.items || []), ...expenseItems];
+
+        if (combinedItems.length > 0) {
+            _el('pinv-items').innerHTML = combinedItems.map(item => `
                 <tr class="hover:bg-slate-50/50">
-                    <td class="py-3 px-4 font-medium text-slate-800">${esc(item.product_name)}</td>
-                    <td class="py-3 px-4 text-center text-slate-600">${esc(item.size_name || '-')}</td>
-                    <td class="py-3 px-4 text-center font-semibold">${fmt(item.quantity)}</td>
+                    <td class="py-3 px-4 font-medium text-slate-800">
+                        ${esc(item.product_name)}
+                        ${item.isExpense ? '<span class="ml-2 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">مصاريف</span>' : ''}
+                    </td>
+                    <td class="py-3 px-4 text-center text-slate-600">${item.isExpense ? (item.unit_label || 'حبة') : esc(item.size_name || '-')}</td>
+                    <td class="py-3 px-4 text-center font-semibold">${fmt(item.isExpense ? 1 : item.quantity)}</td>
                     <td class="py-3 px-4 text-center font-mono">${fmt(item.unit_price)}</td>
                     <td class="py-3 px-4 text-center text-slate-500">${item.discount_percent ? item.discount_percent + '%' : '-'}</td>
-                    <td class="py-3 px-4 text-left font-mono font-semibold text-slate-700">${fmt(item.line_total)}</td>
+                    <td class="py-3 px-4 text-left font-mono font-semibold text-slate-700">${fmt(item.line_total || (item.quantity * item.unit_price))}</td>
                 </tr>
             `).join('');
         } else {

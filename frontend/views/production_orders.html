@@ -721,12 +721,16 @@
                 <label class="block text-sm font-bold text-slate-700 mb-2">أصناف الفاتورة</label>
                 <div id="invoice-items-container" class="space-y-2 bg-slate-50 rounded-xl p-3 border border-slate-200"></div>
             </div>
-            <div class="grid grid-cols-2 gap-3">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                     <label class="block text-sm font-bold text-slate-700 mb-1.5">مصاريف إضافية</label>
-                    <input type="number" id="invoice-extra-expenses" min="0" step="0.01" placeholder="0.00"
-                           oninput="window.poView.calcInvoiceTotal()"
-                           class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-brand-500 transition-all">
+                    <div class="flex flex-col gap-2">
+                        <input type="text" id="invoice-extra-desc" maxlength="120" placeholder="مثال: شحن سريع"
+                               class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-brand-500 transition-all">
+                        <input type="number" id="invoice-extra-expenses" min="0" step="0.01" placeholder="0.00"
+                               oninput="window.poView.calcInvoiceTotal()"
+                               class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-brand-500 transition-all">
+                    </div>
                 </div>
                 <div class="bg-brand-50 rounded-xl p-3 flex flex-col justify-center">
                     <p class="text-xs text-brand-600 font-semibold">الإجمالي (شامل 15% ضريبة)</p>
