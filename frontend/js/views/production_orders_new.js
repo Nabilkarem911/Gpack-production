@@ -2458,7 +2458,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
             const totalPaid = payments.reduce((s, p) => s + parseFloat(p.amount || 0), 0);
             const remaining = Math.max(0, parseFloat(inv.grand_total || 0) - totalPaid);
             const isProforma = inv.status !== 'issued';
-            const invoiceTitle = isProforma ? 'فاتورة أولية (مسودة)' : 'فاتورة نهائية';
+            const invoiceTitle = isProforma ? 'فاتورة أولية' : 'فاتورة نهائية';
             const PAY_M = { cash: 'نقدي', bank_transfer: 'تحويل بنكي', check: 'شيك', card: 'بطاقة' };
 
             const itemsRows = tableItems.map((item, idx) => {
