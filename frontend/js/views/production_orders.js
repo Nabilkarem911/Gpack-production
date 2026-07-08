@@ -825,6 +825,8 @@
         if (expEl) expEl.value = '';
         const expDescEl = document.getElementById('invoice-extra-desc');
         if (expDescEl) expDescEl.value = '';
+        const discEl = document.getElementById('invoice-discount');
+        if (discEl) discEl.value = '';
         _calcInvoiceTotal();
         _showModal('po-invoice-modal');
     }
@@ -837,9 +839,11 @@
             const priceEl = container.querySelectorAll('[data-item-price]')[i];
             if (priceEl) subtotal += parseFloat(qtyEl.value||0) * parseFloat(priceEl.value||0);
         });
+        const discount = parseFloat((document.getElementById('invoice-discount')||{}).value||0);
         const extra = parseFloat((document.getElementById('invoice-extra-expenses')||{}).value||0);
-        const tax   = subtotal * 0.15;
-        const total = subtotal + tax + extra;
+        const afterDiscount = Math.max(0, subtotal - discount);
+        const tax   = afterDiscount * 0.15;
+        const total = afterDiscount + tax + extra;
         const el = document.getElementById('invoice-total-display');
         if (el) el.textContent = `${_fmt(total)} ر.س`;
     }
@@ -848,6 +852,7 @@
         const type     = (document.getElementById('invoice-type')             ||{}).value || 'proforma';
         const extra    = parseFloat((document.getElementById('invoice-extra-expenses')||{}).value)||0;
         const extraDesc= ((document.getElementById('invoice-extra-desc')||{}).value || '').trim();
+        const discount = parseFloat((document.getElementById('invoice-discount')||{}).value)||0;
         const notes    = (document.getElementById('invoice-notes')             ||{}).value || '';
         const container= document.getElementById('invoice-items-container');
         if (!container) return;
@@ -871,7 +876,7 @@
         try {
             await window.apiFetch(`/api/orders/${_hubOrderId}/invoice`, {
                 method: 'POST',
-                body: { type, items, additional_expenses: extra, additional_expense_label: extraDesc, notes },
+                body: { type, items, additional_expenses: extra, additional_expense_label: extraDesc, discount_amount: discount, notes },
             });
             _toast('تم إصدار الفاتورة بنجاح');
             _hideModal('po-invoice-modal');
@@ -879,6 +884,8 @@
             if (expInput) expInput.value = '';
             const expDescInput = document.getElementById('invoice-extra-desc');
             if (expDescInput) expDescInput.value = '';
+            const discInput = document.getElementById('invoice-discount');
+            if (discInput) discInput.value = '';
             await _renderHubFinancial();
         } catch (err) {
             _toast(err.message || 'فشل إصدار الفاتورة', 'error');

@@ -239,14 +239,16 @@
 
     function _calcModalTotals() {
         const taxRate = parseFloat(_el('si-m-tax')?.value || 15) / 100;
+        const discount = parseFloat(_el('si-m-discount')?.value || 0);
 
         let subtotal = 0;
         for (const item of _orderItems) {
             subtotal += item.line_total;
         }
 
-        const taxAmount = subtotal * taxRate;
-        const grand = subtotal + taxAmount;
+        const afterDiscount = Math.max(0, subtotal - discount);
+        const taxAmount = afterDiscount * taxRate;
+        const grand = afterDiscount + taxAmount;
 
         const _s = (id, v) => { const el = _el(id); if (el) el.textContent = v; };
         _s('si-m-subtotal', fmt(subtotal));
@@ -254,6 +256,10 @@
         _s('si-m-tax-amount', fmt(taxAmount));
         _s('si-m-grand', fmt(grand));
     }
+
+    window.siUpdateDiscount = function(value) {
+        _calcModalTotals();
+    };
 
     // Recalc on tax change
     _el('si-m-tax')?.addEventListener('input', _calcModalTotals);
@@ -286,6 +292,7 @@
                 invoice_date: _el('si-m-date')?.value,
                 due_date: _el('si-m-due')?.value || null,
                 tax_rate: parseFloat(_el('si-m-tax')?.value || 15) / 100,
+                discount_amount: parseFloat(_el('si-m-discount')?.value || 0),
                 notes: _el('si-m-notes')?.value || '',
                 items: items,
             };

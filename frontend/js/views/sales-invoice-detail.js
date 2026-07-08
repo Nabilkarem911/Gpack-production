@@ -168,6 +168,12 @@
 
         // Totals
         _el('sid-subtotal').textContent = fmt(inv.subtotal);
+        if (parseFloat(inv.discount_amount || 0) > 0) {
+            _el('sid-discount-row').classList.remove('hidden');
+            _el('sid-discount').textContent = '- ' + fmt(inv.discount_amount);
+        } else {
+            _el('sid-discount-row').classList.add('hidden');
+        }
         _el('sid-tax-rate').textContent = Math.round((inv.tax_rate || 0) * 100);
         _el('sid-tax-amount').textContent = fmt(inv.tax_amount);
         _el('sid-grand-total').textContent = fmt(inv.grand_total);
@@ -318,6 +324,11 @@
         <span style="color:#64748b">المجموع الفرعي</span>
         <span style="font-family:monospace;font-weight:600">${fmt(inv.subtotal)} ريال</span>
       </div>
+      ${parseFloat(inv.discount_amount || 0) > 0 ? `
+      <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:13px">
+        <span style="color:#dc2626">خصم</span>
+        <span style="font-family:monospace;font-weight:600;color:#dc2626">- ${fmt(inv.discount_amount)} ريال</span>
+      </div>` : ''}
       <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:13px">
         <span style="color:#64748b">الضريبة (${Math.round((inv.tax_rate || 0) * 100)}%)</span>
         <span style="font-family:monospace;font-weight:600">${fmt(inv.tax_amount)} ريال</span>

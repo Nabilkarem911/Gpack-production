@@ -62,6 +62,7 @@ const invoiceCreate = z.object({
     tax_rate: z.coerce.number().min(0).max(1).optional().nullable(),
     additional_expenses: z.coerce.number().min(0).optional().default(0),
     additional_expense_label: z.string().max(120).optional().nullable(),
+    discount_amount: z.coerce.number().min(0).optional().default(0),
     notes: z.string().max(2000).optional().nullable(),
     items: z.array(z.object({
         variant_id: z.string().uuid(),
@@ -528,6 +529,7 @@ const orderInvoice = z.object({
     }).passthrough()).optional(),
     additional_expenses: z.coerce.number().min(0).optional().default(0),
     additional_expense_label: z.string().max(120).optional().nullable(),
+    discount_amount: z.coerce.number().min(0).optional().default(0),
     notes: z.string().max(2000).optional().default(''),
 }).passthrough();
 

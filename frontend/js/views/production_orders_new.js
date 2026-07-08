@@ -2169,6 +2169,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
     async function _openInvoiceModal() {
         _setVal('invoice-notes', '');
         _setVal('invoice-extra-expenses', '');
+        _setVal('invoice-discount', '');
 
         // Load previous payments + render items in parallel
         const [, fin] = await Promise.all([
@@ -2236,9 +2237,11 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         qtyEls.forEach((qEl, i) => {
             subtotal += parseFloat(qEl.value || 0) * parseFloat(priceEls[i]?.value || 0);
         });
-        const extra = parseFloat(_el('invoice-extra-expenses')?.value || 0);
-        const tax   = subtotal * 0.15;
-        const total = subtotal + tax + extra;
+        const discount = parseFloat(_el('invoice-discount')?.value || 0);
+        const extra    = parseFloat(_el('invoice-extra-expenses')?.value || 0);
+        const afterDiscount = Math.max(0, subtotal - discount);
+        const tax   = afterDiscount * 0.15;
+        const total = afterDiscount + tax + extra;
         _setText('invoice-total-display', `${_fmt(total)} ر.س`);
 
         // Calculate net remaining (total - previous payments)
@@ -2250,6 +2253,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         const type      = _el('invoice-type')?.value || 'proforma';
         const extra     = parseFloat(_el('invoice-extra-expenses')?.value) || 0;
         const extraDesc = (_el('invoice-extra-desc')?.value || '').trim();
+        const discount  = parseFloat(_el('invoice-discount')?.value) || 0;
         const notes     = _el('invoice-notes')?.value || '';
         const container = _el('invoice-items-container');
         if (!container) return;
@@ -2286,12 +2290,13 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         try {
             await window.apiFetch(`/api/orders/${_hubOrderId}/invoice`, {
                 method: 'POST',
-                body: { type, items, additional_expenses: extra, additional_expense_label: extraDesc, notes },
+                body: { type, items, additional_expenses: extra, additional_expense_label: extraDesc, discount_amount: discount, notes },
             });
             _toast('تم إصدار الفاتورة بنجاح');
             _hideModal('po-invoice-modal');
             _setVal('invoice-extra-expenses', '');
             _setVal('invoice-extra-desc', '');
+            _setVal('invoice-discount', '');
             // Reload order to get updated grand_total after final invoice sync
             if (type === 'final') {
                 const fresh = await window.apiFetch(`/api/orders/${_hubOrderId}`);
@@ -2608,6 +2613,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
                     <span>المجموع</span>
                     <span>${_fmt(inv.subtotal)} ر.س</span>
                 </div>
+                ${parseFloat(inv.discount_amount || 0) > 0 ? `<div class="total-row"><span>خصم</span><span>- ${_fmt(inv.discount_amount)} ر.س</span></div>` : ''}
                 <div class="total-row">
                     <span>الضريبة (${Math.round(parseFloat(inv.tax_rate || 0.15) * 100)}%)</span>
                     <span>${_fmt(inv.tax_amount)} ر.س</span>

@@ -130,6 +130,12 @@
 
         // Totals
         _el('pinv-subtotal').textContent = fmt(inv.subtotal);
+        if (parseFloat(inv.discount_amount || 0) > 0) {
+            _el('pinv-discount-row').classList.remove('hidden');
+            _el('pinv-discount').textContent = '- ' + fmt(inv.discount_amount);
+        } else {
+            _el('pinv-discount-row').classList.add('hidden');
+        }
         _el('pinv-tax').textContent = fmt(inv.tax_amount);
         _el('pinv-grand-total').textContent = fmt(inv.grand_total);
 

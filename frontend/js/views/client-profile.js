@@ -545,6 +545,14 @@
             if (taxLabelEl) taxLabelEl.textContent = `ضريبة (${taxPct}%)`;
             const _s = (id, val) => { const el = _civEl(id); if (el) el.textContent = val; };
             _s('civ-subtotal', parseFloat(inv.subtotal   || 0).toFixed(2));
+            const civDiscRow = _civEl('civ-discount-row');
+            const civDisc    = _civEl('civ-discount');
+            if (parseFloat(inv.discount_amount || 0) > 0 && civDiscRow && civDisc) {
+                civDiscRow.classList.remove('hidden');
+                civDisc.textContent = '- ' + parseFloat(inv.discount_amount).toFixed(2);
+            } else if (civDiscRow) {
+                civDiscRow.classList.add('hidden');
+            }
             _s('civ-tax',      parseFloat(inv.tax_amount || 0).toFixed(2));
             _s('civ-grand',    parseFloat(inv.grand_total|| 0).toFixed(2));
             _s('civ-paid',     totalPaid.toFixed(2));
@@ -1402,6 +1410,7 @@
 
 <div class="totals"><div class="totals-box">
   <div class="tr"><span>المجموع قبل الضريبة</span><span style="font-family:monospace;font-weight:700;">${parseFloat(inv.subtotal||0).toFixed(2)}</span></div>
+  ${parseFloat(inv.discount_amount || 0) > 0 ? `<div class="tr"><span style="color:#dc2626;">خصم</span><span style="font-family:monospace;font-weight:700;color:#dc2626;">- ${parseFloat(inv.discount_amount||0).toFixed(2)}</span></div>` : ''}
   <div class="tr"><span>ضريبة القيمة المضافة (${taxPct(inv.tax_rate)}%)</span><span style="font-family:monospace;">${parseFloat(inv.tax_amount||0).toFixed(2)}</span></div>
   <div class="tr grand"><span>الإجمالي الكلي</span><span style="font-family:monospace;">${parseFloat(inv.grand_total||0).toFixed(2)}</span></div>
   <div class="tr paid"><span>إجمالي المدفوع</span><span style="font-family:monospace;">${totalPaid.toFixed(2)}</span></div>

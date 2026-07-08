@@ -247,6 +247,7 @@ router.post('/', restrictWrite, validateBody(invoiceCreate), async (req, res) =>
             tax_rate,
             additional_expenses = 0,
             additional_expense_label = null,
+            discount_amount = 0,
             notes = '',
         } = req.validatedBody;
 
@@ -270,20 +271,22 @@ router.post('/', restrictWrite, validateBody(invoiceCreate), async (req, res) =>
             subtotal += lineTotal;
         }
 
-        const taxAmount = parseFloat((subtotal * effectiveTaxRate).toFixed(2));
-        const grandTotal = parseFloat((subtotal + taxAmount + parseFloat(additional_expenses)).toFixed(2));
+        const discount = parseFloat(discount_amount || 0);
+        const afterDiscount = Math.max(0, subtotal - discount);
+        const taxAmount = parseFloat((afterDiscount * effectiveTaxRate).toFixed(2));
+        const grandTotal = parseFloat((afterDiscount + taxAmount + parseFloat(additional_expenses)).toFixed(2));
 
         // Insert invoice
         const invRes = await client.query(`
             INSERT INTO invoices
                 (client_id, order_id, invoice_date, due_date, subtotal, tax_rate, tax_amount,
-                 additional_expenses, grand_total, status, notes, created_by)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'issued', $10, $11)
+                 additional_expenses, discount_amount, grand_total, status, notes, created_by)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'issued', $11, $12)
             RETURNING id, invoice_number
         `, [
             client_id, order_id, invoice_date || new Date().toISOString().split('T')[0],
             due_date, subtotal, effectiveTaxRate, taxAmount,
-            additional_expenses, grandTotal, notes, userId,
+            additional_expenses, discount, grandTotal, notes, userId,
         ]);
 
         const invoiceId = invRes.rows[0].id;
