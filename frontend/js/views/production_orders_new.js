@@ -2442,16 +2442,16 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
             if (!inv) { _toast('تعذر تحميل بيانات الفاتورة', 'error'); return; }
 
             const items = inv.items || [];
-            const EXPENSE_UNIT = 'حبة';
             const expenseItems = (inv.expenses || []).map(exp => ({
-                product_name: exp.description || 'مصاريف إضافية',
-                size_name: EXPENSE_UNIT,
+                product_name: exp.description
+                    ? `مصاريف إضافية (${exp.description})`
+                    : 'مصاريف إضافية',
+                size_name: '',
                 quantity: 1,
                 unit_price: parseFloat(exp.amount || 0),
                 line_total: parseFloat(exp.amount || 0),
                 discount_percent: 0,
                 isExpense: true,
-                unit_label: EXPENSE_UNIT,
             }));
             const tableItems = [...items, ...expenseItems];
             const payments = inv.payments || [];
@@ -2470,12 +2470,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
                 const nameCell = item.isExpense
                     ? `<div class="flex items-center gap-2 justify-end"><span>${item.product_name || 'مصاريف إضافية'}</span><span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">مصاريف إضافية</span></div>`
                     : `${item.product_name || '—'} ${item.size_name || ''}`;
-                const qtyCell = item.isExpense
-                    ? `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;line-height:1.2;">
-                            <span style="font-weight:700;">${qty}</span>
-                            <span style="font-size:11px;color:#94a3b8;">${item.unit_label || 'حبة'}</span>
-                       </div>`
-                    : qty;
+                const qtyCell = item.isExpense ? qty : qty;
                 return `
                 <tr>
                     <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; text-align:center; color:#64748b; font-size:13px;">${idx + 1}</td>

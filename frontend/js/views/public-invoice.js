@@ -82,14 +82,13 @@
 
         // Items table
         const expenseItems = (inv.expenses || []).map(exp => ({
-            product_name: exp.description || 'مصاريف إضافية',
-            size_name: 'حبة',
+            product_name: exp.description ? `مصاريف إضافية (${exp.description})` : 'مصاريف إضافية',
+            size_name: '',
             quantity: 1,
             unit_price: parseFloat(exp.amount || 0),
             line_total: parseFloat(exp.amount || 0),
             discount_percent: 0,
             isExpense: true,
-            unit_label: 'حبة',
         }));
         const combinedItems = [...(inv.items || []), ...expenseItems];
 
@@ -100,9 +99,9 @@
                         ${esc(item.product_name)}
                         ${item.isExpense ? '<span class="ml-2 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">مصاريف</span>' : ''}
                     </td>
-                    <td class="py-3 px-4 text-center text-slate-600">${item.isExpense ? (item.unit_label || 'حبة') : esc(item.size_name || '-')}</td>
+                    <td class="py-3 px-4 text-center text-slate-600">${item.isExpense ? '' : esc(item.size_name || '-')}</td>
                     <td class="py-3 px-4 text-center font-semibold">
-                        ${item.isExpense ? `<div style='display:flex;flex-direction:column;align-items:center;line-height:1.1;font-size:12px;'><span>${fmt(1)}</span><span style="font-size:10px;color:#94a3b8;">${item.unit_label || 'حبة'}</span></div>` : fmt(item.quantity)}
+                        ${item.isExpense ? fmt(1) : fmt(item.quantity)}
                     </td>
                     <td class="py-3 px-4 text-center font-mono">${fmt(item.unit_price)}</td>
                     <td class="py-3 px-4 text-center text-slate-500">${item.discount_percent ? item.discount_percent + '%' : '-'}</td>
