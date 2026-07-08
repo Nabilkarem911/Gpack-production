@@ -19,6 +19,112 @@
     let _invoicePrevPaid = 0;
     let _bulkSelected = {}; // { [itemId]: { id, name, qty, assigned } }
 
+    const DESIGN_IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'svg', 'gif', 'webp', 'bmp', 'tif', 'tiff']);
+    const DESIGN_PDF_EXTENSIONS   = new Set(['pdf']);
+    const DESIGN_VECTOR_EXTENSIONS = new Set(['ai', 'eps', 'ps', 'psd']);
+    const DESIGN_VIEWER_VARIANTS = {
+        thumb: {
+            imageClass: 'w-full h-full object-cover',
+            pdfClass: 'w-full h-full border-0 bg-white pointer-events-none',
+            fallbackClass: 'w-full h-full flex flex-col items-center justify-center text-[10px] font-bold text-slate-500 bg-slate-100'
+        },
+        modal: {
+            imageClass: 'max-w-full max-h-[85vh] object-contain',
+            pdfClass: 'w-full h-[85vh] border-0 bg-white',
+            fallbackClass: 'w-full h-[85vh] flex flex-col items-center justify-center text-white text-lg font-bold bg-slate-900'
+        }
+    };
+    const DESIGN_PLACEHOLDER_SVG = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"%3E%3Crect fill="%23e2e8f0" width="200" height="200"/%3E%3Ctext x="50%25" y="50%25" text-anchor="middle" dy=".3em" fill="%2394a3b8" font-size="14" font-family="sans-serif"%3Eلا يوجد تصميم%3C/text%3E%3C/svg%3E';
+
+    function _getFileExt(url) {
+        if (!url) return '';
+        const clean = url.split('?')[0].split('#')[0];
+        const idx = clean.lastIndexOf('.');
+        return idx === -1 ? '' : clean.substring(idx + 1).toLowerCase();
+    }
+
+    function _escapeHtml(str) {
+        return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    function _buildDesignPreviewMarkup(url, name, { variant = 'thumb', extensionOverride } = {}) {
+        const profile = DESIGN_VIEWER_VARIANTS[variant] || DESIGN_VIEWER_VARIANTS.thumb;
+        const safeName = _escapeHtml(name || 'تصميم');
+        if (!url) {
+            return `<div class="${profile.fallbackClass}"><span>${safeName}</span><span class="text-[9px] font-normal">لا يوجد معاينة</span></div>`;
+        }
+        const ext = (extensionOverride || _getFileExt(url)).toLowerCase();
+        const safeUrl = _escapeHtml(url);
+        if (DESIGN_IMAGE_EXTENSIONS.has(ext)) {
+            return `<img src="${safeUrl}" alt="${safeName}" class="${profile.imageClass}" onerror="this.onerror=null; this.src='${DESIGN_PLACEHOLDER_SVG}'">`;
+        }
+        if (DESIGN_PDF_EXTENSIONS.has(ext)) {
+            return `<object data="${safeUrl}#toolbar=0&navpanes=0" type="application/pdf" class="${profile.pdfClass}" aria-label="${safeName}">`
+                + `<div class="${profile.fallbackClass}"><span>${ext.toUpperCase()}</span><span class="text-[10px] font-normal">${safeName}</span></div>`
+                + `</object>`;
+        }
+        if (DESIGN_VECTOR_EXTENSIONS.has(ext)) {
+            return `<div class="${profile.fallbackClass}"><span>${ext.toUpperCase()}</span><span class="text-[10px] font-normal">${safeName}</span></div>`;
+        }
+        const label = ext ? ext.toUpperCase() : 'FILE';
+        return `<div class="${profile.fallbackClass}"><span>${label}</span><span class="text-[10px] font-normal">${safeName}</span></div>`;
+    }
+
+    function _escapeAttrValue(str) {
+        return String(str ?? '').replace(/'/g, "\\'").replace(/\n/g, ' ');
+    }
+
+    function _setAssignPreviewMedia(thumbnail, name, metaLabel, extensionOverride) {
+        const thumbBtn = _el('assign-design-thumb');
+        const media = thumbBtn?.querySelector('.design-preview-media');
+        if (thumbBtn) {
+            thumbBtn.dataset.url = thumbnail || '';
+            thumbBtn.dataset.name = name || '';
+            const ext = extensionOverride || _getFileExt(thumbnail || '');
+            thumbBtn.dataset.ext = ext;
+            thumbBtn.dataset.meta = metaLabel || '';
+        }
+        if (media) {
+            media.innerHTML = _buildDesignPreviewMarkup(thumbnail, name || 'تصميم', { variant: 'thumb', extensionOverride });
+        }
+    }
+
+    function _openAssignPreview(event) {
+        event?.stopPropagation?.();
+        const thumbBtn = event?.currentTarget || _el('assign-design-thumb');
+        if (!thumbBtn) return;
+        const fileUrl = thumbBtn.dataset.url || '';
+        const designName = thumbBtn.dataset.name || 'تصميم';
+        const designExt = thumbBtn.dataset.ext || '';
+        const meta = thumbBtn.dataset.meta || '';
+
+        const modal = _el('po-design-viewer-modal');
+        const content = _el('po-design-viewer-content');
+        const nameEl = _el('po-design-viewer-name');
+        const metaEl = _el('po-design-viewer-meta');
+        if (!modal || !content) return;
+
+        content.innerHTML = _buildDesignPreviewMarkup(fileUrl, designName, { variant: 'modal', extensionOverride: designExt });
+        if (nameEl) nameEl.textContent = designName;
+        if (metaEl) metaEl.textContent = meta;
+
+        modal.classList.remove('hidden');
+        requestAnimationFrame(() => {
+            modal.classList.remove('opacity-0');
+            modal.querySelector('.modal-panel')?.classList.remove('scale-95');
+        });
+    }
+
+    function _closeAssignPreview(event) {
+        const modal = _el('po-design-viewer-modal');
+        if (!modal) return;
+        if (event && event.target !== event.currentTarget && !event.target.closest('button')) return;
+        modal.classList.add('opacity-0');
+        modal.querySelector('.modal-panel')?.classList.add('scale-95');
+        setTimeout(() => modal.classList.add('hidden'), 200);
+    }
+
     // ── Formatters ─────────────────────────────────────────────────────────────
     const _fmt = (n) => {
         if (n === null || n === undefined || n === '' || isNaN(n)) return '—';
@@ -1697,7 +1803,6 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         // Show design preview
         const previewBox = _el('assign-design-preview-box');
         const noDesignBox = _el('assign-no-design-box');
-        const thumbImg = _el('assign-design-thumb-img');
         const nameEl = _el('assign-design-name');
         const typeLabel = _el('assign-design-type-label');
         const btnText = _el('assign-design-btn-text');
@@ -1715,19 +1820,9 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
             if (btnText) btnText.textContent = 'تغيير التصميم';
 
             // Set thumbnail
-            if (thumbImg) {
-                if (item.design_thumbnail) {
-                    thumbImg.src = item.design_thumbnail;
-                    thumbImg.onerror = function() {
-                        this.src = 'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 200 200\'%3E%3Crect fill=\'%23e2e8f0\' width=\'200\' height=\'200\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\' fill=\'%2394a3b8\' font-size=\'14\' font-family=\'sans-serif\'%3Eلا يوجد تصميم%3C/text%3E%3C/svg%3E';
-                    };
-                    thumbImg.classList.remove('hidden');
-                } else {
-                    thumbImg.classList.add('hidden');
-                }
-            }
-
-            if (nameEl) nameEl.textContent = item.design_name || 'تصميم #' + item.design_id.substring(0, 8);
+            const displayName = item.design_name || 'تصميم #' + (item.design_id || '').substring(0, 8);
+            _setAssignPreviewMedia(item.design_thumbnail, displayName, isNew ? 'تصميم جديد' : 'إعادة طباعة', _getFileExt(item.design_thumbnail || ''));
+            if (nameEl) nameEl.textContent = displayName;
             if (typeLabel) typeLabel.textContent = isNew ? 'تصميم جديد' : 'إعادة طباعة';
         } else {
             // No design
@@ -1735,6 +1830,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
             if (noDesignBox) noDesignBox.classList.remove('hidden');
             if (statusBadge) statusBadge.classList.add('hidden');
             if (btnText) btnText.textContent = 'اختر تصميم';
+            _setAssignPreviewMedia('', '', '');
         }
 
         // Store item with client_id for design operations
@@ -1841,21 +1937,25 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
             return;
         }
 
-        container.innerHTML = designs.map(d => `
-            <div onclick="window.poView._selectDesign('${d.id}', '${d.design_name || 'تصميم'}', '${d.thumbnail_url || ''}')"
+        container.innerHTML = designs.map(d => {
+            const designName = d.design_name || `تصميم ${d.design_number || ''}`;
+            const previewMarkup = _buildDesignPreviewMarkup(d.thumbnail_url, designName, { variant: 'thumb' });
+            const safeNameAttr = _escapeAttrValue(designName);
+            const safeUrlAttr = _escapeAttrValue(d.thumbnail_url || '');
+            const fileExtAttr = _escapeAttrValue(_getFileExt(d.thumbnail_url || ''));
+            return `
+            <div onclick="window.poView._selectDesign('${d.id}', '${safeNameAttr}', '${safeUrlAttr}', '${fileExtAttr}')"
                  class="flex items-center gap-3 p-3 bg-slate-50 hover:bg-brand-50 border border-slate-200 hover:border-brand-300 rounded-lg cursor-pointer transition-all">
                 <div class="w-12 h-12 rounded bg-slate-200 flex items-center justify-center shrink-0 overflow-hidden">
-                    ${d.thumbnail_url
-                        ? `<img src="${d.thumbnail_url}" class="w-full h-full object-cover" onerror="this.style.display='none'">`
-                        : '<i class="fa-solid fa-image text-slate-400"></i>'}
+                    ${previewMarkup}
                 </div>
                 <div class="flex-1 min-w-0">
-                    <div class="text-sm font-bold text-slate-800 truncate">${d.design_name || 'تصميم #' + (d.design_number || '')}</div>
-                    <div class="text-xs text-slate-500">#${d.design_number || d.id.substring(0, 8)}</div>
+                    <div class="text-sm font-bold text-slate-800 truncate">${designName}</div>
+                    <div class="text-xs text-slate-500">#${d.design_number || (d.id || '').substring(0, 8)}</div>
                 </div>
                 <i class="fa-solid fa-check-circle text-slate-300"></i>
-            </div>
-        `).join('');
+            </div>`;
+        }).join('');
     }
 
     function _filterDesigns(query) {
@@ -1867,14 +1967,13 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         _renderDesignList(filtered);
     }
 
-    function _selectDesign(designId, designName, thumbnail) {
+    function _selectDesign(designId, designName, thumbnail, extension) {
         // Update hidden input
         _setVal('assign-selected-design-id', designId);
 
         // Update preview
         const previewBox = _el('assign-design-preview-box');
         const noDesignBox = _el('assign-no-design-box');
-        const thumbImg = _el('assign-design-thumb-img');
         const nameEl = _el('assign-design-name');
         const btnText = _el('assign-design-btn-text');
         const statusBadge = _el('assign-design-status-badge');
@@ -1888,17 +1987,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
             statusBadge.className = 'text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700';
         }
 
-        if (thumbImg) {
-            if (thumbnail) {
-                thumbImg.src = thumbnail;
-                thumbImg.onerror = function() {
-                    this.src = 'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 200 200\'%3E%3Crect fill=\'%23e2e8f0\' width=\'200\' height=\'200\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\' fill=\'%2394a3b8\' font-size=\'14\' font-family=\'sans-serif\'%3Eلا يوجد تصميم%3C/text%3E%3C/svg%3E';
-                };
-                thumbImg.classList.remove('hidden');
-            } else {
-                thumbImg.classList.add('hidden');
-            }
-        }
+        _setAssignPreviewMedia(thumbnail, designName, 'إعادة طباعة', extension);
         if (nameEl) nameEl.textContent = designName;
 
         // Auto switch to reprint when selecting existing design
@@ -2004,7 +2093,6 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
 
             const previewBox = _el('assign-design-preview-box');
             const noDesignBox = _el('assign-no-design-box');
-            const thumbImg = _el('assign-design-thumb-img');
             const nameEl = _el('assign-design-name');
             const btnText = _el('assign-design-btn-text');
             const statusBadge = _el('assign-design-status-badge');
@@ -2018,17 +2106,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
                 statusBadge.className = 'text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700';
             }
 
-            if (thumbImg) {
-                if (design?.thumbnail_url) {
-                    thumbImg.src = design.thumbnail_url;
-                    thumbImg.onerror = function() {
-                        this.src = 'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 200 200\'%3E%3Crect fill=\'%23e2e8f0\' width=\'200\' height=\'200\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\' fill=\'%2394a3b8\' font-size=\'14\' font-family=\'sans-serif\'%3Eلا يوجد تصميم%3C/text%3E%3C/svg%3E';
-                    };
-                    thumbImg.classList.remove('hidden');
-                } else {
-                    thumbImg.classList.add('hidden');
-                }
-            }
+            _setAssignPreviewMedia(design?.thumbnail_url || '', name, 'تصميم جديد', _getFileExt(design?.thumbnail_url || ''));
             if (nameEl) nameEl.textContent = name;
 
             // Auto switch to new design
@@ -2818,6 +2896,8 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         },
         openAssignModal:      _openAssignModal,
         closeAssignModal:     () => _hideModal('po-assign-modal'),
+        openAssignPreview:    _openAssignPreview,
+        closeAssignPreview:   _closeAssignPreview,
         saveAssignment:       _saveAssignment,
         toggleItemCheck:      _toggleItemCheck,
         toggleAllItems:       _toggleAllItems,
