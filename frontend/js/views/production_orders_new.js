@@ -90,6 +90,40 @@
         }
     }
 
+    function _normalizeDesignUrl(url) {
+        if (!url) return '';
+        if (url.startsWith('http') || url.startsWith('data:') || url.startsWith('blob:') || url.startsWith('/')) return url;
+        return '/' + url;
+    }
+
+    function _buildPrintPreviewMarkup(url, name, size = 'thumb') {
+        const safeName = _escapeHtml(name || 'تصميم');
+        const normalized = _normalizeDesignUrl(url);
+        const isLarge = size === 'page';
+        const baseStyle = isLarge
+            ? 'border-radius:18px;border:2px solid #e2e8f0;background:#f8fafc;overflow:hidden;min-height:420px;padding:10px;display:flex;align-items:center;justify-content:center;'
+            : 'width:72px;height:72px;border-radius:8px;border:2px solid #e2e8f0;background:#f8fafc;display:flex;align-items:center;justify-content:center;overflow:hidden;margin:0 auto;';
+        const placeholder = `<div style="${baseStyle}"><span style="font-size:${isLarge ? '14px' : '10px'};color:#94a3b8;">لا يوجد</span></div>`;
+        if (!normalized) return placeholder;
+
+        const ext = _getFileExt(normalized);
+        if (DESIGN_IMAGE_EXTENSIONS.has(ext)) {
+            const imgStyle = isLarge ? 'width:100%;height:auto;max-height:700px;display:block;margin:0 auto;' : 'width:100%;height:100%;object-fit:cover;display:block;';
+            return `<div style="${baseStyle}"><img src="${normalized}" alt="${safeName}" style="${imgStyle}" onerror="this.onerror=null;this.parentElement.innerHTML='<span style=\\'font-size:${isLarge ? '14px' : '10px'};color:#94a3b8\\'>لا يوجد</span>';"></div>`;
+        }
+        if (DESIGN_PDF_EXTENSIONS.has(ext)) {
+            if (isLarge) {
+                return `<div style="${baseStyle}"><object data="${normalized}#toolbar=0&navpanes=0" type="application/pdf" style="width:100%;height:600px;border:0;background:#fff;" aria-label="${safeName}"><span style="font-size:14px;color:#94a3b8;">تعذّر تحميل ملف PDF</span></object></div>`;
+            }
+            return `<div style="${baseStyle};flex-direction:column;font-weight:700;color:#dc2626;">PDF</div>`;
+        }
+        if (DESIGN_VECTOR_EXTENSIONS.has(ext)) {
+            return `<div style="${baseStyle};flex-direction:column;font-weight:700;color:#0f172a;">${ext.toUpperCase()}</div>`;
+        }
+        const label = (ext || 'FILE').toUpperCase();
+        return `<div style="${baseStyle};flex-direction:column;font-weight:700;color:#475569;">${label}</div>`;
+    }
+
     function _openAssignPreview(event) {
         event?.stopPropagation?.();
         const thumbBtn = event?.currentTarget || _el('assign-design-thumb');
@@ -1272,20 +1306,14 @@
                 const designText   = isReprint ? '#b45309' : '#15803d';
                 const designDot    = isReprint ? '↻' : '✎';
 
-                let thumbnailUrl = i.design_thumbnail;
-                if (thumbnailUrl && !thumbnailUrl.startsWith('http') && !thumbnailUrl.startsWith('/')) {
-                    thumbnailUrl = '/' + thumbnailUrl;
-                }
-                const thumbnailHTML = thumbnailUrl
-                    ? `<img src="${thumbnailUrl}" style="width:72px;height:72px;object-fit:cover;border-radius:8px;border:2px solid #e2e8f0;display:block;margin:0 auto;" onerror="this.onerror=null;this.parentElement.innerHTML='<span style=font-size:9px;color:#94a3b8>لا يوجد</span>';">`
-                    : `<div style="width:72px;height:72px;background:#f8fafc;border-radius:8px;display:flex;align-items:center;justify-content:center;border:2px dashed #cbd5e1;margin:0 auto;"><span style="font-size:9px;color:#94a3b8">لا يوجد</span></div>`;
+                const thumbMarkup = _buildPrintPreviewMarkup(i.design_thumbnail, i.design_name || '', 'thumb');
 
                 const qty      = parseInt(i.mo_quantity || i.po_quantity || 0);
                 const unitName = i.unit_name || 'قطعة';
 
                 return `<tr>
                     <td style="padding:10px 12px;text-align:center;vertical-align:middle;border-bottom:1px solid #f1f5f9;">
-                        ${thumbnailHTML}
+                        ${thumbMarkup}
                         ${i.design_name ? `<div style="font-size:9px;color:#64748b;margin-top:3px;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${i.design_name}</div>` : ''}
                     </td>
                     <td style="padding:10px 14px;font-weight:700;font-size:14px;color:#1e293b;vertical-align:middle;border-bottom:1px solid #f1f5f9;">${i.product_name || '—'}</td>
@@ -1304,10 +1332,8 @@
             const designPages = (mo.items || [])
                 .filter(i => i.design_thumbnail)
                 .map((i, idx) => {
-                    let thumbUrl = i.design_thumbnail;
-                    if (thumbUrl && !thumbUrl.startsWith('http') && !thumbUrl.startsWith('/')) {
-                        thumbUrl = '/' + thumbUrl;
-                    }
+                    const normalizedUrl = _normalizeDesignUrl(i.design_thumbnail);
+                    const previewMarkup = _buildPrintPreviewMarkup(normalizedUrl, i.design_name || '', 'page');
                     return `<div style="page-break-before:always;padding:30px 40px;">
                         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;padding-bottom:16px;border-bottom:2px solid #f1f5f9;">
                             <div>
@@ -1319,11 +1345,11 @@
                             </div>
                             <span style="background:#5d198e;color:white;padding:8px 18px;border-radius:10px;font-size:13px;font-weight:900;">${mo.mo_number}</span>
                         </div>
-                        <div style="text-align:center;padding:24px;background:#f8fafc;border:2px solid #e2e8f0;border-radius:16px;">
-                            <img src="${thumbUrl}" style="max-width:100%;max-height:480px;object-fit:contain;border-radius:12px;box-shadow:0 10px 25px rgba(0,0,0,0.1);" onerror="this.parentElement.innerHTML='<p style=color:#94a3b8>تعذّر تحميل الصورة</p>'">
+                        <div style="margin-top:25px;">
+                            ${previewMarkup}
                         </div>
                         <div style="text-align:center;margin-top:16px;">
-                            <a href="${thumbUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:8px;padding:10px 22px;background:#5d198e;color:white;text-decoration:none;border-radius:10px;font-size:13px;font-weight:700;">⬇️ تحميل صورة التصميم</a>
+                            <a href="${normalizedUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:8px;padding:10px 22px;background:#5d198e;color:white;text-decoration:none;border-radius:10px;font-size:13px;font-weight:700;">⬇️ تحميل ملف التصميم</a>
                         </div>
                     </div>`;
                 }).join('');
