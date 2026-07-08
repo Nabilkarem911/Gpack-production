@@ -8,6 +8,11 @@ const crypto = require('crypto');
 
 const SECRET = process.env.SHARE_TOKEN_SECRET || '';
 
+function hasShareTokenSecret() {
+    return typeof process.env.SHARE_TOKEN_SECRET === 'string'
+        && process.env.SHARE_TOKEN_SECRET.length >= 32;
+}
+
 function _ensureSecret() {
     if (!SECRET || SECRET.length < 32) {
         throw new Error('SHARE_TOKEN_SECRET must be set and at least 32 characters long.');
@@ -75,4 +80,5 @@ module.exports = {
     decryptToken,
     hashToken,
     decryptShareToken,
+    hasShareTokenSecret,
 };

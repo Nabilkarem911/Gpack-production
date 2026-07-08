@@ -7,7 +7,7 @@ const fs       = require('fs');
 const multer   = require('multer');
 const db       = require('../db');
 const { success } = require('../utils/response');
-const { encryptToken, hashToken } = require('../utils/crypto');
+const { encryptToken, hashToken, hasShareTokenSecret } = require('../utils/crypto');
 const router   = express.Router();
 
 // =============================================================================
@@ -73,15 +73,32 @@ router.post('/quotations/:id/share', require('../middleware/authMiddleware').aut
             storedToken = plainToken;
         }
 
-        await db.query(
-            `UPDATE orders SET share_token = $1, share_token_hash = $2, token_expires_at = $3, updated_at = NOW() WHERE id = $4`,
-            [storedToken, tokenHash, expiresAt, id]
-        );
+        try {
+            await db.query(
+                `UPDATE orders SET share_token = $1, share_token_hash = $2, token_expires_at = $3, updated_at = NOW() WHERE id = $4`,
+                [storedToken, tokenHash, expiresAt, id]
+            );
+        } catch (dbErr) {
+            const missingHashColumn = dbErr?.code === '42703' || /share_token_hash/i.test(dbErr?.message || '');
+            if (missingHashColumn) {
+                console.warn('[PublicQuotation] share_token_hash column missing — falling back to plaintext column only. Please run migrations.');
+                await db.query(
+                    `UPDATE orders SET share_token = $1, token_expires_at = $2, updated_at = NOW() WHERE id = $3`,
+                    [storedToken, expiresAt, id]
+                );
+            } else {
+                throw dbErr;
+            }
+        }
 
         return success(res, { token: plainToken, expires_at: expiresAt });
     } catch (err) {
         console.error('[PublicQuotation] share error:', err.message);
-        return res.status(500).json({ error: 'تعذّر إنشاء رابط المشاركة. تأكد من إعداد SHARE_TOKEN_SECRET في ملف .env' });
+        const needsSecret = !hasShareTokenSecret();
+        const message = needsSecret
+            ? 'تعذّر إنشاء رابط المشاركة. تأكد من إعداد SHARE_TOKEN_SECRET في ملف .env'
+            : `تعذّر إنشاء رابط المشاركة: ${err.message}`;
+        return res.status(500).json({ error: message });
     }
 });
 

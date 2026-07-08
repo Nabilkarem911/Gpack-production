@@ -8,13 +8,14 @@
 // =============================================================================
 
 const express = require('express');
+const crypto  = require('crypto');
 const router  = express.Router();
 const db      = require('../db');
 const { success, created } = require('../utils/response');
 const { authenticate } = require('../middleware/authMiddleware');
 const authorize = require('../middleware/authorize');
 const { getVatRate } = require('../utils/settings');
-const { encryptToken, hashToken } = require('../utils/crypto');
+const { encryptToken, hashToken, hasShareTokenSecret } = require('../utils/crypto');
 const { invoiceCreate, invoiceShare, invoiceStatusUpdate, validateBody } = require('../utils/validators');
 
 // View permission: all authenticated users with 'sales' view can list/get
@@ -183,15 +184,36 @@ router.post('/:id/share', authenticate, validateBody(invoiceShare), async (req, 
         const { id } = req.params;
         const expiresDays = req.validatedBody.expires_days || 30;
 
-        const plainToken = require('crypto').randomBytes(32).toString('hex');
-        const encrypted  = encryptToken(plainToken);
-        const tokenHash  = hashToken(plainToken);
+        const plainToken = crypto.randomBytes(32).toString('hex');
+        let storedToken  = plainToken;
+        let tokenHash;
+        try {
+            storedToken = encryptToken(plainToken);
+            tokenHash   = hashToken(plainToken);
+        } catch (cryptoErr) {
+            console.error('[Invoices] share crypto error:', cryptoErr.message);
+            tokenHash = crypto.createHmac('sha256', plainToken).digest('hex');
+            storedToken = plainToken;
+        }
         const expiresAt  = new Date(Date.now() + expiresDays * 24 * 60 * 60 * 1000);
 
-        await db.query(
-            `UPDATE invoices SET share_token = $1, share_token_hash = $2, token_expires_at = $3 WHERE id = $4`,
-            [encrypted, tokenHash, expiresAt, id]
-        );
+        try {
+            await db.query(
+                `UPDATE invoices SET share_token = $1, share_token_hash = $2, token_expires_at = $3 WHERE id = $4`,
+                [storedToken, tokenHash, expiresAt, id]
+            );
+        } catch (dbErr) {
+            const missingHashColumn = dbErr?.code === '42703' || /share_token_hash/i.test(dbErr?.message || '');
+            if (missingHashColumn) {
+                console.warn('[Invoices] share_token_hash column missing — falling back to plaintext column only. Please run migrations.');
+                await db.query(
+                    `UPDATE invoices SET share_token = $1, token_expires_at = $2 WHERE id = $3`,
+                    [storedToken, expiresAt, id]
+                );
+            } else {
+                throw dbErr;
+            }
+        }
 
         const baseUrl = `${req.protocol}://${req.get('host')}`;
         res.json({
@@ -202,7 +224,11 @@ router.post('/:id/share', authenticate, validateBody(invoiceShare), async (req, 
         });
     } catch (err) {
         console.error('[Invoices] POST /:id/share error:', err.message);
-        res.status(500).json({ error: 'Internal server error.' });
+        const needsSecret = !hasShareTokenSecret();
+        const message = needsSecret
+            ? 'تعذّر إنشاء رابط مشاركة الفاتورة. تأكد من إعداد SHARE_TOKEN_SECRET في ملف .env'
+            : `تعذّر إنشاء رابط مشاركة الفاتورة: ${err.message}`;
+        res.status(500).json({ error: message });
     }
 });
 
