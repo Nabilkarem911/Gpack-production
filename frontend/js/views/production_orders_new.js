@@ -1718,6 +1718,9 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
             if (thumbImg) {
                 if (item.design_thumbnail) {
                     thumbImg.src = item.design_thumbnail;
+                    thumbImg.onerror = function() {
+                        this.src = 'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 200 200\'%3E%3Crect fill=\'%23e2e8f0\' width=\'200\' height=\'200\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\' fill=\'%2394a3b8\' font-size=\'14\' font-family=\'sans-serif\'%3Eلا يوجد تصميم%3C/text%3E%3C/svg%3E';
+                    };
                     thumbImg.classList.remove('hidden');
                 } else {
                     thumbImg.classList.add('hidden');
@@ -1888,6 +1891,9 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         if (thumbImg) {
             if (thumbnail) {
                 thumbImg.src = thumbnail;
+                thumbImg.onerror = function() {
+                    this.src = 'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 200 200\'%3E%3Crect fill=\'%23e2e8f0\' width=\'200\' height=\'200\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\' fill=\'%2394a3b8\' font-size=\'14\' font-family=\'sans-serif\'%3Eلا يوجد تصميم%3C/text%3E%3C/svg%3E';
+                };
                 thumbImg.classList.remove('hidden');
             } else {
                 thumbImg.classList.add('hidden');
@@ -2015,6 +2021,9 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
             if (thumbImg) {
                 if (design?.thumbnail_url) {
                     thumbImg.src = design.thumbnail_url;
+                    thumbImg.onerror = function() {
+                        this.src = 'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 200 200\'%3E%3Crect fill=\'%23e2e8f0\' width=\'200\' height=\'200\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\' fill=\'%2394a3b8\' font-size=\'14\' font-family=\'sans-serif\'%3Eلا يوجد تصميم%3C/text%3E%3C/svg%3E';
+                    };
                     thumbImg.classList.remove('hidden');
                 } else {
                     thumbImg.classList.add('hidden');
