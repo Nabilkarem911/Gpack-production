@@ -1464,6 +1464,20 @@
     transition: opacity 0.2s;
   }
   .print-btn:hover { opacity: 0.9; }
+  .print-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* ── Loading overlay ── */
+  .print-loading {
+    position: fixed; inset: 0; background: rgba(255,255,255,0.95);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    z-index: 9999; transition: opacity 0.3s;
+  }
+  .print-loading .spinner {
+    width: 48px; height: 48px; border: 4px solid #e9d5ff; border-top-color: #5d198e;
+    border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 16px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .print-loading p { font-size: 14px; color: #5d198e; font-weight: 700; }
 </style>
 </head>
 <body>
@@ -1526,15 +1540,56 @@
   </div>
 
   <div class="no-print" style="text-align:center;margin-top:24px;">
-    <button class="print-btn" onclick="window.print()">🖨️ &nbsp; طباعة أمر التشغيل</button>
+    <button id="print-trigger-btn" class="print-btn" disabled onclick="window.print()">🖨️ &nbsp; طباعة أمر التشغيل</button>
+    <p id="print-status" style="font-size:12px;color:#94a3b8;margin-top:10px;">جارٍ تحميل التصاميم...</p>
   </div>
 
 </div>
 
 ${designPages}
+<div id="print-loading-overlay" class="print-loading">
+  <div class="spinner"></div>
+  <p>جارٍ تحميل التصاميم للطباعة...</p>
+</div>
+<script>
+  (function() {
+    var overlay = document.getElementById('print-loading-overlay');
+    var btn = document.getElementById('print-trigger-btn');
+    var status = document.getElementById('print-status');
+    var imgs = Array.prototype.slice.call(document.images);
+    var total = imgs.length;
+    var loaded = 0;
+
+    function checkDone() {
+      loaded++;
+      if (loaded >= total) finishLoad();
+    }
+
+    function finishLoad() {
+      if (overlay) { overlay.style.opacity = '0'; setTimeout(function(){ overlay.style.display = 'none'; }, 300); }
+      if (btn) btn.disabled = false;
+      if (status) status.textContent = 'جاهز للطباعة — اضغط الزر بالأعلى أو Ctrl+P';
+      window.focus();
+    }
+
+    if (total === 0) { finishLoad(); return; }
+
+    imgs.forEach(function(img) {
+      if (img.complete && img.naturalWidth > 0) { checkDone(); }
+      else {
+        img.addEventListener('load', checkDone);
+        img.addEventListener('error', checkDone);
+      }
+    });
+
+    // Safety timeout: 15s max
+    setTimeout(function() { if (btn && btn.disabled) finishLoad(); }, 15000);
+  })();
+</script>
 </body>
 </html>`);
             win.document.close();
+            win.focus();
         } catch (err) {
             _toast('فشل تحميل بيانات الطباعة', 'error');
             console.error('[poView] printMO:', err);
