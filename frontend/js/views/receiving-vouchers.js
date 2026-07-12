@@ -107,11 +107,9 @@
         const ordered  = _pendingMOs.filter(m => ['ordered','sent'].includes(m.status)).length;
         const partial  = _pendingMOs.filter(m => m.status === 'partially_received').length;
         const items    = _pendingMOs.reduce((s, m) => s + (m.items || []).length, 0);
-        const suppliers = new Set(_pendingMOs.map(m => m.supplier_id).filter(Boolean)).size;
         _el('rv-stat-active').textContent    = ordered;
         _el('rv-stat-partial').textContent   = partial;
         _el('rv-stat-items').textContent     = items;
-        _el('rv-stat-suppliers').textContent = suppliers;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -151,7 +149,6 @@
         grid.innerHTML = grouped.map(order => {
             const preview   = order.allItems.slice(0, 3).map(i => esc(i.product_name || '—')).join('، ');
             const more      = order.allItems.length > 3 ? ` (+${order.allItems.length - 3})` : '';
-            const suppliers = [...new Set(order.mos.map(m => m.supplier_name).filter(Boolean))];
             const hasPartial = order.mos.some(m => m.status === 'partially_received');
             const statusBadge = hasPartial
                 ? '<span class="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded-lg font-bold">جزئي الاستلام</span>'
@@ -175,9 +172,6 @@
                         <i class="fa-solid fa-box ml-1"></i>${order.allItems.length} أصناف
                     </p>
                     <p class="text-xs text-slate-700 font-medium truncate">${preview}${more}</p>
-                    ${suppliers.length
-                        ? `<p class="text-xs text-amber-600 mt-1 font-medium">${suppliers.map(s => esc(s)).join(' • ')}</p>`
-                        : ''}
                 </div>
                 <div class="flex gap-2 mt-auto">
                     <button onclick="window.rvOpenReceiveModal('${order.order_id}')"
@@ -223,7 +217,6 @@
                         <div class="font-medium text-slate-800 text-xs">
                             ${esc(item.product_name || '—')} ${esc(item.size_name || '')}
                         </div>
-                        <div class="text-xs text-amber-600 font-medium mt-0.5">${esc(mo.supplier_name || '—')}</div>
                     </td>
                     <td class="py-2.5 px-3 text-center font-bold text-xs">${moQty}</td>
                     <td class="py-2.5 px-3 text-center text-emerald-600 text-xs">${recQty}</td>
@@ -356,8 +349,7 @@
                     opt.value = mo.id;
                     const num = mo.po_number || mo.mo_number || mo.id.slice(0,8);
                     const client = mo.client_name || '—';
-                    const supplier = mo.supplier_name || '—';
-                    opt.textContent = num + ' — ' + client + ' (' + supplier + ')';
+                    opt.textContent = num + ' — ' + client;
                     moSel.appendChild(opt);
                 });
             }
@@ -373,7 +365,6 @@
                         ...s,
                         mo_number:     mo.po_number || mo.mo_number || mo.id.slice(0,8),
                         order_number:  mo.order_number || '—',
-                        supplier_name: mo.supplier_name || '—',
                         client_name:   mo.client_name || '—',
                         mo_status:     mo.status,
                         order_status:  mo.order_status || '',
@@ -421,8 +412,6 @@
                             <div class="flex items-center gap-2 flex-wrap">
                                 ${statusBadge}
                                 <span class="text-sm font-black text-slate-800">جلسة #${s.session_number}</span>
-                                <span class="text-xs text-slate-400">•</span>
-                                <span class="text-xs font-bold text-amber-600">${esc(s.supplier_name)}</span>
                             </div>
                             <p class="text-xs text-slate-400 mt-1">
                                 طلب #${esc(String(s.order_number))} • ${esc(s.mo_number)} — ${esc(s.client_name)}
