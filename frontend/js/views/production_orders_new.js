@@ -695,8 +695,17 @@
                                     <i class="fa-solid fa-link"></i>
                                 </button>
                             </td>
+                            <td class="py-2.5 px-4 text-center">
+                                ${inv.status !== 'issued' && inv.status !== 'paid' && inv.status !== 'cancelled'
+                                    ? `<button onclick="window.poView.editInvoice('${inv.id}')"
+                                        class="px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-600 text-xs font-bold rounded-lg transition-colors"
+                                        title="تعديل الفاتورة">
+                                        <i class="fa-solid fa-pen-to-square"></i>
+                                    </button>`
+                                    : '<span class="text-slate-300 text-xs">—</span>'}
+                            </td>
                         </tr>`).join('')
-                    : '<tr><td colspan="6" class="py-6 text-center text-slate-400 text-xs">لا توجد فواتير</td></tr>';
+                    : '<tr><td colspan="7" class="py-6 text-center text-slate-400 text-xs">لا توجد فواتير</td></tr>';
             }
 
             // Payments
@@ -2543,6 +2552,136 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         }
     }
 
+    let _editingInvoiceId = null;
+
+    async function _editInvoice(invoiceId) {
+        try {
+            const res = await window.apiFetch(`/api/invoices/${invoiceId}`);
+            const inv = res?.data;
+            if (!inv) { _toast('تعذّر تحميل بيانات الفاتورة', 'error'); return; }
+
+            if (inv.status === 'issued' || inv.status === 'paid' || inv.status === 'cancelled') {
+                _toast('لا يمكن تعديل هذه الفاتورة', 'error'); return;
+            }
+
+            _editingInvoiceId = invoiceId;
+
+            // Populate modal fields
+            _setVal('invoice-notes', inv.notes || '');
+            _setVal('invoice-extra-expenses', inv.additional_expenses || '');
+            _setVal('invoice-discount', inv.discount_amount || '');
+
+            // Set expense description
+            const expDesc = (inv.expenses && inv.expenses[0]?.description) || '';
+            _setVal('invoice-extra-desc', expDesc);
+
+            // Disable type selector (can't change type during edit)
+            const typeEl = _el('invoice-type');
+            if (typeEl) { typeEl.value = 'proforma'; typeEl.disabled = true; }
+
+            // Render items with existing values
+            const container = _el('invoice-items-container');
+            if (!container) return;
+
+            const items = inv.items || [];
+            container.innerHTML = items.map(item => {
+                const qty = parseFloat(item.quantity || 0);
+                const price = parseFloat(item.unit_price || 0);
+                return `<div class="flex items-center gap-2 py-2 border-b border-slate-100 last:border-0">
+                    <div class="flex-1 min-w-0">
+                        <p class="text-sm text-slate-700 font-semibold truncate">${item.product_name || '—'} ${item.size_name || ''}</p>
+                    </div>
+                    <input type="hidden" data-variant-id="${item.variant_id || ''}">
+                    <div class="flex items-center gap-2">
+                        <input type="number" min="0" step="1" value="${qty}"
+                               data-item-qty
+                               class="w-20 px-2 py-1.5 border border-slate-200 rounded-lg text-sm text-center outline-none focus:border-brand-500"
+                               oninput="window.poView.calcInvoiceTotal()">
+                        <input type="number" min="0" step="0.01" value="${price.toFixed(2)}"
+                               data-item-price
+                               class="w-24 px-2 py-1.5 border border-slate-200 rounded-lg text-sm text-center outline-none focus:border-brand-500"
+                               oninput="window.poView.calcInvoiceTotal()">
+                    </div>
+                </div>`;
+            }).join('');
+
+            // Load previous payments
+            const fin = await window.apiFetch(`/api/orders/${_hubOrderId}/financial`).catch(() => null);
+            const totalPaid = (fin?.data?.payments || []).reduce((s, p) => s + parseFloat(p.amount || 0), 0);
+            _invoicePrevPaid = totalPaid;
+            _setText('invoice-prev-paid', `${_fmt(totalPaid)} ر.س`);
+
+            _calcInvoiceTotal();
+
+            // Change save button text and action
+            const saveBtn = _el('po-invoice-save-btn');
+            if (saveBtn) {
+                saveBtn.innerHTML = '<i class="fa-solid fa-check ml-1"></i> حفظ التعديلات';
+                saveBtn.setAttribute('onclick', 'window.poView.saveEditInvoice()');
+            }
+
+            // Change modal title
+            const titleEl = _el('po-invoice-modal-title');
+            if (titleEl) titleEl.textContent = 'تعديل فاتورة أولية #' + inv.invoice_number;
+
+            _showModal('po-invoice-modal');
+        } catch (err) {
+            console.error('[poView] editInvoice:', err);
+            _toast(err.message || 'فشل تحميل الفاتورة للتعديل', 'error');
+        }
+    }
+
+    async function _saveEditInvoice() {
+        if (!_editingInvoiceId) return;
+
+        const extra     = parseFloat(_el('invoice-extra-expenses')?.value) || 0;
+        const extraDesc = (_el('invoice-extra-desc')?.value || '').trim();
+        const discount  = parseFloat(_el('invoice-discount')?.value) || 0;
+        const notes     = _el('invoice-notes')?.value || '';
+        const container = _el('invoice-items-container');
+        if (!container) return;
+
+        const qtyEls     = container.querySelectorAll('[data-item-qty]');
+        const priceEls   = container.querySelectorAll('[data-item-price]');
+        const variantEls = container.querySelectorAll('[data-variant-id]');
+        const items = [];
+
+        for (let i = 0; i < qtyEls.length; i++) {
+            const qty   = parseFloat(qtyEls[i].value);
+            const price = parseFloat(priceEls[i]?.value);
+            const vid   = variantEls[i]?.getAttribute('data-variant-id');
+            if (qty > 0 && price > 0 && vid) items.push({ variant_id: vid, quantity: qty, unit_price: price });
+        }
+
+        if (!items.length) { _toast('أضف بنداً واحداً على الأقل', 'error'); return; }
+
+        try {
+            await window.apiFetch(`/api/invoices/${_editingInvoiceId}`, {
+                method: 'PUT',
+                body: { items, additional_expenses: extra, additional_expense_label: extraDesc, discount_amount: discount, notes },
+            });
+            _toast('تم تعديل الفاتورة بنجاح');
+            _hideModal('po-invoice-modal');
+            _resetInvoiceModal();
+            await _renderHubFinancial();
+        } catch (err) {
+            _toast(err.message || 'فشل تعديل الفاتورة', 'error');
+        }
+    }
+
+    function _resetInvoiceModal() {
+        _editingInvoiceId = null;
+        const typeEl = _el('invoice-type');
+        if (typeEl) typeEl.disabled = false;
+        const saveBtn = _el('po-invoice-save-btn');
+        if (saveBtn) {
+            saveBtn.innerHTML = '<i class="fa-solid fa-check ml-1"></i> إصدار الفاتورة';
+            saveBtn.setAttribute('onclick', 'window.poView.saveInvoice()');
+        }
+        const titleEl = _el('po-invoice-modal-title');
+        if (titleEl) titleEl.textContent = 'إصدار فاتورة';
+    }
+
     async function _printInvoice(invoiceId) {
         try {
             const res = await window.apiFetch(`/api/orders/${_hubOrderId}/invoice/${invoiceId}`);
@@ -3072,12 +3211,14 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         closeBulkAssignModal: () => _hideModal('po-bulk-assign-modal'),
         saveBulkAssignment:   _saveBulkAssignment,
         openInvoiceModal:   _openInvoiceModal,
-        closeInvoiceModal:  () => _hideModal('po-invoice-modal'),
+        closeInvoiceModal:  () => { _resetInvoiceModal(); _hideModal('po-invoice-modal'); },
         onInvoiceTypeChange: _renderInvoiceItems,
         calcInvoiceTotal:   _calcInvoiceTotal,
         saveInvoice:        _saveInvoice,
         printInvoice:       _printInvoice,
         shareInvoice:       _shareInvoice,
+        editInvoice:        _editInvoice,
+        saveEditInvoice:    _saveEditInvoice,
         openPaymentModal:   _openPaymentModal,
         closePaymentModal:  () => _hideModal('po-payment-modal'),
         savePayment:        _savePayment,

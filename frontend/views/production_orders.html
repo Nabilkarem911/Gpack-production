@@ -292,10 +292,11 @@
                                 <th class="text-right py-2.5 px-4 text-xs font-bold text-slate-500">الإجمالي</th>
                                 <th class="text-center py-2.5 px-4 text-xs font-bold text-slate-500">طباعة</th>
                                 <th class="text-center py-2.5 px-4 text-xs font-bold text-slate-500">رابط</th>
+                                <th class="text-center py-2.5 px-4 text-xs font-bold text-slate-500">تعديل</th>
                             </tr>
                         </thead>
                         <tbody id="hub-invoices-tbody">
-                            <tr><td colspan="6" class="py-6 text-center text-slate-400 text-xs">لا توجد فواتير</td></tr>
+                            <tr><td colspan="7" class="py-6 text-center text-slate-400 text-xs">لا توجد فواتير</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -701,7 +702,7 @@
     <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onclick="window.poView.closeInvoiceModal()"></div>
     <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg bg-white rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
         <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 sticky top-0 bg-white z-10">
-            <h3 class="font-bold text-slate-800 flex items-center gap-2">
+            <h3 id="po-invoice-modal-title" class="font-bold text-slate-800 flex items-center gap-2">
                 <i class="fa-solid fa-file-invoice text-blue-500"></i> إصدار فاتورة
             </h3>
             <button onclick="window.poView.closeInvoiceModal()" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 transition-colors">
@@ -767,7 +768,7 @@
         <div class="flex justify-end gap-2 px-5 py-4 border-t border-slate-100 sticky bottom-0 bg-white">
             <button onclick="window.poView.closeInvoiceModal()"
                     class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold rounded-xl transition-colors">إلغاء</button>
-            <button onclick="window.poView.saveInvoice()"
+            <button id="po-invoice-save-btn" onclick="window.poView.saveInvoice()"
                     class="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl shadow transition-all active:scale-[0.98]">
                 <i class="fa-solid fa-check ml-1"></i> إصدار الفاتورة
             </button>
@@ -1039,4 +1040,4 @@
     </div>
 </div>
 
-<script src="/js/views/production_orders_new.js?v=20260712c"></script>
+<script src="/js/views/production_orders_new.js?v=20260712d"></script>

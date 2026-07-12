@@ -73,6 +73,23 @@ const invoiceCreate = z.object({
     }).passthrough()).min(1, 'At least one item is required'),
 }).passthrough();
 
+const invoiceUpdate = z.object({
+    invoice_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    due_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+    tax_rate: z.coerce.number().min(0).max(1).optional().nullable(),
+    additional_expenses: z.coerce.number().min(0).optional().default(0),
+    additional_expense_label: z.string().max(120).optional().nullable(),
+    discount_amount: z.coerce.number().min(0).optional().default(0),
+    notes: z.string().max(2000).optional().nullable(),
+    items: z.array(z.object({
+        variant_id: z.string().uuid(),
+        quantity: z.coerce.number().positive(),
+        unit_price: z.coerce.number().min(0),
+        discount_percent: z.coerce.number().min(0).max(100).optional().default(0),
+        order_item_id: z.string().uuid().optional().nullable(),
+    }).passthrough()).min(1, 'At least one item is required'),
+}).passthrough();
+
 const receiptVoucherCreate = z.object({
     client_id: z.string().uuid('Valid client_id is required'),
     client_type: z.enum(['client', 'franchise']).optional().default('client'),
@@ -721,6 +738,7 @@ module.exports = {
     clientCreate,
     orderCreate,
     invoiceCreate,
+    invoiceUpdate,
     receiptVoucherCreate,
     productCreate,
     productUpdate,

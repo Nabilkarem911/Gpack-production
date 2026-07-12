@@ -16,7 +16,7 @@ const { authenticate } = require('../middleware/authMiddleware');
 const authorize = require('../middleware/authorize');
 const { getVatRate } = require('../utils/settings');
 const { hashToken, hasShareTokenSecret } = require('../utils/crypto');
-const { invoiceCreate, invoiceShare, invoiceStatusUpdate, validateBody } = require('../utils/validators');
+const { invoiceCreate, invoiceUpdate, invoiceShare, invoiceStatusUpdate, validateBody } = require('../utils/validators');
 
 // View permission: all authenticated users with 'sales' view can list/get
 router.use(authorize('sales', 'view'));
@@ -324,6 +324,117 @@ router.post('/', restrictWrite, validateBody(invoiceCreate), async (req, res) =>
     } catch (err) {
         await client.query('ROLLBACK');
         console.error('[Invoices] POST / error:', err.message);
+        res.status(500).json({ error: 'Internal server error.' });
+    } finally {
+        client.release();
+    }
+});
+
+// ── PUT /api/invoices/:id ────────────────────────────────────────────────────
+// Edit invoice content (items, prices, notes, discount, expenses).
+// Only invoices with status 'draft' (proforma) can be edited.
+router.put('/:id', restrictEdit, validateBody(invoiceUpdate), async (req, res) => {
+    const client = await db.pool.connect();
+    try {
+        const { id } = req.params;
+        const {
+            invoice_date,
+            due_date,
+            tax_rate,
+            additional_expenses = 0,
+            additional_expense_label = null,
+            discount_amount = 0,
+            notes = '',
+            items = [],
+        } = req.validatedBody;
+
+        // Check invoice exists and is editable
+        const invRes = await client.query(`
+            SELECT id, invoice_number, status, client_id, order_id
+            FROM invoices WHERE id = $1
+        `, [id]);
+
+        if (!invRes.rows.length) {
+            return res.status(404).json({ error: 'Invoice not found' });
+        }
+
+        const invoice = invRes.rows[0];
+
+        if (invoice.status === 'paid' || invoice.status === 'cancelled' || invoice.status === 'issued') {
+            return res.status(400).json({ error: 'لا يمكن تعديل فاتورة نهائية أو مدفوعة أو ملغية. فقط الفواتير الأولية قابلة للتعديل.' });
+        }
+
+        const effectiveTaxRate = tax_rate ?? await getVatRate();
+
+        await client.query('BEGIN');
+
+        // Calculate new totals
+        let subtotal = 0;
+        for (const item of items) {
+            const qty = parseFloat(item.quantity) || 0;
+            const price = parseFloat(item.unit_price) || 0;
+            const discount = parseFloat(item.discount_percent) || 0;
+            const lineTotal = qty * price * (1 - discount / 100);
+            subtotal += lineTotal;
+        }
+        const discount = parseFloat(discount_amount || 0);
+        const afterDiscount = Math.max(0, subtotal - discount);
+        const taxAmount = parseFloat((afterDiscount * effectiveTaxRate).toFixed(2));
+        const addExp = parseFloat(additional_expenses || 0);
+        const grandTotal = parseFloat((afterDiscount + taxAmount + addExp).toFixed(2));
+
+        // Update invoice header
+        await client.query(`
+            UPDATE invoices
+            SET subtotal = $1, tax_rate = $2, tax_amount = $3,
+                additional_expenses = $4, discount_amount = $5, grand_total = $6,
+                notes = $7, due_date = $8,
+                invoice_date = COALESCE($9, invoice_date),
+                updated_at = NOW()
+            WHERE id = $10
+        `, [subtotal, effectiveTaxRate, taxAmount, addExp, discount, grandTotal,
+            notes || null, due_date || null, invoice_date || null, id]);
+
+        // Delete old items and insert new ones
+        await client.query('DELETE FROM invoice_items WHERE invoice_id = $1', [id]);
+        for (const item of items) {
+            const qty = parseFloat(item.quantity) || 0;
+            const price = parseFloat(item.unit_price) || 0;
+            const disc = parseFloat(item.discount_percent) || 0;
+            const lineTotal = qty * price * (1 - disc / 100);
+            await client.query(`
+                INSERT INTO invoice_items (invoice_id, variant_id, order_item_id, quantity, unit_price, discount_percent, line_total)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+            `, [id, item.variant_id, item.order_item_id || null, qty, price, disc, lineTotal]);
+        }
+
+        // Delete old expenses and insert new one
+        await client.query('DELETE FROM invoice_expenses WHERE invoice_id = $1', [id]);
+        if (addExp > 0) {
+            const label = (additional_expense_label || '').trim() || 'مصاريف إضافية';
+            await client.query(`
+                INSERT INTO invoice_expenses (invoice_id, expense_type, description, amount)
+                VALUES ($1, $2, $3, $4)
+            `, [id, 'additional', label, addExp]);
+        }
+
+        // Update client_transactions amount for this invoice
+        await client.query(`
+            UPDATE client_transactions
+            SET amount = $1, updated_at = NOW()
+            WHERE invoice_id = $2 AND type = 'invoice'
+        `, [grandTotal, id]);
+
+        await client.query('COMMIT');
+
+        res.json({
+            data: { id: parseInt(id), invoice_number: invoice.invoice_number, grand_total: grandTotal },
+            message: 'تم تعديل الفاتورة بنجاح',
+        });
+
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('[Invoices] PUT /:id error:', err.message);
         res.status(500).json({ error: 'Internal server error.' });
     } finally {
         client.release();
