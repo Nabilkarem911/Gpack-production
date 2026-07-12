@@ -204,6 +204,132 @@
         }
     };
 
+    // ── Create standalone delivery note ───────────────────────────────────────
+    window.dvOpenCreateModal = async function() {
+        const clientSel = _el('dv-create-client');
+        const whSel     = _el('dv-create-warehouse');
+        const stockDiv  = _el('dv-create-stock');
+        if (clientSel) clientSel.innerHTML = '<option value="">— اختر العميل —</option>';
+        if (whSel)     whSel.innerHTML     = '<option value="">— كل المستودعات —</option>';
+        if (stockDiv)  stockDiv.innerHTML  = '<p class="text-sm text-slate-400 text-center py-4">اختر العميل لعرض الأصناف</p>';
+        const dEl = _el('dv-create-driver');   if (dEl) dEl.value = '';
+        const vEl = _el('dv-create-vehicle');  if (vEl) vEl.value = '';
+        const nEl = _el('dv-create-notes');    if (nEl) nEl.value = '';
+
+        try {
+            const res = await window.apiFetch('/api/clients');
+            const clients = res.data || [];
+            if (clientSel) {
+                clients.forEach(c => {
+                    clientSel.innerHTML += `<option value="${esc(c.id)}">${esc(c.name)}</option>`;
+                });
+            }
+        } catch (e) { window.showToast('فشل تحميل العملاء', 'error'); }
+
+        openModal('dv-create-modal');
+    };
+
+    window.dvCloseCreateModal = function() { closeModalEl('dv-create-modal'); };
+
+    window.dvOnClientChange = async function() {
+        const clientId = _el('dv-create-client')?.value;
+        const whSel    = _el('dv-create-warehouse');
+        if (whSel) whSel.innerHTML = '<option value="">— كل المستودعات —</option>';
+        if (!clientId) {
+            const stockDiv = _el('dv-create-stock');
+            if (stockDiv) stockDiv.innerHTML = '<p class="text-sm text-slate-400 text-center py-4">اختر العميل لعرض الأصناف</p>';
+            return;
+        }
+        try {
+            const res = await window.apiFetch('/api/inventory/warehouses?client_id=' + clientId);
+            const warehouses = res.data || [];
+            if (whSel) {
+                warehouses.forEach(w => {
+                    whSel.innerHTML += `<option value="${esc(w.id)}">${esc(w.name)}</option>`;
+                });
+            }
+        } catch (_) {}
+        await window.dvLoadStockForCreate();
+    };
+
+    window.dvLoadStockForCreate = async function() {
+        const clientId = _el('dv-create-client')?.value;
+        const whId     = _el('dv-create-warehouse')?.value;
+        const stockDiv = _el('dv-create-stock');
+        if (!stockDiv || !clientId) return;
+
+        stockDiv.innerHTML = '<p class="text-sm text-slate-400 text-center py-4"><i class="fa-solid fa-circle-notch fa-spin"></i> جاري التحميل...</p>';
+
+        try {
+            let url = '/api/inventory/stock?client_id=' + clientId;
+            if (whId) url += '&warehouse_id=' + whId;
+            const res = await window.apiFetch(url);
+            const stock = (res.data || []).filter(s => parseFloat(s.quantity || s.available_qty || 0) > 0);
+
+            if (!stock.length) {
+                stockDiv.innerHTML = '<p class="text-sm text-slate-400 text-center py-4">لا يوجد مخزون متاح</p>';
+                return;
+            }
+
+            stockDiv.innerHTML = stock.map(s => {
+                const avail = parseFloat(s.available_qty || s.quantity || 0);
+                return `
+                <div class="flex items-center gap-3 bg-white rounded-xl p-3 border border-slate-200">
+                    <div class="flex-1">
+                        <p class="text-sm font-bold text-slate-800">${esc(s.product_name || '—')}</p>
+                        <p class="text-xs text-slate-500">${esc(s.variant_name || s.size_name || '')} — متاح: <span class="font-bold text-emerald-600">${avail}</span></p>
+                    </div>
+                    <div class="w-24">
+                        <input type="number" min="0" max="${avail}" step="1" value="0" placeholder="0"
+                               data-create-variant-id="${esc(s.variant_id)}"
+                               data-create-max="${avail}"
+                               class="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-sm text-center outline-none focus:border-brand-400" />
+                    </div>
+                </div>`;
+            }).join('');
+        } catch (e) {
+            stockDiv.innerHTML = '<p class="text-sm text-red-400 text-center py-4">فشل تحميل المخزون</p>';
+        }
+    };
+
+    window.dvConfirmCreate = async function() {
+        const clientId  = _el('dv-create-client')?.value;
+        const whId      = _el('dv-create-warehouse')?.value;
+        const driver    = _el('dv-create-driver')?.value || null;
+        const vehicle   = _el('dv-create-vehicle')?.value || null;
+        const notes     = _el('dv-create-notes')?.value || null;
+
+        if (!clientId) { window.showToast('اختر العميل', 'error'); return; }
+
+        const inputs = document.querySelectorAll('#dv-create-stock input[data-create-variant-id]');
+        const items  = [];
+        let valErr   = null;
+        inputs.forEach(inp => {
+            const q   = parseFloat(inp.value) || 0;
+            const max = parseFloat(inp.dataset.createMax) || 0;
+            if (q > max) valErr = `الكمية (${q}) تتجاوز المتاح (${max})`;
+            if (q > 0)   items.push({ variant_id: inp.dataset.createVariantId, requested_qty: q });
+        });
+        if (valErr)        { window.showToast(valErr, 'error'); return; }
+        if (!items.length) { window.showToast('أدخل كمية لأحد الأصناف على الأقل', 'error'); return; }
+
+        const btn = _el('dv-create-confirm-btn');
+        if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin ml-2"></i> جاري الإصدار...'; }
+
+        try {
+            const body = { client_id: clientId, items, notes, driver_name: driver, vehicle_number: vehicle };
+            if (whId) body.warehouse_id = whId;
+            await window.apiFetch('/api/delivery-notes', { method: 'POST', body });
+            window.dvCloseCreateModal();
+            window.showToast('تم إصدار أمر الفسح بنجاح ✅');
+            await window.dvInit();
+        } catch (e) {
+            window.showToast(e.message || 'فشل إصدار أمر الفسح', 'error');
+        } finally {
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-check ml-1.5"></i> إصدار أمر الفسح'; }
+        }
+    };
+
     window.dvConfirmEdit = async function() {
         if (!_editDN) return;
         const inputs = document.querySelectorAll('#dv-edit-modal-items input[data-edit-item-id]');

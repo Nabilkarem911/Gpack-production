@@ -71,6 +71,86 @@ router.get('/', async (req, res) => {
 });
 
 // =============================================================================
+// POST /api/delivery-notes
+// Create a standalone delivery note (not tied to an order).
+// Body: { client_id, warehouse_id, items: [{ variant_id, requested_qty }], notes, driver_name, vehicle_number }
+// =============================================================================
+
+router.post('/', restrictWrite, async (req, res) => {
+    const {
+        client_id,
+        warehouse_id,
+        items = [],
+        notes = null,
+        driver_name = null,
+        vehicle_number = null
+    } = req.body;
+
+    if (!client_id) {
+        return res.status(400).json({ error: 'يجب اختيار العميل.' });
+    }
+    if (!Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ error: 'يجب إدراج أصناف.' });
+    }
+
+    try {
+        const result = await db.withTransaction(async (client) => {
+            // Verify client exists
+            const clientCheck = await client.query('SELECT id, name FROM clients WHERE id = $1', [client_id]);
+            if (clientCheck.rowCount === 0) throw new Error('العميل غير موجود.');
+
+            // Validate items against warehouse_stock
+            for (const item of items) {
+                if (!item.variant_id || !item.requested_qty || item.requested_qty <= 0) continue;
+
+                const stockRes = await client.query(
+                    `SELECT id, quantity, available_qty FROM warehouse_stock
+                     WHERE variant_id = $1 AND client_id = $2
+                     ${warehouse_id ? 'AND warehouse_id = $3' : ''}
+                     ORDER BY quantity DESC LIMIT 1`,
+                    warehouse_id ? [item.variant_id, client_id, warehouse_id] : [item.variant_id, client_id]
+                );
+
+                if (stockRes.rowCount === 0) {
+                    throw new Error('لا يوجد مخزون لهذا الصنف لهذا العميل.');
+                }
+                const available = parseFloat(stockRes.rows[0].available_qty || stockRes.rows[0].quantity || 0);
+                if (item.requested_qty > available) {
+                    throw new Error(`الكمية المطلوبة (${item.requested_qty}) تتجاوز المتاح (${available}).`);
+                }
+            }
+
+            // Create delivery note (no order_id)
+            const dnRes = await client.query(
+                `INSERT INTO delivery_notes (client_id, status, notes, driver_name, vehicle_number, created_by)
+                 VALUES ($1, 'pending', $2, $3, $4, $5)
+                 RETURNING id, note_number`,
+                [client_id, notes, driver_name, vehicle_number, req.user?.id]
+            );
+            const dnId = dnRes.rows[0].id;
+            const noteNumber = dnRes.rows[0].note_number;
+
+            // Insert items
+            for (const item of items) {
+                if (!item.variant_id || !item.requested_qty || item.requested_qty <= 0) continue;
+                await client.query(
+                    `INSERT INTO delivery_note_items (delivery_note_id, variant_id, requested_qty)
+                     VALUES ($1, $2, $3)`,
+                    [dnId, item.variant_id, item.requested_qty]
+                );
+            }
+
+            return { id: dnId, note_number: noteNumber };
+        });
+
+        return res.status(201).json({ data: result, message: 'تم إصدار أمر الفسح بنجاح.' });
+    } catch (err) {
+        console.error('[DeliveryNotes] POST / error:', err.message);
+        return res.status(400).json({ error: err.message || 'Internal server error.' });
+    }
+});
+
+// =============================================================================
 // GET /api/delivery-notes/:id
 // Get single delivery note with items
 // =============================================================================
