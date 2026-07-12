@@ -453,7 +453,101 @@ router.post('/:id/confirm', restrictWrite, validateBody(deliveryNoteDispatch), a
 // DELETE /api/delivery-notes/:id
 // Delete delivery note (only if pending)
 // =============================================================================
+// POST /api/delivery-notes/:id/reverse
+// Reverse all dispatches on a delivery note: return stock, reset delivered_qty,
+// set status back to 'pending'. Only allowed if status is 'partial' or 'completed'.
+// =============================================================================
 
+router.post('/:id/reverse', restrictWrite, async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const result = await db.withTransaction(async (client) => {
+            const dnCheck = await client.query(
+                `SELECT dn.id, dn.status, dn.note_number, dn.client_id
+                 FROM delivery_notes dn WHERE dn.id = $1 FOR UPDATE`,
+                [id]
+            );
+            if (dnCheck.rowCount === 0) throw new Error('أمر الفسح غير موجود.');
+            const dn = dnCheck.rows[0];
+            if (dn.status === 'pending') throw new Error('أمر الفسح لم يتم تسليمه بعد، لا يوجد ما يمكن التراجع عنه.');
+
+            // Get all items with their delivered_qty and variant info
+            const itemsRes = await client.query(
+                `SELECT dni.id, dni.order_item_id, dni.variant_id, dni.delivered_qty,
+                        oi.id AS oi_id
+                 FROM delivery_note_items dni
+                 JOIN order_items oi ON oi.id = dni.order_item_id
+                 WHERE dni.delivery_note_id = $1 AND dni.delivered_qty > 0`,
+                [id]
+            );
+
+            for (const item of itemsRes.rows) {
+                const delQty = parseFloat(item.delivered_qty);
+                if (delQty <= 0) continue;
+
+                // Return stock
+                const stockRes = await client.query(
+                    `SELECT id, quantity FROM warehouse_stock
+                     WHERE variant_id = $1 AND (client_id = $2 OR (client_id IS NULL AND $2 IS NULL))
+                     ORDER BY quantity DESC LIMIT 1`,
+                    [item.variant_id, dn.client_id]
+                );
+                if (stockRes.rowCount > 0) {
+                    await client.query(
+                        `UPDATE warehouse_stock SET quantity = quantity + $1, last_updated = NOW() WHERE id = $2`,
+                        [delQty, stockRes.rows[0].id]
+                    );
+                } else {
+                    // Re-create stock record if it was deleted
+                    await client.query(
+                        `INSERT INTO warehouse_stock (variant_id, client_id, quantity, last_updated)
+                         VALUES ($1, $2, $3, NOW())`,
+                        [item.variant_id, dn.client_id, delQty]
+                    );
+                }
+
+                // Reverse order_items delivered_qty
+                await client.query(
+                    `UPDATE order_items SET delivered_qty = GREATEST(0, COALESCE(delivered_qty, 0) - $1) WHERE id = $2`,
+                    [delQty, item.order_item_id]
+                );
+
+                // Reset delivery_note_items delivered_qty
+                await client.query(
+                    `UPDATE delivery_note_items SET delivered_qty = 0 WHERE id = $1`,
+                    [item.id]
+                );
+
+                // Create inventory transaction for reversal
+                const stockId = stockRes.rowCount > 0 ? stockRes.rows[0].id : null;
+                await client.query(
+                    `INSERT INTO inventory_transactions (stock_id, variant_id, transaction_type, quantity, notes, reference_id, reference_type, created_by, created_at)
+                     VALUES ($1, $2, 'return', $3, $4, $5, 'delivery_note', $6, NOW())`,
+                    [stockId, item.variant_id, delQty, `تراجع عن تسليم - أمر فسح #${dn.note_number}`, id, req.user?.id]
+                );
+            }
+
+            // Set status back to pending
+            await client.query(
+                `UPDATE delivery_notes SET status = 'pending', updated_at = NOW() WHERE id = $1`,
+                [id]
+            );
+
+            return { note_number: dn.note_number, reversed_items: itemsRes.rowCount };
+        });
+
+        return res.status(200).json({ data: result, message: 'تم التراجع عن التسليم بنجاح. تم إرجاع الكميات للمخزون.' });
+    } catch (err) {
+        console.error('[DeliveryNotes] POST /:id/reverse error:', err.message);
+        return res.status(400).json({ error: err.message || 'Internal server error.' });
+    }
+});
+
+// =============================================================================
+// DELETE /api/delivery-notes/:id
+// Delete delivery note (only if pending)
+// =============================================================================
 router.delete('/:id', restrictWrite, async (req, res) => {
     const { id } = req.params;
     

@@ -191,6 +191,19 @@
 
     window.dvCloseEditModal = function() { closeModalEl('dv-edit-modal'); _editDN = null; };
 
+    // ── Reverse dispatch ─────────────────────────────────────────────────────
+    window.dvReverseDispatch = async function(dnId) {
+        if (!confirm('هل أنت متأكد من التراجع عن التسليم؟ سيتم إرجاع جميع الكميات المسلّمة إلى المخزون وإعادة أمر الفسح إلى حالة "معلق".')) return;
+        try {
+            await window.apiFetch('/api/delivery-notes/' + dnId + '/reverse', { method: 'POST' });
+            window.showToast('تم التراجع عن التسليم بنجاح ✅');
+            await window.dvInit();
+            await window.dvLoadArchive();
+        } catch (e) {
+            window.showToast(e.message || 'فشل التراجع عن التسليم', 'error');
+        }
+    };
+
     window.dvConfirmEdit = async function() {
         if (!_editDN) return;
         const inputs = document.querySelectorAll('#dv-edit-modal-items input[data-edit-item-id]');
@@ -302,6 +315,16 @@
                             <p class="text-xs text-slate-400">${dn.item_count || 0} أصناف — طلب #${esc(String(dn.order_number || '—'))} — ${fmtD(dn.created_at)}</p>
                         </div>
                         <div class="flex gap-2 flex-shrink-0">
+                            ${dn.status === 'pending'
+                                ? `<button onclick="window.dvOpenEditModal('${esc(dn.id)}')"
+                                          class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-blue-700 border border-blue-200 rounded-xl hover:bg-blue-50 transition-colors">
+                                       <i class="fa-solid fa-pen"></i>تعديل
+                                   </button>` : ''}
+                            ${dn.status !== 'pending'
+                                ? `<button onclick="window.dvReverseDispatch('${esc(dn.id)}')"
+                                          class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-red-700 border border-red-200 rounded-xl hover:bg-red-50 transition-colors">
+                                       <i class="fa-solid fa-rotate-left"></i>تراجع عن التسليم
+                                   </button>` : ''}
                             ${dn.status !== 'completed'
                                 ? `<button onclick="window.dvOpenDispatchModal('${esc(dn.id)}')"
                                           class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-amber-700 border border-amber-200 rounded-xl hover:bg-amber-50 transition-colors">
