@@ -300,39 +300,56 @@
 ══════════════════════════════════════════════════════════ -->
 <div id="stock-modal" class="fixed inset-0 z-50 hidden bg-black/50 overflow-y-auto">
   <div class="min-h-screen flex items-center justify-center p-4">
-    <div class="w-full max-w-sm bg-white rounded-2xl shadow-2xl p-5">
+    <div class="w-full max-w-lg bg-white rounded-2xl shadow-2xl p-5">
       <div class="flex items-center justify-between mb-4">
         <div>
           <h3 class="text-base font-bold text-slate-800">تسوية مخزون</h3>
-          <p class="text-xs text-slate-400">موجب (+) للإضافة · سالب (-) للنقص</p>
+          <p class="text-xs text-slate-400">موجب (+) للإضافة · سالب (-) للنقص — يمكنك إضافة أكثر من صنف</p>
         </div>
         <button onclick="closeStockModal()" class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100">
           <i class="fa-solid fa-xmark"></i>
         </button>
       </div>
+
+      <!-- Form area -->
       <div class="space-y-3">
         <select id="modal-warehouse" class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-brand-500 outline-none">
           <option value="">اختر المستودع *</option>
         </select>
-        <select id="modal-product" class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-brand-500 outline-none" onchange="loadVariantsForAdjustment()">
-          <option value="">اختر الصنف *</option>
-        </select>
-        <select id="modal-variant" class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-brand-500 outline-none">
-          <option value="">اختر المقاس *</option>
-        </select>
+        <div class="grid grid-cols-2 gap-3">
+          <select id="modal-product" class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-brand-500 outline-none" onchange="loadVariantsForAdjustment()">
+            <option value="">اختر الصنف *</option>
+          </select>
+          <select id="modal-variant" class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-brand-500 outline-none">
+            <option value="">اختر المقاس *</option>
+          </select>
+        </div>
         <div class="flex items-center gap-2 bg-amber-50 border border-amber-200 p-3 rounded-xl">
           <i class="fa-solid fa-circle-info text-amber-500 text-sm"></i>
           <p class="text-xs text-amber-800">أدخل رقماً موجباً للإضافة، أو سالباً للخصم</p>
         </div>
         <div class="flex items-center gap-2">
-          <button onclick="adjustQty(-1)" class="w-10 h-10 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl font-bold text-lg transition-colors">−</button>
+          <button onclick="adjustQty(-1)" class="w-10 h-10 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl font-bold text-lg transition-colors flex-shrink-0">−</button>
           <input type="number" id="modal-qty" placeholder="+5 أو -3" class="flex-1 px-3 py-2.5 border border-slate-200 rounded-xl text-sm text-center font-mono focus:border-brand-500 outline-none">
-          <button onclick="adjustQty(+1)" class="w-10 h-10 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 rounded-xl font-bold text-lg transition-colors">+</button>
+          <button onclick="adjustQty(+1)" class="w-10 h-10 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 rounded-xl font-bold text-lg transition-colors flex-shrink-0">+</button>
         </div>
+        <button onclick="addToAdjustmentCart()" class="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-bold transition-colors border border-slate-200">
+          <i class="fa-solid fa-plus ml-1"></i> إضافة للقائمة
+        </button>
       </div>
+
+      <!-- Cart area -->
+      <div id="adj-cart-section" class="mt-4 hidden">
+        <div class="flex items-center justify-between mb-2">
+          <h4 class="text-sm font-bold text-slate-700">القائمة (<span id="adj-cart-count">0</span>)</h4>
+          <button onclick="clearAdjustmentCart()" class="text-xs text-red-500 hover:text-red-700 font-semibold">مسح الكل</button>
+        </div>
+        <div id="adj-cart-list" class="max-h-48 overflow-y-auto space-y-2 mb-3"></div>
+      </div>
+
       <div class="flex gap-2 mt-4">
-        <button onclick="closeStockModal()" class="flex-1 py-2.5 text-slate-600 border border-slate-200 rounded-xl text-sm font-bold hover:bg-slate-50">إلغاء</button>
-        <button onclick="saveStockAdjustment()" class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold transition-colors">تنفيذ</button>
+        <button onclick="closeStockModal()" class="flex-1 py-2.5 text-slate-600 border border-slate-200 rounded-xl text-sm font-bold hover:bg-slate-50">إغلاق</button>
+        <button id="adj-submit-btn" onclick="submitAllAdjustments()" class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled>تنفيذ الكل</button>
       </div>
     </div>
   </div>
@@ -896,17 +913,27 @@ function filterByWarehouse(warehouseId) {
   if (filter) { filter.value = warehouseId; renderStock(); }
 }
 
-// ── Modals: Stock Adjustment ──────────────────────────────────────────────
+// ── Modals: Stock Adjustment (Multi-item cart) ───────────────────────────
+let _adjustmentCart = [];
+
 function openStockModal() {
   const el = document.getElementById('stock-modal');
   if (el) el.classList.remove('hidden');
+  _renderAdjustmentCart();
 }
+
 function closeStockModal() {
   const el = document.getElementById('stock-modal');
   if (el) el.classList.add('hidden');
 }
 
-async function saveStockAdjustment() {
+function _resetAdjustmentForm() {
+  document.getElementById('modal-product').value = '';
+  document.getElementById('modal-variant').innerHTML = '<option value="">اختر المقاس *</option>';
+  document.getElementById('modal-qty').value = '';
+}
+
+function addToAdjustmentCart() {
   const warehouseId = document.getElementById('modal-warehouse')?.value;
   const variantId   = document.getElementById('modal-variant')?.value;
   const qtyInput    = document.getElementById('modal-qty')?.value;
@@ -916,27 +943,115 @@ async function saveStockAdjustment() {
     showToast('اكمل جميع الحقول (الكمية لا تكون صفر)', 'error'); return;
   }
 
-  const action = qty > 0 ? 'إضافة' : 'حذف';
-  if (!confirm('هل تريد ' + action + ' ' + Math.abs(qty) + ' قطعة؟')) return;
+  const product = products.find(p => p.id === document.getElementById('modal-product').value);
+  const variant = product?.variants?.find(v => v.id === variantId);
+  const warehouse = warehouses.find(w => w.id === warehouseId);
+
+  // Check if same warehouse+variant already in cart
+  const existing = _adjustmentCart.find(i => i.warehouse_id === warehouseId && i.variant_id === variantId);
+  if (existing) {
+    existing.quantity += qty;
+    if (existing.quantity === 0) {
+      _adjustmentCart = _adjustmentCart.filter(i => i !== existing);
+    }
+  } else {
+    _adjustmentCart.push({
+      warehouse_id: warehouseId,
+      variant_id:   variantId,
+      quantity:     qty,
+      product_name: product?.name || '',
+      variant_name: variant?.size_name || variant?.size || '',
+      warehouse_name: warehouse?.name || '',
+    });
+  }
+
+  _resetAdjustmentForm();
+  _renderAdjustmentCart();
+  showToast('تمت الإضافة للقائمة');
+}
+
+function removeFromAdjustmentCart(idx) {
+  _adjustmentCart.splice(idx, 1);
+  _renderAdjustmentCart();
+}
+
+function clearAdjustmentCart() {
+  _adjustmentCart = [];
+  _renderAdjustmentCart();
+}
+
+function _renderAdjustmentCart() {
+  const section = document.getElementById('adj-cart-section');
+  const list    = document.getElementById('adj-cart-list');
+  const countEl = document.getElementById('adj-cart-count');
+  const submitBtn = document.getElementById('adj-submit-btn');
+
+  if (!section || !list) return;
+
+  const count = _adjustmentCart.length;
+  if (countEl) countEl.textContent = count;
+  section.classList.toggle('hidden', count === 0);
+  if (submitBtn) submitBtn.disabled = count === 0;
+
+  if (count === 0) { list.innerHTML = ''; return; }
+
+  list.innerHTML = _adjustmentCart.map((item, idx) => {
+    const isIncrease = item.quantity > 0;
+    const qtyClass   = isIncrease ? 'text-emerald-600' : 'text-red-600';
+    const qtySign    = isIncrease ? '+' : '';
+    return `
+      <div class="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5">
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-semibold text-slate-800 truncate">${item.product_name} — ${item.variant_name}</p>
+          <p class="text-xs text-slate-400 truncate">${item.warehouse_name}</p>
+        </div>
+        <div class="flex items-center gap-3 flex-shrink-0">
+          <span class="text-sm font-bold ${qtyClass} font-mono">${qtySign}${item.quantity}</span>
+          <button onclick="removeFromAdjustmentCart(${idx})" class="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors">
+            <i class="fa-solid fa-trash text-xs"></i>
+          </button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+async function submitAllAdjustments() {
+  if (_adjustmentCart.length === 0) { showToast('القائمة فارغة', 'error'); return; }
+
+  const totalItems = _adjustmentCart.length;
+  if (!confirm('هل تريد تنفيذ تسوية لـ ' + totalItems + ' صنف؟')) return;
+
+  const submitBtn = document.getElementById('adj-submit-btn');
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin ml-1"></i> جارٍ التنفيذ...'; }
 
   try {
+    const items = _adjustmentCart.map(i => ({
+      warehouse_id:    i.warehouse_id,
+      variant_id:      i.variant_id,
+      quantity:        Math.abs(i.quantity),
+      adjustment_type: i.quantity > 0 ? 'increase' : 'decrease',
+    }));
+
     await window.apiFetch('/api/inventory/stock/adjust', {
       method: 'POST',
-      body: { items: [{ warehouse_id: warehouseId, variant_id: variantId, quantity: Math.abs(qty), adjustment_type: qty > 0 ? 'increase' : 'decrease' }] }
+      body: { items }
     });
+
+    _adjustmentCart = [];
+    _renderAdjustmentCart();
+    _resetAdjustmentForm();
     closeStockModal();
-    document.getElementById('modal-product').value = '';
-    document.getElementById('modal-variant').innerHTML = '<option value="">اختر المقاس *</option>';
-    document.getElementById('modal-qty').value = '';
     await loadStock();
     renderAll();
     if (_activeWhId) {
       _detStockData = stock.filter(s => s.warehouse_id === _activeWhId);
       renderDetailStock();
     }
-    showToast('تم ' + action + ' ' + Math.abs(qty) + ' قطعة بنجاح');
+    showToast('تم تنفيذ تسوية ' + totalItems + ' صنف بنجاح');
   } catch(e) {
     showToast(e.message || 'خطأ في التسوية', 'error');
+  } finally {
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'تنفيذ الكل'; }
   }
 }
 
