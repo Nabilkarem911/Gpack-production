@@ -688,8 +688,15 @@
                                     <i class="fa-solid fa-print"></i>
                                 </button>
                             </td>
+                            <td class="py-2.5 px-4 text-center">
+                                <button onclick="window.poView.shareInvoice('${inv.id}')"
+                                        class="px-2.5 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-600 text-xs font-bold rounded-lg transition-colors"
+                                        title="نسخ رابط الفاتورة للعميل">
+                                    <i class="fa-solid fa-link"></i>
+                                </button>
+                            </td>
                         </tr>`).join('')
-                    : '<tr><td colspan="5" class="py-6 text-center text-slate-400 text-xs">لا توجد فواتير</td></tr>';
+                    : '<tr><td colspan="6" class="py-6 text-center text-slate-400 text-xs">لا توجد فواتير</td></tr>';
             }
 
             // Payments
@@ -2520,6 +2527,22 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
     }
 
     // ── Print Invoice ─────────────────────────────────────────────────────────
+    async function _shareInvoice(invoiceId) {
+        try {
+            _toast('جاري إنشاء الرابط...', 'info');
+            const res = await window.apiFetch(`/api/invoices/${invoiceId}/share`, {
+                method: 'POST',
+                body: JSON.stringify({ expires_days: 30 })
+            });
+            if (!res?.url) throw new Error('تعذّر إنشاء الرابط');
+            await navigator.clipboard.writeText(res.url);
+            _toast('تم نسخ رابط الفاتورة — أرسله للعميل', 'success');
+        } catch (err) {
+            console.error('[poView] shareInvoice:', err);
+            _toast(err.message || 'فشل إنشاء رابط المشاركة', 'error');
+        }
+    }
+
     async function _printInvoice(invoiceId) {
         try {
             const res = await window.apiFetch(`/api/orders/${_hubOrderId}/invoice/${invoiceId}`);
@@ -3054,6 +3077,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         calcInvoiceTotal:   _calcInvoiceTotal,
         saveInvoice:        _saveInvoice,
         printInvoice:       _printInvoice,
+        shareInvoice:       _shareInvoice,
         openPaymentModal:   _openPaymentModal,
         closePaymentModal:  () => _hideModal('po-payment-modal'),
         savePayment:        _savePayment,
