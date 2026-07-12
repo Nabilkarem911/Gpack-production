@@ -332,8 +332,9 @@
         showEl('rv-archive-loading');
         hideEl('rv-archive-empty');
 
-        const filterMO     = _el('rv-archive-mo-filter')?.value || '';
-        const filterStatus = _el('rv-archive-status-filter')?.value || '';
+        const filterMO      = _el('rv-archive-mo-filter')?.value || '';
+        const filterStatus  = _el('rv-archive-status-filter')?.value || '';
+        const filterInvoice = _el('rv-archive-invoice-filter')?.value || '';
 
         try {
             // جيب كل الـ MOs (مش بس active — بما فيها received)
@@ -376,9 +377,15 @@
 
             hideEl('rv-archive-loading');
 
-            const filtered = filterStatus
-                ? allSessions.filter(s => s.status === filterStatus)
-                : allSessions;
+            let filtered = allSessions;
+            if (filterStatus) {
+                filtered = filtered.filter(s => s.status === filterStatus);
+            }
+            if (filterInvoice === 'with') {
+                filtered = filtered.filter(s => s.has_supplier_invoice === true);
+            } else if (filterInvoice === 'without') {
+                filtered = filtered.filter(s => !s.has_supplier_invoice);
+            }
 
             filtered.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
@@ -398,6 +405,10 @@
                         ? '<span class="text-xs px-2 py-0.5 bg-slate-200 text-slate-600 rounded-lg font-bold">طلب مُقفل</span>'
                         : '<span class="text-xs px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-lg font-bold">فعّال — يمكن التراجع</span>';
 
+                const invoiceBadge = s.has_supplier_invoice
+                    ? `<span class="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded-lg font-bold"><i class="fa-solid fa-file-invoice ml-1"></i>بفاتورة</span>${s.supplier_invoice_ref ? `<span class="text-xs text-slate-500 font-mono">(${esc(s.supplier_invoice_ref)})</span>` : ''}`
+                    : '<span class="text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-lg font-bold"><i class="fa-solid fa-file-circle-xmark ml-1"></i>بدون فاتورة</span>';
+
                 const itemsHtml = (s.items || []).map(i =>
                     `<div class="flex justify-between text-xs py-1.5 border-b border-slate-100 last:border-0">
                         <span class="text-slate-700">${esc(i.product_name || '—')} ${esc(i.size_name || '')}</span>
@@ -412,6 +423,7 @@
                             <div class="flex items-center gap-2 flex-wrap">
                                 ${statusBadge}
                                 <span class="text-sm font-black text-slate-800">جلسة #${s.session_number}</span>
+                                ${invoiceBadge}
                             </div>
                             <p class="text-xs text-slate-400 mt-1">
                                 طلب #${esc(String(s.order_number))} • ${esc(s.mo_number)} — ${esc(s.client_name)}

@@ -87,6 +87,12 @@
                 <option value="active">فعّال</option>
                 <option value="reversed">تم التراجع</option>
             </select>
+            <select id="rv-archive-invoice-filter"
+                    class="px-3 py-2 border border-slate-200 rounded-xl text-sm text-slate-700 focus:border-brand-500 outline-none">
+                <option value="">الكل (فاتورة/بدون)</option>
+                <option value="with">بفاتورة</option>
+                <option value="without">بدون فاتورة</option>
+            </select>
             <button onclick="window.rvLoadArchive()"
                     class="flex items-center gap-2 px-4 py-2 bg-slate-700 text-white text-sm font-bold rounded-xl hover:bg-slate-800 transition-colors">
                 <i class="fa-solid fa-filter"></i> تصفية
