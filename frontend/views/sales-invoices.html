@@ -1,0 +1,237 @@
+<!-- =============================================================================
+     G.PACK 2.0 — Sales Invoices View (Order-Based)
+     فواتير المبيعات مبنية على أوامر التشغيل
+============================================================================= -->
+
+<!-- Header -->
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+    <div class="flex items-center gap-3">
+        <button onclick="window.navigateTo('dashboard')"
+                class="w-9 h-9 flex items-center justify-center rounded-xl bg-white border border-slate-200
+                       text-slate-500 hover:text-brand-600 hover:border-brand-300 transition-colors shadow-sm">
+            <i class="fa-solid fa-arrow-right text-sm"></i>
+        </button>
+        <div>
+            <h1 class="text-2xl font-extrabold text-slate-800">فواتير المبيعات</h1>
+            <p class="text-slate-400 text-sm mt-0.5">فاتورة مسبقة الدفع - إنشاء فاتورة قبل تسليم البضاعة</p>
+        </div>
+    </div>
+</div>
+
+<!-- ── Filters ─────────────────────────────────────────────────────────────── -->
+<div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 mb-5">
+    <div class="flex flex-col sm:flex-row gap-3">
+        <!-- Search -->
+        <div class="flex-1">
+            <div class="relative">
+                <i class="fa-solid fa-magnifying-glass absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                <input id="si-search" type="text" placeholder="بحث برقم الأمر أو العميل..."
+                       class="w-full pr-10 pl-3 py-2.5 border border-slate-200 rounded-xl text-sm
+                              focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition-all"
+                       oninput="window.siOnFilterChange()" />
+            </div>
+        </div>
+
+        <!-- Client filter -->
+        <div class="sm:w-48">
+            <select id="si-client"
+                    class="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-700
+                           focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none bg-white transition-all"
+                    onchange="window.siOnFilterChange()">
+                <option value="">— كل العملاء —</option>
+            </select>
+        </div>
+    </div>
+</div>
+
+<!-- ── Stats Summary ────────────────────────────────────────────────────────── -->
+<div class="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-5">
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
+        <p class="text-xs text-slate-400 mb-1">أوامر جاهزة للفاتورة</p>
+        <p class="text-2xl font-black text-slate-800" id="si-stat-total">0</p>
+    </div>
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
+        <p class="text-xs text-slate-400 mb-1">إجمالي قيمة الفواتير المتوقعة</p>
+        <p class="text-2xl font-black text-emerald-600" id="si-stat-amount">0.00</p>
+    </div>
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
+        <p class="text-xs text-slate-400 mb-1">عدد الأصناف</p>
+        <p class="text-2xl font-black text-blue-600" id="si-stat-items">0</p>
+    </div>
+</div>
+
+<!-- ── Table ───────────────────────────────────────────────────────────────── -->
+<div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="bg-slate-50 text-xs text-slate-500 border-b border-slate-100">
+                    <th class="py-3 px-4 text-right font-semibold">رقم الأمر</th>
+                    <th class="py-3 px-4 text-right font-semibold">التاريخ</th>
+                    <th class="py-3 px-4 text-right font-semibold">العميل</th>
+                    <th class="py-3 px-4 text-center font-semibold">عدد الأصناف</th>
+                    <th class="py-3 px-4 text-right font-semibold">المبلغ المتوقع</th>
+                    <th class="py-3 px-4 text-center font-semibold w-32">إجراء</th>
+                </tr>
+            </thead>
+            <tbody id="si-tbody">
+                <tr>
+                    <td colspan="6" class="py-16 text-center text-slate-400">
+                        <i class="fa-solid fa-circle-notch fa-spin text-2xl"></i>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination -->
+    <div class="flex items-center justify-between px-4 py-3 border-t border-slate-100 bg-slate-50/50">
+        <p class="text-xs text-slate-500">
+            عرض <span id="si-showing" class="font-bold">0</span> من <span id="si-total" class="font-bold">0</span>
+        </p>
+        <div class="flex items-center gap-2">
+            <button id="si-prev" onclick="window.siChangePage(-1)" disabled
+                    class="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-500 text-xs font-bold
+                           hover:bg-white hover:border-brand-300 hover:text-brand-600 transition-all disabled:opacity-40">
+                <i class="fa-solid fa-chevron-right"></i>
+            </button>
+            <span id="si-page" class="text-xs font-bold text-slate-600">1</span>
+            <button id="si-next" onclick="window.siChangePage(1)" disabled
+                    class="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-500 text-xs font-bold
+                           hover:bg-white hover:border-brand-300 hover:text-brand-600 transition-all disabled:opacity-40">
+                <i class="fa-solid fa-chevron-left"></i>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ── Empty State (hidden by default) ───────────────────────────────────────── -->
+<div id="si-empty" class="hidden flex flex-col items-center justify-center py-16 text-slate-400">
+    <div class="w-20 h-20 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
+        <i class="fa-solid fa-clipboard-check text-3xl text-slate-300"></i>
+    </div>
+    <p class="text-lg font-semibold text-slate-500 mb-1">لا توجد أوامر جاهزة للفاتورة</p>
+    <p class="text-sm text-slate-400">جميع أوامر التشغيل الحالية تم إنشاء فواتير لها أو قيد الانتظار</p>
+</div>
+
+<!-- ── Create Invoice Modal ─────────────────────────────────────────────────── -->
+<div id="si-modal-overlay" class="fixed inset-0 bg-black/50 z-50 hidden" onclick="window.siCloseModal()"></div>
+<div id="si-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col"
+         onclick="event.stopPropagation()">
+
+        <!-- Modal Header -->
+        <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50">
+            <div>
+                <h3 class="text-lg font-bold text-slate-800">إنشاء فاتورة مبيعات</h3>
+                <p class="text-xs text-slate-400 mt-0.5">من أمر التشغيل <span id="si-m-order-num" class="font-bold text-brand-600"></span></p>
+            </div>
+            <button onclick="window.siCloseModal()"
+                    class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <!-- Modal Body -->
+        <div class="flex-1 overflow-y-auto p-6">
+            <!-- Hidden order id -->
+            <input type="hidden" id="si-m-order-id" />
+            <input type="hidden" id="si-m-client-id" />
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+                <!-- Client (read-only) -->
+                <div class="md:col-span-2">
+                    <label class="block text-xs font-bold text-slate-500 mb-1.5">العميل</label>
+                    <input id="si-m-client" type="text" readonly
+                           class="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700" />
+                </div>
+
+                <!-- Invoice Date -->
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 mb-1.5">تاريخ الفاتورة *</label>
+                    <input id="si-m-date" type="date"
+                           class="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm
+                                  focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none" />
+                </div>
+
+                <!-- Due Date -->
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 mb-1.5">تاريخ الاستحقاق</label>
+                    <input id="si-m-due" type="date"
+                           class="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm
+                                  focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none" />
+                </div>
+
+                <!-- Tax Rate -->
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 mb-1.5">نسبة الضريبة (%)</label>
+                    <input id="si-m-tax" type="number" value="15" min="0" max="100" step="0.01"
+                           class="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-center font-bold
+                                  focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none" />
+                </div>
+            </div>
+
+            <!-- Items Table -->
+            <div class="border border-slate-200 rounded-xl overflow-hidden mb-4">
+                <table class="w-full text-sm">
+                    <thead class="bg-slate-50">
+                        <tr>
+                            <th class="py-2 px-3 text-right text-xs font-bold text-slate-500">المنتج</th>
+                            <th class="py-2 px-3 text-center text-xs font-bold text-slate-500 w-24">الكمية المستلمة</th>
+                            <th class="py-2 px-3 text-center text-xs font-bold text-slate-500 w-28">سعر البيع</th>
+                            <th class="py-2 px-3 text-center text-xs font-bold text-slate-500 w-28">الإجمالي</th>
+                        </tr>
+                    </thead>
+                    <tbody id="si-m-items">
+                        <!-- Dynamic items from order -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Notes -->
+            <div class="mb-4">
+                <label class="block text-xs font-bold text-slate-500 mb-1.5">ملاحظات</label>
+                <textarea id="si-m-notes" rows="2"
+                          class="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm
+                                 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none resize-none"
+                          placeholder="أي ملاحظات إضافية..."></textarea>
+            </div>
+
+            <!-- Totals -->
+            <div class="bg-slate-50 rounded-xl p-4">
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-sm text-slate-500">الإجمالي قبل الضريبة:</span>
+                    <span class="text-sm font-bold text-slate-700" id="si-m-subtotal">0.00</span>
+                </div>
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-sm text-slate-500">خصم (ر.س):</span>
+                    <input type="number" id="si-m-discount" min="0" step="0.01" value="0"
+                           oninput="window.siUpdateDiscount(this.value)"
+                           class="w-28 border border-slate-200 rounded-lg px-2 py-1 text-sm text-center font-mono focus:border-brand-400 outline-none" />
+                </div>
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-sm text-slate-500">الضريبة (<span id="si-m-tax-display">15</span>%):</span>
+                    <span class="text-sm font-bold text-amber-600" id="si-m-tax-amount">0.00</span>
+                </div>
+                <div class="flex justify-between items-center pt-2 border-t border-slate-200">
+                    <span class="text-base font-bold text-slate-700">الإجمالي النهائي:</span>
+                    <span class="text-xl font-black text-emerald-600" id="si-m-grand">0.00</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal Footer -->
+        <div class="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50/50">
+            <button onclick="window.siCloseModal()"
+                    class="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-200 transition-all">
+                إلغاء
+            </button>
+            <button onclick="window.siSaveInvoice()"
+                    class="px-5 py-2.5 rounded-xl text-sm font-bold bg-brand-600 text-white hover:bg-brand-700 transition-all">
+                <i class="fa-solid fa-file-invoice ml-1"></i> إنشاء الفاتورة
+            </button>
+        </div>
+    </div>
+</div>
+
+<script src="/js/views/sales-invoices.js?v=20260512c"></script>

@@ -1,0 +1,1041 @@
+<!-- =============================================================================
+     G.PACK 2.0 — Production Orders (أوامر التشغيل)
+     Injected into #main-content by the SPA router.
+     Logic: /js/views/production_orders.js
+============================================================================= -->
+
+<!-- Page Header -->
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+    <div>
+        <h1 class="text-2xl font-extrabold text-slate-800">أوامر التشغيل والإنتاج</h1>
+        <p class="text-slate-500 text-sm mt-0.5">متابعة وإدارة أوامر الإنتاج من البداية للتسليم</p>
+    </div>
+
+    <button onclick="window.poView.reload()"
+            class="flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200
+                   text-slate-700 text-sm font-bold rounded-xl transition-all active:scale-[0.98]">
+        <i class="fa-solid fa-rotate"></i><span>تحديث</span>
+    </button>
+</div>
+
+<!-- Stats -->
+<div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+    <div class="bg-white rounded-xl border border-slate-100 shadow-sm p-3.5 flex items-center gap-3">
+        <div class="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center shrink-0">
+            <i class="fa-solid fa-clock text-amber-500 text-sm"></i>
+        </div>
+        <div><p class="text-xs text-slate-400 font-semibold">في الانتظار</p>
+            <p id="po-stat-pending" class="text-xl font-extrabold text-slate-800">0</p></div>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-100 shadow-sm p-3.5 flex items-center gap-3">
+        <div class="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
+            <i class="fa-solid fa-gears text-blue-500 text-sm"></i>
+        </div>
+        <div><p class="text-xs text-slate-400 font-semibold">قيد التنفيذ</p>
+            <p id="po-stat-processing" class="text-xl font-extrabold text-blue-600">0</p></div>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-100 shadow-sm p-3.5 flex items-center gap-3">
+        <div class="w-9 h-9 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
+            <i class="fa-solid fa-circle-check text-emerald-500 text-sm"></i>
+        </div>
+        <div><p class="text-xs text-slate-400 font-semibold">مكتملة</p>
+            <p id="po-stat-completed" class="text-xl font-extrabold text-emerald-600">0</p></div>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-100 shadow-sm p-3.5 flex items-center gap-3">
+        <div class="w-9 h-9 rounded-lg bg-red-50 flex items-center justify-center shrink-0">
+            <i class="fa-solid fa-triangle-exclamation text-red-400 text-sm"></i>
+        </div>
+        <div><p class="text-xs text-slate-400 font-semibold">مدفوعات معلقة</p>
+            <p id="po-stat-unpaid" class="text-xl font-extrabold text-red-500">0</p></div>
+    </div>
+</div>
+
+<!-- Tabs + Search -->
+<div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden mb-4">
+    <!-- Tab Bar -->
+    <div class="flex border-b border-slate-100 overflow-x-auto">
+        <button onclick="window.poView.switchTab('pending_assignment')" id="po-tab-pending_assignment"
+                class="po-tab-btn active flex items-center gap-2 px-5 py-3.5 text-sm font-semibold
+                       text-brand-600 border-b-2 border-brand-600 whitespace-nowrap">
+            <i class="fa-solid fa-hourglass-half"></i> الطلبات المعلقة
+        </button>
+        <button onclick="window.poView.switchTab('active')" id="po-tab-active"
+                class="po-tab-btn flex items-center gap-2 px-5 py-3.5 text-sm font-semibold
+                       text-slate-500 hover:text-slate-700 border-b-2 border-transparent hover:border-slate-200 whitespace-nowrap transition-colors">
+            <i class="fa-solid fa-industry"></i> الأوامر الجارية
+        </button>
+        <button onclick="window.poView.switchTab('completed')" id="po-tab-completed"
+                class="po-tab-btn flex items-center gap-2 px-5 py-3.5 text-sm font-semibold
+                       text-slate-500 hover:text-slate-700 border-b-2 border-transparent hover:border-slate-200 whitespace-nowrap transition-colors">
+            <i class="fa-solid fa-check-double"></i> المكتملة
+        </button>
+        <button onclick="window.poView.switchTab('archived')" id="po-tab-archived"
+                class="po-tab-btn flex items-center gap-2 px-5 py-3.5 text-sm font-semibold
+                       text-slate-500 hover:text-slate-700 border-b-2 border-transparent hover:border-slate-200 whitespace-nowrap transition-colors">
+            <i class="fa-solid fa-box-archive"></i> الأرشيف
+        </button>
+    </div>
+
+    <!-- Search Bar -->
+    <div class="p-3 border-b border-slate-50 bg-slate-50/50">
+        <div class="relative max-w-sm">
+            <span class="absolute inset-y-0 right-0 flex items-center pr-3.5 text-slate-400 pointer-events-none">
+                <i class="fa-solid fa-magnifying-glass text-sm"></i>
+            </span>
+            <input type="text" id="po-search"
+                   oninput="window.poView.applySearch()"
+                   placeholder="بحث برقم الأمر أو اسم العميل..."
+                   class="w-full pr-10 pl-4 py-2 bg-white border border-slate-200 rounded-xl text-sm
+                          text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                          focus:ring-2 focus:ring-brand-500/20 transition-all" />
+        </div>
+    </div>
+
+    <!-- Table -->
+    <div class="overflow-x-auto">
+        <table class="w-full">
+            <thead>
+                <tr class="bg-slate-50 border-b border-slate-100">
+                    <th class="text-right py-3 px-4 text-xs font-bold text-slate-500">رقم الأمر</th>
+                    <th class="text-right py-3 px-4 text-xs font-bold text-slate-500">العميل</th>
+                    <th class="text-right py-3 px-4 text-xs font-bold text-slate-500 hidden sm:table-cell">التاريخ</th>
+                    <th class="text-right py-3 px-4 text-xs font-bold text-slate-500 hidden md:table-cell">الإجمالي</th>
+                    <th class="text-right py-3 px-4 text-xs font-bold text-slate-500 hidden md:table-cell">المدفوع</th>
+                    <th class="text-right py-3 px-4 text-xs font-bold text-slate-500">الحالة</th>
+                    <th class="text-center py-3 px-4 text-xs font-bold text-slate-500">الاستلام</th>
+                    <th class="py-3 px-4 text-xs font-bold text-slate-500 text-center">إدارة</th>
+                </tr>
+            </thead>
+            <tbody id="po-tbody">
+                <tr><td colspan="8" class="py-12 text-center text-slate-400">
+                    <i class="fa-solid fa-circle-notch fa-spin text-2xl"></i>
+                </td></tr>
+            </tbody>
+        </table>
+    </div>
+    <div id="po-empty" class="hidden py-16 text-center text-slate-400">
+        <i class="fa-solid fa-industry text-5xl mb-3 text-slate-200"></i>
+        <p class="font-semibold text-slate-500">لا توجد أوامر تشغيل</p>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════ ORDER HUB MODAL ═══════════════════════════════════════ -->
+<div id="po-hub-modal" class="fixed inset-0 z-50 hidden">
+    <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onclick="window.poView.closeHub()"></div>
+
+    <div class="absolute inset-2 md:inset-6 bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+
+        <!-- Hub Header -->
+        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-gradient-to-l from-brand-50 to-white shrink-0">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-brand-600 flex items-center justify-center">
+                    <i class="fa-solid fa-industry text-white text-sm"></i>
+                </div>
+                <div>
+                    <h2 id="hub-title" class="text-base font-bold text-slate-800">إدارة الأمر</h2>
+                    <div class="flex items-center gap-3 text-xs text-slate-500 mt-0.5">
+                        <span id="hub-client" class="font-semibold text-brand-600"></span>
+                        <span>|</span>
+                        <span id="hub-order-num" class="font-mono"></span>
+                        <span id="hub-status-badge"></span>
+                    </div>
+                </div>
+            </div>
+            <!-- Financial Summary in Header -->
+            <div class="hidden md:flex items-center gap-4 text-center ml-4">
+                <div class="bg-slate-50 rounded-xl px-4 py-2">
+                    <p class="text-xs text-slate-400">الإجمالي</p>
+                    <p id="hub-grand-total" class="text-sm font-bold text-slate-800">—</p>
+                </div>
+                <div class="bg-emerald-50 rounded-xl px-4 py-2">
+                    <p class="text-xs text-emerald-600">المدفوع</p>
+                    <p id="hub-paid" class="text-sm font-bold text-emerald-700">—</p>
+                </div>
+                <div class="bg-red-50 rounded-xl px-4 py-2">
+                    <p class="text-xs text-red-500">المتبقي</p>
+                    <p id="hub-remaining" class="text-sm font-bold text-red-600">—</p>
+                </div>
+            </div>
+            <button onclick="window.poView.closeHub()"
+                    class="w-9 h-9 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 transition-colors mr-2">
+                <i class="fa-solid fa-xmark text-lg"></i>
+            </button>
+        </div>
+
+        <!-- Hub Tabs -->
+        <div class="flex border-b border-slate-100 bg-slate-50/50 shrink-0 overflow-x-auto">
+            <button onclick="window.poView.switchHubTab('items')" id="hub-tab-items"
+                    class="hub-tab active flex items-center gap-2 px-5 py-3 text-sm font-semibold
+                           text-brand-600 border-b-2 border-brand-600 whitespace-nowrap">
+                <i class="fa-solid fa-boxes-stacked"></i> الأصناف والموردين
+            </button>
+            <button onclick="window.poView.switchHubTab('financial')" id="hub-tab-financial"
+                    class="hub-tab flex items-center gap-2 px-5 py-3 text-sm font-semibold
+                           text-slate-500 hover:text-slate-700 border-b-2 border-transparent whitespace-nowrap transition-colors">
+                <i class="fa-solid fa-file-invoice-dollar"></i> الفواتير والدفعات
+            </button>
+            <button onclick="window.poView.switchHubTab('delivery')" id="hub-tab-delivery"
+                    class="hub-tab flex items-center gap-2 px-5 py-3 text-sm font-semibold
+                           text-slate-500 hover:text-slate-700 border-b-2 border-transparent whitespace-nowrap transition-colors">
+                <i class="fa-solid fa-truck-fast"></i> سندات التسليم
+            </button>
+            <button onclick="window.poView.switchHubTab('notes')" id="hub-tab-notes"
+                    class="hub-tab flex items-center gap-2 px-5 py-3 text-sm font-semibold
+                           text-slate-500 hover:text-slate-700 border-b-2 border-transparent whitespace-nowrap transition-colors">
+                <i class="fa-solid fa-comments"></i> ملاحظات
+            </button>
+            <button onclick="window.poView.switchHubTab('pricing')" id="hub-tab-pricing"
+                    class="hub-tab flex items-center gap-2 px-5 py-3 text-sm font-semibold
+                           text-slate-500 hover:text-slate-700 border-b-2 border-transparent whitespace-nowrap transition-colors">
+                <i class="fa-solid fa-tags"></i> تكاليف الشراء
+            </button>
+        </div>
+
+        <!-- Hub Content Area -->
+        <div class="flex-1 overflow-y-auto p-5" id="hub-content-area">
+
+            <!-- ── TAB: ITEMS ── -->
+            <div id="hub-tab-items-content">
+                <!-- Status Control -->
+                <div class="bg-white border border-slate-200 rounded-xl p-4 mb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                        <p class="text-sm font-bold text-slate-700">حالة الأمر</p>
+                        <p class="text-xs text-slate-400 mt-0.5">تحديث مرحلة الإنتاج</p>
+                    </div>
+                    <div id="hub-status-actions" class="flex flex-wrap gap-2"></div>
+                </div>
+
+                <!-- Order Items -->
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-sm font-bold text-slate-700 flex items-center gap-2">
+                        <i class="fa-solid fa-box text-brand-400"></i> بنود الطلب
+                    </h3>
+                    <button id="hub-bulk-assign-btn"
+                            onclick="window.poView.openBulkAssignModal()"
+                            class="hidden items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl shadow transition-all active:scale-[0.98]">
+                        <i class="fa-solid fa-layer-group"></i>
+                        إسناد مجمع
+                        <span id="hub-bulk-count" class="bg-white/25 text-white text-xs font-black px-1.5 py-0.5 rounded-full"></span>
+                    </button>
+                </div>
+                <div class="bg-white border border-slate-200 rounded-xl overflow-hidden mb-5">
+                    <table class="w-full text-sm">
+                        <thead class="bg-slate-50 border-b border-slate-100">
+                            <tr>
+                                <th class="py-2.5 px-3 w-8">
+                                    <input type="checkbox" id="hub-items-check-all"
+                                           onchange="window.poView.toggleAllItems(this.checked)"
+                                           class="w-4 h-4 rounded accent-purple-600 cursor-pointer">
+                                </th>
+                                <th class="text-right py-2.5 px-4 text-xs font-bold text-slate-500">المنتج / المقاس</th>
+                                <th class="text-center py-2.5 px-4 text-xs font-bold text-slate-500">الكمية</th>
+                                <th class="text-center py-2.5 px-4 text-xs font-bold text-slate-500 hidden sm:table-cell">مُسندة</th>
+                                <th class="text-center py-2.5 px-4 text-xs font-bold text-slate-500 hidden sm:table-cell">مستلمة</th>
+                                <th class="text-center py-2.5 px-4 text-xs font-bold text-slate-500">إسناد لمورد</th>
+                            </tr>
+                        </thead>
+                        <tbody id="hub-items-tbody"></tbody>
+                    </table>
+                </div>
+
+                <!-- Manufacturer Orders -->
+                <h3 class="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+                    <i class="fa-solid fa-truck-ramp-box text-purple-400"></i> أوامر الموردين
+                </h3>
+                <div id="hub-mo-list" class="space-y-3"></div>
+                <div id="hub-mo-empty" class="hidden bg-slate-50 rounded-xl py-8 text-center text-slate-400 text-sm">
+                    لا توجد أوامر موردين — استخدم زرار "إسناد لمورد" في الجدول أعلاه
+                </div>
+            </div>
+
+            <!-- ── TAB: FINANCIAL ── -->
+            <div id="hub-tab-financial-content" class="hidden">
+                <!-- Mobile financial summary -->
+                <div class="grid grid-cols-3 gap-3 mb-5 md:hidden">
+                    <div class="bg-slate-50 rounded-xl p-3 text-center">
+                        <p class="text-xs text-slate-400 mb-1">الإجمالي</p>
+                        <p id="hub-grand-total-mobile" class="text-sm font-bold text-slate-800">—</p>
+                    </div>
+                    <div class="bg-emerald-50 rounded-xl p-3 text-center">
+                        <p class="text-xs text-emerald-500 mb-1">المدفوع</p>
+                        <p id="hub-paid-mobile" class="text-sm font-bold text-emerald-700">—</p>
+                    </div>
+                    <div class="bg-red-50 rounded-xl p-3 text-center">
+                        <p class="text-xs text-red-400 mb-1">المتبقي</p>
+                        <p id="hub-remaining-mobile" class="text-sm font-bold text-red-600">—</p>
+                    </div>
+                </div>
+
+                <!-- Actions -->
+                <div class="flex flex-wrap gap-2 mb-5">
+                    <button onclick="window.poView.openInvoiceModal()"
+                            class="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl shadow transition-all active:scale-[0.98]">
+                        <i class="fa-solid fa-file-invoice"></i> إصدار فاتورة
+                    </button>
+                    <button onclick="window.poView.openPaymentModal()"
+                            class="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl shadow transition-all active:scale-[0.98]">
+                        <i class="fa-solid fa-money-bill-wave"></i> تسجيل دفعة
+                    </button>
+                </div>
+
+                <!-- Invoices List -->
+                <h3 class="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+                    <i class="fa-solid fa-file-invoice text-blue-400"></i> الفواتير الصادرة
+                </h3>
+                <div class="bg-white border border-slate-200 rounded-xl overflow-hidden mb-5">
+                    <table class="w-full text-sm">
+                        <thead class="bg-slate-50 border-b border-slate-100">
+                            <tr>
+                                <th class="text-right py-2.5 px-4 text-xs font-bold text-slate-500">رقم الفاتورة</th>
+                                <th class="text-right py-2.5 px-4 text-xs font-bold text-slate-500 hidden sm:table-cell">التاريخ</th>
+                                <th class="text-right py-2.5 px-4 text-xs font-bold text-slate-500">النوع</th>
+                                <th class="text-right py-2.5 px-4 text-xs font-bold text-slate-500">الإجمالي</th>
+                                <th class="text-center py-2.5 px-4 text-xs font-bold text-slate-500">طباعة</th>
+                            </tr>
+                        </thead>
+                        <tbody id="hub-invoices-tbody">
+                            <tr><td colspan="5" class="py-6 text-center text-slate-400 text-xs">لا توجد فواتير</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Payments List -->
+                <h3 class="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+                    <i class="fa-solid fa-money-check-dollar text-emerald-500"></i> سجل الدفعات
+                </h3>
+                <div class="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                    <table class="w-full text-sm">
+                        <thead class="bg-slate-50 border-b border-slate-100">
+                            <tr>
+                                <th class="text-right py-2.5 px-4 text-xs font-bold text-slate-500">التاريخ</th>
+                                <th class="text-right py-2.5 px-4 text-xs font-bold text-slate-500">طريقة الدفع</th>
+                                <th class="text-right py-2.5 px-4 text-xs font-bold text-slate-500">المبلغ</th>
+                                <th class="text-right py-2.5 px-4 text-xs font-bold text-slate-500 hidden sm:table-cell">ملاحظات</th>
+                            </tr>
+                        </thead>
+                        <tbody id="hub-payments-tbody">
+                            <tr><td colspan="4" class="py-6 text-center text-slate-400 text-xs">لا توجد دفعات مسجلة</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- ── TAB: DELIVERY ── -->
+            <div id="hub-tab-delivery-content" class="hidden">
+                <div class="flex justify-end mb-4">
+                    <button onclick="window.poView.openDeliveryModal()"
+                            class="flex items-center gap-2 px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-sm font-bold rounded-xl shadow transition-all active:scale-[0.98]">
+                        <i class="fa-solid fa-truck-fast"></i> إصدار سند تسليم
+                    </button>
+                </div>
+                <div class="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                    <table class="w-full text-sm">
+                        <thead class="bg-slate-50 border-b border-slate-100">
+                            <tr>
+                                <th class="text-right py-2.5 px-4 text-xs font-bold text-slate-500">رقم السند</th>
+                                <th class="text-right py-2.5 px-4 text-xs font-bold text-slate-500 hidden sm:table-cell">التاريخ</th>
+                                <th class="text-right py-2.5 px-4 text-xs font-bold text-slate-500">الحالة</th>
+                                <th class="text-right py-2.5 px-4 text-xs font-bold text-slate-500">الأصناف</th>
+                                <th class="text-center py-2.5 px-4 text-xs font-bold text-slate-500">إجراء</th>
+                            </tr>
+                        </thead>
+                        <tbody id="hub-delivery-tbody">
+                            <tr><td colspan="5" class="py-6 text-center text-slate-400 text-xs">لا توجد سندات تسليم</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- ── TAB: PRICING (Purchase Costs) ── -->
+            <div id="hub-tab-pricing-content" class="hidden">
+                <div id="hub-pricing-container">
+                    <div class="py-8 text-center text-slate-400 text-sm">جاري تحميل تكاليف الشراء...</div>
+                </div>
+            </div>
+
+            <!-- ── TAB: NOTES (Internal Chat) ── -->
+            <div id="hub-tab-notes-content" class="hidden flex flex-col h-full">
+                <div class="bg-white border border-slate-200 rounded-xl flex flex-col" style="height: 520px;">
+                    <!-- Chat Header -->
+                    <div class="px-4 py-3 border-b border-slate-100 flex items-center gap-2 shrink-0">
+                        <i class="fa-solid fa-comments text-brand-600"></i>
+                        <span class="text-sm font-bold text-slate-700">الدردشة الداخلية للطلب</span>
+                        <span class="text-xs text-slate-400 mr-auto">مرئي للفريق فقط</span>
+                    </div>
+                    <!-- Messages Area -->
+                    <div id="hub-chat-messages" class="flex-1 overflow-y-auto px-4 py-3 space-y-3 bg-slate-50/50">
+                        <div class="text-center text-slate-400 text-xs py-8" id="hub-chat-empty">
+                            <i class="fa-solid fa-comment-slash text-2xl mb-2 block"></i>
+                            لا توجد رسائل بعد — ابدأ المحادثة!
+                        </div>
+                    </div>
+                    <!-- Input Area -->
+                    <div class="px-4 py-3 border-t border-slate-100 shrink-0 bg-white rounded-b-xl">
+                        <div class="flex gap-2 items-end">
+                            <textarea id="hub-chat-input" rows="2"
+                                      class="flex-1 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800
+                                             outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all resize-none"
+                                      placeholder="اكتب رسالة..."
+                                      onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();window.poView.sendNote();}"></textarea>
+                            <button onclick="window.poView.sendNote()"
+                                    class="px-4 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold rounded-xl transition-all active:scale-[0.98] shrink-0">
+                                <i class="fa-solid fa-paper-plane"></i>
+                            </button>
+                        </div>
+                        <p class="text-xs text-slate-400 mt-1">Enter للإرسال · Shift+Enter لسطر جديد</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════ ASSIGN SUPPLIER MODAL ═══════════════════════ -->
+<div id="po-assign-modal" class="fixed inset-0 z-[60] hidden">
+    <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onclick="window.poView.closeAssignModal()"></div>
+    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md max-h-[90vh] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 shrink-0">
+            <h3 class="font-bold text-slate-800 flex items-center gap-2">
+                <i class="fa-solid fa-user-tie text-purple-500"></i> إسناد لمورد / مطبعة
+            </h3>
+            <button onclick="window.poView.closeAssignModal()" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 transition-colors">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        <div class="p-5 space-y-4 overflow-y-auto">
+            <input type="hidden" id="assign-order-item-id">
+            <input type="hidden" id="assign-order-id">
+            <div class="bg-slate-50 rounded-xl p-3 text-sm">
+                <span class="text-slate-500">الصنف: </span>
+                <span id="assign-item-name" class="font-bold text-slate-800"></span>
+                <div class="flex gap-4 mt-1 text-xs text-slate-500">
+                    <span>المطلوب: <b id="assign-item-qty" class="text-slate-700"></b></span>
+                    <span>مُسندة: <b id="assign-item-assigned" class="text-blue-600"></b></span>
+                    <span>المتاح: <b id="assign-item-available" class="text-emerald-600"></b></span>
+                </div>
+            </div>
+            <div>
+                <label class="block text-sm font-bold text-slate-700 mb-1.5">المورد <span class="text-red-500">*</span></label>
+                <div class="flex gap-2">
+                    <select id="assign-supplier-select"
+                            class="flex-1 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all">
+                        <option value="">— اختر المورد —</option>
+                    </select>
+                    <button type="button" onclick="window.poView.openQuickSupplierModal()"
+                            class="px-3 py-2.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl text-sm font-bold text-emerald-700 transition-all shrink-0"
+                            title="إضافة مورد جديد">
+                        <i class="fa-solid fa-plus"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-sm font-bold text-slate-700 mb-1.5">الكمية <span class="text-red-500">*</span></label>
+                    <input type="number" id="assign-qty" min="1"
+                           class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all">
+                </div>
+                <div>
+                    <label class="block text-sm font-bold text-slate-700 mb-1.5">نوع التصميم <span class="text-red-500">*</span></label>
+                    <div class="flex gap-2">
+                        <label class="flex-1 cursor-pointer">
+                            <input type="radio" name="assign-design-status" value="new" class="peer hidden" checked>
+                            <div class="px-3 py-2.5 bg-slate-50 border-2 border-slate-200 rounded-xl text-sm text-center peer-checked:border-emerald-500 peer-checked:bg-emerald-50 peer-checked:text-emerald-700 transition-all">
+                                <i class="fa-solid fa-pen-nib ml-1"></i> تصميم جديد
+                            </div>
+                        </label>
+                        <label class="flex-1 cursor-pointer">
+                            <input type="radio" name="assign-design-status" value="reprint" class="peer hidden">
+                            <div class="px-3 py-2.5 bg-slate-50 border-2 border-slate-200 rounded-xl text-sm text-center peer-checked:border-amber-500 peer-checked:bg-amber-50 peer-checked:text-amber-700 transition-all">
+                                <i class="fa-solid fa-rotate ml-1"></i> إعادة طباعة
+                            </div>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <!-- Design Management -->
+            <div class="border border-slate-200 rounded-xl p-3 bg-slate-50/50">
+                <div class="flex items-center justify-between mb-2">
+                    <label class="text-sm font-bold text-slate-700">التصميم</label>
+                    <span id="assign-design-status-badge" class="text-xs px-2 py-0.5 rounded-full bg-slate-200 text-slate-600 hidden">—</span>
+                </div>
+
+                <!-- Current Design Preview -->
+                <div id="assign-design-preview-box" class="hidden">
+                    <div class="flex items-center gap-3 mb-3 p-2 bg-white rounded-lg border border-slate-200">
+                        <button type="button" id="assign-design-thumb"
+                                class="w-16 h-16 rounded-xl bg-white border border-slate-200 flex items-center justify-center shrink-0 overflow-hidden relative group text-[10px] font-bold text-slate-500 cursor-zoom-in"
+                                onclick="window.poView.openAssignPreview(event)">
+                            <div class="design-preview-media w-full h-full flex items-center justify-center"></div>
+                            <span class="absolute inset-0 rounded-xl border-2 border-transparent group-hover:border-brand-400 transition-colors"></span>
+                        </button>
+                        <div class="flex-1 min-w-0">
+                            <div id="assign-design-name" class="text-sm font-bold text-slate-800 truncate">—</div>
+                            <div id="assign-design-type-label" class="text-xs text-slate-500">—</div>
+                        </div>
+                        <input type="hidden" id="assign-selected-design-id" value="">
+                    </div>
+                </div>
+
+                <!-- No Design State -->
+                <div id="assign-no-design-box" class="hidden">
+                    <div class="text-center py-3 text-slate-400">
+                        <i class="fa-solid fa-image text-2xl mb-1"></i>
+                        <p class="text-xs">لا يوجد تصميم</p>
+                    </div>
+                </div>
+
+                <!-- Design Actions -->
+                <div class="flex gap-2">
+                    <button type="button" onclick="window.poView._openDesignSelector()"
+                            class="flex-1 px-3 py-2 bg-white border border-slate-200 hover:border-brand-400 hover:text-brand-600 rounded-lg text-sm font-semibold text-slate-700 transition-all">
+                        <i class="fa-solid fa-images ml-1"></i>
+                        <span id="assign-design-btn-text">اختر تصميم</span>
+                    </button>
+                    <button type="button" onclick="window.poView._openDesignUpload()"
+                            class="flex-1 px-3 py-2 bg-white border border-slate-200 hover:border-emerald-400 hover:text-emerald-600 rounded-lg text-sm font-semibold text-slate-700 transition-all">
+                        <i class="fa-solid fa-cloud-arrow-up ml-1"></i> رفع جديد
+                    </button>
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-sm font-bold text-slate-700 mb-1.5">تاريخ التسليم المتوقع</label>
+                <input type="date" id="assign-expected-delivery"
+                       class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all">
+            </div>
+            <div>
+                <label class="block text-sm font-bold text-slate-700 mb-1.5">ملاحظات للمورد</label>
+                <textarea id="assign-notes" rows="2"
+                          class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 resize-none transition-all"
+                          placeholder="أي تعليمات خاصة..."></textarea>
+            </div>
+        </div>
+        <div class="flex justify-end gap-2 px-5 py-4 border-t border-slate-100 shrink-0 bg-white">
+            <button onclick="window.poView.closeAssignModal()"
+                    class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold rounded-xl transition-colors">
+                إلغاء
+            </button>
+            <button onclick="window.poView.saveAssignment()"
+                    class="px-5 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold rounded-xl shadow transition-all active:scale-[0.98]">
+                <i class="fa-solid fa-save ml-1"></i> حفظ أمر التشغيل
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════ BULK ASSIGN MODAL ═══════════════════════ -->
+<div id="po-bulk-assign-modal" class="fixed inset-0 z-[60] hidden">
+    <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onclick="window.poView.closeBulkAssignModal()"></div>
+    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg max-h-[90vh] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+        <!-- Header -->
+        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 shrink-0 bg-gradient-to-l from-purple-50 to-white">
+            <h3 class="font-bold text-slate-800 flex items-center gap-2">
+                <i class="fa-solid fa-layer-group text-purple-500"></i> إسناد مجمع لمورد
+            </h3>
+            <button onclick="window.poView.closeBulkAssignModal()" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 transition-colors">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <div class="p-5 space-y-4 overflow-y-auto flex-1">
+            <!-- Selected Items Summary -->
+            <div>
+                <p class="text-xs font-bold text-slate-500 uppercase mb-2">الأصناف المختارة</p>
+                <div id="bulk-items-summary" class="bg-slate-50 border border-slate-200 rounded-xl divide-y divide-slate-100"></div>
+            </div>
+
+            <!-- Supplier -->
+            <div>
+                <label class="block text-sm font-bold text-slate-700 mb-1.5">المورد <span class="text-red-500">*</span></label>
+                <div class="flex gap-2">
+                    <select id="bulk-supplier-select"
+                            class="flex-1 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all">
+                        <option value="">— اختر المورد —</option>
+                    </select>
+                    <button type="button" onclick="window.poView.openQuickSupplierModal()"
+                            class="px-3 py-2.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl text-sm font-bold text-emerald-700 transition-all shrink-0"
+                            title="إضافة مورد جديد">
+                        <i class="fa-solid fa-plus"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Design Status -->
+            <div>
+                <label class="block text-sm font-bold text-slate-700 mb-1.5">نوع التصميم <span class="text-red-500">*</span></label>
+                <div class="flex gap-2">
+                    <label class="flex-1 cursor-pointer">
+                        <input type="radio" name="bulk-design-status" value="new" class="peer hidden" checked>
+                        <div class="px-3 py-2.5 bg-slate-50 border-2 border-slate-200 rounded-xl text-sm text-center peer-checked:border-emerald-500 peer-checked:bg-emerald-50 peer-checked:text-emerald-700 transition-all">
+                            <i class="fa-solid fa-pen-nib ml-1"></i> تصميم جديد
+                        </div>
+                    </label>
+                    <label class="flex-1 cursor-pointer">
+                        <input type="radio" name="bulk-design-status" value="reprint" class="peer hidden">
+                        <div class="px-3 py-2.5 bg-slate-50 border-2 border-slate-200 rounded-xl text-sm text-center peer-checked:border-amber-500 peer-checked:bg-amber-50 peer-checked:text-amber-700 transition-all">
+                            <i class="fa-solid fa-rotate ml-1"></i> إعادة طباعة
+                        </div>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Expected Delivery -->
+            <div>
+                <label class="block text-sm font-bold text-slate-700 mb-1.5">تاريخ التسليم المتوقع</label>
+                <input type="date" id="bulk-expected-delivery"
+                       class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all">
+            </div>
+
+            <!-- Notes -->
+            <div>
+                <label class="block text-sm font-bold text-slate-700 mb-1.5">ملاحظات للمورد</label>
+                <textarea id="bulk-notes" rows="2"
+                          class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 resize-none transition-all"
+                          placeholder="أي تعليمات خاصة..."></textarea>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="flex justify-end gap-2 px-5 py-4 border-t border-slate-100 shrink-0 bg-white">
+            <button onclick="window.poView.closeBulkAssignModal()"
+                    class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold rounded-xl transition-colors">
+                إلغاء
+            </button>
+            <button onclick="window.poView.saveBulkAssignment()"
+                    id="bulk-save-btn"
+                    class="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-sm font-bold rounded-xl shadow transition-all active:scale-[0.98]">
+                <i class="fa-solid fa-layer-group ml-1"></i> إنشاء أمر التشغيل المجمع
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════ DESIGN SELECTOR MODAL ═══════════════════════ -->
+<div id="po-design-selector-modal" class="fixed inset-0 z-[70] hidden">
+    <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onclick="window.poView._closeDesignSelector()"></div>
+    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white rounded-2xl shadow-2xl max-h-[80vh] overflow-hidden">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+            <h3 class="font-bold text-slate-800 flex items-center gap-2">
+                <i class="fa-solid fa-images text-brand-500"></i> اختيار تصميم
+            </h3>
+            <button onclick="window.poView._closeDesignSelector()" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 transition-colors">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        <div class="p-4">
+            <input type="text" id="design-search" placeholder="ابحث في التصاميم..."
+                   class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm mb-3 outline-none focus:border-brand-500"
+                   oninput="window.poView._filterDesigns(this.value)">
+            <div id="design-selector-list" class="max-h-[50vh] overflow-y-auto space-y-2">
+                <p class="text-center text-slate-400 py-4">جاري تحميل التصاميم...</p>
+            </div>
+        </div>
+        <div class="flex justify-end gap-2 px-5 py-3 border-t border-slate-100 bg-slate-50">
+            <button onclick="window.poView._closeDesignSelector()"
+                    class="px-4 py-2 bg-white border border-slate-200 text-slate-700 text-sm font-bold rounded-lg">
+                إلغاء
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════ DESIGN UPLOAD MODAL ═══════════════════════ -->
+<div id="po-design-upload-modal" class="fixed inset-0 z-[70] hidden">
+    <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onclick="window.poView._closeDesignUpload()"></div>
+    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white rounded-2xl shadow-2xl">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+            <h3 class="font-bold text-slate-800 flex items-center gap-2">
+                <i class="fa-solid fa-cloud-arrow-up text-emerald-500"></i> رفع تصميم جديد
+            </h3>
+            <button onclick="window.poView._closeDesignUpload()" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 transition-colors">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        <div class="p-5 space-y-4">
+            <input type="hidden" id="upload-design-client-id">
+            <div>
+                <label class="block text-sm font-bold text-slate-700 mb-1.5">اسم التصميم <span class="text-red-500">*</span></label>
+                <input type="text" id="upload-design-name" placeholder="مثال: تصميم كرتون شركة النور"
+                       class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-emerald-500">
+            </div>
+            <div>
+                <label class="block text-sm font-bold text-slate-700 mb-1.5">الملف <span class="text-red-500">*</span></label>
+                <div class="relative">
+                    <input type="file" id="upload-design-file" accept=".pdf,.ai,.eps,.png,.jpg,.jpeg,.svg,.webp,.tiff,.tif,.bmp,.raw,.heic,.gif"
+                           class="hidden" onchange="window.poView._onDesignFileSelected(this)">
+                    <label for="upload-design-file" id="upload-design-dropzone"
+                           class="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-slate-300 rounded-xl bg-slate-50 cursor-pointer hover:border-emerald-400 hover:bg-emerald-50 transition-all">
+                        <i class="fa-solid fa-cloud-arrow-up text-2xl text-slate-400 mb-2"></i>
+                        <span class="text-sm text-slate-500">اضغط أو اسحب الملف هنا</span>
+                        <span class="text-xs text-slate-400 mt-1">PDF, AI, EPS, PNG, JPG, SVG, WEBP, TIFF, GIF</span>
+                    </label>
+                    <div id="upload-design-file-info" class="hidden mt-2 flex items-center gap-2 p-2 bg-emerald-50 rounded-lg">
+                        <i class="fa-solid fa-check-circle text-emerald-500"></i>
+                        <span id="upload-design-file-name" class="text-sm text-emerald-700 flex-1 truncate">—</span>
+                        <button type="button" onclick="window.poView._clearDesignFile()" class="text-slate-400 hover:text-red-500">
+                            <i class="fa-solid fa-times"></i>
+                        </button>
+                    </div>
+                    <!-- Preview image for selected file -->
+                    <img id="upload-design-preview-img" class="hidden mt-3 w-full h-40 object-contain rounded-lg border border-slate-200" alt="Preview">
+                </div>
+            </div>
+        </div>
+        <div class="flex justify-end gap-2 px-5 py-4 border-t border-slate-100">
+            <button onclick="window.poView._closeDesignUpload()"
+                    class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold rounded-xl">
+                إلغاء
+            </button>
+            <button id="upload-design-btn" onclick="window.poView._uploadDesign()"
+                    class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl shadow disabled:opacity-50 disabled:cursor-not-allowed">
+                <i id="upload-design-spinner" class="fa-solid fa-circle-notch fa-spin ml-1 hidden"></i>
+                <span id="upload-design-btn-text">رفع</span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════ INVOICE MODAL ═══════════════════════ -->
+<div id="po-invoice-modal" class="fixed inset-0 z-[60] hidden">
+    <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onclick="window.poView.closeInvoiceModal()"></div>
+    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg bg-white rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 sticky top-0 bg-white z-10">
+            <h3 class="font-bold text-slate-800 flex items-center gap-2">
+                <i class="fa-solid fa-file-invoice text-blue-500"></i> إصدار فاتورة
+            </h3>
+            <button onclick="window.poView.closeInvoiceModal()" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 transition-colors">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        <div class="p-5 space-y-4">
+            <div>
+                <label class="block text-sm font-bold text-slate-700 mb-1.5">نوع الفاتورة</label>
+                <select id="invoice-type"
+                        onchange="window.poView.onInvoiceTypeChange()"
+                        class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-brand-500 transition-all">
+                    <option value="proforma">فاتورة أولية </option>
+                    <option value="final">فاتورة مبيعات نهائية</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-bold text-slate-700 mb-2">أصناف الفاتورة</label>
+                <div id="invoice-items-container" class="space-y-2 bg-slate-50 rounded-xl p-3 border border-slate-200"></div>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                    <label class="block text-sm font-bold text-slate-700 mb-1.5">خصم (ر.س)</label>
+                    <input type="number" id="invoice-discount" min="0" step="0.01" placeholder="0.00"
+                           oninput="window.poView.calcInvoiceTotal()"
+                           class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-brand-500 transition-all">
+                </div>
+                <div>
+                    <label class="block text-sm font-bold text-slate-700 mb-1.5">مصاريف إضافية</label>
+                    <div class="flex flex-col gap-2">
+                        <input type="text" id="invoice-extra-desc" maxlength="120" placeholder="مثال: شحن سريع"
+                               class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-brand-500 transition-all">
+                        <input type="number" id="invoice-extra-expenses" min="0" step="0.01" placeholder="0.00"
+                               oninput="window.poView.calcInvoiceTotal()"
+                               class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-brand-500 transition-all">
+                    </div>
+                </div>
+                <div class="bg-brand-50 rounded-xl p-3 flex flex-col justify-center">
+                    <p class="text-xs text-brand-600 font-semibold">الإجمالي (شامل 15% ضريبة)</p>
+                    <p id="invoice-total-display" class="text-lg font-extrabold text-brand-700">0.00 ر.س</p>
+                </div>
+            </div>
+
+            <!-- Previous Payments Summary -->
+            <div id="invoice-payments-summary" class="bg-slate-50 rounded-xl p-3 border border-slate-200">
+                <div class="flex justify-between items-center py-1">
+                    <span class="text-sm text-slate-600">المدفوع سابقاً</span>
+                    <span id="invoice-prev-paid" class="text-sm font-bold text-emerald-600">0.00 ر.س</span>
+                </div>
+                <div class="border-t border-slate-200 my-2"></div>
+                <div class="flex justify-between items-center">
+                    <span class="text-sm font-bold text-slate-700">المتبقي على العميل</span>
+                    <span id="invoice-net-remaining" class="text-lg font-extrabold text-red-600">0.00 ر.س</span>
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-sm font-bold text-slate-700 mb-1.5">ملاحظات</label>
+                <textarea id="invoice-notes" rows="2"
+                          class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-brand-500 resize-none transition-all"></textarea>
+            </div>
+        </div>
+        <div class="flex justify-end gap-2 px-5 py-4 border-t border-slate-100 sticky bottom-0 bg-white">
+            <button onclick="window.poView.closeInvoiceModal()"
+                    class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold rounded-xl transition-colors">إلغاء</button>
+            <button onclick="window.poView.saveInvoice()"
+                    class="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl shadow transition-all active:scale-[0.98]">
+                <i class="fa-solid fa-check ml-1"></i> إصدار الفاتورة
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════ PAYMENT MODAL ═══════════════════════ -->
+<div id="po-payment-modal" class="fixed inset-0 z-[60] hidden">
+    <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onclick="window.poView.closePaymentModal()"></div>
+    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-sm bg-white rounded-2xl shadow-2xl">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+            <h3 class="font-bold text-slate-800 flex items-center gap-2">
+                <i class="fa-solid fa-money-bill-wave text-emerald-500"></i> تسجيل دفعة مالية
+            </h3>
+            <button onclick="window.poView.closePaymentModal()" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 transition-colors">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        <div class="p-5 space-y-4">
+            <div class="bg-red-50 border border-red-100 rounded-xl p-3 text-center">
+                <p class="text-xs text-red-500 font-semibold mb-0.5">المبلغ المتبقي</p>
+                <p id="payment-remaining-display" class="text-2xl font-extrabold text-red-600">0.00 ر.س</p>
+            </div>
+            <div>
+                <label class="block text-sm font-bold text-slate-700 mb-1.5">المبلغ المدفوع <span class="text-red-500">*</span></label>
+                <input type="number" id="payment-amount" min="0.01" step="0.01" placeholder="0.00"
+                       class="w-full px-3 py-3 bg-slate-50 border border-slate-200 rounded-xl text-lg font-bold text-center outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all">
+            </div>
+            <div>
+                <label class="block text-sm font-bold text-slate-700 mb-1.5">طريقة الدفع</label>
+                <select id="payment-method" onchange="window.poView.onPaymentMethodChange(this.value)"
+                        class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-emerald-500 transition-all">
+                    <option value="cash">نقدي</option>
+                    <option value="bank_transfer">تحويل بنكي</option>
+                    <option value="pos">نقاط البيع</option>
+                </select>
+            </div>
+
+            <!-- Cash Fields -->
+            <div id="payment-cash-fields" class="space-y-3">
+                <div>
+                    <label class="block text-sm font-bold text-slate-700 mb-1.5">الصندوق <span class="text-red-500">*</span></label>
+                    <select id="payment-cash-box"
+                            class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-emerald-500 transition-all">
+                        <option value="">— اختر الصندوق —</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Bank Fields -->
+            <div id="payment-bank-fields" class="space-y-3 hidden">
+                <div>
+                    <label class="block text-sm font-bold text-slate-700 mb-1.5">الحساب البنكي <span class="text-red-500">*</span></label>
+                    <select id="payment-bank-account"
+                            class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-emerald-500 transition-all">
+                        <option value="">— اختر الحساب البنكي —</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-bold text-slate-700 mb-1.5">رقم الحوالة / المرجع <span class="text-red-500">*</span></label>
+                    <input type="text" id="payment-bank-ref" placeholder="مثال: TRF-2026-001234"
+                           class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-emerald-500 transition-all">
+                </div>
+            </div>
+
+            <!-- POS Fields -->
+            <div id="payment-pos-fields" class="space-y-3 hidden">
+                <div>
+                    <label class="block text-sm font-bold text-slate-700 mb-1.5">جهاز نقاط البيع <span class="text-red-500">*</span></label>
+                    <select id="payment-pos-terminal"
+                            class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-emerald-500 transition-all">
+                        <option value="">— اختر جهاز نقاط البيع —</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-bold text-slate-700 mb-1.5">رقم العملية (Reference) <span class="text-red-500">*</span></label>
+                    <input type="text" id="payment-pos-ref" placeholder="مثال: POS-2026-56789"
+                           class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-emerald-500 transition-all">
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-sm font-bold text-slate-700 mb-1.5">ملاحظات إضافية</label>
+                <input type="text" id="payment-notes" placeholder="أي ملاحظات إضافية..."
+                       class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-emerald-500 transition-all">
+            </div>
+        </div>
+        <div class="flex justify-end gap-2 px-5 py-4 border-t border-slate-100">
+            <button onclick="window.poView.closePaymentModal()"
+                    class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold rounded-xl transition-colors">إلغاء</button>
+            <button onclick="window.poView.savePayment()"
+                    class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl shadow transition-all active:scale-[0.98]">
+                <i class="fa-solid fa-check ml-1"></i> تأكيد الدفعة
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════ DELIVERY MODAL ═══════════════════════ -->
+<div id="po-delivery-modal" class="fixed inset-0 z-[60] hidden">
+    <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onclick="window.poView.closeDeliveryModal()"></div>
+    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg bg-white rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 sticky top-0 bg-white z-10">
+            <h3 class="font-bold text-slate-800 flex items-center gap-2">
+                <i class="fa-solid fa-truck-fast text-purple-500"></i> إصدار سند تسليم
+            </h3>
+            <button onclick="window.poView.closeDeliveryModal()" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 transition-colors">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        <div class="p-5 space-y-4">
+            <div>
+                <label class="block text-sm font-bold text-slate-700 mb-2">الأصناف المراد تسليمها</label>
+                <div id="delivery-items-container" class="space-y-2 bg-slate-50 rounded-xl p-3 border border-slate-200"></div>
+            </div>
+            <div>
+                <label class="block text-sm font-bold text-slate-700 mb-1.5">ملاحظات</label>
+                <textarea id="delivery-notes" rows="2"
+                          class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-brand-500 resize-none transition-all"
+                          placeholder="أي ملاحظات خاصة بهذا التسليم..."></textarea>
+            </div>
+        </div>
+        <div class="flex justify-end gap-2 px-5 py-4 border-t border-slate-100 sticky bottom-0 bg-white">
+            <button onclick="window.poView.closeDeliveryModal()"
+                    class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold rounded-xl transition-colors">إلغاء</button>
+            <button onclick="window.poView.saveDelivery()"
+                    class="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-sm font-bold rounded-xl shadow transition-all active:scale-[0.98]">
+                <i class="fa-solid fa-check ml-1"></i> إصدار السند
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════ RECEIVE GOODS MODAL ═══════════════════════ -->
+<div id="po-receive-modal" class="fixed inset-0 z-[60] hidden">
+    <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onclick="window.poView.closeReceiveModal()"></div>
+    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl bg-white rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 sticky top-0 bg-white z-10">
+            <h3 class="font-bold text-slate-800 flex items-center gap-2">
+                <i class="fa-solid fa-box-open text-emerald-500"></i> استلام بضاعة وفاتورة مشتريات
+            </h3>
+            <button onclick="window.poView.closeReceiveModal()" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 transition-colors">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        <div class="p-5 space-y-4">
+            <input type="hidden" id="receive-mo-id">
+
+            <!-- Supplier & Warehouse Row -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div class="bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-sm">
+                    <span class="text-slate-500">المورد: </span>
+                    <span id="receive-mo-supplier" class="font-bold text-slate-800"></span>
+                </div>
+                <div>
+                    <select id="receive-warehouse-select"
+                            class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all">
+                        <option value="">— المستودع *—</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Supplier Invoice Ref -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">رقم فاتورة المورد</label>
+                    <input type="text" id="receive-supplier-invoice-ref" placeholder="INV-001 أو رقم الفاتورة..."
+                           class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-emerald-500 transition-all">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">ملاحظات</label>
+                    <input type="text" id="receive-notes" placeholder="استلام جزئي — دفعة أولى..."
+                           class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-emerald-500 transition-all">
+                </div>
+            </div>
+
+            <!-- Items with Qty + Unit Price -->
+            <div>
+                <label class="block text-sm font-bold text-slate-700 mb-2">الأصناف المستلمة والأسعار</label>
+                <div id="receive-items-container" class="space-y-2 bg-slate-50 rounded-xl p-3 border border-slate-200"></div>
+            </div>
+
+            <!-- Info for warehouse keeper -->
+            <div class="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                <div class="flex items-center gap-3 text-blue-800">
+                    <i class="fa-solid fa-info-circle text-blue-600"></i>
+                    <div class="text-sm">
+                        <span class="font-bold">تنبيه:</span> التسعير والدفع يتم من قبل المدير في صفحة "تكاليف الشراء"
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="flex justify-end gap-2 px-5 py-4 border-t border-slate-100 sticky bottom-0 bg-white">
+            <button onclick="window.poView.closeReceiveModal()"
+                    class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold rounded-xl transition-colors">إلغاء</button>
+            <button onclick="window.poView.saveReceive()"
+                    class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl shadow transition-all active:scale-[0.98]">
+                <i class="fa-solid fa-check ml-1"></i> تأكيد الاستلام وإصدار الفاتورة
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════ QUICK ADD SUPPLIER MODAL ═══════════════════════ -->
+<div id="po-quick-supplier-modal" class="fixed inset-0 z-[70] hidden">
+    <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onclick="window.poView.closeQuickSupplierModal()"></div>
+    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+            <h3 class="text-base font-bold text-slate-800">إضافة مورد جديد</h3>
+            <button onclick="window.poView.closeQuickSupplierModal()" class="text-slate-400 hover:text-slate-600 transition-colors">
+                <i class="fa-solid fa-xmark text-lg"></i>
+            </button>
+        </div>
+        <div class="p-5 space-y-3">
+            <div>
+                <label class="block text-xs font-bold text-slate-600 mb-1">اسم المورد <span class="text-red-500">*</span></label>
+                <input type="text" id="qs-name" placeholder="اسم الشركة"
+                       class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all">
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-600 mb-1">النوع</label>
+                <select id="qs-type"
+                        class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all">
+                    <option value="manufacturer">مُصنّع</option>
+                    <option value="vendor">مورّد</option>
+                    <option value="both">كلاهما</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-600 mb-1">مسؤول التواصل</label>
+                <input type="text" id="qs-contact" placeholder="الاسم"
+                       class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all">
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-600 mb-1">الهاتف</label>
+                <input type="text" id="qs-phone" placeholder="رقم الهاتف"
+                       class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all">
+            </div>
+        </div>
+        <div class="flex justify-end gap-2 px-5 py-4 border-t border-slate-100">
+            <button onclick="window.poView.closeQuickSupplierModal()"
+                    class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold rounded-xl transition-colors">إلغاء</button>
+            <button onclick="window.poView.saveQuickSupplier()"
+                    class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl shadow transition-all active:scale-[0.98]">
+                <i class="fa-solid fa-check ml-1"></i> حفظ المورد
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════ DESIGN VIEWER MODAL ═══════════════════════ -->
+<div id="po-design-viewer-modal"
+     class="fixed inset-0 z-[70] hidden items-center justify-center p-4 bg-black/75 opacity-0 transition-opacity duration-200"
+     onclick="window.poView.closeAssignPreview(event)">
+    <div class="modal-panel relative max-w-5xl w-full max-h-[90vh] transform scale-95 transition-transform duration-200">
+        <div id="po-design-viewer-content"
+             class="bg-slate-900 rounded-2xl shadow-2xl overflow-hidden flex items-center justify-center max-h-[85vh] min-h-[240px] p-4">
+            <div class="text-white/70 text-sm text-center">لا توجد معاينة</div>
+        </div>
+        <button type="button" onclick="window.poView.closeAssignPreview()"
+                class="absolute top-4 right-4 w-10 h-10 text-white bg-black/60 hover:bg-black/80 rounded-full flex items-center justify-center shadow-lg transition-colors">
+            <i class="fa-solid fa-xmark text-lg"></i>
+        </button>
+        <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent rounded-b-2xl px-5 py-3">
+            <p id="po-design-viewer-name" class="text-white font-bold text-sm"></p>
+            <p id="po-design-viewer-meta" class="text-white/70 text-xs mt-0.5"></p>
+        </div>
+    </div>
+</div>
+
+<script src="/js/views/production_orders_new.js?v=20260630"></script>

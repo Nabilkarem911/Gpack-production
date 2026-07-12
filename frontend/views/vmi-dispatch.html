@@ -1,0 +1,138 @@
+<!-- =============================================================================
+     G.PACK 2.0 — سندات التسليم
+     تسليم البضاعة للعملاء ضد سندات التسليم المفتوحة
+============================================================================= -->
+
+<!-- Header -->
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+    <div>
+        <h1 class="text-2xl font-black text-slate-800">سندات التسليم</h1>
+        <p class="text-slate-400 text-sm mt-0.5">تسليم البضاعة للعملاء ضد الطلبات</p>
+    </div>
+    <button onclick="window.dvInit()"
+            class="w-9 h-9 flex items-center justify-center rounded-xl bg-white border border-slate-200
+                   text-slate-500 hover:text-brand-600 hover:border-brand-300 transition-colors shadow-sm">
+        <i class="fa-solid fa-rotate-right text-sm"></i>
+    </button>
+</div>
+
+<!-- Tabs -->
+<div class="flex gap-1 bg-slate-100 rounded-2xl p-1 mb-5">
+    <button id="dv-tab-pending" onclick="window.dvSwitchTab('pending')"
+            class="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-sm font-bold transition-all bg-white text-brand-700 shadow-sm">
+        <i class="fa-solid fa-truck-fast"></i>
+        <span>أوامر التسليم</span>
+        <span id="dv-tab-pending-badge" class="hidden px-2 py-0.5 bg-amber-500 text-white rounded-full text-xs font-black">0</span>
+    </button>
+    <button id="dv-tab-archive" onclick="window.dvSwitchTab('archive')"
+            class="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-sm font-bold transition-all text-slate-500 hover:text-slate-700">
+        <i class="fa-solid fa-clock-rotate-left"></i>
+        <span>الأرشيف</span>
+    </button>
+</div>
+
+<!-- ══ TAB: أوامر التسليم ══ -->
+<div id="dv-section-pending">
+
+    <!-- Loading -->
+    <div id="dv-loading" class="bg-white rounded-2xl shadow-sm border border-slate-100 py-16 text-center mb-5">
+        <i class="fa-solid fa-circle-notch fa-spin text-2xl text-brand-400 mb-3"></i>
+        <p class="text-slate-400 text-sm">جاري تحميل سندات التسليم...</p>
+    </div>
+
+    <!-- Delivery Notes Grid -->
+    <div id="dv-notes-grid" class="hidden grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6"></div>
+
+    <!-- Empty -->
+    <div id="dv-empty" class="hidden bg-white rounded-2xl shadow-sm border border-slate-100 py-16 text-center mb-5">
+        <i class="fa-solid fa-truck text-4xl text-slate-200 mb-3 block"></i>
+        <p class="text-slate-400 text-sm font-medium">لا توجد سندات تسليم معلقة</p>
+        <p class="text-slate-300 text-xs mt-1">جميع الطلبات تم تسليمها أو لم يُصدر لها سند بعد</p>
+    </div>
+
+</div>
+<!-- /dv-section-pending -->
+
+<!-- ══ TAB: الأرشيف ══ -->
+<div id="dv-section-archive" class="hidden">
+
+    <!-- Filters -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 mb-5">
+        <div class="flex flex-wrap items-center gap-3">
+            <select id="dv-archive-status-filter"
+                    class="px-3 py-2 border border-slate-200 rounded-xl text-sm text-slate-700 focus:border-brand-500 outline-none">
+                <option value="">كل الحالات</option>
+                <option value="completed">مكتملة</option>
+                <option value="partial">جزئية</option>
+            </select>
+            <input id="dv-archive-search" type="text" placeholder="بحث باسم العميل أو رقم السند..."
+                   class="flex-1 min-w-[200px] px-3 py-2 border border-slate-200 rounded-xl text-sm focus:border-brand-500 outline-none" />
+            <button onclick="window.dvLoadArchive()"
+                    class="flex items-center gap-2 px-4 py-2 bg-slate-700 text-white text-sm font-bold rounded-xl hover:bg-slate-800 transition-colors">
+                <i class="fa-solid fa-filter"></i> تصفية
+            </button>
+        </div>
+    </div>
+
+    <div id="dv-archive-loading" class="hidden bg-white rounded-2xl shadow-sm border border-slate-100 py-16 text-center mb-5">
+        <i class="fa-solid fa-circle-notch fa-spin text-2xl text-brand-400 mb-3"></i>
+        <p class="text-slate-400 text-sm">جاري تحميل الأرشيف...</p>
+    </div>
+
+    <div id="dv-archive-list" class="space-y-3 mb-6"></div>
+
+    <div id="dv-archive-empty" class="hidden bg-white rounded-2xl shadow-sm border border-slate-100 py-16 text-center mb-5">
+        <i class="fa-solid fa-clock-rotate-left text-4xl text-slate-200 mb-3 block"></i>
+        <p class="text-slate-400 text-sm font-medium">لا توجد سندات في الأرشيف</p>
+    </div>
+
+</div>
+<!-- /dv-section-archive -->
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     Modal: تسليم جديد
+══════════════════════════════════════════════════════════════════════════ -->
+<div id="dv-dispatch-modal"
+     style="display:none"
+     class="fixed inset-0 z-50 flex items-start justify-center p-4 pt-6 bg-black/50 opacity-0 transition-opacity duration-200 overflow-y-auto">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mb-8">
+
+        <!-- Modal Header -->
+        <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+            <div>
+                <h3 class="text-base font-bold text-slate-800">تسليم بضاعة</h3>
+                <p id="dv-modal-subtitle" class="text-xs text-slate-400 mt-0.5"></p>
+            </div>
+            <button onclick="window.dvCloseModal()"
+                    class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <!-- Items -->
+        <div class="p-6">
+            <div id="dv-modal-items" class="space-y-3 max-h-[50vh] overflow-y-auto mb-4"></div>
+
+            <!-- Notes -->
+            <div>
+                <label class="block text-xs font-bold text-slate-500 mb-1.5">ملاحظات</label>
+                <input id="dv-modal-notes" type="text" placeholder="اختياري..."
+                       class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:border-brand-500 outline-none" />
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="px-6 pb-6 flex gap-3">
+            <button id="dv-modal-confirm-btn" onclick="window.dvConfirmDispatch()"
+                    class="flex-1 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold rounded-xl transition-colors">
+                <i class="fa-solid fa-truck ml-1.5"></i> تأكيد التسليم
+            </button>
+            <button onclick="window.dvCloseModal()"
+                    class="flex-1 py-2.5 border border-slate-200 text-slate-600 text-sm font-bold rounded-xl hover:bg-slate-50">
+                إلغاء
+            </button>
+        </div>
+    </div>
+</div>
+
+<script src="/js/views/vmi-dispatch.js?v=20260520d"></script>

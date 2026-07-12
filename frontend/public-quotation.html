@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>عرض السعر | G.PACK</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <style>
+        * { font-family: 'Cairo', sans-serif; }
+        @media print {
+            .no-print { display: none !important; }
+            body { background: white; }
+        }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen">
+
+<!-- Loading -->
+<div id="loading" class="fixed inset-0 bg-white flex flex-col items-center justify-center z-50">
+    <div class="w-14 h-14 border-4 border-purple-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+    <p class="text-slate-500 text-sm">جاري تحميل عرض السعر...</p>
+</div>
+
+<!-- Error State -->
+<div id="error-state" class="hidden fixed inset-0 bg-slate-100 flex flex-col items-center justify-center p-6">
+    <div class="bg-white rounded-2xl shadow-lg p-10 max-w-md w-full text-center">
+        <div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <i class="fa-solid fa-link-slash text-2xl text-red-500"></i>
+        </div>
+        <h2 class="text-xl font-bold text-slate-800 mb-2">الرابط غير صالح</h2>
+        <p id="error-msg" class="text-slate-500 text-sm">انتهت صلاحية هذا الرابط أو أنه غير موجود.</p>
+    </div>
+</div>
+
+<!-- Success Response State -->
+<div id="success-state" class="hidden fixed inset-0 bg-slate-100 flex flex-col items-center justify-center p-6">
+    <div class="bg-white rounded-2xl shadow-lg p-10 max-w-md w-full text-center">
+        <div id="success-icon" class="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 bg-emerald-100">
+            <i class="fa-solid fa-circle-check text-3xl text-emerald-500"></i>
+        </div>
+        <h2 id="success-title" class="text-xl font-bold text-slate-800 mb-2">تم تسجيل ردك!</h2>
+        <p id="success-msg" class="text-slate-500 text-sm">شكراً، سيتواصل معك فريقنا قريباً.</p>
+    </div>
+</div>
+
+<!-- Main Content -->
+<div id="main-content" class="hidden max-w-3xl mx-auto py-8 px-4">
+
+    <!-- Header -->
+    <div class="bg-white rounded-2xl shadow-sm p-6 mb-5 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <img src="/images/logo.png" alt="G.PACK" class="h-12 w-auto" />
+            <div>
+                <div class="flex items-center gap-2 mb-1">
+                    <span class="text-2xl font-black text-purple-700">G.PACK</span>
+                    <span class="text-slate-300">|</span>
+                    <span class="text-sm text-slate-500">حلول التعبئة والتغليف</span>
+                </div>
+                <p class="text-xs text-slate-400">ينبع، المملكة العربية السعودية</p>
+            </div>
+        </div>
+        <button onclick="window.print()" class="no-print flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-sm transition-colors">
+            <i class="fa-solid fa-print"></i> طباعة
+        </button>
+    </div>
+
+    <!-- Already Responded Banner -->
+    <div id="responded-banner" class="hidden mb-5"></div>
+
+    <!-- Quote Card -->
+    <div class="bg-white rounded-2xl shadow-sm overflow-hidden mb-5">
+        <!-- Quote Header -->
+        <div class="bg-gradient-to-l from-purple-700 to-purple-900 p-6 text-white">
+            <div class="flex items-start justify-between">
+                <div>
+                    <p class="text-purple-200 text-sm mb-1">عرض سعر</p>
+                    <h1 class="text-3xl font-black">#<span id="q-number">—</span></h1>
+                </div>
+                <div class="text-left text-sm text-purple-200 space-y-1">
+                    <p><i class="fa-regular fa-calendar ml-1"></i><span id="q-date">—</span></p>
+                    <p id="q-valid-wrap"><i class="fa-regular fa-clock ml-1"></i>صالح حتى: <span id="q-valid">—</span></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Client Info -->
+        <div class="p-6 border-b border-slate-100">
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <p class="text-xs text-slate-400 mb-1">العميل</p>
+                    <p class="font-bold text-slate-800" id="q-client">—</p>
+                </div>
+                <div>
+                    <p class="text-xs text-slate-400 mb-1">رقم العرض</p>
+                    <p class="font-bold text-slate-800">#<span id="q-number2">—</span></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Items Table -->
+        <div class="p-6">
+            <h3 class="text-sm font-bold text-slate-700 mb-4">أصناف العرض</h3>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="bg-slate-50 text-slate-500 text-xs">
+                            <th class="py-2 px-3 text-right font-semibold rounded-r-lg">#</th>
+                            <th class="py-2 px-3 text-right font-semibold">الصنف</th>
+                            <th class="py-2 px-3 text-center font-semibold">الكمية</th>
+                            <th class="py-2 px-3 text-center font-semibold">سعر الوحدة</th>
+                            <th class="py-2 px-3 text-center font-semibold rounded-l-lg">المجموع</th>
+                        </tr>
+                    </thead>
+                    <tbody id="q-items"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Totals -->
+        <div class="px-6 pb-6">
+            <div class="bg-slate-50 rounded-xl p-4 max-w-xs mr-auto space-y-2 text-sm">
+                <div class="flex justify-between text-slate-600">
+                    <span>المجموع</span>
+                    <span id="q-subtotal" class="font-semibold">—</span>
+                </div>
+                <div id="q-tax-row" class="flex justify-between text-slate-600">
+                    <span>الضريبة (15%)</span>
+                    <span id="q-tax" class="font-semibold">—</span>
+                </div>
+                <div id="q-down-payment-section" class="hidden flex justify-between bg-amber-50 rounded-lg p-2 -mx-2">
+                    <span class="text-amber-700 font-bold">مبلغ الدفعة الأولية المطلوب</span>
+                    <span id="q-down-payment" class="font-bold text-amber-700">—</span>
+                </div>
+                <div class="flex justify-between text-slate-800 font-black text-base border-t border-slate-200 pt-2">
+                    <span>الإجمالي</span>
+                    <span id="q-total" class="text-purple-700">—</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Notes -->
+        <div id="q-notes-section" class="hidden px-6 pb-6">
+            <div class="bg-amber-50 border border-amber-100 rounded-xl p-4">
+                <p class="text-xs font-bold text-amber-700 mb-1"><i class="fa-solid fa-note-sticky ml-1"></i>ملاحظات</p>
+                <p id="q-notes" class="text-sm text-slate-700"></p>
+            </div>
+        </div>
+
+        <!-- Terms -->
+        <div id="q-terms-section" class="hidden px-6 pb-6">
+            <div class="bg-slate-50 rounded-xl p-4">
+                <p class="text-xs font-bold text-slate-600 mb-2"><i class="fa-solid fa-file-contract ml-1"></i>الشروط والأحكام</p>
+                <div id="q-terms" class="text-xs text-slate-500 space-y-1"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Response Section -->
+    <div id="response-section" class="no-print bg-white rounded-2xl shadow-sm p-6 mb-5">
+        <h3 class="text-base font-bold text-slate-800 mb-1">ردك على العرض</h3>
+        <p class="text-sm text-slate-500 mb-5">يرجى مراجعة العرض والرد عليه. في حال الموافقة، يمكنك رفع إيصال الدفعة المقدمة.</p>
+
+        <div class="grid grid-cols-2 gap-3 mb-5">
+            <button id="btn-approve" onclick="selectResponse('approved')"
+                class="flex flex-col items-center gap-2 p-4 border-2 border-slate-200 rounded-xl hover:border-emerald-500 hover:bg-emerald-50 transition-all cursor-pointer">
+                <i class="fa-solid fa-circle-check text-2xl text-slate-300" id="icon-approve"></i>
+                <span class="text-sm font-bold text-slate-700">أوافق على العرض</span>
+                <span class="text-xs text-slate-400">وسأرسل الدفعة المقدمة</span>
+            </button>
+            <button id="btn-reject" onclick="selectResponse('rejected')"
+                class="flex flex-col items-center gap-2 p-4 border-2 border-slate-200 rounded-xl hover:border-red-400 hover:bg-red-50 transition-all cursor-pointer">
+                <i class="fa-solid fa-circle-xmark text-2xl text-slate-300" id="icon-reject"></i>
+                <span class="text-sm font-bold text-slate-700">أرفض العرض</span>
+                <span class="text-xs text-slate-400">وسأذكر السبب</span>
+            </button>
+        </div>
+
+        <!-- Approve fields -->
+        <div id="approve-fields" class="hidden space-y-4">
+            <div>
+                <label class="block text-sm font-bold text-slate-700 mb-2">
+                    <i class="fa-solid fa-receipt ml-1 text-emerald-600"></i>رفع إيصال الدفعة المقدمة
+                    <span class="text-slate-400 font-normal text-xs">(اختياري — JPG, PNG, PDF — حجم أقصى 10 ميجا)</span>
+                </label>
+                <div id="drop-zone"
+                     ondragover="event.preventDefault(); this.classList.add('border-purple-400','bg-purple-50')"
+                     ondragleave="this.classList.remove('border-purple-400','bg-purple-50')"
+                     ondrop="handleDrop(event)"
+                     onclick="document.getElementById('receipt-input').click()"
+                     class="border-2 border-dashed border-slate-300 rounded-xl p-8 text-center cursor-pointer hover:border-purple-400 hover:bg-purple-50 transition-all">
+                    <i class="fa-solid fa-cloud-arrow-up text-3xl text-slate-300 mb-2 block"></i>
+                    <p class="text-sm text-slate-500">اسحب الملف هنا أو <span class="text-purple-600 font-bold">اضغط للرفع</span></p>
+                    <input type="file" id="receipt-input" class="hidden" accept=".jpg,.jpeg,.png,.pdf,.webp" onchange="handleFileSelect(event)" />
+                </div>
+                <div id="file-preview" class="hidden mt-3 flex items-center gap-3 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
+                    <i class="fa-solid fa-file-circle-check text-emerald-500 text-xl"></i>
+                    <span id="file-name" class="text-sm text-slate-700 flex-1 truncate"></span>
+                    <button onclick="clearFile()" class="text-slate-400 hover:text-red-500 transition-colors"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Reject fields -->
+        <div id="reject-fields" class="hidden space-y-3">
+            <label class="block text-sm font-bold text-slate-700 mb-1">
+                <i class="fa-solid fa-comment-dots ml-1 text-red-500"></i>سبب الرفض <span class="text-red-500">*</span>
+            </label>
+            <textarea id="rejection-reason" rows="3"
+                class="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-red-400 resize-none"
+                placeholder="يرجى توضيح سبب الرفض حتى نتمكن من تحسين عرضنا..."></textarea>
+        </div>
+
+        <!-- Submit -->
+        <div id="submit-section" class="hidden mt-5">
+            <button id="submit-btn" onclick="submitResponse()"
+                class="w-full py-3 rounded-xl font-bold text-white text-sm transition-all active:scale-[0.98]"
+                style="background:#7c3aed">
+                <i class="fa-solid fa-paper-plane ml-2"></i>إرسال الرد
+            </button>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <p class="text-center text-xs text-slate-400 mb-8 no-print">
+        G.PACK • حلول التعبئة والتغليف — ينبع، المملكة العربية السعودية
+    </p>
+</div>
+
+<script>
+const fmt = (v) => parseFloat(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const sar = (v) => fmt(v);
+
+let selectedResponse = null;
+let selectedFile     = null;
+let quoteToken       = null;
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+(async () => {
+    quoteToken = new URLSearchParams(window.location.search).get('token');
+    if (!quoteToken) return showError('الرابط غير صالح — لا يوجد token.');
+
+    try {
+        const res  = await fetch(`/api/public/quotation/${quoteToken}`);
+        const data = await res.json();
+
+        if (!res.ok) return showError(data.error || 'حدث خطأ.');
+
+        renderQuote(data.data);
+    } catch (e) {
+        showError('تعذّر الاتصال بالخادم.');
+    }
+})();
+
+function showError(msg) {
+    document.getElementById('loading').classList.add('hidden');
+    document.getElementById('error-msg').textContent = msg;
+    document.getElementById('error-state').classList.remove('hidden');
+}
+
+function renderQuote({ order, items }) {
+    document.getElementById('loading').classList.add('hidden');
+    document.getElementById('main-content').classList.remove('hidden');
+
+    document.getElementById('q-number').textContent  = order.order_number;
+    document.getElementById('q-number2').textContent = order.order_number;
+    document.getElementById('q-client').textContent  = order.client_name || '—';
+    document.getElementById('q-date').textContent    = new Date(order.order_date).toLocaleDateString('ar-SA');
+
+    if (order.valid_until) {
+        document.getElementById('q-valid').textContent = new Date(order.valid_until).toLocaleDateString('ar-SA');
+    } else {
+        document.getElementById('q-valid-wrap').classList.add('hidden');
+    }
+
+    // Items
+    const tbody = document.getElementById('q-items');
+    tbody.innerHTML = items.map((item, i) => `
+        <tr class="border-b border-slate-50 hover:bg-slate-50/50">
+            <td class="py-3 px-3 text-slate-400 text-xs">${i + 1}</td>
+            <td class="py-3 px-3">
+                <p class="font-semibold text-slate-800">${item.product_name}</p>
+                <p class="text-xs text-slate-400">${item.size_name || ''}</p>
+            </td>
+            <td class="py-3 px-3 text-center text-slate-700">${parseFloat(item.quantity).toLocaleString('en-US')}</td>
+            <td class="py-3 px-3 text-center text-slate-700">${sar(item.unit_price)}</td>
+            <td class="py-3 px-3 text-center font-bold text-slate-800">${sar(item.line_total)}</td>
+        </tr>
+    `).join('');
+
+    document.getElementById('q-subtotal').textContent = sar(order.subtotal);
+    document.getElementById('q-tax').textContent      = sar(order.tax_amount);
+    document.getElementById('q-total').textContent    = sar(order.grand_total);
+
+    // Down payment
+    if (order.down_payment_required && parseFloat(order.down_payment_required) > 0) {
+        document.getElementById('q-down-payment').textContent = sar(order.down_payment_required);
+        document.getElementById('q-down-payment-section').classList.remove('hidden');
+    }
+
+    if (!order.tax_amount || parseFloat(order.tax_amount) === 0) {
+        document.getElementById('q-tax-row').classList.add('hidden');
+    }
+
+    if (order.client_notes) {
+        document.getElementById('q-notes').textContent = order.client_notes;
+        document.getElementById('q-notes-section').classList.remove('hidden');
+    }
+
+    // Terms - use custom_terms (edited) if available, otherwise use terms_conditions
+    const termsToShow = (Array.isArray(order.custom_terms) && order.custom_terms.length > 0)
+        ? order.custom_terms.filter(t => t.is_checked)
+        : (Array.isArray(order.terms_conditions) ? order.terms_conditions : []);
+
+    if (termsToShow.length > 0) {
+        const termsList = document.getElementById('q-terms');
+        termsList.innerHTML = termsToShow.map(t => `<p>• ${t.content || t.title || t}</p>`).join('');
+        document.getElementById('q-terms-section').classList.remove('hidden');
+    }
+
+    // If already responded
+    if (order.client_response) {
+        showAlreadyResponded(order);
+    }
+}
+
+function showAlreadyResponded(order) {
+    document.getElementById('response-section').classList.add('hidden');
+    const banner = document.getElementById('responded-banner');
+    const isApproved = order.client_response === 'approved';
+    banner.innerHTML = `
+        <div class="flex items-center gap-4 p-4 rounded-2xl ${isApproved ? 'bg-emerald-50 border border-emerald-200' : 'bg-red-50 border border-red-200'}">
+            <i class="fa-solid ${isApproved ? 'fa-circle-check text-emerald-500' : 'fa-circle-xmark text-red-500'} text-2xl flex-shrink-0"></i>
+            <div>
+                <p class="font-bold text-sm ${isApproved ? 'text-emerald-700' : 'text-red-700'}">
+                    ${isApproved ? 'تمت الموافقة على العرض' : 'تم رفض العرض'}
+                </p>
+                ${order.rejection_reason ? `<p class="text-xs text-slate-500 mt-0.5">السبب: ${order.rejection_reason}</p>` : ''}
+                <p class="text-xs text-slate-400 mt-0.5">بتاريخ: ${new Date(order.responded_at).toLocaleDateString('ar-SA')}</p>
+            </div>
+        </div>`;
+    banner.classList.remove('hidden');
+}
+
+function selectResponse(type) {
+    selectedResponse = type;
+
+    const btnA  = document.getElementById('btn-approve');
+    const btnR  = document.getElementById('btn-reject');
+    const iconA = document.getElementById('icon-approve');
+    const iconR = document.getElementById('icon-reject');
+
+    if (type === 'approved') {
+        btnA.classList.add('border-emerald-500', 'bg-emerald-50');
+        btnA.classList.remove('border-slate-200');
+        iconA.classList.remove('text-slate-300');
+        iconA.classList.add('text-emerald-500');
+        btnR.classList.add('border-slate-200');
+        btnR.classList.remove('border-red-400', 'bg-red-50');
+        iconR.classList.remove('text-red-500');
+        iconR.classList.add('text-slate-300');
+        document.getElementById('approve-fields').classList.remove('hidden');
+        document.getElementById('reject-fields').classList.add('hidden');
+        document.getElementById('submit-btn').style.background = '#059669';
+    } else {
+        btnR.classList.add('border-red-400', 'bg-red-50');
+        btnR.classList.remove('border-slate-200');
+        iconR.classList.remove('text-slate-300');
+        iconR.classList.add('text-red-500');
+        btnA.classList.add('border-slate-200');
+        btnA.classList.remove('border-emerald-500', 'bg-emerald-50');
+        iconA.classList.remove('text-emerald-500');
+        iconA.classList.add('text-slate-300');
+        document.getElementById('reject-fields').classList.remove('hidden');
+        document.getElementById('approve-fields').classList.add('hidden');
+        document.getElementById('submit-btn').style.background = '#dc2626';
+    }
+
+    document.getElementById('submit-section').classList.remove('hidden');
+}
+
+function handleDrop(e) {
+    e.preventDefault();
+    document.getElementById('drop-zone').classList.remove('border-purple-400', 'bg-purple-50');
+    const file = e.dataTransfer.files[0];
+    if (file) applyFile(file);
+}
+
+function handleFileSelect(e) {
+    const file = e.target.files[0];
+    if (file) applyFile(file);
+}
+
+function applyFile(file) {
+    selectedFile = file;
+    document.getElementById('file-name').textContent = file.name;
+    document.getElementById('file-preview').classList.remove('hidden');
+    document.getElementById('drop-zone').classList.add('hidden');
+}
+
+function clearFile() {
+    selectedFile = null;
+    document.getElementById('receipt-input').value = '';
+    document.getElementById('file-preview').classList.add('hidden');
+    document.getElementById('drop-zone').classList.remove('hidden');
+}
+
+async function submitResponse() {
+    if (!selectedResponse) return;
+    if (selectedResponse === 'rejected') {
+        const reason = document.getElementById('rejection-reason').value.trim();
+        if (!reason) {
+            document.getElementById('rejection-reason').classList.add('border-red-400');
+            document.getElementById('rejection-reason').focus();
+            return;
+        }
+    }
+
+    const btn = document.getElementById('submit-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin ml-2"></i>جاري الإرسال...';
+
+    try {
+        const formData = new FormData();
+        formData.append('response', selectedResponse);
+        if (selectedResponse === 'rejected') {
+            formData.append('reason', document.getElementById('rejection-reason').value.trim());
+        }
+        if (selectedFile) {
+            formData.append('receipt', selectedFile);
+        }
+
+        const res  = await fetch(`/api/public/quotation/${quoteToken}/respond`, {
+            method: 'POST',
+            body: formData,
+        });
+        const data = await res.json();
+
+        if (!res.ok) throw new Error(data.error);
+
+        // Show success
+        document.getElementById('loading').classList.add('hidden');
+        document.getElementById('main-content').classList.add('hidden');
+        const isApproved = selectedResponse === 'approved';
+        document.getElementById('success-icon').className = `w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${isApproved ? 'bg-emerald-100' : 'bg-red-100'}`;
+        document.getElementById('success-icon').querySelector('i').className = `fa-solid ${isApproved ? 'fa-circle-check text-3xl text-emerald-500' : 'fa-circle-xmark text-3xl text-red-500'}`;
+        document.getElementById('success-title').textContent = isApproved ? 'تمت الموافقة!' : 'تم تسجيل ردك';
+        document.getElementById('success-msg').textContent   = data.message;
+        document.getElementById('success-state').classList.remove('hidden');
+
+    } catch (err) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-paper-plane ml-2"></i>إرسال الرد';
+        alert(err.message || 'حدث خطأ، يرجى المحاولة مجدداً.');
+    }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,226 @@
+<!-- =============================================================================
+     G.PACK 2.0 - Journal Entry View
+     Logic: /js/views/journal-entry.js
+============================================================================= -->
+
+<!-- Page Header -->
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+    <div>
+        <h1 class="text-2xl font-extrabold text-slate-800">قيود اليومية</h1>
+        <p class="text-slate-400 text-sm mt-0.5">إدخال وعرض القيود المحاسبية اليدوية</p>
+    </div>
+    <div class="flex items-center gap-2">
+        <button onclick="window.jeRefresh()"
+                class="w-9 h-9 flex items-center justify-center rounded-xl bg-white border border-slate-200 text-slate-500 hover:text-brand-600 hover:border-brand-300 transition-colors shadow-sm">
+            <i class="fa-solid fa-rotate-right text-sm"></i>
+        </button>
+        <button onclick="window.jeOpenNew()"
+                class="flex items-center gap-2 px-5 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold rounded-xl shadow-md transition-all active:scale-[0.98]">
+            <i class="fa-solid fa-plus"></i>
+            <span>قيد جديد</span>
+        </button>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 mb-5">
+    <div class="flex flex-wrap items-center gap-3">
+        <div class="relative flex-1 min-w-[200px]">
+            <i class="fa-solid fa-magnifying-glass absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none"></i>
+            <input id="je-search" type="text" placeholder="بحث برقم القيد أو البيان..."
+                   oninput="window.jeSearch()"
+                   class="w-full pr-9 pl-4 py-2 border border-slate-200 rounded-xl text-sm text-slate-700 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition-all" />
+        </div>
+        <input id="je-date-from" type="date" onchange="window.jeSearch()"
+               class="px-3 py-2 border border-slate-200 rounded-xl text-sm text-slate-700 focus:border-brand-500 outline-none" />
+        <input id="je-date-to" type="date" onchange="window.jeSearch()"
+               class="px-3 py-2 border border-slate-200 rounded-xl text-sm text-slate-700 focus:border-brand-500 outline-none" />
+    </div>
+</div>
+
+<!-- List -->
+<div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden mb-6">
+    <div id="je-loading" class="py-16 text-center">
+        <i class="fa-solid fa-circle-notch fa-spin text-2xl text-brand-400 mb-3"></i>
+        <p class="text-slate-400 text-sm">جاري تحميل القيود...</p>
+    </div>
+    <div id="je-table-wrap" class="hidden overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="bg-slate-50 text-xs text-slate-500 border-b border-slate-100">
+                    <th class="py-3 px-4 text-right font-semibold">رقم القيد</th>
+                    <th class="py-3 px-4 text-right font-semibold hidden sm:table-cell">التاريخ</th>
+                    <th class="py-3 px-4 text-right font-semibold">البيان</th>
+                    <th class="py-3 px-4 text-right font-semibold">المبلغ</th>
+                    <th class="py-3 px-4 text-right font-semibold hidden md:table-cell">بواسطة</th>
+                    <th class="py-3 px-4 text-right font-semibold">الحالة</th>
+                    <th class="py-3 px-4 text-center font-semibold">إجراءات</th>
+                </tr>
+            </thead>
+            <tbody id="je-tbody"></tbody>
+        </table>
+    </div>
+    <div id="je-empty" class="hidden py-16 text-center">
+        <i class="fa-solid fa-book-journal-whills text-4xl text-slate-200 mb-3"></i>
+        <p class="text-slate-400 text-sm">لا توجد قيود يومية</p>
+        <button onclick="window.jeOpenNew()"
+                class="mt-4 px-5 py-2 bg-brand-600 text-white text-sm font-bold rounded-xl hover:bg-brand-700 transition-colors">
+            إضافة أول قيد
+        </button>
+    </div>
+    <!-- Pagination -->
+    <div id="je-pagination" class="hidden flex items-center justify-between px-4 py-3 border-t border-slate-100">
+        <span id="je-page-info" class="text-xs text-slate-400"></span>
+        <div class="flex gap-2">
+            <button id="je-prev-btn" onclick="window.jePrevPage()"
+                    class="px-3 py-1.5 text-xs font-bold border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                السابق
+            </button>
+            <button id="je-next-btn" onclick="window.jeNextPage()"
+                    class="px-3 py-1.5 text-xs font-bold border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                التالي
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     New Journal Entry Modal
+══════════════════════════════════════════════════════════════════════════ -->
+<div id="je-modal"
+     style="display:none"
+     class="fixed inset-0 z-50 flex items-start justify-center p-4 pt-8 bg-black/50 opacity-0 transition-opacity duration-200 overflow-y-auto">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl mb-8">
+        <!-- Header -->
+        <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+            <div>
+                <h3 class="text-base font-bold text-slate-800">قيد يومية جديد</h3>
+                <p class="text-xs text-slate-400 mt-0.5">القيد يجب أن يكون متوازناً — مجموع المدين = مجموع الدائن</p>
+            </div>
+            <button onclick="window.jeCloseModal()"
+                    class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <!-- Body -->
+        <div class="p-6 space-y-5">
+            <!-- Date & Description -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1.5">تاريخ القيد <span class="text-red-500">*</span></label>
+                    <input id="je-modal-date" type="date"
+                           class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition-all" />
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1.5">البيان</label>
+                    <input id="je-modal-desc" type="text" placeholder="وصف القيد..."
+                           class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition-all" />
+                </div>
+            </div>
+
+            <!-- Lines Table -->
+            <div>
+                <div class="flex items-center justify-between mb-2">
+                    <label class="text-xs font-bold text-slate-600">سطور القيد</label>
+                    <button onclick="window.jeAddLine()"
+                            class="flex items-center gap-1.5 text-xs font-bold text-brand-600 hover:text-brand-700 transition-colors">
+                        <i class="fa-solid fa-plus"></i> إضافة سطر
+                    </button>
+                </div>
+                <div class="border border-slate-200 rounded-xl overflow-hidden">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="bg-slate-50 text-xs text-slate-500 border-b border-slate-100">
+                                <th class="py-2.5 px-3 text-right font-semibold w-[35%]">الحساب</th>
+                                <th class="py-2.5 px-3 text-right font-semibold hidden sm:table-cell">البيان</th>
+                                <th class="py-2.5 px-3 text-right font-semibold w-[18%]">مدين</th>
+                                <th class="py-2.5 px-3 text-right font-semibold w-[18%]">دائن</th>
+                                <th class="py-2.5 px-3 w-8"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="je-lines-tbody"></tbody>
+                        <!-- Totals row -->
+                        <tfoot>
+                            <tr class="bg-slate-50 border-t border-slate-200">
+                                <td colspan="2" class="py-2.5 px-3 text-xs font-bold text-slate-500 text-left">الإجمالي</td>
+                                <td class="py-2.5 px-3 font-mono font-black text-red-500 text-sm" id="je-total-debit">0.00</td>
+                                <td class="py-2.5 px-3 font-mono font-black text-emerald-600 text-sm" id="je-total-credit">0.00</td>
+                                <td></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+                <!-- Balance indicator -->
+                <div id="je-balance-indicator" class="mt-2 text-xs font-bold text-center py-1.5 rounded-lg bg-slate-100 text-slate-400">
+                    أدخل القيود لتتحقق من التوازن
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="flex gap-3 px-6 pb-6">
+            <button id="je-save-btn" onclick="window.jeSave()"
+                    class="flex-1 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold rounded-xl transition-all active:scale-[0.98] disabled:opacity-50">
+                <i class="fa-solid fa-floppy-disk ml-1.5"></i> حفظ القيد
+            </button>
+            <button onclick="window.jeCloseModal()"
+                    class="flex-1 py-2.5 border border-slate-200 text-slate-600 text-sm font-bold rounded-xl hover:bg-slate-50 transition-all">
+                إلغاء
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     Detail Modal (View Lines)
+══════════════════════════════════════════════════════════════════════════ -->
+<div id="je-detail-modal"
+     style="display:none"
+     class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 opacity-0 transition-opacity duration-200">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+        <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100 flex-shrink-0">
+            <div>
+                <h3 id="je-detail-title" class="text-base font-bold text-slate-800">تفاصيل القيد</h3>
+                <p id="je-detail-sub" class="text-xs text-slate-400 mt-0.5"></p>
+            </div>
+            <button onclick="window.jeCloseDetail()"
+                    class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        <!-- Lines -->
+        <div class="flex-1 overflow-auto">
+            <table class="w-full text-sm">
+                <thead class="sticky top-0">
+                    <tr class="bg-slate-50 text-xs text-slate-500 border-b border-slate-100">
+                        <th class="py-3 px-4 text-right font-semibold">الحساب</th>
+                        <th class="py-3 px-4 text-right font-semibold hidden sm:table-cell">البيان</th>
+                        <th class="py-3 px-4 text-right font-semibold">مدين</th>
+                        <th class="py-3 px-4 text-right font-semibold">دائن</th>
+                    </tr>
+                </thead>
+                <tbody id="je-detail-tbody"></tbody>
+                <tfoot>
+                    <tr class="bg-slate-50 border-t border-slate-200">
+                        <td class="py-3 px-4 text-xs font-bold text-slate-500" colspan="2">الإجمالي</td>
+                        <td id="je-detail-total-debit"  class="py-3 px-4 font-mono font-black text-red-500"></td>
+                        <td id="je-detail-total-credit" class="py-3 px-4 font-mono font-black text-emerald-600"></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+        <div class="px-6 py-4 border-t border-slate-100 flex justify-end gap-2 flex-shrink-0">
+            <button id="je-detail-reverse-btn" onclick="window.jeReverse()"
+                    class="px-4 py-2 text-xs font-bold text-red-600 border border-red-200 rounded-xl hover:bg-red-50 transition-colors">
+                <i class="fa-solid fa-ban ml-1"></i> عكس القيد
+            </button>
+            <button onclick="window.jeCloseDetail()"
+                    class="px-4 py-2 text-xs font-bold text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors">
+                إغلاق
+            </button>
+        </div>
+    </div>
+</div>
+
+<script src="/js/views/journal-entry.js?v=20260518a"></script>

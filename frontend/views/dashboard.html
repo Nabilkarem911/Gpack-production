@@ -1,0 +1,543 @@
+<!-- =============================================================================
+     G.PACK 2.0 - Dashboard View Fragment
+     Injected into #main-content by the SPA router (layout.js navigateTo).
+     All data here is placeholder — Phase 4 will wire real API calls.
+============================================================================= -->
+
+<!-- Welcome Banner -->
+<div class="mb-6">
+    <h1 class="text-2xl font-extrabold text-slate-800" id="dash-welcome-title">لوحة التحكم</h1>
+    <p class="text-slate-500 text-sm mt-1" id="dash-welcome-sub">مرحباً بك في نظام G.PACK 2.0</p>
+</div>
+
+<!-- Task Alert Banner (Dynamic - shows when there are pending tasks) -->
+<div id="task-alert-banner"></div>
+
+<!-- Pricing Alert Banner (Dynamic - shows when there are pending pricing quotations) -->
+<div id="pricing-alert-banner"></div>
+
+<!-- Receiving Alert Banner (Dynamic - shows when there are goods awaiting receiving) -->
+<div id="receiving-alert-banner"></div>
+
+<!-- KPI Cards -->
+<div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 mb-6">
+    <div class="bg-white rounded-xl p-5 border border-slate-200 shadow-sm">
+        <div class="flex items-center gap-3 mb-3">
+            <div class="w-10 h-10 rounded-lg bg-brand-50 flex items-center justify-center">
+                <i class="fa-solid fa-file-invoice text-brand-600"></i>
+            </div>
+            <div>
+                <p class="text-xs text-slate-500">عروض الأسعار المفتوحة</p>
+                <p class="text-2xl font-bold text-slate-800" id="stat-quotations">0</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-xl p-5 border border-slate-200 shadow-sm">
+        <div class="flex items-center gap-3 mb-3">
+            <div class="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center">
+                <i class="fa-solid fa-cart-shopping text-blue-600"></i>
+            </div>
+            <div>
+                <p class="text-xs text-slate-500">الطلبات قيد التنفيذ</p>
+                <p class="text-2xl font-bold text-slate-800" id="stat-orders">0</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-xl p-5 border border-slate-200 shadow-sm">
+        <div class="flex items-center gap-3 mb-3">
+            <div class="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center">
+                <i class="fa-solid fa-sack-dollar text-emerald-600"></i>
+            </div>
+            <div>
+                <p class="text-xs text-slate-500">إجمالي الإيرادات (ر.س)</p>
+                <p class="text-2xl font-bold text-slate-800" id="stat-revenue">0</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-xl p-5 border border-slate-200 shadow-sm">
+        <div class="flex items-center gap-3 mb-3">
+            <div class="w-10 h-10 rounded-lg bg-red-50 flex items-center justify-center">
+                <i class="fa-solid fa-hand-holding-dollar text-red-600"></i>
+            </div>
+            <div>
+                <p class="text-xs text-slate-500">المستحقات الغير محصلة (ر.س)</p>
+                <p class="text-2xl font-bold text-slate-800" id="stat-receivables">0</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-xl p-5 border border-slate-200 shadow-sm cursor-pointer hover:shadow-md transition-shadow" onclick="window.navigateTo('receiving-vouchers')">
+        <div class="flex items-center gap-3 mb-3">
+            <div class="w-10 h-10 rounded-lg bg-amber-50 flex items-center justify-center">
+                <i class="fa-solid fa-truck-ramp-box text-amber-600"></i>
+            </div>
+            <div>
+                <p class="text-xs text-slate-500">بضاعة منتظر استلامها</p>
+                <p class="text-2xl font-bold text-slate-800" id="stat-pending-receiving">0</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Second Row: Quick Stats + Recent Orders -->
+<div class="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-6">
+
+    <!-- Tasks Widget -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="font-bold text-slate-800 text-base flex items-center gap-2">
+                <i class="fa-solid fa-list-check text-brand-500"></i>
+                مهامي
+            </h3>
+            <button onclick="window.navigateTo('tasks')"
+                    class="text-xs text-brand-600 hover:text-brand-700 font-semibold transition-colors">
+                عرض الكل ←
+            </button>
+        </div>
+        <div id="dashboard-tasks-list" class="space-y-2 max-h-56 overflow-y-auto">
+            <!-- Tasks loaded by dashboard.js -->
+            <div class="text-center py-4 text-slate-400">
+                <i class="fa-solid fa-circle-notch fa-spin text-brand-400"></i>
+                <p class="text-xs mt-2">جارٍ التحميل...</p>
+            </div>
+        </div>
+        <div class="grid grid-cols-3 gap-2 mt-4 pt-3 border-t border-slate-100">
+            <div class="text-center">
+                <p class="text-lg font-bold text-orange-600" id="dash-tasks-pending">0</p>
+                <p class="text-xs text-slate-500">قيد التنفيذ</p>
+            </div>
+            <div class="text-center">
+                <p class="text-lg font-bold text-emerald-600" id="dash-tasks-completed">0</p>
+                <p class="text-xs text-slate-500">مكتملة</p>
+            </div>
+            <div class="text-center">
+                <p class="text-lg font-bold text-red-600" id="dash-tasks-overdue">0</p>
+                <p class="text-xs text-slate-500">متأخرة</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Alerts Widget -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="font-bold text-slate-800 text-base flex items-center gap-2">
+                <i class="fa-solid fa-triangle-exclamation text-red-500"></i>
+                تنبيهات
+            </h3>
+            <span id="alerts-count" class="px-2 py-0.5 bg-red-100 text-red-600 text-xs font-bold rounded-full">٠</span>
+        </div>
+        <div id="dashboard-alerts-list" class="space-y-2 max-h-56 overflow-y-auto">
+            <div class="text-center py-4 text-slate-400">
+                <i class="fa-solid fa-circle-notch fa-spin text-brand-400"></i>
+                <p class="text-xs mt-2">جارٍ التحميل...</p>
+            </div>
+        </div>
+        <button onclick="window.navigateTo('inventory')" class="mt-4 w-full text-center text-xs text-brand-600 hover:text-brand-700 font-semibold transition-colors">
+            عرض كل التنبيهات ←
+        </button>
+    </div>
+
+    <!-- Activity Feed -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="font-bold text-slate-800 text-base flex items-center gap-2">
+                <i class="fa-solid fa-clock-rotate-left text-slate-500"></i>
+                آخر النشاطات
+            </h3>
+        </div>
+        <div id="dashboard-activity-list" class="space-y-1 max-h-56 overflow-y-auto">
+            <div class="text-center py-4 text-slate-400">
+                <i class="fa-solid fa-circle-notch fa-spin text-brand-400"></i>
+                <p class="text-xs mt-2">جارٍ التحميل...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Top Products + Revenue Chart -->
+<div class="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-6">
+    <!-- Top Products Widget -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="font-bold text-slate-800 text-base flex items-center gap-2">
+                <i class="fa-solid fa-crown text-amber-500"></i>
+                الأكثر مبيعاً (٣٠ يوم)
+            </h3>
+            <button onclick="window.navigateTo('products')" class="text-xs text-brand-600 hover:text-brand-700 font-semibold transition-colors">
+                عرض الكل ←
+            </button>
+        </div>
+        <div id="top-products-list" class="space-y-3">
+            <div class="text-center py-6 text-slate-400">
+                <i class="fa-solid fa-circle-notch fa-spin text-brand-400"></i>
+                <p class="text-xs mt-2">جارٍ التحميل...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Revenue Chart -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="font-bold text-slate-800 text-base flex items-center gap-2">
+                <i class="fa-solid fa-chart-line text-brand-500"></i>
+                تحليل الإيرادات (٦ أشهر)
+            </h3>
+        </div>
+        <div id="revenue-chart-container" class="h-64 flex items-end gap-2">
+            <!-- Chart bars rendered by JS -->
+            <div class="text-center w-full py-6 text-slate-400">
+                <i class="fa-solid fa-circle-notch fa-spin text-brand-400"></i>
+                <p class="text-xs mt-2">جارٍ التحميل...</p>
+            </div>
+        </div>
+        <div id="revenue-chart-labels" class="flex justify-between text-xs text-slate-500 mt-2">
+        </div>
+    </div>
+</div>
+
+<!-- ══════════════════════════  RECENT ORDERS  ═══════════════════════════ -->
+<div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 mb-6">
+    <div class="flex items-center justify-between mb-4">
+        <h3 class="font-bold text-slate-800 text-base flex items-center gap-2">
+            <i class="fa-solid fa-cart-shopping text-brand-500"></i>
+            آخر الطلبات
+        </h3>
+        <button onclick="window.navigateTo('orders')" class="text-xs text-brand-600 hover:text-brand-700 font-semibold transition-colors">
+            عرض الكل ←
+        </button>
+    </div>
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="border-b border-slate-100">
+                    <th class="text-right pb-3 font-semibold text-slate-500 text-xs">رقم الطلب</th>
+                    <th class="text-right pb-3 font-semibold text-slate-500 text-xs">العميل</th>
+                    <th class="text-right pb-3 font-semibold text-slate-500 text-xs">الحالة</th>
+                    <th class="text-right pb-3 font-semibold text-slate-500 text-xs">المبلغ</th>
+                    <th class="text-right pb-3 font-semibold text-slate-500 text-xs">التاريخ</th>
+                </tr>
+            </thead>
+            <tbody id="recent-orders-table" class="divide-y divide-slate-50">
+                <tr><td colspan="5" class="py-4 text-center text-slate-400 text-xs">جارٍ التحميل...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Third Row: Quick Actions -->
+<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+    <button onclick="window.navigateTo('quotations')"
+            class="bg-white border border-slate-100 rounded-2xl p-4 text-center hover:border-brand-300 hover:shadow-md
+                   transition-all group cursor-pointer">
+        <div class="w-10 h-10 rounded-xl bg-brand-50 group-hover:bg-brand-100 flex items-center justify-center mx-auto mb-2 transition-colors">
+            <i class="fa-solid fa-file-circle-plus text-brand-600"></i>
+        </div>
+        <p class="text-xs font-semibold text-slate-700">عرض سعر جديد</p>
+    </button>
+    <button onclick="window.navigateTo('clients')"
+            class="bg-white border border-slate-100 rounded-2xl p-4 text-center hover:border-emerald-300 hover:shadow-md
+                   transition-all group cursor-pointer">
+        <div class="w-10 h-10 rounded-xl bg-emerald-50 group-hover:bg-emerald-100 flex items-center justify-center mx-auto mb-2 transition-colors">
+            <i class="fa-solid fa-user-plus text-emerald-600"></i>
+        </div>
+        <p class="text-xs font-semibold text-slate-700">عميل جديد</p>
+    </button>
+    <button onclick="window.navigateTo('delivery')"
+            class="bg-white border border-slate-100 rounded-2xl p-4 text-center hover:border-amber-300 hover:shadow-md
+                   transition-all group cursor-pointer">
+        <div class="w-10 h-10 rounded-xl bg-amber-50 group-hover:bg-amber-100 flex items-center justify-center mx-auto mb-2 transition-colors">
+            <i class="fa-solid fa-truck-fast text-amber-600"></i>
+        </div>
+        <p class="text-xs font-semibold text-slate-700">أوامر التسليم</p>
+    </button>
+    <button onclick="window.navigateTo('accounting')"
+            class="bg-white border border-slate-100 rounded-2xl p-4 text-center hover:border-purple-300 hover:shadow-md
+                   transition-all group cursor-pointer">
+        <div class="w-10 h-10 rounded-xl bg-purple-50 group-hover:bg-purple-100 flex items-center justify-center mx-auto mb-2 transition-colors">
+            <i class="fa-solid fa-book-open text-purple-600"></i>
+        </div>
+        <p class="text-xs font-semibold text-slate-700">قيد محاسبي</p>
+    </button>
+</div>
+
+<!-- Tasks List Modal (Dashboard) -->
+<div id="dash-tasks-list-modal" class="fixed inset-0 z-50 hidden" style="background: rgba(0,0,0,0.5);">
+    <div class="absolute inset-0" onclick="dashboardView._closeTasksListModal()"></div>
+    <div class="relative min-h-screen flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col">
+            <!-- Header -->
+            <div class="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50">
+                <h3 class="font-bold text-lg text-slate-800 flex items-center gap-2">
+                    <i class="fa-solid fa-list-check text-brand-500"></i>
+                    المهام المطلوبة
+                </h3>
+                <button onclick="dashboardView._closeTasksListModal()" class="text-slate-400 hover:text-slate-600 transition-colors">
+                    <i class="fa-solid fa-times text-xl"></i>
+                </button>
+            </div>
+            <!-- Tasks List -->
+            <div id="dash-tasks-list-container" class="flex-1 overflow-y-auto p-5 space-y-3">
+                <div class="text-center py-8 text-slate-400">
+                    <i class="fa-solid fa-circle-notch fa-spin text-brand-400 text-2xl"></i>
+                    <p class="text-sm mt-2">جارٍ التحميل...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Task Detail Modal (Dashboard) -->
+<div id="dash-task-modal" class="fixed inset-0 z-50 hidden" style="background: rgba(0,0,0,0.5);">
+    <div class="absolute inset-0" onclick="dashboardView._closeTaskModal()"></div>
+    <div class="relative min-h-screen flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <!-- Header -->
+            <div class="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50 rounded-t-2xl sticky top-0">
+                <div class="flex items-center gap-3">
+                    <span id="dash-modal-status" class="px-2.5 py-1 rounded-full text-xs font-bold"></span>
+                    <h3 class="font-bold text-lg text-slate-800" id="dash-modal-title">تفاصيل المهمة</h3>
+                </div>
+                <button onclick="dashboardView._closeTaskModal()" class="text-slate-400 hover:text-slate-600 transition-colors">
+                    <i class="fa-solid fa-times text-xl"></i>
+                </button>
+            </div>
+            
+            <!-- Content -->
+            <div class="p-5 space-y-4">
+                <!-- Info Grid -->
+                <div class="grid grid-cols-2 gap-4 text-sm">
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-user text-slate-400"></i>
+                        <span class="text-slate-500">الموظف:</span>
+                        <span id="dash-modal-assignee" class="font-medium text-slate-800"></span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-calendar text-slate-400"></i>
+                        <span class="text-slate-500">تاريخ التسليم:</span>
+                        <span id="dash-modal-due" class="font-medium text-slate-800"></span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-flag text-slate-400"></i>
+                        <span class="text-slate-500">الأولوية:</span>
+                        <span id="dash-modal-priority" class="font-medium"></span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-clock text-slate-400"></i>
+                        <span class="text-slate-500">الإنشاء:</span>
+                        <span id="dash-modal-created" class="font-medium text-slate-800"></span>
+                    </div>
+                </div>
+                
+                <!-- Description -->
+                <div class="bg-slate-50 rounded-xl p-4">
+                    <p class="text-xs font-semibold text-slate-500 mb-2">الوصف:</p>
+                    <p id="dash-modal-desc" class="text-sm text-slate-700 whitespace-pre-wrap"></p>
+                </div>
+                
+                <!-- Subtasks -->
+                <div>
+                    <p class="text-xs font-semibold text-slate-500 mb-2">المهام الفرعية:</p>
+                    <div id="dash-modal-subtasks" class="space-y-2 mb-3"></div>
+                    <div id="dash-modal-save-btn" class="hidden mb-3">
+                        <button onclick="dashboardView._saveModalSubtasks()" id="dash-modal-save-btn-el"
+                                class="w-full px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-sm font-medium transition-colors">
+                            <i class="fa-solid fa-save mr-1"></i> حفظ التغييرات
+                        </button>
+                    </div>
+                    <div id="dash-modal-complete-btn" class="hidden mb-3">
+                        <button onclick="dashboardView._completeModalTask()"
+                                class="w-full px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-sm font-bold transition-colors shadow-lg">
+                            <i class="fa-solid fa-check-circle mr-1"></i> إنجاز المهمة
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Chat -->
+                <div class="border-t border-slate-100 pt-4">
+                    <p class="text-xs font-semibold text-slate-500 mb-2">المحادثة:</p>
+                    <div id="dash-modal-comments" class="bg-slate-50 rounded-xl p-4 max-h-48 overflow-y-auto space-y-3 mb-3">
+                        <p class="text-sm text-slate-400 text-center">لا توجد رسائل...</p>
+                    </div>
+                    <div class="flex gap-2">
+                        <input type="text" id="dash-modal-comment-input" 
+                               class="flex-1 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-brand-500"
+                               placeholder="اكتب رسالة...">
+                        <button onclick="dashboardView._addModalComment()" 
+                                class="px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-sm font-medium transition-colors">
+                            <i class="fa-solid fa-paper-plane"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Pricing List Modal (Dashboard) -->
+<div id="dash-pricing-list-modal" class="fixed inset-0 z-50 hidden" style="background: rgba(0,0,0,0.5);">
+    <div class="absolute inset-0" onclick="dashboardView._closePricingListModal()"></div>
+    <div class="relative min-h-screen flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col">
+            <div class="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50">
+                <h3 class="font-bold text-lg text-slate-800 flex items-center gap-2">
+                    <i class="fa-solid fa-tags text-red-500"></i>
+                    عروض الأسعار بحاجة تسعير
+                </h3>
+                <button onclick="dashboardView._closePricingListModal()" class="text-slate-400 hover:text-slate-600 transition-colors">
+                    <i class="fa-solid fa-times text-xl"></i>
+                </button>
+            </div>
+            <div id="dash-pricing-list-container" class="flex-1 overflow-y-auto p-5 space-y-3">
+                <div class="text-center py-8 text-slate-400">
+                    <i class="fa-solid fa-circle-notch fa-spin text-brand-400 text-2xl"></i>
+                    <p class="text-sm mt-2">جارٍ التحميل...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Pricing Detail Modal (Manager sets prices) -->
+<div id="dash-pricing-detail-modal" class="fixed inset-0 z-50 hidden" style="background: rgba(0,0,0,0.5);">
+    <div class="absolute inset-0" onclick="dashboardView._closePricingDetailModal()"></div>
+    <div class="relative min-h-screen flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+            <div class="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50 rounded-t-2xl sticky top-0">
+                <h3 class="font-bold text-lg text-slate-800 flex items-center gap-2">
+                    <i class="fa-solid fa-calculator text-brand-500"></i>
+                    تسعير عرض السعر
+                </h3>
+                <button onclick="dashboardView._closePricingDetailModal()" class="text-slate-400 hover:text-slate-600 transition-colors">
+                    <i class="fa-solid fa-times text-xl"></i>
+                </button>
+            </div>
+            <div class="p-5 space-y-4">
+                <!-- Order Info -->
+                <div class="grid grid-cols-2 gap-4 text-sm bg-slate-50 rounded-xl p-4">
+                    <div><span class="text-slate-500">رقم العرض:</span> <span id="pricing-detail-number" class="font-bold text-slate-800"></span></div>
+                    <div><span class="text-slate-500">العميل:</span> <span id="pricing-detail-client" class="font-bold text-slate-800"></span></div>
+                    <div><span class="text-slate-500">التاريخ:</span> <span id="pricing-detail-date" class="font-medium"></span></div>
+                    <div><span class="text-slate-500">الموظف:</span> <span id="pricing-detail-rep" class="font-medium"></span></div>
+                </div>
+
+                <!-- Items Table -->
+                <div>
+                    <p class="text-xs font-semibold text-slate-500 mb-2">الأصناف (حدد السعر لكل صنف):</p>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr class="border-b border-slate-200 bg-slate-50">
+                                    <th class="text-right py-2 px-3 font-semibold text-slate-600 text-xs">الصنف</th>
+                                    <th class="text-right py-2 px-3 font-semibold text-slate-600 text-xs">الكمية</th>
+                                    <th class="text-right py-2 px-3 font-semibold text-slate-600 text-xs">السعر</th>
+                                    <th class="text-right py-2 px-3 font-semibold text-slate-600 text-xs">الخصم %</th>
+                                    <th class="text-right py-2 px-3 font-semibold text-slate-600 text-xs">الإجمالي</th>
+                                </tr>
+                            </thead>
+                            <tbody id="pricing-detail-items" class="divide-y divide-slate-100">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Notes -->
+                <div>
+                    <p class="text-xs font-semibold text-slate-500 mb-2">ملاحظات للموظف:</p>
+                    <textarea id="pricing-detail-notes" rows="3" 
+                              class="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-brand-500 resize-none"
+                              placeholder="اكتب ملاحظات للموظف القائم على عرض السعر..."></textarea>
+                </div>
+
+                <!-- Actions -->
+                <div class="flex gap-3 pt-2 border-t border-slate-100">
+                    <button onclick="dashboardView._savePricing()" 
+                            class="flex-1 px-4 py-3 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-sm font-bold transition-colors">
+                        <i class="fa-solid fa-save mr-1"></i> حفظ الأسعار
+                    </button>
+                    <button onclick="dashboardView._closePricingDetailModal()" 
+                            class="px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-medium transition-colors">
+                        إلغاء
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Price History Popup (per item) -->
+<div id="dash-price-history-popup" class="fixed inset-0 z-[60] hidden" style="background: rgba(0,0,0,0.4);">
+    <div class="absolute inset-0" onclick="dashboardView._closePriceHistoryPopup()"></div>
+    <div class="relative min-h-screen flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden">
+            <div class="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50">
+                <h3 class="font-bold text-base text-slate-800 flex items-center gap-2">
+                    <i class="fa-solid fa-clock-rotate-left text-brand-500"></i>
+                    <span id="price-history-title">تاريخ أسعار العميل</span>
+                </h3>
+                <button onclick="dashboardView._closePriceHistoryPopup()" class="text-slate-400 hover:text-slate-600">
+                    <i class="fa-solid fa-times"></i>
+                </button>
+            </div>
+            <div class="p-4 overflow-y-auto max-h-[60vh]">
+                <div id="price-history-content">
+                    <div class="text-center py-8 text-slate-400 text-sm">جارٍ التحميل...</div>
+                </div>
+            </div>
+            <div class="p-3 border-t border-slate-100 bg-slate-50 text-center">
+                <button onclick="dashboardView._closePriceHistoryPopup()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-sm font-medium transition-colors">
+                    إغلاق
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Order Detail Summary Popup (from price history click) -->
+<div id="dash-order-detail-popup" class="fixed inset-0 z-[70] hidden" style="background: rgba(0,0,0,0.4);">
+    <div class="absolute inset-0" onclick="dashboardView._closeOrderDetailPopup()"></div>
+    <div class="relative min-h-screen flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] overflow-hidden">
+            <div class="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50">
+                <h3 class="font-bold text-base text-slate-800 flex items-center gap-2">
+                    <i class="fa-solid fa-file-invoice text-brand-500"></i>
+                    <span>موجز الطلب</span>
+                </h3>
+                <button onclick="dashboardView._closeOrderDetailPopup()" class="text-slate-400 hover:text-slate-600">
+                    <i class="fa-solid fa-times"></i>
+                </button>
+            </div>
+            <div id="order-detail-content" class="p-4 overflow-y-auto max-h-[65vh] space-y-4">
+                <div class="text-center py-8 text-slate-400 text-sm">جارٍ التحميل...</div>
+            </div>
+            <div class="p-3 border-t border-slate-100 bg-slate-50 text-center">
+                <button onclick="dashboardView._closeOrderDetailPopup()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-sm font-medium transition-colors">
+                    إغلاق
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Load dashboard.js -->
+<script src="/js/views/dashboard.js"></script>
+<script>
+    // Personalise the welcome message with the current user's name
+    (function () {
+        const user = window.GpackUser;
+        if (!user) return;
+        const sub = document.getElementById('dash-welcome-sub');
+        if (sub) {
+            const hour = new Date().getHours();
+            const greeting = hour < 12 ? 'صباح الخير' : hour < 18 ? 'مساء الخير' : 'مساء النور';
+            sub.textContent = `${greeting}، ${user.name}. إليك ملخص اليوم.`;
+        }
+    })();
+    
+    // Initialize dashboard view
+    if (window.dashboardView && typeof window.dashboardView._init === 'function') {
+        window.dashboardView._init();
+    }
+</script>

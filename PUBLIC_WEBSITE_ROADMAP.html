@@ -1,0 +1,1212 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>G.PACK — خارطة طريق الموقع الخارجي</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;800;900&display=swap');
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        @page {
+            size: A3 portrait;
+            margin: 12mm;
+        }
+
+        @media print {
+            body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+            .page-break { page-break-before: always; }
+            .no-print { display: none !important; }
+        }
+
+        body {
+            font-family: 'Cairo', sans-serif;
+            background: #f0f2f5;
+            color: #1a1a2e;
+            line-height: 1.6;
+            direction: rtl;
+        }
+
+        /* Print Button */
+        .print-btn {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 12px 28px;
+            border-radius: 8px;
+            font-family: 'Cairo', sans-serif;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            z-index: 1000;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+            transition: all 0.2s;
+        }
+        .print-btn:hover { background: #1d4ed8; transform: translateY(-2px); }
+
+        /* Container */
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 30px 20px;
+        }
+
+        /* Cover Page */
+        .cover {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%);
+            color: white;
+            padding: 80px 50px;
+            border-radius: 16px;
+            text-align: center;
+            margin-bottom: 40px;
+            position: relative;
+            overflow: hidden;
+        }
+        .cover::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -30%;
+            width: 500px;
+            height: 500px;
+            background: radial-gradient(circle, rgba(59, 130, 246, 0.15) 0%, transparent 70%);
+            border-radius: 50%;
+        }
+        .cover::after {
+            content: '';
+            position: absolute;
+            bottom: -40%;
+            left: -20%;
+            width: 400px;
+            height: 400px;
+            background: radial-gradient(circle, rgba(16, 185, 129, 0.1) 0%, transparent 70%);
+            border-radius: 50%;
+        }
+        .cover h1 {
+            font-size: 42px;
+            font-weight: 900;
+            margin-bottom: 12px;
+            position: relative;
+            z-index: 1;
+        }
+        .cover .subtitle {
+            font-size: 22px;
+            font-weight: 300;
+            opacity: 0.9;
+            margin-bottom: 30px;
+            position: relative;
+            z-index: 1;
+        }
+        .cover .meta {
+            display: flex;
+            justify-content: center;
+            gap: 40px;
+            font-size: 14px;
+            opacity: 0.7;
+            position: relative;
+            z-index: 1;
+        }
+        .cover .badge {
+            display: inline-block;
+            background: rgba(59, 130, 246, 0.2);
+            border: 1px solid rgba(59, 130, 246, 0.4);
+            padding: 6px 20px;
+            border-radius: 20px;
+            font-size: 14px;
+            margin-bottom: 20px;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Section */
+        .section {
+            background: white;
+            border-radius: 12px;
+            padding: 36px;
+            margin-bottom: 24px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+            border: 1px solid #e5e7eb;
+        }
+        .section-title {
+            font-size: 24px;
+            font-weight: 800;
+            color: #0f172a;
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 3px solid #2563eb;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .section-title .icon {
+            width: 36px;
+            height: 36px;
+            background: #2563eb;
+            color: white;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            flex-shrink: 0;
+        }
+
+        /* Architecture Diagram */
+        .arch-grid {
+            display: grid;
+            grid-template-columns: 1fr 80px 1fr;
+            gap: 0;
+            align-items: center;
+            margin: 20px 0;
+        }
+        .arch-box {
+            border-radius: 12px;
+            padding: 24px;
+            position: relative;
+        }
+        .arch-box.erp {
+            background: linear-gradient(135deg, #ecfdf5, #d1fae5);
+            border: 2px solid #10b981;
+        }
+        .arch-box.web {
+            background: linear-gradient(135deg, #eff6ff, #dbeafe);
+            border: 2px solid #3b82f6;
+        }
+        .arch-box h3 {
+            font-size: 18px;
+            font-weight: 800;
+            margin-bottom: 12px;
+        }
+        .arch-box.erp h3 { color: #065f46; }
+        .arch-box.web h3 { color: #1e40af; }
+        .arch-box ul {
+            list-style: none;
+            font-size: 13px;
+        }
+        .arch-box ul li {
+            padding: 4px 0;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .arch-box ul li::before {
+            content: '●';
+            font-size: 8px;
+            color: #6b7280;
+        }
+        .arch-connector {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+        .arch-connector .arrow {
+            font-size: 28px;
+            color: #f59e0b;
+            font-weight: 900;
+        }
+        .arch-connector .label {
+            font-size: 10px;
+            color: #92400e;
+            background: #fef3c7;
+            padding: 2px 8px;
+            border-radius: 4px;
+            white-space: nowrap;
+            font-weight: 700;
+        }
+
+        /* Flow Diagram */
+        .flow-container {
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+            margin: 20px 0;
+        }
+        .flow-step {
+            display: flex;
+            align-items: stretch;
+            gap: 16px;
+        }
+        .flow-number {
+            width: 50px;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .flow-number .num {
+            width: 42px;
+            height: 42px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: 18px;
+            color: white;
+            flex-shrink: 0;
+        }
+        .flow-number .line {
+            flex: 1;
+            width: 3px;
+            background: #d1d5db;
+            margin: 4px 0;
+        }
+        .flow-content {
+            flex: 1;
+            padding: 12px 20px 24px;
+        }
+        .flow-content h4 {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
+        .flow-content p {
+            font-size: 13px;
+            color: #4b5563;
+            line-height: 1.7;
+        }
+        .flow-content .who {
+            display: inline-block;
+            font-size: 11px;
+            padding: 2px 10px;
+            border-radius: 10px;
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
+        .who-admin { background: #dbeafe; color: #1e40af; }
+        .who-visitor { background: #fce7f3; color: #9d174d; }
+        .who-sales { background: #d1fae5; color: #065f46; }
+        .who-auto { background: #fef3c7; color: #92400e; }
+
+        .bg-blue { background: #3b82f6; }
+        .bg-pink { background: #ec4899; }
+        .bg-green { background: #10b981; }
+        .bg-amber { background: #f59e0b; }
+        .bg-purple { background: #8b5cf6; }
+
+        /* Tables */
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+            margin: 16px 0;
+        }
+        .data-table th {
+            background: #f8fafc;
+            padding: 10px 14px;
+            text-align: right;
+            font-weight: 700;
+            color: #374151;
+            border-bottom: 2px solid #e5e7eb;
+        }
+        .data-table td {
+            padding: 10px 14px;
+            border-bottom: 1px solid #f3f4f6;
+            vertical-align: top;
+        }
+        .data-table tr:hover td { background: #f9fafb; }
+        .data-table code {
+            background: #f1f5f9;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            color: #1e40af;
+        }
+
+        /* Tags */
+        .tag {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 700;
+        }
+        .tag-blue { background: #dbeafe; color: #1e40af; }
+        .tag-green { background: #d1fae5; color: #065f46; }
+        .tag-amber { background: #fef3c7; color: #92400e; }
+        .tag-red { background: #fee2e2; color: #991b1b; }
+        .tag-purple { background: #ede9fe; color: #5b21b6; }
+        .tag-gray { background: #f3f4f6; color: #374151; }
+
+        /* Phase Cards */
+        .phases-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin: 16px 0;
+        }
+        .phase-card {
+            border-radius: 10px;
+            padding: 20px;
+            border: 1px solid #e5e7eb;
+            position: relative;
+        }
+        .phase-card .phase-label {
+            position: absolute;
+            top: -10px;
+            right: 16px;
+            padding: 2px 14px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 800;
+            color: white;
+        }
+        .phase-card h4 {
+            font-size: 15px;
+            font-weight: 700;
+            margin-bottom: 10px;
+            margin-top: 4px;
+        }
+        .phase-card ol {
+            padding-right: 18px;
+            font-size: 12.5px;
+            color: #374151;
+        }
+        .phase-card ol li {
+            padding: 3px 0;
+        }
+
+        .phase-a { background: #f0fdf4; border-color: #86efac; }
+        .phase-a .phase-label { background: #16a34a; }
+        .phase-b { background: #eff6ff; border-color: #93c5fd; }
+        .phase-b .phase-label { background: #2563eb; }
+        .phase-c { background: #fdf4ff; border-color: #d8b4fe; }
+        .phase-c .phase-label { background: #9333ea; }
+        .phase-d { background: #fff7ed; border-color: #fdba74; }
+        .phase-d .phase-label { background: #ea580c; }
+        .phase-e { background: #fef2f2; border-color: #fca5a5; }
+        .phase-e .phase-label { background: #dc2626; }
+
+        /* File Tree */
+        .file-tree {
+            font-family: 'Courier New', monospace;
+            font-size: 12.5px;
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 24px;
+            border-radius: 10px;
+            line-height: 1.8;
+            overflow-x: auto;
+            direction: ltr;
+            text-align: left;
+        }
+        .file-tree .folder { color: #60a5fa; font-weight: 700; }
+        .file-tree .file { color: #a5b4fc; }
+        .file-tree .comment { color: #64748b; }
+
+        /* DB Schema */
+        .schema-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+            margin: 16px 0;
+        }
+        .schema-card {
+            border-radius: 8px;
+            overflow: hidden;
+            border: 1px solid #e5e7eb;
+            font-size: 12px;
+        }
+        .schema-card .card-header {
+            padding: 8px 12px;
+            font-weight: 800;
+            color: white;
+            font-size: 13px;
+        }
+        .schema-card .card-body {
+            padding: 10px 12px;
+            background: white;
+        }
+        .schema-card .card-body div {
+            padding: 2px 0;
+            color: #4b5563;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .schema-card .card-body div::before {
+            content: '○';
+            font-size: 8px;
+            color: #9ca3af;
+        }
+
+        .header-green { background: #059669; }
+        .header-blue { background: #2563eb; }
+        .header-purple { background: #7c3aed; }
+        .header-amber { background: #d97706; }
+
+        /* API Cards */
+        .api-group {
+            margin: 16px 0;
+        }
+        .api-group-title {
+            font-size: 15px;
+            font-weight: 700;
+            padding: 8px 14px;
+            border-radius: 8px 8px 0 0;
+            color: white;
+        }
+        .api-list {
+            border: 1px solid #e5e7eb;
+            border-top: none;
+            border-radius: 0 0 8px 8px;
+            overflow: hidden;
+        }
+        .api-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 14px;
+            font-size: 12.5px;
+            border-bottom: 1px solid #f3f4f6;
+        }
+        .api-item:last-child { border-bottom: none; }
+        .api-method {
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 4px;
+            min-width: 50px;
+            text-align: center;
+        }
+        .method-get { background: #d1fae5; color: #065f46; }
+        .method-post { background: #dbeafe; color: #1e40af; }
+        .method-put { background: #fef3c7; color: #92400e; }
+        .method-crud { background: #ede9fe; color: #5b21b6; }
+        .api-path {
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            color: #1e293b;
+            direction: ltr;
+        }
+        .api-desc {
+            color: #6b7280;
+            font-size: 12px;
+            margin-right: auto;
+        }
+
+        /* Security */
+        .security-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin: 16px 0;
+        }
+        .security-item {
+            display: flex;
+            gap: 12px;
+            padding: 14px;
+            background: #f8fafc;
+            border-radius: 8px;
+            border: 1px solid #e5e7eb;
+        }
+        .security-item .s-icon {
+            width: 32px;
+            height: 32px;
+            background: #fee2e2;
+            color: #dc2626;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            flex-shrink: 0;
+        }
+        .security-item h5 { font-size: 13px; font-weight: 700; color: #1e293b; }
+        .security-item p { font-size: 12px; color: #6b7280; margin-top: 2px; }
+
+        /* Summary Stats */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin: 20px 0;
+        }
+        .stat-card {
+            text-align: center;
+            padding: 24px 16px;
+            border-radius: 10px;
+            color: white;
+        }
+        .stat-card .stat-num {
+            font-size: 36px;
+            font-weight: 900;
+            line-height: 1;
+            margin-bottom: 6px;
+        }
+        .stat-card .stat-label {
+            font-size: 13px;
+            opacity: 0.9;
+        }
+
+        /* Docker diagram */
+        .docker-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 14px;
+            margin: 16px 0;
+        }
+        .docker-card {
+            border: 2px dashed #94a3b8;
+            border-radius: 10px;
+            padding: 16px;
+            text-align: center;
+        }
+        .docker-card h5 {
+            font-size: 14px;
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
+        .docker-card .port {
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            color: #2563eb;
+            font-weight: 700;
+        }
+        .docker-card p {
+            font-size: 12px;
+            color: #6b7280;
+            margin-top: 4px;
+        }
+
+        /* Warning box */
+        .warning-box {
+            background: linear-gradient(135deg, #fef3c7, #fffbeb);
+            border: 2px solid #f59e0b;
+            border-radius: 10px;
+            padding: 20px 24px;
+            margin: 24px 0;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+        .warning-box .w-icon {
+            font-size: 32px;
+            flex-shrink: 0;
+        }
+        .warning-box p {
+            font-size: 15px;
+            font-weight: 700;
+            color: #92400e;
+        }
+
+        /* Nginx block */
+        .nginx-block {
+            font-family: 'Courier New', monospace;
+            font-size: 12.5px;
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 20px;
+            border-radius: 10px;
+            direction: ltr;
+            text-align: left;
+            line-height: 1.7;
+        }
+        .nginx-block .keyword { color: #60a5fa; }
+        .nginx-block .string { color: #34d399; }
+        .nginx-block .comment { color: #64748b; }
+
+        /* Section types grid */
+        .section-types-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 10px;
+            margin: 16px 0;
+        }
+        .section-type-card {
+            text-align: center;
+            padding: 14px 8px;
+            border-radius: 8px;
+            background: #f8fafc;
+            border: 1px solid #e5e7eb;
+        }
+        .section-type-card .st-icon {
+            font-size: 24px;
+            margin-bottom: 6px;
+        }
+        .section-type-card h5 {
+            font-size: 12px;
+            font-weight: 700;
+            color: #1e293b;
+        }
+        .section-type-card p {
+            font-size: 10px;
+            color: #6b7280;
+            margin-top: 2px;
+        }
+
+        /* Footer */
+        .footer {
+            text-align: center;
+            padding: 30px;
+            color: #9ca3af;
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+
+<button class="print-btn no-print" onclick="window.print()">طباعة PDF</button>
+
+<div class="container">
+
+    <!-- ======================== COVER ======================== -->
+    <div class="cover">
+        <div class="badge">خطة مستقبلية — للدراسة فقط</div>
+        <h1>G.PACK</h1>
+        <div class="subtitle">خارطة طريق الموقع الخارجي العام</div>
+        <div class="meta">
+            <span>تاريخ: 2026-05-03</span>
+            <span>المعمارية: نظامين منفصلين + Internal API</span>
+            <span>التقنيات: Vanilla JS + Express + PostgreSQL + Docker</span>
+        </div>
+    </div>
+
+    <!-- ======================== ARCHITECTURE ======================== -->
+    <div class="section">
+        <div class="section-title">
+            <div class="icon">1</div>
+            المعمارية العامة — نظامين منفصلين تماماً
+        </div>
+
+        <div class="arch-grid">
+            <!-- ERP System -->
+            <div class="arch-box erp">
+                <h3>نظام إدارة الإنتاج (الحالي)</h3>
+                <ul>
+                    <li>Express Server — Port 3000</li>
+                    <li>Database: gpack_erp</li>
+                    <li>Frontend: داشبورد الموظفين</li>
+                    <li>27 جدول موجود</li>
+                    <li>المستخدمين: الموظفين فقط</li>
+                    <li><strong>لا يُعدّل نهائياً</strong></li>
+                </ul>
+            </div>
+
+            <!-- Connector -->
+            <div class="arch-connector">
+                <div class="arrow">⟵</div>
+                <div class="label">Internal API</div>
+                <div class="arrow">⟶</div>
+                <div style="font-size: 10px; color: #64748b; margin-top: 4px;">Docker Network</div>
+            </div>
+
+            <!-- Website System -->
+            <div class="arch-box web">
+                <h3>نظام الموقع الخارجي (الجديد)</h3>
+                <ul>
+                    <li>Express Server — Port 3001</li>
+                    <li>Database: gpack_website</li>
+                    <li>Frontend: الموقع العام + داشبورد إدارة الموقع</li>
+                    <li>8 جداول جديدة</li>
+                    <li>المستخدمين: مدير الموقع + الزوار</li>
+                    <li><strong>مشروع منفصل بالكامل</strong></li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Docker Services -->
+        <h4 style="margin: 20px 0 12px; font-size: 15px; color: #374151;">خدمات Docker</h4>
+        <div class="docker-grid">
+            <div class="docker-card" style="border-color: #10b981;">
+                <h5 style="color: #059669;">PostgreSQL #2</h5>
+                <div class="port">:5433</div>
+                <p>gpack_website</p>
+            </div>
+            <div class="docker-card" style="border-color: #3b82f6;">
+                <h5 style="color: #2563eb;">Express #2</h5>
+                <div class="port">:3001</div>
+                <p>web-backend</p>
+            </div>
+            <div class="docker-card" style="border-color: #f59e0b;">
+                <h5 style="color: #d97706;">Nginx</h5>
+                <div class="port">:8080</div>
+                <p>website + admin + API</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- ======================== FLOW ======================== -->
+    <div class="section">
+        <div class="section-title">
+            <div class="icon">2</div>
+            تدفق العمل الكامل
+        </div>
+
+        <div class="flow-container">
+            <!-- Step 1 -->
+            <div class="flow-step">
+                <div class="flow-number">
+                    <div class="num bg-blue">1</div>
+                    <div class="line"></div>
+                </div>
+                <div class="flow-content">
+                    <span class="who who-admin">مدير الموقع</span>
+                    <h4>إعداد الموقع من داشبورد إدارة الموقع</h4>
+                    <p>يسجل دخول بحساب خاص بالموقع (مش نظام الإنتاج) ← يضيف صفحات (من نحن، خدمات) ← يضيف أصناف الكتالوج (صور + وصف + مواصفات — بدون سعر) ← يتحكم في كل محتوى الموقع</p>
+                </div>
+            </div>
+
+            <!-- Step 2 -->
+            <div class="flow-step">
+                <div class="flow-number">
+                    <div class="num bg-pink">2</div>
+                    <div class="line"></div>
+                </div>
+                <div class="flow-content">
+                    <span class="who who-visitor">الزائر / العميل المحتمل</span>
+                    <h4>تصفح الموقع + طلب عرض سعر</h4>
+                    <p>يدخل الموقع ← يتصفح الصفحات والكتالوج ← يختار أصناف + يحدد كميات ← يملأ بياناته (اسم، شركة، تليفون، إيميل) ← يرسل طلب عرض سعر (RFQ)</p>
+                </div>
+            </div>
+
+            <!-- Step 3 -->
+            <div class="flow-step">
+                <div class="flow-number">
+                    <div class="num bg-blue">3</div>
+                    <div class="line"></div>
+                </div>
+                <div class="flow-content">
+                    <span class="who who-admin">مدير الموقع</span>
+                    <h4>استلام الطلب في داشبورد الموقع</h4>
+                    <p>يشوف طلبات عروض الأسعار الواردة ← يبلّغ فريق المبيعات في نظام الإنتاج</p>
+                </div>
+            </div>
+
+            <!-- Step 4 -->
+            <div class="flow-step">
+                <div class="flow-number">
+                    <div class="num bg-green">4</div>
+                    <div class="line"></div>
+                </div>
+                <div class="flow-content">
+                    <span class="who who-sales">فريق المبيعات (نظام الإنتاج)</span>
+                    <h4>التسعير + إرسال العرض</h4>
+                    <p>يسحب بيانات الطلب عبر Internal API ← يسعّر الأصناف ← يطبع PDF عرض السعر ← يبعته للعميل (واتساب / إيميل)</p>
+                </div>
+            </div>
+
+            <!-- Step 5 -->
+            <div class="flow-step">
+                <div class="flow-number">
+                    <div class="num bg-amber">5</div>
+                    <div class="line" style="background: transparent;"></div>
+                </div>
+                <div class="flow-content">
+                    <span class="who who-auto">تحويل تلقائي</span>
+                    <h4>تحويل RFQ ← أوردر في نظام الإنتاج</h4>
+                    <p>لو العميل وافق ← يتحول Lead لعميل رسمي ← يتحول RFQ لأوردر ← يكمل الدورة العادية (إنتاج ← استلام ← تسليم ← فاتورة)</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ======================== PAGE BREAK ======================== -->
+    <div class="page-break"></div>
+
+    <!-- ======================== DATABASE ======================== -->
+    <div class="section">
+        <div class="section-title">
+            <div class="icon">3</div>
+            قاعدة البيانات — gpack_website (8 جداول)
+        </div>
+
+        <div class="schema-grid">
+            <div class="schema-card">
+                <div class="card-header header-green">web_users</div>
+                <div class="card-body">
+                    <div>id (UUID PK)</div>
+                    <div>email (UNIQUE)</div>
+                    <div>password_hash</div>
+                    <div>name</div>
+                    <div>role (admin/editor)</div>
+                    <div>status</div>
+                </div>
+            </div>
+
+            <div class="schema-card">
+                <div class="card-header header-blue">cms_pages</div>
+                <div class="card-body">
+                    <div>id (UUID PK)</div>
+                    <div>slug (UNIQUE)</div>
+                    <div>title</div>
+                    <div>is_published</div>
+                    <div>show_in_navbar</div>
+                    <div>sort_order</div>
+                </div>
+            </div>
+
+            <div class="schema-card">
+                <div class="card-header header-blue">cms_sections</div>
+                <div class="card-body">
+                    <div>id (UUID PK)</div>
+                    <div>page_id (FK)</div>
+                    <div>section_type</div>
+                    <div>title, content</div>
+                    <div>media (JSONB)</div>
+                    <div>settings (JSONB)</div>
+                </div>
+            </div>
+
+            <div class="schema-card">
+                <div class="card-header header-blue">cms_settings</div>
+                <div class="card-body">
+                    <div>key (PK)</div>
+                    <div>value (JSONB)</div>
+                    <div>updated_at</div>
+                    <div style="color: #9ca3af; font-style: italic;">لوجو، ألوان، سوشيال</div>
+                </div>
+            </div>
+
+            <div class="schema-card">
+                <div class="card-header header-purple">catalog_categories</div>
+                <div class="card-body">
+                    <div>id (UUID PK)</div>
+                    <div>name, slug</div>
+                    <div>image</div>
+                    <div>parent_id (self FK)</div>
+                    <div>is_visible</div>
+                    <div>sort_order</div>
+                </div>
+            </div>
+
+            <div class="schema-card">
+                <div class="card-header header-purple">catalog_items</div>
+                <div class="card-body">
+                    <div>id (UUID PK)</div>
+                    <div>category_id (FK)</div>
+                    <div>name, slug</div>
+                    <div>description</div>
+                    <div>images (JSONB)</div>
+                    <div>specifications (JSONB)</div>
+                </div>
+            </div>
+
+            <div class="schema-card">
+                <div class="card-header header-amber">public_leads</div>
+                <div class="card-body">
+                    <div>id (UUID PK)</div>
+                    <div>name</div>
+                    <div>company_name</div>
+                    <div>phone, email</div>
+                    <div>city</div>
+                    <div>status (new/contacted/...)</div>
+                </div>
+            </div>
+
+            <div class="schema-card">
+                <div class="card-header header-amber">public_rfqs</div>
+                <div class="card-body">
+                    <div>id (UUID PK)</div>
+                    <div>rfq_number (SEQ)</div>
+                    <div>lead_id (FK)</div>
+                    <div>status</div>
+                    <div>total / tax / grand</div>
+                    <div>+ rfq_items (child)</div>
+                </div>
+            </div>
+        </div>
+
+        <p style="font-size: 12px; color: #6b7280; text-align: center;">+ جدول <code>public_rfq_items</code> (جدول فرعي لأصناف كل RFQ) — المجموع 9 جداول مع sequence</p>
+    </div>
+
+    <!-- ======================== API ======================== -->
+    <div class="section">
+        <div class="section-title">
+            <div class="icon">4</div>
+            الـ API — باك اند الموقع (Port 3001)
+        </div>
+
+        <!-- Public API -->
+        <div class="api-group">
+            <div class="api-group-title" style="background: #059669;">API عامة (بدون JWT) — الموقع الخارجي</div>
+            <div class="api-list">
+                <div class="api-item"><span class="api-method method-get">GET</span><span class="api-path">/api/public/settings</span><span class="api-desc">إعدادات الموقع</span></div>
+                <div class="api-item"><span class="api-method method-get">GET</span><span class="api-path">/api/public/pages</span><span class="api-desc">الصفحات المنشورة</span></div>
+                <div class="api-item"><span class="api-method method-get">GET</span><span class="api-path">/api/public/pages/:slug</span><span class="api-desc">صفحة + أقسامها</span></div>
+                <div class="api-item"><span class="api-method method-get">GET</span><span class="api-path">/api/public/catalog/categories</span><span class="api-desc">تصنيفات الكتالوج</span></div>
+                <div class="api-item"><span class="api-method method-get">GET</span><span class="api-path">/api/public/catalog</span><span class="api-desc">أصناف الكتالوج</span></div>
+                <div class="api-item"><span class="api-method method-get">GET</span><span class="api-path">/api/public/catalog/:slug</span><span class="api-desc">تفاصيل صنف</span></div>
+                <div class="api-item"><span class="api-method method-post">POST</span><span class="api-path">/api/public/rfq</span><span class="api-desc">إرسال طلب عرض سعر</span></div>
+            </div>
+        </div>
+
+        <!-- Admin API -->
+        <div class="api-group">
+            <div class="api-group-title" style="background: #2563eb;">API محمية (JWT) — داشبورد إدارة الموقع</div>
+            <div class="api-list">
+                <div class="api-item"><span class="api-method method-post">POST</span><span class="api-path">/api/auth/login</span><span class="api-desc">تسجيل دخول</span></div>
+                <div class="api-item"><span class="api-method method-crud">CRUD</span><span class="api-path">/api/cms/pages</span><span class="api-desc">إدارة الصفحات</span></div>
+                <div class="api-item"><span class="api-method method-crud">CRUD</span><span class="api-path">/api/cms/pages/:id/sections</span><span class="api-desc">أقسام الصفحة</span></div>
+                <div class="api-item"><span class="api-method method-put">PUT</span><span class="api-path">/api/cms/settings</span><span class="api-desc">إعدادات الموقع</span></div>
+                <div class="api-item"><span class="api-method method-crud">CRUD</span><span class="api-path">/api/catalog/categories</span><span class="api-desc">تصنيفات الكتالوج</span></div>
+                <div class="api-item"><span class="api-method method-crud">CRUD</span><span class="api-path">/api/catalog/items</span><span class="api-desc">أصناف الكتالوج</span></div>
+                <div class="api-item"><span class="api-method method-get">GET</span><span class="api-path">/api/rfqs</span><span class="api-desc">عروض الأسعار الواردة</span></div>
+                <div class="api-item"><span class="api-method method-put">PUT</span><span class="api-path">/api/rfqs/:id/price</span><span class="api-desc">تسعير</span></div>
+                <div class="api-item"><span class="api-method method-post">POST</span><span class="api-path">/api/uploads</span><span class="api-desc">رفع صور</span></div>
+            </div>
+        </div>
+
+        <!-- Internal API -->
+        <div class="api-group">
+            <div class="api-group-title" style="background: #dc2626;">Internal API (Docker فقط — مش مكشوف للإنترنت)</div>
+            <div class="api-list">
+                <div class="api-item"><span class="api-method method-get">GET</span><span class="api-path">/api/internal/rfqs/pending-count</span><span class="api-desc">عدد الطلبات الجديدة</span></div>
+                <div class="api-item"><span class="api-method method-get">GET</span><span class="api-path">/api/internal/rfqs/:id</span><span class="api-desc">تفاصيل طلب كاملة</span></div>
+                <div class="api-item"><span class="api-method method-get">GET</span><span class="api-path">/api/internal/leads/:id</span><span class="api-desc">بيانات عميل محتمل</span></div>
+                <div class="api-item"><span class="api-method method-put">PUT</span><span class="api-path">/api/internal/rfqs/:id/mark-converted</span><span class="api-desc">تعليم كمحوّل</span></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ======================== PAGE BREAK ======================== -->
+    <div class="page-break"></div>
+
+    <!-- ======================== CMS SECTIONS ======================== -->
+    <div class="section">
+        <div class="section-title">
+            <div class="icon">5</div>
+            أنواع أقسام المحتوى (CMS Section Types)
+        </div>
+        <div class="section-types-grid">
+            <div class="section-type-card"><div class="st-icon">🎯</div><h5>Hero</h5><p>بانر رئيسي + زر CTA</p></div>
+            <div class="section-type-card"><div class="st-icon">📝</div><h5>Text</h5><p>فقرة نصية</p></div>
+            <div class="section-type-card"><div class="st-icon">🖼️</div><h5>Image Grid</h5><p>شبكة صور</p></div>
+            <div class="section-type-card"><div class="st-icon">⭐</div><h5>Features</h5><p>قائمة ميزات</p></div>
+            <div class="section-type-card"><div class="st-icon">📢</div><h5>CTA</h5><p>دعوة للإجراء</p></div>
+            <div class="section-type-card"><div class="st-icon">💬</div><h5>Testimonials</h5><p>آراء العملاء</p></div>
+            <div class="section-type-card"><div class="st-icon">🎨</div><h5>Gallery</h5><p>معرض صور</p></div>
+            <div class="section-type-card"><div class="st-icon">🎬</div><h5>Video</h5><p>فيديو يوتيوب</p></div>
+            <div class="section-type-card"><div class="st-icon">📊</div><h5>Stats</h5><p>أرقام وإحصائيات</p></div>
+            <div class="section-type-card"><div class="st-icon">👥</div><h5>Team</h5><p>فريق العمل</p></div>
+        </div>
+    </div>
+
+    <!-- ======================== FILE STRUCTURE ======================== -->
+    <div class="section">
+        <div class="section-title">
+            <div class="icon">6</div>
+            هيكل الملفات — مشروع منفصل
+        </div>
+        <div class="file-tree">
+<span class="folder">gpack-website/</span>                         <span class="comment">← مشروع منفصل تماماً</span>
+│
+├── <span class="folder">web-backend/</span>                       <span class="comment">← Express Server #2</span>
+│   ├── <span class="file">server.js</span>                       <span class="comment">← Port 3001</span>
+│   ├── <span class="file">db.js</span>                           <span class="comment">← PostgreSQL: gpack_website</span>
+│   ├── <span class="file">package.json</span>
+│   ├── <span class="file">Dockerfile</span>
+│   ├── <span class="folder">middleware/</span>
+│   │   └── <span class="file">authMiddleware.js</span>           <span class="comment">← JWT خاص</span>
+│   ├── <span class="folder">routes/</span>
+│   │   ├── <span class="file">auth.js</span>                     <span class="comment">← لوجين مدير الموقع</span>
+│   │   ├── <span class="file">public.js</span>                   <span class="comment">← API عامة</span>
+│   │   ├── <span class="file">cms.js</span>                      <span class="comment">← إدارة المحتوى</span>
+│   │   ├── <span class="file">catalog.js</span>                  <span class="comment">← إدارة الكتالوج</span>
+│   │   ├── <span class="file">rfqs.js</span>                     <span class="comment">← عروض الأسعار</span>
+│   │   ├── <span class="file">leads.js</span>                    <span class="comment">← العملاء المحتملين</span>
+│   │   ├── <span class="file">uploads.js</span>                  <span class="comment">← رفع الصور</span>
+│   │   └── <span class="file">internal.js</span>                 <span class="comment">← Internal API</span>
+│   └── <span class="folder">uploads/</span>
+│
+├── <span class="folder">website/</span>                           <span class="comment">← الموقع العام</span>
+│   ├── <span class="file">index.html</span>
+│   ├── <span class="file">page.html</span>
+│   ├── <span class="file">catalog.html</span>
+│   ├── <span class="file">item.html</span>
+│   ├── <span class="file">rfq.html</span>
+│   ├── <span class="folder">css/</span> + <span class="folder">js/</span>
+│
+├── <span class="folder">website-admin/</span>                     <span class="comment">← داشبورد إدارة الموقع</span>
+│   ├── <span class="file">index.html</span> + <span class="file">login.html</span>
+│   ├── <span class="folder">views/</span>
+│   │   ├── <span class="file">dashboard.html</span>
+│   │   ├── <span class="file">pages.html</span>
+│   │   ├── <span class="file">catalog-items.html</span>
+│   │   ├── <span class="file">rfqs.html</span>
+│   │   ├── <span class="file">leads.html</span>
+│   │   └── <span class="file">settings.html</span>
+│   └── <span class="folder">js/</span>
+│
+├── <span class="folder">database/</span>
+│   └── <span class="file">init.sql</span>
+├── <span class="file">docker-compose.yml</span>
+└── <span class="folder">nginx/</span>
+    └── <span class="file">nginx.conf</span>
+        </div>
+    </div>
+
+    <!-- ======================== PHASES ======================== -->
+    <div class="section">
+        <div class="section-title">
+            <div class="icon">7</div>
+            مراحل التنفيذ
+        </div>
+
+        <div class="phases-grid">
+            <div class="phase-card phase-a">
+                <div class="phase-label" style="background: #16a34a;">المرحلة A</div>
+                <h4>البنية التحتية</h4>
+                <ol>
+                    <li>إنشاء مجلد gpack-website منفصل</li>
+                    <li>Docker Compose + Dockerfile + Nginx</li>
+                    <li>داتابيز gpack_website + init.sql</li>
+                    <li>server.js + db.js + JWT middleware</li>
+                    <li>حساب admin أولي</li>
+                </ol>
+            </div>
+
+            <div class="phase-card phase-b">
+                <div class="phase-label" style="background: #2563eb;">المرحلة B</div>
+                <h4>API الموقع</h4>
+                <ol>
+                    <li>تسجيل دخول مدير الموقع</li>
+                    <li>API عامة (صفحات + كتالوج + RFQ)</li>
+                    <li>إدارة المحتوى CMS</li>
+                    <li>إدارة الكتالوج</li>
+                    <li>عروض الأسعار + رفع صور</li>
+                    <li>Internal API لنظام الإنتاج</li>
+                </ol>
+            </div>
+
+            <div class="phase-card phase-c">
+                <div class="phase-label" style="background: #9333ea;">المرحلة C</div>
+                <h4>داشبورد إدارة الموقع</h4>
+                <ol>
+                    <li>صفحة اللوجين + الداشبورد</li>
+                    <li>إدارة الصفحات + الأقسام</li>
+                    <li>إعدادات الموقع</li>
+                    <li>إدارة الكتالوج</li>
+                    <li>عروض الأسعار الواردة + تسعير</li>
+                    <li>العملاء المحتملين</li>
+                </ol>
+            </div>
+
+            <div class="phase-card phase-d">
+                <div class="phase-label" style="background: #ea580c;">المرحلة D</div>
+                <h4>الموقع الخارجي العام</h4>
+                <ol>
+                    <li>الصفحة الرئيسية</li>
+                    <li>الصفحات الديناميكية</li>
+                    <li>الكتالوج + فلترة</li>
+                    <li>تفاصيل صنف</li>
+                    <li>نموذج طلب عرض سعر</li>
+                    <li>تصميم responsive حديث</li>
+                </ol>
+            </div>
+
+            <div class="phase-card phase-e" style="grid-column: span 2;">
+                <div class="phase-label" style="background: #dc2626;">المرحلة E</div>
+                <h4>الربط مع نظام الإنتاج</h4>
+                <ol style="columns: 2;">
+                    <li>Docker network مشتركة</li>
+                    <li>Internal API calls في نظام الإنتاج</li>
+                    <li>إشعارات في داشبورد الإنتاج (اختياري)</li>
+                    <li>تحويل RFQ ← أوردر في نظام الإنتاج</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+
+    <!-- ======================== SECURITY ======================== -->
+    <div class="section">
+        <div class="section-title">
+            <div class="icon">8</div>
+            الأمان
+        </div>
+        <div class="security-grid">
+            <div class="security-item">
+                <div class="s-icon">🔒</div>
+                <div><h5>Internal API</h5><p>Docker network فقط — مش مكشوف للإنترنت</p></div>
+            </div>
+            <div class="security-item">
+                <div class="s-icon">🔑</div>
+                <div><h5>JWT منفصل</h5><p>secret مختلف عن نظام الإنتاج</p></div>
+            </div>
+            <div class="security-item">
+                <div class="s-icon">⏱️</div>
+                <div><h5>Rate Limiting</h5><p>5 طلبات RFQ / ساعة / IP</p></div>
+            </div>
+            <div class="security-item">
+                <div class="s-icon">🖼️</div>
+                <div><h5>رفع الصور</h5><p>تحقق نوع الملف + حد 5MB</p></div>
+            </div>
+            <div class="security-item">
+                <div class="s-icon">🛡️</div>
+                <div><h5>SQL Injection</h5><p>Parameterized queries فقط</p></div>
+            </div>
+            <div class="security-item">
+                <div class="s-icon">🧹</div>
+                <div><h5>XSS Protection</h5><p>تنظيف المحتوى قبل الحفظ</p></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ======================== SUMMARY ======================== -->
+    <div class="section">
+        <div class="section-title">
+            <div class="icon">9</div>
+            ملخص المشروع
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card" style="background: linear-gradient(135deg, #059669, #10b981);">
+                <div class="stat-num">8</div>
+                <div class="stat-label">جداول جديدة</div>
+            </div>
+            <div class="stat-card" style="background: linear-gradient(135deg, #2563eb, #3b82f6);">
+                <div class="stat-num">8</div>
+                <div class="stat-label">ملفات Routes</div>
+            </div>
+            <div class="stat-card" style="background: linear-gradient(135deg, #7c3aed, #8b5cf6);">
+                <div class="stat-num">8</div>
+                <div class="stat-label">صفحات داشبورد</div>
+            </div>
+            <div class="stat-card" style="background: linear-gradient(135deg, #ea580c, #f97316);">
+                <div class="stat-num">5</div>
+                <div class="stat-label">صفحات موقع عام</div>
+            </div>
+        </div>
+
+        <div class="warning-box">
+            <div class="w-icon">⚠️</div>
+            <p>لا تبدأ التنفيذ إلا بعد اكتمال نظام الإنتاج الحالي بالكامل. هذا مشروع منفصل لا يؤثر على النظام الحالي.</p>
+        </div>
+
+        <table class="data-table" style="margin-top: 20px;">
+            <thead>
+                <tr>
+                    <th>العنصر</th>
+                    <th>نظام الإنتاج (الحالي)</th>
+                    <th>الموقع الخارجي (الجديد)</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td><strong>Express Server</strong></td><td>Port 3000</td><td>Port 3001</td></tr>
+                <tr><td><strong>Database</strong></td><td>gpack_erp</td><td>gpack_website</td></tr>
+                <tr><td><strong>JWT Secret</strong></td><td>خاص بالإنتاج</td><td>خاص بالموقع (مختلف)</td></tr>
+                <tr><td><strong>المستخدمين</strong></td><td>موظفين (users)</td><td>مدير موقع (web_users)</td></tr>
+                <tr><td><strong>المنتجات</strong></td><td>products + variants (بأسعار)</td><td>catalog_items (بدون أسعار)</td></tr>
+                <tr><td><strong>العملاء</strong></td><td>clients (رسميين)</td><td>public_leads (محتملين)</td></tr>
+                <tr><td><strong>الطلبات</strong></td><td>orders (إنتاج)</td><td>public_rfqs (عروض أسعار)</td></tr>
+                <tr><td><strong>الربط</strong></td><td colspan="2" style="text-align: center;"><span class="tag tag-red">Internal API عبر Docker Network</span></td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="footer">
+        G.PACK — خارطة طريق الموقع الخارجي العام | تاريخ: 2026-05-03 | مشروع منفصل — باك اند مستقل + Internal API
+    </div>
+
+</div>
+
+</body>
+</html>

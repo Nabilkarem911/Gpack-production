@@ -1,0 +1,569 @@
+<!-- ============================================================
+     G.PACK 2.0 — إدارة المخزون 360°
+     أرصدة · حركات · تحليلات · معدلات استهلاك
+============================================================ -->
+<div id="inventory-container" class="h-full flex flex-col bg-slate-50">
+
+  <!-- ── Header ─────────────────────────────────────────────── -->
+  <div class="bg-gradient-to-r from-emerald-700 to-emerald-900 text-white px-5 py-4 flex-shrink-0">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div>
+        <h1 class="text-2xl font-black flex items-center gap-2">
+          <i class="fa-solid fa-boxes-stacked text-emerald-300"></i>
+          إدارة المخزون
+        </h1>
+        <p class="text-emerald-300 text-sm mt-0.5">أرصدة · حركات · تحليلات 360°</p>
+      </div>
+      <div class="flex items-center gap-2 flex-wrap">
+        <div class="bg-white/10 rounded-xl px-3 py-2 text-center min-w-[60px]">
+          <p class="text-xl font-black" id="stat-total-items">0</p>
+          <p class="text-[10px] text-emerald-300">صنف</p>
+        </div>
+        <div class="bg-white/10 rounded-xl px-3 py-2 text-center min-w-[60px]">
+          <p class="text-xl font-black text-blue-300" id="stat-total-qty">0</p>
+          <p class="text-[10px] text-emerald-300">قطعة</p>
+        </div>
+        <div class="bg-white/10 rounded-xl px-3 py-2 text-center min-w-[60px]">
+          <p class="text-xl font-black text-amber-300" id="stat-low-stock">0</p>
+          <p class="text-[10px] text-emerald-300">منخفض</p>
+        </div>
+        <div class="bg-white/10 rounded-xl px-3 py-2 text-center min-w-[60px]">
+          <p class="text-xl font-black text-red-300" id="stat-out-stock">0</p>
+          <p class="text-[10px] text-emerald-300">نفذ</p>
+        </div>
+        <div class="bg-white/10 rounded-xl px-3 py-2 text-center min-w-[60px]">
+          <p class="text-xl font-black" id="stat-warehouses">0</p>
+          <p class="text-[10px] text-emerald-300">مستودع</p>
+        </div>
+        <button onclick="window.inventoryView._exportToExcel()"
+                class="flex items-center gap-2 px-3 py-2 bg-white/10 hover:bg-white/20 text-white text-sm font-bold rounded-xl transition-colors">
+          <i class="fa-solid fa-file-csv"></i>
+          <span class="hidden sm:inline">تصدير</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Low Stock Alert ─────────────────────────────────────── -->
+  <div id="low-stock-alerts" class="hidden px-5 pt-3 flex-shrink-0">
+    <div class="bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 flex items-center gap-3">
+      <i class="fa-solid fa-triangle-exclamation text-amber-500 text-lg"></i>
+      <p class="text-sm font-bold text-amber-800" id="low-stock-message">يوجد أصناف تحتاج إلى إعادة طلب</p>
+      <button onclick="window.inventoryView._switchTab('stock');document.getElementById('filter-stock-status').value='low';window.inventoryView._loadInventory();"
+              class="mr-auto text-xs text-amber-700 underline font-bold">عرض</button>
+    </div>
+  </div>
+
+  <!-- ── Tabs ─────────────────────────────────────────────────── -->
+  <div class="px-5 pt-4 flex-shrink-0">
+    <div class="flex gap-1 bg-slate-200 rounded-2xl p-1">
+      <button id="inv-tab-stock" onclick="window.inventoryView._switchTab('stock')"
+              class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold bg-white text-emerald-700 shadow-sm transition-all">
+        <i class="fa-solid fa-boxes-stacked"></i><span>الأرصدة</span>
+      </button>
+      <button id="inv-tab-transactions" onclick="window.inventoryView._switchTab('transactions')"
+              class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-slate-500 hover:text-slate-700 transition-all">
+        <i class="fa-solid fa-clock-rotate-left"></i><span>الحركات</span>
+      </button>
+      <button id="inv-tab-analytics" onclick="window.inventoryView._switchTab('analytics')"
+              class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-slate-500 hover:text-slate-700 transition-all">
+        <i class="fa-solid fa-chart-bar"></i><span>التحليلات</span>
+      </button>
+      <button id="inv-tab-clients" onclick="window.inventoryView._switchTab('clients')"
+              class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-slate-500 hover:text-slate-700 transition-all">
+        <i class="fa-solid fa-users-gear"></i><span>دوران العملاء</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ── Main Content ───────────────────────────────────────── -->
+  <div class="flex-1 overflow-auto p-5">
+
+    <!-- ══════════════════════════════════════════════════════
+         TAB 1: الأرصدة
+    ══════════════════════════════════════════════════════ -->
+    <div id="inv-section-stock">
+
+      <!-- Smart Alerts Panel -->
+      <div id="smart-alerts-panel" class="hidden mb-4"></div>
+
+      <!-- Filters Bar -->
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 mb-4">
+        <div class="flex flex-wrap gap-3">
+          <input type="text" id="search-product" placeholder="بحث في الأصناف..."
+                 class="flex-1 min-w-[160px] px-3 py-2 border border-slate-200 rounded-xl text-sm focus:border-emerald-500 outline-none">
+          <select id="filter-warehouse"
+                  class="px-3 py-2 border border-slate-200 rounded-xl text-sm focus:border-emerald-500 outline-none">
+            <option value="">جميع المستودعات</option>
+          </select>
+          <select id="filter-category"
+                  class="px-3 py-2 border border-slate-200 rounded-xl text-sm focus:border-emerald-500 outline-none">
+            <option value="">جميع الفئات</option>
+          </select>
+          <select id="filter-stock-status"
+                  class="px-3 py-2 border border-slate-200 rounded-xl text-sm focus:border-emerald-500 outline-none">
+            <option value="">كل الحالات</option>
+            <option value="low">مخزون منخفض</option>
+            <option value="out">نفذ المخزون</option>
+            <option value="normal">طبيعي</option>
+          </select>
+          <button onclick="window.inventoryView._loadInventory()"
+                  class="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl transition-colors">
+            <i class="fa-solid fa-rotate"></i>تحديث
+          </button>
+        </div>
+      </div>
+
+      <!-- Stock Table -->
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-100 text-xs text-slate-500">
+              <tr>
+                <th class="px-4 py-3 text-right font-semibold">الصنف / المقاس</th>
+                <th class="px-4 py-3 text-right font-semibold hidden md:table-cell">المستودع</th>
+                <th class="px-4 py-3 text-center font-semibold">المتاح</th>
+                <th class="px-4 py-3 text-center font-semibold hidden sm:table-cell">محجوز</th>
+                <th class="px-4 py-3 text-center font-semibold hidden sm:table-cell">الصافي</th>
+                <th class="px-4 py-3 text-center font-semibold hidden lg:table-cell">مستوى المخزون</th>
+                <th class="px-4 py-3 text-center font-semibold hidden xl:table-cell">تغطية تقديرية</th>
+                <th class="px-4 py-3 text-center font-semibold">الحالة</th>
+                <th class="px-4 py-3 text-center font-semibold">إجراء</th>
+              </tr>
+            </thead>
+            <tbody id="inventory-table-body" class="divide-y divide-slate-100">
+              <tr>
+                <td colspan="9" class="px-4 py-10 text-center text-slate-400">
+                  <i class="fa-solid fa-circle-notch fa-spin text-2xl mb-2 block"></i>
+                  جاري تحميل البيانات...
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div id="empty-state" class="hidden px-4 py-14 text-center text-slate-300">
+          <i class="fa-solid fa-box-open text-4xl mb-3 block"></i>
+          <p class="font-bold">لا توجد أصناف في المخزون</p>
+        </div>
+      </div>
+    </div>
+    <!-- /inv-section-stock -->
+
+    <!-- ══════════════════════════════════════════════════════
+         TAB 2: الحركات
+    ══════════════════════════════════════════════════════ -->
+    <div id="inv-section-transactions" class="hidden">
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+
+        <!-- Filters -->
+        <div class="p-4 border-b border-slate-100 bg-slate-50">
+          <div class="flex flex-wrap gap-3">
+            <select id="tx-filter-warehouse"
+                    class="px-3 py-2 border border-slate-200 rounded-xl text-sm focus:border-emerald-500 outline-none">
+              <option value="">جميع المستودعات</option>
+            </select>
+            <select id="tx-filter-type"
+                    class="px-3 py-2 border border-slate-200 rounded-xl text-sm focus:border-emerald-500 outline-none">
+              <option value="">كل العمليات</option>
+              <option value="receipt">توريد</option>
+              <option value="dispense">صرف</option>
+              <option value="transfer">نقل</option>
+            </select>
+            <input type="date" id="tx-from"
+                   class="px-3 py-2 border border-slate-200 rounded-xl text-sm focus:border-emerald-500 outline-none">
+            <input type="date" id="tx-to"
+                   class="px-3 py-2 border border-slate-200 rounded-xl text-sm focus:border-emerald-500 outline-none">
+            <button onclick="window.inventoryView._loadTransactions()"
+                    class="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl transition-colors">
+              <i class="fa-solid fa-rotate"></i>تحديث
+            </button>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-100 text-xs text-slate-500">
+              <tr>
+                <th class="px-4 py-3 text-right font-semibold">التاريخ</th>
+                <th class="px-4 py-3 text-right font-semibold">النوع</th>
+                <th class="px-4 py-3 text-right font-semibold">الصنف</th>
+                <th class="px-4 py-3 text-right font-semibold hidden md:table-cell">المستودع</th>
+                <th class="px-4 py-3 text-right font-semibold hidden lg:table-cell">العميل</th>
+                <th class="px-4 py-3 text-center font-semibold">الكمية</th>
+                <th class="px-4 py-3 text-right font-semibold hidden xl:table-cell">ملاحظات</th>
+              </tr>
+            </thead>
+            <tbody id="tx-table-body" class="divide-y divide-slate-100"></tbody>
+          </table>
+        </div>
+        <div id="tx-empty" class="hidden py-14 text-center text-slate-300">
+          <i class="fa-solid fa-clock-rotate-left text-4xl mb-3 block"></i>
+          <p class="font-bold">لا توجد حركات بعد</p>
+          <p class="text-sm mt-1">اضغط "تحديث" لجلب البيانات</p>
+        </div>
+      </div>
+    </div>
+    <!-- /inv-section-transactions -->
+
+    <!-- ══════════════════════════════════════════════════════
+         TAB 3: التحليلات
+    ══════════════════════════════════════════════════════ -->
+    <div id="inv-section-analytics" class="hidden">
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+        <!-- معدلات الاستهلاك -->
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div class="flex items-center gap-3 px-5 py-4 border-b border-slate-100 bg-slate-50">
+            <div class="w-9 h-9 rounded-xl bg-red-50 text-red-600 flex items-center justify-center">
+              <i class="fa-solid fa-fire-flame-curved"></i>
+            </div>
+            <div>
+              <h3 class="font-bold text-slate-800 text-sm">معدلات الاستهلاك</h3>
+              <p class="text-xs text-slate-400">أعلى الأصناف صرفاً — آخر 30 يوم</p>
+            </div>
+          </div>
+          <div class="p-4" id="consumption-list">
+            <p class="text-slate-400 text-sm text-center py-6">
+              <i class="fa-solid fa-circle-notch fa-spin block text-xl mb-2"></i>
+              جاري الحساب...
+            </p>
+          </div>
+        </div>
+
+        <!-- أعلى الأصناف رصيداً -->
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div class="flex items-center gap-3 px-5 py-4 border-b border-slate-100 bg-slate-50">
+            <div class="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+              <i class="fa-solid fa-ranking-star"></i>
+            </div>
+            <div>
+              <h3 class="font-bold text-slate-800 text-sm">أعلى الأصناف رصيداً</h3>
+              <p class="text-xs text-slate-400">توزيع المخزون الحالي</p>
+            </div>
+          </div>
+          <div class="p-4" id="top-stock-list">
+            <p class="text-slate-400 text-sm text-center py-6">
+              <i class="fa-solid fa-circle-notch fa-spin block text-xl mb-2"></i>
+              جاري التحليل...
+            </p>
+          </div>
+        </div>
+
+        <!-- توزيع المستودعات -->
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden lg:col-span-2">
+          <div class="flex items-center gap-3 px-5 py-4 border-b border-slate-100 bg-slate-50">
+            <div class="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+              <i class="fa-solid fa-warehouse"></i>
+            </div>
+            <div>
+              <h3 class="font-bold text-slate-800 text-sm">توزيع المخزون على المستودعات</h3>
+              <p class="text-xs text-slate-400">مقارنة الأرصدة والأصناف لكل مستودع</p>
+            </div>
+          </div>
+          <div class="p-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4" id="warehouse-breakdown">
+            <p class="col-span-full text-slate-400 text-sm text-center py-6">
+              <i class="fa-solid fa-circle-notch fa-spin block text-xl mb-2"></i>
+              جاري التحليل...
+            </p>
+          </div>
+        </div>
+
+      </div>
+    </div>
+    <!-- /inv-section-analytics -->
+
+    <!-- ══════════════════════════════════════════════════════
+         TAB 4: دوران العملاء
+    ══════════════════════════════════════════════════════ -->
+    <div id="inv-section-clients" class="hidden space-y-5">
+
+      <!-- Sub-tabs: تحليل فردي / مقارنة -->
+      <div class="flex gap-1 bg-slate-100 rounded-xl p-1 w-fit">
+        <button id="ca-subtab-single" onclick="window.inventoryView._caSubtab('single')"
+                class="px-4 py-2 rounded-lg text-xs font-bold bg-white text-emerald-700 shadow-sm transition-all">
+          <i class="fa-solid fa-user ml-1"></i>تحليل عميل
+        </button>
+        <button id="ca-subtab-compare" onclick="window.inventoryView._caSubtab('compare')"
+                class="px-4 py-2 rounded-lg text-xs font-bold text-slate-500 hover:text-slate-700 transition-all">
+          <i class="fa-solid fa-code-compare ml-1"></i>مقارنة عميلين
+        </button>
+      </div>
+
+      <!-- ── Single Client Panel ── -->
+      <div id="ca-panel-single">
+
+      <!-- Controls Bar -->
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+        <div class="flex flex-wrap items-end gap-3">
+          <div class="flex-1 min-w-[180px]">
+            <label class="block text-xs font-bold text-slate-500 mb-1.5">العميل</label>
+            <select id="ca-client"
+                    class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-emerald-500 outline-none">
+              <option value="">— اختر عميلاً —</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-500 mb-1.5">من</label>
+            <input type="date" id="ca-from"
+                   class="px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-emerald-500 outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-500 mb-1.5">إلى</label>
+            <input type="date" id="ca-to"
+                   class="px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-emerald-500 outline-none">
+          </div>
+          <!-- Quick range -->
+          <div class="flex gap-1">
+            <button onclick="window.inventoryView._caSetRange(30)"
+                    class="px-3 py-2.5 text-xs font-bold bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 rounded-xl transition-colors">30 يوم</button>
+            <button onclick="window.inventoryView._caSetRange(60)"
+                    class="px-3 py-2.5 text-xs font-bold bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 rounded-xl transition-colors">60 يوم</button>
+            <button onclick="window.inventoryView._caSetRange(90)"
+                    class="px-3 py-2.5 text-xs font-bold bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 rounded-xl transition-colors">90 يوم</button>
+          </div>
+          <button onclick="window.inventoryView._loadClientAnalytics()"
+                  class="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl transition-colors shadow-sm">
+            <i class="fa-solid fa-magnifying-glass-chart"></i>تحليل
+          </button>
+          <button onclick="window.inventoryView._caExport()"
+                  class="flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold rounded-xl transition-colors">
+            <i class="fa-solid fa-file-csv"></i>تصدير
+          </button>
+        </div>
+      </div>
+
+      <!-- Empty / Loading placeholder -->
+      <div id="ca-placeholder" class="bg-white rounded-2xl border border-slate-200 py-16 text-center text-slate-300">
+        <i class="fa-solid fa-users-gear text-5xl mb-4 block"></i>
+        <p class="font-bold text-slate-400">اختر عميلاً ثم اضغط "تحليل"</p>
+        <p class="text-sm mt-1">سيظهر هنا تفصيل كامل لمعدل دوران المخزون</p>
+      </div>
+
+      <!-- KPI Cards -->
+      <div id="ca-kpis" class="hidden grid grid-cols-2 sm:grid-cols-4 gap-4"></div>
+
+      <!-- ─── Main Table ─────────────────────────────────────── -->
+      <div id="ca-table-wrap" class="hidden bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 bg-slate-50">
+          <div>
+            <h3 class="font-bold text-slate-800 text-sm" id="ca-table-title">معدل دوران الأصناف</h3>
+            <p class="text-xs text-slate-400" id="ca-period-label">—</p>
+          </div>
+          <input type="text" id="ca-search" placeholder="بحث في الأصناف..."
+                 class="px-3 py-1.5 border border-slate-200 rounded-xl text-xs focus:border-emerald-500 outline-none w-48">
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-100 text-xs text-slate-500">
+              <tr>
+                <th class="px-4 py-3 text-right font-semibold">الصنف / المقاس</th>
+                <th class="px-4 py-3 text-center font-semibold">إجمالي الصرف</th>
+                <th class="px-4 py-3 text-center font-semibold">معدل يومي</th>
+                <th class="px-4 py-3 text-center font-semibold">معدل شهري</th>
+                <th class="px-4 py-3 text-center font-semibold">الرصيد الحالي</th>
+                <th class="px-4 py-3 text-center font-semibold">أيام التغطية</th>
+                <th class="px-4 py-3 text-center font-semibold">مستوى الخطر</th>
+                <th class="px-4 py-3 text-center font-semibold">آخر صرف</th>
+              </tr>
+            </thead>
+            <tbody id="ca-table-body" class="divide-y divide-slate-100"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ─── Monthly Trend ──────────────────────────────────── -->
+      <div id="ca-monthly-wrap" class="hidden bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="px-5 py-3.5 border-b border-slate-100 bg-slate-50">
+          <h3 class="font-bold text-slate-800 text-sm">مقارنة الصرف الشهري — آخر 6 أشهر</h3>
+          <p class="text-xs text-slate-400">استهلاك العميل شهراً بشهر لكل صنف</p>
+        </div>
+        <div class="p-5" id="ca-monthly-body"></div>
+      </div>
+
+      </div>
+      <!-- /ca-panel-single -->
+
+      <!-- ── Compare Two Clients Panel ── -->
+      <div id="ca-panel-compare" class="hidden space-y-5">
+
+        <!-- Compare Controls -->
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+          <div class="flex flex-wrap items-end gap-3">
+            <div class="flex-1 min-w-[160px]">
+              <label class="block text-xs font-bold text-slate-500 mb-1.5">
+                <span class="inline-block w-3 h-3 rounded-full bg-emerald-400 ml-1"></span>العميل الأول
+              </label>
+              <select id="cmp-client-a"
+                      class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-emerald-500 outline-none">
+                <option value="">— اختر —</option>
+              </select>
+            </div>
+            <div class="flex-1 min-w-[160px]">
+              <label class="block text-xs font-bold text-slate-500 mb-1.5">
+                <span class="inline-block w-3 h-3 rounded-full bg-blue-400 ml-1"></span>العميل الثاني
+              </label>
+              <select id="cmp-client-b"
+                      class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-emerald-500 outline-none">
+                <option value="">— اختر —</option>
+              </select>
+            </div>
+            <div class="flex gap-1">
+              <button onclick="window.inventoryView._caSetRangeCmp(30)"
+                      class="px-3 py-2.5 text-xs font-bold bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 rounded-xl transition-colors">30</button>
+              <button onclick="window.inventoryView._caSetRangeCmp(60)"
+                      class="px-3 py-2.5 text-xs font-bold bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 rounded-xl transition-colors">60</button>
+              <button onclick="window.inventoryView._caSetRangeCmp(90)"
+                      class="px-3 py-2.5 text-xs font-bold bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 rounded-xl transition-colors">90</button>
+            </div>
+            <input type="date" id="cmp-from" class="px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-emerald-500 outline-none">
+            <input type="date" id="cmp-to"   class="px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-emerald-500 outline-none">
+            <button onclick="window.inventoryView._loadCompare()"
+                    class="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl transition-colors shadow-sm">
+              <i class="fa-solid fa-code-compare"></i>مقارنة
+            </button>
+          </div>
+        </div>
+
+        <!-- Compare Placeholder -->
+        <div id="cmp-placeholder" class="bg-white rounded-2xl border border-slate-200 py-14 text-center text-slate-300">
+          <i class="fa-solid fa-code-compare text-5xl mb-4 block"></i>
+          <p class="font-bold text-slate-400">اختر عميلين ثم اضغط "مقارنة"</p>
+        </div>
+
+        <!-- Compare KPIs -->
+        <div id="cmp-kpis" class="hidden grid grid-cols-1 sm:grid-cols-3 gap-4"></div>
+
+        <!-- Compare Table -->
+        <div id="cmp-table-wrap" class="hidden bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div class="px-5 py-3.5 border-b border-slate-100 bg-slate-50">
+            <h3 class="font-bold text-slate-800 text-sm">مقارنة الاستهلاك per صنف</h3>
+            <p class="text-xs text-slate-400">الأصناف المشتركة بين العميلين + الفارق</p>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-50 border-b border-slate-100 text-xs text-slate-500">
+                <tr>
+                  <th class="px-4 py-3 text-right font-semibold">الصنف</th>
+                  <th class="px-4 py-3 text-center font-semibold">
+                    <span class="flex items-center justify-center gap-1">
+                      <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block"></span>
+                      <span id="cmp-head-a">العميل أ</span>
+                    </span>
+                  </th>
+                  <th class="px-4 py-3 text-center font-semibold">
+                    <span class="flex items-center justify-center gap-1">
+                      <span class="w-2.5 h-2.5 rounded-full bg-blue-400 inline-block"></span>
+                      <span id="cmp-head-b">العميل ب</span>
+                    </span>
+                  </th>
+                  <th class="px-4 py-3 text-center font-semibold">الفارق</th>
+                  <th class="px-4 py-3 text-center font-semibold">المقارنة المرئية</th>
+                </tr>
+              </thead>
+              <tbody id="cmp-table-body" class="divide-y divide-slate-100"></tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+      <!-- /ca-panel-compare -->
+
+    </div>
+    <!-- /inv-section-clients -->
+
+  </div>
+  <!-- /Main Content -->
+
+</div>
+<!-- /inventory-container -->
+
+<!-- ══════════════════════════════════════════════════════════
+     Modal: تسوية المخزون
+══════════════════════════════════════════════════════════ -->
+<div id="adjustment-modal" class="hidden fixed inset-0 bg-black/50 z-50 overflow-y-auto">
+  <div class="min-h-screen flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+
+      <!-- Header -->
+      <div class="bg-gradient-to-r from-emerald-600 to-emerald-700 text-white px-5 py-4 rounded-t-2xl">
+        <div class="flex items-center justify-between">
+          <div>
+            <h3 class="text-base font-bold">تسوية مخزون</h3>
+            <p class="text-emerald-200 text-xs mt-0.5" id="adj-product-name">—</p>
+          </div>
+          <button onclick="window.inventoryView._closeAdjustmentModal()"
+                  class="w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 transition-colors">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Body -->
+      <div class="p-5 space-y-4">
+
+        <!-- Info -->
+        <div class="grid grid-cols-2 gap-3">
+          <div class="bg-slate-50 rounded-xl p-3 text-center">
+            <p class="text-xs text-slate-400 mb-1">الكمية الحالية</p>
+            <p class="text-2xl font-black text-slate-800" id="adj-current-qty">0</p>
+          </div>
+          <div class="bg-emerald-50 rounded-xl p-3 text-center">
+            <p class="text-xs text-slate-400 mb-1">الكمية بعد التسوية</p>
+            <p class="text-2xl font-black text-emerald-700" id="adj-new-qty">0</p>
+          </div>
+        </div>
+
+        <div class="text-xs text-slate-500 flex items-center gap-1.5">
+          <i class="fa-solid fa-warehouse text-slate-300"></i>
+          <span id="adj-warehouse-name">—</span>
+        </div>
+
+        <!-- Type -->
+        <div>
+          <label class="block text-xs font-bold text-slate-600 mb-1.5">نوع التسوية</label>
+          <select id="adj-type"
+                  class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-emerald-500 outline-none">
+            <option value="increase">إضافة (+)</option>
+            <option value="decrease">خصم (−)</option>
+            <option value="set">تعيين قيمة محددة</option>
+          </select>
+        </div>
+
+        <!-- Quantity -->
+        <div>
+          <label class="block text-xs font-bold text-slate-600 mb-1.5">الكمية</label>
+          <input type="number" id="adj-quantity" min="0" step="1" placeholder="0"
+                 class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm text-center font-mono focus:border-emerald-500 outline-none">
+        </div>
+
+        <!-- Reason -->
+        <div>
+          <label class="block text-xs font-bold text-slate-600 mb-1.5">سبب التسوية *</label>
+          <input type="text" id="adj-reason" placeholder="مثال: جرد فعلي، تلف، استرداد..."
+                 class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-emerald-500 outline-none">
+        </div>
+
+      </div>
+
+      <!-- Footer -->
+      <div class="flex gap-2 px-5 pb-5">
+        <button onclick="window.inventoryView._closeAdjustmentModal()"
+                class="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-bold hover:bg-slate-50 transition-colors">
+          إلغاء
+        </button>
+        <button onclick="window.inventoryView._submitAdjustment()"
+                class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold transition-colors shadow">
+          <i class="fa-solid fa-check ml-1"></i>تأكيد التسوية
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Load inventory.js -->
+<script src="/js/views/inventory.js"></script>
+<script>
+  if (window.inventoryView && typeof window.inventoryView._init === 'function') {
+    window.inventoryView._init();
+  }
+</script>

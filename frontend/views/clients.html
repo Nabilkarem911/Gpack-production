@@ -1,0 +1,362 @@
+<!-- =============================================================================
+     G.PACK 2.0 - Clients View Fragment
+     Injected into #main-content by the SPA router.
+     Logic is handled by /js/views/clients.js (loaded below).
+============================================================================= -->
+
+<!-- Page Header -->
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+    <div>
+        <h1 class="text-2xl font-extrabold text-slate-800">إدارة العملاء</h1>
+        <p class="text-slate-500 text-sm mt-0.5">قائمة العملاء الرئيسيين والفروع (نظام الامتياز)</p>
+    </div>
+    <div class="flex items-center gap-2">
+        <button id="add-branches-btn"
+                onclick="window.openBulkBranchModal()"
+                class="flex items-center gap-2 px-4 py-2.5 bg-purple-600 hover:bg-purple-700 active:scale-[0.98]
+                       text-white text-sm font-bold rounded-xl shadow-md shadow-purple-600/20 transition-all">
+            <i class="fa-solid fa-code-branch"></i>
+            <span>إضافة فروع</span>
+        </button>
+        <button id="add-client-btn"
+                class="flex items-center gap-2 px-5 py-2.5 bg-brand-600 hover:bg-brand-700 active:scale-[0.98]
+                       text-white text-sm font-bold rounded-xl shadow-md shadow-brand-600/20 transition-all">
+            <i class="fa-solid fa-user-plus"></i>
+            <span>إضافة عميل</span>
+        </button>
+    </div>
+</div>
+
+<!-- Search & Filter Bar -->
+<div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 mb-4">
+    <div class="relative max-w-sm">
+        <span class="absolute inset-y-0 right-0 flex items-center pr-3.5 text-slate-400 pointer-events-none">
+            <i class="fa-solid fa-magnifying-glass text-sm"></i>
+        </span>
+        <input type="text"
+               id="clients-search"
+               placeholder="بحث بالاسم، المدينة، الهاتف..."
+               class="w-full pr-10 pl-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                      text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                      focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all" />
+    </div>
+</div>
+
+<!-- Clients Table Card -->
+<div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+    <div class="overflow-x-auto">
+        <table class="w-full">
+            <thead>
+                <tr class="bg-slate-50 border-b border-slate-200">
+                    <th class="text-right py-3.5 px-4 text-xs font-bold text-slate-500 uppercase tracking-wide">العميل</th>
+                    <th class="text-right py-3.5 px-4 text-xs font-bold text-slate-500 uppercase tracking-wide">النوع</th>
+                    <th class="text-right py-3.5 px-4 text-xs font-bold text-slate-500 uppercase tracking-wide">تابع لـ</th>
+                    <th class="text-right py-3.5 px-4 text-xs font-bold text-slate-500 uppercase tracking-wide">الهاتف</th>
+                    <th class="text-right py-3.5 px-4 text-xs font-bold text-slate-500 uppercase tracking-wide">المدينة</th>
+                    <th class="py-3.5 px-4"></th>
+                </tr>
+            </thead>
+            <tbody id="clients-tbody">
+                <tr>
+                    <td colspan="6" class="py-10 text-center text-slate-400">
+                        <i class="fa-solid fa-circle-notch fa-spin text-2xl"></i>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Empty state -->
+    <div id="clients-empty" class="hidden py-16 text-center text-slate-400">
+        <i class="fa-solid fa-users text-5xl mb-4 text-slate-200"></i>
+        <p class="text-base font-semibold text-slate-500">لا يوجد عملاء حتى الآن</p>
+        <p class="text-sm mt-1">ابدأ بإضافة أول عميل لك</p>
+    </div>
+</div>
+
+<!-- =============================================================================
+     ADD / EDIT CLIENT MODAL
+     Visibility controlled via CSS opacity + scale. Hidden class toggled by JS.
+     Backdrop click closes the modal (wired in clients.js).
+============================================================================= -->
+<div id="client-modal"
+     style="display:none"
+     class="fixed inset-0 z-50 items-center justify-center p-4
+            bg-black/50 opacity-0 transition-opacity duration-200">
+
+    <div class="modal-panel bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto
+                transform scale-95 transition-transform duration-200">
+
+        <!-- Modal Header -->
+        <div class="flex items-center justify-between px-6 py-5 border-b border-slate-100">
+            <h2 id="modal-title" class="text-lg font-bold text-slate-800">إضافة عميل جديد</h2>
+            <button id="modal-close-btn"
+                    class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400
+                           hover:text-slate-700 hover:bg-slate-100 transition-colors">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <!-- Modal Body — not a <form> to avoid submit event complexity in SPA -->
+        <div id="client-form" class="px-6 py-5 space-y-5">
+
+            <!-- Error Alert -->
+            <div id="client-form-error"
+                 class="hidden flex items-center gap-2 bg-red-50 border border-red-200 text-red-700
+                        rounded-xl px-4 py-3 text-sm font-medium">
+                <i class="fa-solid fa-circle-exclamation flex-shrink-0"></i>
+                <span></span>
+            </div>
+
+            <!-- Franchise Parent Selector — Searchable Custom Dropdown -->
+            <div>
+                <label class="block text-sm font-semibold text-slate-700 mb-1.5">نوع العميل / تابع لـ</label>
+                <!-- Hidden real value holder -->
+                <input type="hidden" id="client-parent-id" value="" />
+                <div class="relative" id="parent-dropdown-wrap">
+                    <!-- Display input -->
+                    <span class="absolute inset-y-0 right-0 flex items-center pr-3.5 text-slate-400 pointer-events-none z-10">
+                        <i class="fa-solid fa-sitemap text-sm"></i>
+                    </span>
+                    <input type="text" id="parent-search-input"
+                           placeholder="— عميل مستقل (رئيسي) —"
+                           autocomplete="off"
+                           class="w-full pr-10 pl-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                  text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                                  focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all cursor-pointer"
+                           onfocus="window._cpShowParentDropdown()"
+                           oninput="window._cpFilterParents(this.value)" />
+                    <!-- Dropdown list -->
+                    <div id="parent-dropdown-list"
+                         class="hidden absolute top-full right-0 left-0 mt-1 bg-white border border-slate-200
+                                rounded-xl shadow-xl z-50 max-h-52 overflow-y-auto">
+                    </div>
+                </div>
+                <p class="text-xs text-slate-400 mt-1">اتركه فارغاً للعميل الرئيسي، أو ابحث واختر العميل الأب للفرع</p>
+            </div>
+
+            <!-- Row: Name + Contact Person -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label for="client-name" class="block text-sm font-semibold text-slate-700 mb-1.5">
+                        اسم العميل <span class="text-red-500">*</span>
+                    </label>
+                    <input type="text" id="client-name" placeholder="شركة النور للتعبئة"
+                           class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                  text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                                  focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all" required />
+                </div>
+                <div>
+                    <label for="client-contact-person" class="block text-sm font-semibold text-slate-700 mb-1.5">
+                        مسؤول التواصل
+                    </label>
+                    <input type="text" id="client-contact-person" placeholder="أحمد محمد"
+                           class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                  text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                                  focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all" />
+                </div>
+            </div>
+
+            <!-- Row: Phone + Email -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label for="client-phone" class="block text-sm font-semibold text-slate-700 mb-1.5">
+                        رقم الهاتف
+                    </label>
+                    <input type="tel" id="client-phone" placeholder="+966 5X XXX XXXX"
+                           class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                  text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                                  focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all" />
+                </div>
+                <div>
+                    <label for="client-email" class="block text-sm font-semibold text-slate-700 mb-1.5">
+                        البريد الإلكتروني
+                    </label>
+                    <input type="email" id="client-email" placeholder="client@example.com"
+                           class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                  text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                                  focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all" />
+                </div>
+            </div>
+
+            <!-- Row: City + Address -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label for="client-city" class="block text-sm font-semibold text-slate-700 mb-1.5">
+                        المدينة
+                    </label>
+                    <input type="text" id="client-city" placeholder="الرياض"
+                           class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                  text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                                  focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all" />
+                </div>
+                <div>
+                    <label for="client-address" class="block text-sm font-semibold text-slate-700 mb-1.5">
+                        العنوان
+                    </label>
+                    <input type="text" id="client-address" placeholder="شارع، حي، رقم المبنى"
+                           class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                  text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                                  focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all" />
+                </div>
+            </div>
+
+            <!-- Row: Tax ID + Commercial Register -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label for="client-tax-id" class="block text-sm font-semibold text-slate-700 mb-1.5">
+                        الرقم الضريبي
+                    </label>
+                    <input type="text" id="client-tax-id" placeholder="3XXXXXXXXXXXXXXXXX"
+                           class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                  text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                                  focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all" />
+                </div>
+                <div>
+                    <label for="client-commercial-register" class="block text-sm font-semibold text-slate-700 mb-1.5">
+                        السجل التجاري
+                    </label>
+                    <input type="text" id="client-commercial-register" placeholder="1XXXXXXXXX"
+                           class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                  text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                                  focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all" />
+                </div>
+            </div>
+
+            <!-- Row: Credit Limit + Status -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label for="client-credit-limit" class="block text-sm font-semibold text-slate-700 mb-1.5">
+                        حد الائتمان (ر.س)
+                    </label>
+                    <input type="number" id="client-credit-limit" placeholder="0" min="0" step="0.01"
+                           class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                  text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                                  focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all" />
+                </div>
+                <div>
+                    <label for="client-status" class="block text-sm font-semibold text-slate-700 mb-1.5">
+                        الحالة
+                    </label>
+                    <select id="client-status"
+                            class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                   text-slate-800 outline-none focus:border-brand-500 focus:ring-2
+                                   focus:ring-brand-500/20 focus:bg-white transition-all appearance-none">
+                        <option value="active">نشط</option>
+                        <option value="inactive">غير نشط</option>
+                        <option value="blacklisted">محظور</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Modal Footer — inside the <form> so type="submit" fires the submit event -->
+            <div class="flex items-center justify-end gap-3 pt-2 pb-1 border-t border-slate-100 mt-2">
+                <button id="modal-cancel-btn" type="button"
+                        class="px-5 py-2.5 text-sm font-semibold text-slate-600 bg-white border border-slate-200
+                               rounded-xl hover:bg-slate-100 transition-colors">
+                    إلغاء
+                </button>
+                <button id="modal-submit-btn" type="button"
+                        onclick="window.submitClientForm()"
+                        class="px-6 py-2.5 text-sm font-bold text-white bg-brand-600 hover:bg-brand-700
+                               rounded-xl shadow-md shadow-brand-600/20 transition-all active:scale-[0.98]">
+                    إضافة العميل
+                </button>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<!-- =====================================================================
+     BULK BRANCHES MODAL
+====================================================================== -->
+<div id="bulk-branch-modal"
+     style="display:none"
+     class="fixed inset-0 z-50 items-center justify-center p-4
+            bg-black/50 opacity-0 transition-opacity duration-200">
+
+    <div class="modal-panel bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto
+                transform scale-95 transition-transform duration-200">
+
+        <div class="flex items-center justify-between px-6 py-5 border-b border-slate-100">
+            <div>
+                <h2 class="text-lg font-bold text-slate-800">إضافة فروع متعددة</h2>
+                <p class="text-xs text-slate-400 mt-0.5">أضف عدة فروع دفعة واحدة لنفس العميل الرئيسي</p>
+            </div>
+            <button onclick="window.closeBulkBranchModal()"
+                    class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400
+                           hover:text-slate-700 hover:bg-slate-100 transition-colors">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <div class="px-6 py-5 space-y-4">
+
+            <!-- Error -->
+            <div id="bulk-branch-error"
+                 class="hidden flex items-center gap-2 bg-red-50 border border-red-200 text-red-700
+                        rounded-xl px-4 py-3 text-sm font-medium">
+                <i class="fa-solid fa-circle-exclamation flex-shrink-0"></i>
+                <span></span>
+            </div>
+
+            <!-- Parent selector (searchable) -->
+            <div>
+                <label class="block text-sm font-semibold text-slate-700 mb-1.5">
+                    العميل الرئيسي <span class="text-red-500">*</span>
+                </label>
+                <input type="hidden" id="bulk-parent-id" value="" />
+                <div class="relative">
+                    <span class="absolute inset-y-0 right-0 flex items-center pr-3.5 text-slate-400 pointer-events-none z-10">
+                        <i class="fa-solid fa-building text-sm"></i>
+                    </span>
+                    <input type="text" id="bulk-parent-search"
+                           placeholder="ابحث عن العميل الرئيسي..."
+                           autocomplete="off"
+                           class="w-full pr-10 pl-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                  text-slate-800 placeholder-slate-400 outline-none focus:border-purple-500
+                                  focus:ring-2 focus:ring-purple-500/20 focus:bg-white transition-all"
+                           onfocus="window._bulkShowParents()"
+                           oninput="window._bulkFilterParents(this.value)" />
+                    <div id="bulk-parent-dropdown"
+                         class="hidden absolute top-full right-0 left-0 mt-1 bg-white border border-slate-200
+                                rounded-xl shadow-xl z-50 max-h-48 overflow-y-auto">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Branches list -->
+            <div>
+                <div class="flex items-center justify-between mb-2">
+                    <label class="text-sm font-semibold text-slate-700">الفروع</label>
+                    <button onclick="window._addBranchRow()"
+                            class="flex items-center gap-1.5 px-3 py-1.5 bg-purple-50 hover:bg-purple-100
+                                   text-purple-700 text-xs font-bold rounded-lg transition-colors">
+                        <i class="fa-solid fa-plus"></i> إضافة سطر
+                    </button>
+                </div>
+                <div id="bulk-branches-list" class="space-y-2">
+                    <!-- rows injected by JS -->
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="flex items-center justify-end gap-3 pt-2 border-t border-slate-100">
+                <button onclick="window.closeBulkBranchModal()"
+                        class="px-5 py-2.5 text-sm font-semibold text-slate-600 bg-white border border-slate-200
+                               rounded-xl hover:bg-slate-100 transition-colors">إلغاء</button>
+                <button id="bulk-branch-save-btn"
+                        onclick="window.saveBulkBranches()"
+                        class="px-6 py-2.5 text-sm font-bold text-white bg-purple-600 hover:bg-purple-700
+                               rounded-xl shadow-md shadow-purple-600/20 transition-all active:scale-[0.98]">
+                    <i class="fa-solid fa-check ml-1"></i> حفظ الكل
+                </button>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<!-- Load the view controller. initClientsView() is self-invoked inside its IIFE. -->
+<script src="/js/views/clients.js?v=20260521f"></script>

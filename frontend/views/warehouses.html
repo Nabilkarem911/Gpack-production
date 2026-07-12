@@ -1,0 +1,1081 @@
+﻿<!-- ============================================================
+     G.PACK 2.0 — إدارة المستودعات 360°
+     نظام متكامل: مستودعات + مخزون + حركات
+============================================================ -->
+<div id="warehouses-container" class="h-full flex flex-col bg-slate-50">
+
+  <!-- ── Header ─────────────────────────────────────────── -->
+  <div class="bg-gradient-to-r from-slate-800 to-slate-900 text-white px-5 py-4 flex-shrink-0">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div>
+        <h1 class="text-2xl font-black flex items-center gap-2">
+          <i class="fa-solid fa-warehouse text-brand-400"></i>
+          إدارة المستودعات
+        </h1>
+        <p class="text-slate-400 text-sm mt-0.5">نظام 360° — رصيد · حركات · إدارة كاملة</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <div class="bg-white/10 rounded-xl px-4 py-2 text-center min-w-[70px]">
+          <p class="text-2xl font-black" id="stat-warehouses">0</p>
+          <p class="text-xs text-slate-400">مستودع</p>
+        </div>
+        <div class="bg-white/10 rounded-xl px-4 py-2 text-center min-w-[70px]">
+          <p class="text-2xl font-black text-emerald-400" id="stat-stock">0</p>
+          <p class="text-xs text-slate-400">صنف</p>
+        </div>
+        <div class="bg-white/10 rounded-xl px-4 py-2 text-center min-w-[70px]">
+          <p class="text-2xl font-black text-blue-400" id="stat-total-qty">0</p>
+          <p class="text-xs text-slate-400">إجمالي القطع</p>
+        </div>
+        <button onclick="openWarehouseModal()"
+                class="flex items-center gap-2 px-4 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold rounded-xl transition-colors shadow">
+          <i class="fa-solid fa-plus"></i>
+          <span class="hidden sm:inline">مستودع جديد</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Tabs ─────────────────────────────────────────────── -->
+  <div class="px-5 pt-4 flex-shrink-0">
+    <div class="flex gap-1 bg-slate-200 rounded-2xl p-1">
+      <button id="wh-tab-warehouses" onclick="whSwitchTab('warehouses')"
+              class="flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-sm font-bold transition-all bg-white text-slate-800 shadow-sm">
+        <i class="fa-solid fa-warehouse text-brand-600"></i><span>المستودعات</span>
+      </button>
+      <button id="wh-tab-stock" onclick="whSwitchTab('stock')"
+              class="flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-sm font-bold transition-all text-slate-500 hover:text-slate-700">
+        <i class="fa-solid fa-boxes-stacked"></i><span>المخزون</span>
+      </button>
+      <button id="wh-tab-history" onclick="whSwitchTab('history')"
+              class="flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-sm font-bold transition-all text-slate-500 hover:text-slate-700">
+        <i class="fa-solid fa-clock-rotate-left"></i><span>سجل الحركات</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ── Main Content ───────────────────────────────────── -->
+  <div class="flex-1 overflow-auto p-5">
+
+    <!-- ════════════════════════════════════════════════════
+         TAB 1: المستودعات
+    ════════════════════════════════════════════════════ -->
+    <div id="wh-section-warehouses">
+
+      <!-- Warehouses Grid -->
+      <div id="wh-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-6">
+        <div class="col-span-full text-center py-12 text-slate-300">
+          <i class="fa-solid fa-circle-notch fa-spin text-2xl"></i>
+        </div>
+      </div>
+
+      <!-- ── Warehouse Detail Panel ─────────────────────── -->
+      <div id="wh-detail-panel" class="hidden bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <!-- Detail Header -->
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-5 py-4 border-b border-slate-100 bg-slate-50">
+          <div class="flex items-center gap-3">
+            <button onclick="closeWarehouseDetail()"
+                    class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-200 transition-colors">
+              <i class="fa-solid fa-arrow-right"></i>
+            </button>
+            <div id="wh-detail-icon" class="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center">
+              <i class="fa-solid fa-warehouse"></i>
+            </div>
+            <div>
+              <h2 id="wh-detail-name" class="font-black text-slate-800 text-base">—</h2>
+              <p id="wh-detail-meta" class="text-xs text-slate-400"></p>
+            </div>
+          </div>
+          <div class="flex gap-2">
+            <button onclick="openStockModal()"
+                    class="flex items-center gap-2 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-sm font-bold rounded-xl transition-colors">
+              <i class="fa-solid fa-plus-minus"></i>تسوية مخزون
+            </button>
+            <button id="wh-detail-request-btn"
+                    onclick="openRequestStockModal()"
+                    class="flex items-center gap-2 px-3 py-2 bg-brand-50 hover:bg-brand-100 text-brand-700 text-sm font-bold rounded-xl transition-colors">
+              <i class="fa-solid fa-cart-plus"></i>طلب مخزون
+            </button>
+          </div>
+        </div>
+
+        <!-- Detail Stats -->
+        <div class="grid grid-cols-3 gap-0 divide-x divide-x-reverse border-b border-slate-100">
+          <div class="px-5 py-3 text-center">
+            <p class="text-xl font-black text-emerald-600" id="wh-detail-stat-items">0</p>
+            <p class="text-xs text-slate-400">صنف</p>
+          </div>
+          <div class="px-5 py-3 text-center">
+            <p class="text-xl font-black text-blue-600" id="wh-detail-stat-qty">0</p>
+            <p class="text-xs text-slate-400">قطعة إجمالي</p>
+          </div>
+          <div class="px-5 py-3 text-center">
+            <p class="text-xl font-black text-amber-600" id="wh-detail-stat-low">0</p>
+            <p class="text-xs text-slate-400">رصيد منخفض</p>
+          </div>
+        </div>
+
+        <!-- Detail Inner Tabs -->
+        <div class="flex gap-1 p-3 border-b border-slate-100 bg-slate-50/50">
+          <button id="det-tab-stock" onclick="whDetailSwitchTab('stock')"
+                  class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-white shadow-sm text-slate-700 transition-all">
+            <i class="fa-solid fa-boxes-stacked text-emerald-600"></i>المخزون
+          </button>
+          <button id="det-tab-history" onclick="whDetailSwitchTab('history')"
+                  class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:text-slate-700 transition-all">
+            <i class="fa-solid fa-clock-rotate-left text-purple-500"></i>الحركات
+          </button>
+        </div>
+
+        <!-- Stock sub-tab -->
+        <div id="det-section-stock" class="p-4">
+          <div class="flex flex-col sm:flex-row gap-2 mb-3">
+            <input id="det-stock-search" type="text" placeholder="بحث في المخزون..."
+                   oninput="renderDetailStock()"
+                   class="flex-1 px-3 py-2 border border-slate-200 rounded-xl text-sm focus:border-brand-500 outline-none">
+            <label class="flex items-center gap-2 text-xs text-slate-600 cursor-pointer whitespace-nowrap">
+              <input type="checkbox" id="det-hide-zero" onchange="renderDetailStock()" class="w-4 h-4 rounded text-brand-600">
+              إخفاء الصفر
+            </label>
+          </div>
+          <div class="overflow-x-auto rounded-xl border border-slate-200">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-50 text-xs text-slate-500">
+                <tr>
+                  <th class="px-4 py-3 text-right font-semibold">الصنف / المقاس</th>
+                  <th class="px-4 py-3 text-right font-semibold hidden md:table-cell">العميل</th>
+                  <th class="px-4 py-3 text-center font-semibold">الرصيد</th>
+                </tr>
+              </thead>
+              <tbody id="det-stock-table" class="divide-y divide-slate-100"></tbody>
+            </table>
+          </div>
+          <div id="det-stock-empty" class="hidden py-10 text-center text-slate-300">
+            <i class="fa-solid fa-box-open text-3xl mb-2 block"></i>لا توجد أصناف
+          </div>
+        </div>
+
+        <!-- History sub-tab -->
+        <div id="det-section-history" class="hidden p-4">
+          <div class="flex flex-wrap gap-2 mb-3">
+            <select id="det-hist-type" onchange="renderDetailHistory()"
+                    class="px-3 py-2 border border-slate-200 rounded-xl text-sm focus:border-brand-500 outline-none">
+              <option value="">كل العمليات</option>
+              <option value="receipt">توريد</option>
+              <option value="dispense">صرف</option>
+              <option value="transfer">نقل</option>
+            </select>
+            <input type="date" id="det-hist-from" onchange="renderDetailHistory()"
+                   class="px-3 py-2 border border-slate-200 rounded-xl text-sm focus:border-brand-500 outline-none">
+            <input type="date" id="det-hist-to" onchange="renderDetailHistory()"
+                   class="px-3 py-2 border border-slate-200 rounded-xl text-sm focus:border-brand-500 outline-none">
+          </div>
+          <div class="overflow-x-auto rounded-xl border border-slate-200">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-50 text-xs text-slate-500">
+                <tr>
+                  <th class="px-3 py-3 text-right font-semibold">التاريخ</th>
+                  <th class="px-3 py-3 text-right font-semibold">النوع</th>
+                  <th class="px-3 py-3 text-right font-semibold">الصنف</th>
+                  <th class="px-3 py-3 text-right font-semibold hidden md:table-cell">العميل</th>
+                  <th class="px-3 py-3 text-center font-semibold">الكمية</th>
+                </tr>
+              </thead>
+              <tbody id="det-hist-table" class="divide-y divide-slate-100"></tbody>
+            </table>
+          </div>
+          <div id="det-hist-empty" class="hidden py-10 text-center text-slate-300">
+            <i class="fa-solid fa-clock-rotate-left text-3xl mb-2 block"></i>لا توجد حركات
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- /wh-section-warehouses -->
+
+    <!-- ════════════════════════════════════════════════════
+         TAB 2: المخزون الكامل
+    ════════════════════════════════════════════════════ -->
+    <div id="wh-section-stock" class="hidden">
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between p-4 border-b border-slate-100 bg-slate-50">
+          <div>
+            <h3 class="font-bold text-slate-800">المخزون الكامل</h3>
+            <p class="text-xs text-slate-500">أرصدة جميع الأصناف في كل المستودعات</p>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <input type="text" id="stock-search" placeholder="بحث..." onkeyup="renderStock()"
+                   class="px-3 py-2 border border-slate-200 rounded-xl text-sm w-36 focus:border-brand-500 outline-none">
+            <select id="stock-warehouse-filter" onchange="renderStock()"
+                    class="px-3 py-2 border border-slate-200 rounded-xl text-sm focus:border-brand-500 outline-none">
+              <option value="">كل المستودعات</option>
+            </select>
+            <button onclick="openStockModal()"
+                    class="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl transition-colors">
+              <i class="fa-solid fa-plus-minus"></i>تسوية
+            </button>
+          </div>
+        </div>
+        <div class="px-4 py-2 border-b border-slate-100">
+          <label class="flex items-center gap-2 text-xs text-slate-500 cursor-pointer">
+            <input type="checkbox" id="hide-zero-stock" onchange="renderStock()" class="w-4 h-4 rounded text-brand-600">
+            إخفاء الأصناف برصيد صفر
+          </label>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-100 text-xs text-slate-500">
+              <tr>
+                <th class="px-4 py-3 text-right font-semibold">الصنف / المقاس</th>
+                <th class="px-4 py-3 text-right font-semibold hidden md:table-cell">العميل</th>
+                <th class="px-4 py-3 text-right font-semibold hidden sm:table-cell">المستودع</th>
+                <th class="px-4 py-3 text-center font-semibold">الرصيد</th>
+              </tr>
+            </thead>
+            <tbody id="stock-table" class="divide-y divide-slate-100"></tbody>
+          </table>
+        </div>
+        <div id="stock-empty" class="hidden text-center py-12 text-slate-300">
+          <i class="fa-solid fa-box-open text-4xl mb-3 block"></i>
+          <p>لا توجد أصناف في المخزون</p>
+        </div>
+      </div>
+    </div>
+    <!-- /wh-section-stock -->
+
+    <!-- ════════════════════════════════════════════════════
+         TAB 3: سجل الحركات الكامل
+    ════════════════════════════════════════════════════ -->
+    <div id="wh-section-history" class="hidden">
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between p-4 border-b border-slate-100 bg-slate-50">
+          <div>
+            <h3 class="font-bold text-slate-800">سجل حركات المخزون</h3>
+            <p class="text-xs text-slate-500">جميع التوريدات والصرف والنقل</p>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <select id="history-type-filter" onchange="renderHistory()"
+                    class="px-3 py-2 border border-slate-200 rounded-xl text-sm focus:border-brand-500 outline-none">
+              <option value="">كل العمليات</option>
+              <option value="receipt">توريد</option>
+              <option value="dispense">صرف</option>
+              <option value="transfer">نقل</option>
+            </select>
+            <input type="date" id="history-from" onchange="renderHistory()"
+                   class="px-3 py-2 border border-slate-200 rounded-xl text-sm focus:border-brand-500 outline-none">
+            <input type="date" id="history-to" onchange="renderHistory()"
+                   class="px-3 py-2 border border-slate-200 rounded-xl text-sm focus:border-brand-500 outline-none">
+          </div>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-100 text-xs text-slate-500">
+              <tr>
+                <th class="px-4 py-3 text-right font-semibold">التاريخ</th>
+                <th class="px-4 py-3 text-right font-semibold">النوع</th>
+                <th class="px-4 py-3 text-right font-semibold">الصنف</th>
+                <th class="px-4 py-3 text-right font-semibold hidden md:table-cell">العميل</th>
+                <th class="px-4 py-3 text-right font-semibold hidden sm:table-cell">المستودع</th>
+                <th class="px-4 py-3 text-center font-semibold">الكمية</th>
+              </tr>
+            </thead>
+            <tbody id="history-table" class="divide-y divide-slate-100"></tbody>
+          </table>
+        </div>
+        <div id="history-empty" class="hidden text-center py-12 text-slate-300">
+          <i class="fa-solid fa-clock-rotate-left text-4xl mb-3 block"></i>
+          <p>لا توجد عمليات</p>
+        </div>
+      </div>
+    </div>
+    <!-- /wh-section-history -->
+
+  </div>
+  <!-- /Main Content -->
+
+</div>
+<!-- /warehouses-container -->
+
+<!-- ══════════════════════════════════════════════════════════
+     Modal: تسوية المخزون
+══════════════════════════════════════════════════════════ -->
+<div id="stock-modal" class="fixed inset-0 z-50 hidden bg-black/50 overflow-y-auto">
+  <div class="min-h-screen flex items-center justify-center p-4">
+    <div class="w-full max-w-sm bg-white rounded-2xl shadow-2xl p-5">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h3 class="text-base font-bold text-slate-800">تسوية مخزون</h3>
+          <p class="text-xs text-slate-400">موجب (+) للإضافة · سالب (-) للنقص</p>
+        </div>
+        <button onclick="closeStockModal()" class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+      <div class="space-y-3">
+        <select id="modal-warehouse" class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-brand-500 outline-none">
+          <option value="">اختر المستودع *</option>
+        </select>
+        <select id="modal-product" class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-brand-500 outline-none" onchange="loadVariantsForAdjustment()">
+          <option value="">اختر الصنف *</option>
+        </select>
+        <select id="modal-variant" class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-brand-500 outline-none">
+          <option value="">اختر المقاس *</option>
+        </select>
+        <div class="flex items-center gap-2 bg-amber-50 border border-amber-200 p-3 rounded-xl">
+          <i class="fa-solid fa-circle-info text-amber-500 text-sm"></i>
+          <p class="text-xs text-amber-800">أدخل رقماً موجباً للإضافة، أو سالباً للخصم</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="adjustQty(-1)" class="w-10 h-10 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl font-bold text-lg transition-colors">−</button>
+          <input type="number" id="modal-qty" placeholder="+5 أو -3" class="flex-1 px-3 py-2.5 border border-slate-200 rounded-xl text-sm text-center font-mono focus:border-brand-500 outline-none">
+          <button onclick="adjustQty(+1)" class="w-10 h-10 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 rounded-xl font-bold text-lg transition-colors">+</button>
+        </div>
+      </div>
+      <div class="flex gap-2 mt-4">
+        <button onclick="closeStockModal()" class="flex-1 py-2.5 text-slate-600 border border-slate-200 rounded-xl text-sm font-bold hover:bg-slate-50">إلغاء</button>
+        <button onclick="saveStockAdjustment()" class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold transition-colors">تنفيذ</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     Modal: إضافة / تعديل مستودع
+══════════════════════════════════════════════════════════ -->
+<div id="warehouse-modal" class="fixed inset-0 z-50 hidden bg-black/50 overflow-y-auto">
+  <div class="min-h-screen flex items-center justify-center p-4">
+    <div class="w-full max-w-sm bg-white rounded-2xl shadow-2xl p-5">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-base font-bold text-slate-800" id="wh-modal-title">مستودع جديد</h3>
+        <button onclick="closeWarehouseModal()" class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+      <input type="hidden" id="wh-id">
+      <div class="space-y-3">
+        <input type="text" id="wh-name" placeholder="اسم المستودع *"
+               class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-brand-500 outline-none">
+        <input type="text" id="wh-code" placeholder="الرمز (اختياري)"
+               class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-brand-500 outline-none">
+        <select id="wh-type" class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-brand-500 outline-none" onchange="toggleClient()">
+          <option value="general">مستودع عام</option>
+          <option value="dedicated">مخصص لعميل</option>
+        </select>
+        <select id="wh-client" class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-brand-500 outline-none hidden">
+          <option value="">اختر العميل *</option>
+        </select>
+      </div>
+      <div class="flex gap-2 mt-4">
+        <button onclick="closeWarehouseModal()" class="flex-1 py-2.5 text-slate-600 border border-slate-200 rounded-xl text-sm font-bold hover:bg-slate-50">إلغاء</button>
+        <button onclick="saveWarehouse()" class="flex-1 py-2.5 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-sm font-bold transition-colors">حفظ</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     Modal: طلب مخزون (يُرسل لأوامر التشغيل)
+══════════════════════════════════════════════════════════ -->
+<div id="request-stock-modal" class="fixed inset-0 z-50 hidden bg-black/50 overflow-y-auto">
+  <div class="min-h-screen flex items-center justify-center p-4">
+    <div class="w-full max-w-md bg-white rounded-2xl shadow-2xl p-5">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h3 class="text-base font-bold text-slate-800">طلب مخزون</h3>
+          <p id="rsm-subtitle" class="text-xs text-slate-400 mt-0.5">يُنشئ أمر تشغيل جديد</p>
+        </div>
+        <button onclick="closeRequestStockModal()" class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+      <div class="space-y-3">
+        <select id="rsm-client" class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-brand-500 outline-none">
+          <option value="">اختر العميل *</option>
+        </select>
+        <select id="rsm-product" class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-brand-500 outline-none" onchange="rsmLoadVariants()">
+          <option value="">اختر الصنف *</option>
+        </select>
+        <select id="rsm-variant" class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-brand-500 outline-none">
+          <option value="">اختر المقاس *</option>
+        </select>
+        <input type="number" id="rsm-qty" min="1" placeholder="الكمية المطلوبة *"
+               class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm font-mono text-center focus:border-brand-500 outline-none">
+        <input type="text" id="rsm-notes" placeholder="ملاحظات (اختياري)"
+               class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-brand-500 outline-none">
+      </div>
+      <div class="bg-blue-50 border border-blue-200 rounded-xl p-3 mt-3">
+        <p class="text-xs text-blue-700"><i class="fa-solid fa-circle-info ml-1"></i>سيتم إنشاء أمر تشغيل جديد بحالة "معلق" يمكن إسناده للمورد من صفحة أوامر التشغيل.</p>
+      </div>
+      <div class="flex gap-2 mt-4">
+        <button onclick="closeRequestStockModal()" class="flex-1 py-2.5 text-slate-600 border border-slate-200 rounded-xl text-sm font-bold hover:bg-slate-50">إلغاء</button>
+        <button onclick="saveRequestStock()" class="flex-1 py-2.5 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-sm font-bold transition-colors">
+          <i class="fa-solid fa-paper-plane ml-1"></i>إرسال الطلب
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// G.PACK 2.0 — Warehouses 360° Controller
+// ═══════════════════════════════════════════════════════════════════════════
+
+var warehouses      = [];
+var clients         = [];
+var products        = [];
+var stock           = [];
+var transactions    = [];
+var _activeWhId     = null;
+var _detStockData   = [];
+var _detHistData    = [];
+
+// ── Init ──────────────────────────────────────────────────────────────────
+async function initWarehousesView() {
+  await Promise.all([loadWarehouses(), loadClients(), loadProducts(), loadStock()]);
+  renderAll();
+}
+
+async function loadWarehouses() {
+  try {
+    const res = await window.apiFetch('/api/inventory/warehouses');
+    warehouses = res.data || [];
+    updateSelects();
+  } catch(e) { console.error('loadWarehouses:', e); }
+}
+
+async function loadClients() {
+  try {
+    const res = await window.apiFetch('/api/clients?status=active');
+    clients = res.data || [];
+    updateSelects();
+  } catch(e) { console.error('loadClients:', e); }
+}
+
+async function loadProducts() {
+  try {
+    const res = await window.apiFetch('/api/products?include_variants=true');
+    products = res.data || [];
+    updateSelects();
+  } catch(e) { console.error('loadProducts:', e); }
+}
+
+async function loadStock() {
+  try {
+    const res = await window.apiFetch('/api/inventory/stock');
+    stock = res.data || [];
+  } catch(e) { console.error('loadStock:', e); }
+}
+
+async function loadTransactions() {
+  try {
+    const res = await window.apiFetch('/api/inventory/transactions');
+    transactions = res.data || [];
+    renderHistory();
+  } catch(e) { console.error('loadTransactions:', e); }
+}
+
+// ── Tab Switching ─────────────────────────────────────────────────────────
+function whSwitchTab(tab) {
+  const activeClass   = 'flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-sm font-bold transition-all bg-white text-slate-800 shadow-sm';
+  const inactiveClass = 'flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-sm font-bold transition-all text-slate-500 hover:text-slate-700';
+  ['warehouses','stock','history'].forEach(t => {
+    const btn = document.getElementById('wh-tab-' + t);
+    if (btn) btn.className = (t === tab) ? activeClass : inactiveClass;
+    const sec = document.getElementById('wh-section-' + t);
+    if (sec) sec.classList.toggle('hidden', t !== tab);
+  });
+  if (tab === 'history' && !transactions.length) loadTransactions();
+}
+
+// ── renderAll ─────────────────────────────────────────────────────────────
+function renderAll() {
+  renderWarehouses();
+  renderStock();
+  updateHeaderStats();
+}
+
+// ── Header Stats ──────────────────────────────────────────────────────────
+function updateHeaderStats() {
+  const totalQty = stock.reduce((s, x) => s + parseFloat(x.available_qty || 0), 0);
+  const el = id => document.getElementById(id);
+  const set = (id, v) => { const e = el(id); if(e) e.textContent = v; };
+  set('stat-warehouses', warehouses.length);
+  set('stat-stock',      [...new Set(stock.map(s => s.variant_id))].length);
+  set('stat-total-qty',  Math.round(totalQty).toLocaleString('ar-EG'));
+}
+
+// ── Render Warehouses Grid ────────────────────────────────────────────────
+function renderWarehouses() {
+  const grid = document.getElementById('wh-grid');
+  if (!grid) return;
+
+  if (!warehouses.length) {
+    grid.innerHTML = '<div class="col-span-full text-center py-16 text-slate-300"><i class="fa-solid fa-warehouse text-5xl mb-4 block"></i><p class="font-bold">لا توجد مستودعات بعد</p><p class="text-sm mt-1">أنشئ مستودعك الأول بالضغط على "مستودع جديد"</p></div>';
+    return;
+  }
+
+  grid.innerHTML = warehouses.map(w => {
+    const isDedicated = !!w.client_id;
+    const whStock     = stock.filter(s => s.warehouse_id === w.id);
+    const totalQty    = whStock.reduce((s, x) => s + parseFloat(x.available_qty || 0), 0);
+    const itemCount   = [...new Set(whStock.map(s => s.variant_id))].length;
+    const lowCount    = whStock.filter(s => parseFloat(s.available_qty || 0) > 0 && parseFloat(s.available_qty || 0) <= 10).length;
+
+    const iconBg  = isDedicated ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-blue-600';
+    const cardBdr = isDedicated ? 'border-purple-200 hover:border-purple-400' : 'border-slate-200 hover:border-brand-400';
+    const tagBg   = isDedicated ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-blue-50 text-blue-700 border-blue-200';
+
+    return `
+    <div class="bg-white rounded-2xl border-2 ${cardBdr} shadow-sm hover:shadow-md transition-all cursor-pointer group p-5 flex flex-col gap-4"
+         onclick="openWarehouseDetail('${w.id}')">
+
+      <div class="flex items-start justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-12 h-12 rounded-xl ${iconBg} flex items-center justify-center group-hover:scale-110 transition-transform">
+            <i class="fa-solid fa-warehouse text-xl"></i>
+          </div>
+          <div>
+            <p class="font-black text-slate-800 text-base leading-tight">${w.name}</p>
+            ${w.code ? `<p class="text-xs text-slate-400 font-mono">${w.code}</p>` : ''}
+          </div>
+        </div>
+        <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button onclick="event.stopPropagation();editWarehouse('${w.id}')"
+                  class="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-brand-600 hover:bg-brand-50 transition-colors">
+            <i class="fa-solid fa-pen text-xs"></i>
+          </button>
+          <button onclick="event.stopPropagation();deleteWarehouse('${w.id}')"
+                  class="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors">
+            <i class="fa-solid fa-trash text-xs"></i>
+          </button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-3 gap-2 text-center">
+        <div class="bg-slate-50 rounded-xl py-2">
+          <p class="text-lg font-black text-emerald-600">${itemCount}</p>
+          <p class="text-[10px] text-slate-400">صنف</p>
+        </div>
+        <div class="bg-slate-50 rounded-xl py-2">
+          <p class="text-lg font-black text-blue-600">${Math.round(totalQty)}</p>
+          <p class="text-[10px] text-slate-400">قطعة</p>
+        </div>
+        <div class="bg-slate-50 rounded-xl py-2">
+          <p class="text-lg font-black ${lowCount > 0 ? 'text-red-500' : 'text-slate-300'}">${lowCount}</p>
+          <p class="text-[10px] text-slate-400">منخفض</p>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-between">
+        <span class="text-xs px-2 py-1 border rounded-lg ${tagBg} font-bold">
+          ${isDedicated ? '<i class="fa-solid fa-user ml-1 text-[10px]"></i>' + (w.client_name || 'عميل') : '<i class="fa-solid fa-globe ml-1 text-[10px]"></i>مستودع عام'}
+        </span>
+        <span class="text-xs text-slate-400 group-hover:text-brand-600 transition-colors flex items-center gap-1">
+          تفاصيل <i class="fa-solid fa-arrow-left text-[10px]"></i>
+        </span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── Open Warehouse Detail ─────────────────────────────────────────────────
+function openWarehouseDetail(whId) {
+  _activeWhId   = whId;
+  const w       = warehouses.find(x => x.id === whId);
+  if (!w) return;
+
+  const isDedicated = !!w.client_id;
+  const iconBg      = isDedicated ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-blue-600';
+
+  const icon = document.getElementById('wh-detail-icon');
+  if (icon) icon.className = `w-10 h-10 rounded-xl ${iconBg} flex items-center justify-center`;
+
+  const nameEl = document.getElementById('wh-detail-name');
+  if (nameEl) nameEl.textContent = w.name;
+
+  const metaEl = document.getElementById('wh-detail-meta');
+  if (metaEl) metaEl.textContent = isDedicated ? (w.client_name || 'عميل') + ' — مستودع مخصص' : 'مستودع عام' + (w.code ? ' · ' + w.code : '');
+
+  // Filter stock for this warehouse
+  _detStockData = stock.filter(s => s.warehouse_id === whId);
+
+  // Stats
+  const totalQty = _detStockData.reduce((s, x) => s + parseFloat(x.available_qty || 0), 0);
+  const itemCount = [...new Set(_detStockData.map(s => s.variant_id))].length;
+  const lowCount  = _detStockData.filter(s => parseFloat(s.available_qty || 0) > 0 && parseFloat(s.available_qty || 0) <= 10).length;
+  document.getElementById('wh-detail-stat-items').textContent = itemCount;
+  document.getElementById('wh-detail-stat-qty').textContent   = Math.round(totalQty);
+  document.getElementById('wh-detail-stat-low').textContent   = lowCount;
+
+  // Pre-select warehouse in stock modal
+  const mwh = document.getElementById('modal-warehouse');
+  if (mwh) mwh.value = whId;
+
+  // Show/hide request stock btn for dedicated
+  const reqBtn = document.getElementById('wh-detail-request-btn');
+  if (reqBtn) reqBtn.classList.toggle('hidden', !isDedicated);
+  if (isDedicated) {
+    const rsmClient = document.getElementById('rsm-client');
+    if (rsmClient) rsmClient.value = w.client_id || '';
+    const subtitle = document.getElementById('rsm-subtitle');
+    if (subtitle) subtitle.textContent = 'عميل: ' + (w.client_name || '—') + ' — يُنشئ أمر تشغيل جديد';
+  }
+
+  // Show panel & switch to stock sub-tab
+  document.getElementById('wh-detail-panel').classList.remove('hidden');
+  document.getElementById('wh-detail-panel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  whDetailSwitchTab('stock');
+  renderDetailStock();
+}
+
+function closeWarehouseDetail() {
+  document.getElementById('wh-detail-panel').classList.add('hidden');
+  _activeWhId   = null;
+  _detStockData = [];
+}
+
+// ── Detail inner tabs ─────────────────────────────────────────────────────
+function whDetailSwitchTab(tab) {
+  const activeClass   = 'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-white shadow-sm text-slate-700 transition-all';
+  const inactiveClass = 'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:text-slate-700 transition-all';
+  ['stock','history'].forEach(t => {
+    const btn = document.getElementById('det-tab-' + t);
+    if (btn) btn.className = (t === tab) ? activeClass : inactiveClass;
+    const sec = document.getElementById('det-section-' + t);
+    if (sec) sec.classList.toggle('hidden', t !== tab);
+  });
+  if (tab === 'history' && _activeWhId) loadDetailHistory(_activeWhId);
+}
+
+// ── Render Detail Stock ───────────────────────────────────────────────────
+function renderDetailStock() {
+  const search   = (document.getElementById('det-stock-search')?.value || '').toLowerCase();
+  const hideZero = document.getElementById('det-hide-zero')?.checked || false;
+
+  let rows = _detStockData.filter(s => {
+    const matchSearch = !search || (s.product_name || '').toLowerCase().includes(search) || (s.variant_size || s.size_name || '').toLowerCase().includes(search);
+    const matchZero   = !hideZero || parseFloat(s.available_qty || 0) > 0;
+    return matchSearch && matchZero;
+  });
+
+  const tbody = document.getElementById('det-stock-table');
+  const empty = document.getElementById('det-stock-empty');
+  if (!rows.length) {
+    if (tbody) tbody.innerHTML = '';
+    if (empty) empty.classList.remove('hidden');
+    return;
+  }
+  if (empty) empty.classList.add('hidden');
+
+  if (tbody) {
+    tbody.innerHTML = rows.map(s => {
+      const qty     = parseFloat(s.available_qty || 0);
+      const qtyClass = qty <= 0 ? 'text-slate-300' : qty <= 10 ? 'text-red-600 font-black' : 'text-emerald-600 font-bold';
+      const vSize   = s.variant_size || s.size_name;
+      const vDisplay = vSize && vSize !== '-' ? ' <span class="text-slate-400 font-normal text-xs">— ' + vSize + '</span>' : '';
+      const clientD  = s.client_name
+        ? '<span class="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 text-xs rounded-full"><i class="fa-solid fa-user text-[9px]"></i>' + s.client_name + '</span>'
+        : '<span class="text-slate-300 text-xs">—</span>';
+      return '<tr class="hover:bg-slate-50/80">' +
+        '<td class="px-4 py-2.5 font-medium text-slate-800">' + (s.product_name || '—') + vDisplay + '</td>' +
+        '<td class="px-4 py-2.5 hidden md:table-cell">' + clientD + '</td>' +
+        '<td class="px-4 py-2.5 text-center text-lg ' + qtyClass + '">' + qty + '</td>' +
+      '</tr>';
+    }).join('');
+  }
+}
+
+// ── Load Detail History ───────────────────────────────────────────────────
+async function loadDetailHistory(whId) {
+  try {
+    const res = await window.apiFetch('/api/inventory/transactions?warehouse_id=' + whId);
+    _detHistData = res.data || [];
+  } catch(e) {
+    _detHistData = transactions.filter(t => t.warehouse_from === whId || t.warehouse_to === whId);
+  }
+  renderDetailHistory();
+}
+
+function renderDetailHistory() {
+  const typeF  = document.getElementById('det-hist-type')?.value || '';
+  const fromD  = document.getElementById('det-hist-from')?.value;
+  const toD    = document.getElementById('det-hist-to')?.value;
+  const tbody  = document.getElementById('det-hist-table');
+  const empty  = document.getElementById('det-hist-empty');
+
+  let rows = _detHistData.filter(tx => {
+    const matchType = !typeF || tx.transaction_type === typeF;
+    const txDate    = new Date(tx.created_at);
+    const matchFrom = !fromD || txDate >= new Date(fromD);
+    const matchTo   = !toD   || txDate <= new Date(toD + 'T23:59:59');
+    return matchType && matchFrom && matchTo;
+  });
+
+  if (!rows.length) {
+    if (tbody) tbody.innerHTML = '';
+    if (empty) empty.classList.remove('hidden');
+    return;
+  }
+  if (empty) empty.classList.add('hidden');
+
+  const typeInfo = {
+    receipt:  { icon: 'fa-inbox',              color: 'text-emerald-600', bg: 'bg-emerald-50', label: 'توريد' },
+    dispense: { icon: 'fa-arrow-up',            color: 'text-amber-600',   bg: 'bg-amber-50',   label: 'صرف'   },
+    transfer: { icon: 'fa-arrow-right-arrow-left', color: 'text-blue-600', bg: 'bg-blue-50',    label: 'نقل'   }
+  };
+
+  if (tbody) {
+    tbody.innerHTML = rows.map(tx => {
+      const ti   = typeInfo[tx.transaction_type] || typeInfo.receipt;
+      const date = new Date(tx.created_at).toLocaleDateString('ar-EG');
+      const clientD = tx.client_name
+        ? '<span class="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 text-xs rounded-full"><i class="fa-solid fa-user text-[9px]"></i>' + tx.client_name + '</span>'
+        : '<span class="text-slate-300 text-xs">—</span>';
+      return '<tr class="hover:bg-slate-50/80">' +
+        '<td class="px-3 py-2.5 text-xs text-slate-500">' + date + '</td>' +
+        '<td class="px-3 py-2.5"><span class="inline-flex items-center gap-1.5 px-2 py-1 ' + ti.bg + ' ' + ti.color + ' rounded-lg text-xs font-bold"><i class="fa-solid ' + ti.icon + '"></i>' + ti.label + '</span></td>' +
+        '<td class="px-3 py-2.5 text-sm text-slate-800 font-medium">' + (tx.product_name || '—') + (tx.variant_name ? '<span class="text-slate-400 text-xs"> — ' + tx.variant_name + '</span>' : '') + '</td>' +
+        '<td class="px-3 py-2.5 hidden md:table-cell">' + clientD + '</td>' +
+        '<td class="px-3 py-2.5 text-center font-bold ' + ti.color + '">' + (tx.quantity || 0) + '</td>' +
+      '</tr>';
+    }).join('');
+  }
+}
+
+// ── Render Global Stock ───────────────────────────────────────────────────
+function renderStock() {
+  const search    = (document.getElementById('stock-search')?.value || '').toLowerCase();
+  const whFilter  = document.getElementById('stock-warehouse-filter')?.value || '';
+  const hideZero  = document.getElementById('hide-zero-stock')?.checked || false;
+
+  let filtered = stock.filter(s => {
+    const matchSearch = !search || (s.product_name || '').toLowerCase().includes(search);
+    const matchWh     = !whFilter || s.warehouse_id === whFilter;
+    const matchZero   = !hideZero || parseFloat(s.available_qty || 0) > 0;
+    return matchSearch && matchWh && matchZero;
+  });
+
+  const tbody = document.getElementById('stock-table');
+  const empty = document.getElementById('stock-empty');
+  if (!filtered.length) {
+    if (tbody) tbody.innerHTML = '';
+    if (empty) empty.classList.remove('hidden');
+    return;
+  }
+  if (empty) empty.classList.add('hidden');
+
+  if (tbody) {
+    tbody.innerHTML = filtered.map(s => {
+      const qty      = parseFloat(s.available_qty || 0);
+      const qtyClass = qty <= 0 ? 'text-slate-300' : qty <= 10 ? 'text-red-600 font-black' : 'text-emerald-600 font-bold';
+      const vSize    = s.variant_size || s.size_name;
+      const vDisplay = vSize && vSize !== '-' ? '<span class="text-slate-400 font-normal"> — ' + vSize + '</span>' : '';
+      const clientD  = s.client_name
+        ? '<span class="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 text-xs rounded-full"><i class="fa-solid fa-user text-[9px]"></i>' + s.client_name + '</span>'
+        : '<span class="text-slate-300 text-xs">—</span>';
+      return '<tr class="hover:bg-slate-50">' +
+        '<td class="px-4 py-3 font-medium text-slate-800">' + (s.product_name || '—') + vDisplay + '</td>' +
+        '<td class="px-4 py-3 hidden md:table-cell">' + clientD + '</td>' +
+        '<td class="px-4 py-3 text-slate-400 hidden sm:table-cell text-sm">' + (s.warehouse_name || '—') + '</td>' +
+        '<td class="px-4 py-3 text-center text-lg ' + qtyClass + '">' + qty + '</td>' +
+      '</tr>';
+    }).join('');
+  }
+}
+
+// ── Render Global History ─────────────────────────────────────────────────
+function renderHistory() {
+  const typeFilter = document.getElementById('history-type-filter')?.value || '';
+  const fromDate   = document.getElementById('history-from')?.value;
+  const toDate     = document.getElementById('history-to')?.value;
+  const tbody      = document.getElementById('history-table');
+  const empty      = document.getElementById('history-empty');
+
+  let filtered = transactions.filter(tx => {
+    const matchType = !typeFilter || tx.transaction_type === typeFilter;
+    const txDate    = new Date(tx.created_at);
+    const matchFrom = !fromDate || txDate >= new Date(fromDate);
+    const matchTo   = !toDate   || txDate <= new Date(toDate + 'T23:59:59');
+    return matchType && matchFrom && matchTo;
+  });
+
+  if (!filtered.length) {
+    if (tbody) tbody.innerHTML = '';
+    if (empty) empty.classList.remove('hidden');
+    return;
+  }
+  if (empty) empty.classList.add('hidden');
+
+  const typeInfo = {
+    receipt:  { icon: 'fa-inbox',              color: 'text-emerald-600', bg: 'bg-emerald-50', label: 'توريد' },
+    dispense: { icon: 'fa-arrow-up',            color: 'text-amber-600',   bg: 'bg-amber-50',   label: 'صرف'   },
+    transfer: { icon: 'fa-arrow-right-arrow-left', color: 'text-blue-600', bg: 'bg-blue-50',    label: 'نقل'   }
+  };
+
+  if (tbody) {
+    tbody.innerHTML = filtered.map(tx => {
+      const ti   = typeInfo[tx.transaction_type] || typeInfo.receipt;
+      const date = new Date(tx.created_at).toLocaleDateString('ar-EG');
+      const clientD = tx.client_name
+        ? '<span class="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 text-xs rounded-full"><i class="fa-solid fa-user text-[9px]"></i>' + tx.client_name + '</span>'
+        : '<span class="text-slate-300 text-xs">—</span>';
+      return '<tr class="hover:bg-slate-50">' +
+        '<td class="px-4 py-3 text-xs text-slate-500">' + date + '</td>' +
+        '<td class="px-4 py-3"><span class="inline-flex items-center gap-1.5 px-2 py-1 ' + ti.bg + ' ' + ti.color + ' rounded-lg text-xs font-bold"><i class="fa-solid ' + ti.icon + '"></i>' + ti.label + '</span></td>' +
+        '<td class="px-4 py-3 text-sm text-slate-800 font-medium">' + (tx.product_name || '—') + (tx.variant_name ? '<span class="text-slate-400 text-xs"> — ' + tx.variant_name + '</span>' : '') + '</td>' +
+        '<td class="px-4 py-3 hidden md:table-cell">' + clientD + '</td>' +
+        '<td class="px-4 py-3 text-slate-400 hidden sm:table-cell text-sm">' + (tx.warehouse_name || '—') + '</td>' +
+        '<td class="px-4 py-3 text-center font-bold ' + ti.color + '">' + (tx.quantity || 0) + '</td>' +
+      '</tr>';
+    }).join('');
+  }
+}
+
+// ── Update Selects ────────────────────────────────────────────────────────
+function updateSelects() {
+  const whOpts = warehouses.map(w => '<option value="' + w.id + '">' + w.name + '</option>').join('');
+  const clOpts = clients.map(c   => '<option value="' + c.id + '">' + c.name + '</option>').join('');
+  const prOpts = products.map(p  => '<option value="' + p.id + '">' + p.name + '</option>').join('');
+
+  ['modal-warehouse'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = '<option value="">اختر المستودع *</option>' + whOpts;
+  });
+
+  const swf = document.getElementById('stock-warehouse-filter');
+  if (swf) swf.innerHTML = '<option value="">كل المستودعات</option>' + whOpts;
+
+  const whc = document.getElementById('wh-client');
+  if (whc) whc.innerHTML = '<option value="">اختر العميل</option>' + clOpts;
+
+  const mp = document.getElementById('modal-product');
+  if (mp) mp.innerHTML = '<option value="">اختر الصنف *</option>' + prOpts;
+
+  const rsmP = document.getElementById('rsm-product');
+  if (rsmP) rsmP.innerHTML = '<option value="">اختر الصنف *</option>' + prOpts;
+
+  const rsmC = document.getElementById('rsm-client');
+  if (rsmC) rsmC.innerHTML = '<option value="">اختر العميل *</option>' + clOpts;
+}
+
+// ── Variant Loading ───────────────────────────────────────────────────────
+function loadVariantsForAdjustment() {
+  const pid = document.getElementById('modal-product')?.value;
+  if (!pid) return;
+  const p = products.find(x => x.id === pid);
+  const variants = p?.variants || [];
+  const sel = document.getElementById('modal-variant');
+  if (!sel) return;
+  sel.innerHTML = variants.length
+    ? '<option value="">اختر المقاس *</option>' + variants.map(v => '<option value="' + v.id + '">' + (v.size_name || v.size || v.id.substring(0,6)) + '</option>').join('')
+    : '<option value="">لا توجد مقاسات</option>';
+}
+
+function rsmLoadVariants() {
+  const pid = document.getElementById('rsm-product')?.value;
+  if (!pid) return;
+  const p = products.find(x => x.id === pid);
+  const variants = p?.variants || [];
+  const sel = document.getElementById('rsm-variant');
+  if (!sel) return;
+  sel.innerHTML = variants.length
+    ? '<option value="">اختر المقاس *</option>' + variants.map(v => '<option value="' + v.id + '">' + (v.size_name || v.size || v.id.substring(0,6)) + '</option>').join('')
+    : '<option value="">لا توجد مقاسات</option>';
+}
+
+function adjustQty(delta) {
+  const input = document.getElementById('modal-qty');
+  const current = parseInt(input?.value) || 0;
+  if (input) input.value = current + delta;
+}
+
+// ── filterByWarehouse (called from inventory shortcut links) ─────────────
+function filterByWarehouse(warehouseId) {
+  whSwitchTab('stock');
+  const filter = document.getElementById('stock-warehouse-filter');
+  if (filter) { filter.value = warehouseId; renderStock(); }
+}
+
+// ── Modals: Stock Adjustment ──────────────────────────────────────────────
+function openStockModal() {
+  const el = document.getElementById('stock-modal');
+  if (el) el.classList.remove('hidden');
+}
+function closeStockModal() {
+  const el = document.getElementById('stock-modal');
+  if (el) el.classList.add('hidden');
+}
+
+async function saveStockAdjustment() {
+  const warehouseId = document.getElementById('modal-warehouse')?.value;
+  const variantId   = document.getElementById('modal-variant')?.value;
+  const qtyInput    = document.getElementById('modal-qty')?.value;
+  const qty         = parseInt(qtyInput);
+
+  if (!warehouseId || !variantId || !qtyInput || isNaN(qty) || qty === 0) {
+    showToast('اكمل جميع الحقول (الكمية لا تكون صفر)', 'error'); return;
+  }
+
+  const action = qty > 0 ? 'إضافة' : 'حذف';
+  if (!confirm('هل تريد ' + action + ' ' + Math.abs(qty) + ' قطعة؟')) return;
+
+  try {
+    await window.apiFetch('/api/inventory/stock/adjust', {
+      method: 'POST',
+      body: { items: [{ warehouse_id: warehouseId, variant_id: variantId, quantity: Math.abs(qty), adjustment_type: qty > 0 ? 'increase' : 'decrease' }] }
+    });
+    closeStockModal();
+    document.getElementById('modal-product').value = '';
+    document.getElementById('modal-variant').innerHTML = '<option value="">اختر المقاس *</option>';
+    document.getElementById('modal-qty').value = '';
+    await loadStock();
+    renderAll();
+    if (_activeWhId) {
+      _detStockData = stock.filter(s => s.warehouse_id === _activeWhId);
+      renderDetailStock();
+    }
+    showToast('تم ' + action + ' ' + Math.abs(qty) + ' قطعة بنجاح');
+  } catch(e) {
+    showToast(e.message || 'خطأ في التسوية', 'error');
+  }
+}
+
+// ── Modals: Warehouse ─────────────────────────────────────────────────────
+function openWarehouseModal() {
+  document.getElementById('wh-modal-title').textContent = 'مستودع جديد';
+  document.getElementById('wh-id').value   = '';
+  document.getElementById('wh-name').value = '';
+  document.getElementById('wh-code').value = '';
+  document.getElementById('wh-type').value = 'general';
+  document.getElementById('wh-client').value = '';
+  toggleClient();
+  document.getElementById('warehouse-modal').classList.remove('hidden');
+}
+function closeWarehouseModal() { document.getElementById('warehouse-modal').classList.add('hidden'); }
+
+function toggleClient() {
+  const isDedicated = document.getElementById('wh-type').value === 'dedicated';
+  document.getElementById('wh-client').classList.toggle('hidden', !isDedicated);
+}
+
+async function saveWarehouse() {
+  const data = {
+    name:           document.getElementById('wh-name').value,
+    code:           document.getElementById('wh-code').value,
+    warehouse_type: document.getElementById('wh-type').value,
+    client_id:      document.getElementById('wh-type').value === 'dedicated' ? document.getElementById('wh-client').value : null,
+    status:         'active'
+  };
+  if (!data.name) { showToast('اسم المستودع مطلوب', 'error'); return; }
+
+  try {
+    const id = document.getElementById('wh-id').value;
+    if (id) {
+      await window.apiFetch('/api/inventory/warehouses/' + id, { method: 'PUT', body: data });
+    } else {
+      await window.apiFetch('/api/inventory/warehouses', { method: 'POST', body: data });
+    }
+    closeWarehouseModal();
+    await loadWarehouses();
+    await loadStock();
+    renderAll();
+    showToast('تم الحفظ بنجاح');
+  } catch(e) {
+    showToast(e.message || 'خطأ في الحفظ', 'error');
+  }
+}
+
+function editWarehouse(id) {
+  const w = warehouses.find(x => x.id === id);
+  if (!w) return;
+  document.getElementById('wh-modal-title').textContent = 'تعديل مستودع';
+  document.getElementById('wh-id').value   = w.id;
+  document.getElementById('wh-name').value = w.name;
+  document.getElementById('wh-code').value = w.code || '';
+  document.getElementById('wh-type').value = w.client_id ? 'dedicated' : 'general';
+  document.getElementById('wh-client').value = w.client_id || '';
+  toggleClient();
+  document.getElementById('warehouse-modal').classList.remove('hidden');
+}
+
+async function deleteWarehouse(id) {
+  if (!confirm('حذف المستودع؟ تأكد أنه فارغ.')) return;
+  try {
+    await window.apiFetch('/api/inventory/warehouses/' + id, { method: 'DELETE' });
+    if (_activeWhId === id) closeWarehouseDetail();
+    await loadWarehouses();
+    await loadStock();
+    renderAll();
+    showToast('تم الحذف');
+  } catch(e) {
+    showToast(e.message || 'خطأ في الحذف', 'error');
+  }
+}
+
+// ── Modal: طلب مخزون ──────────────────────────────────────────────────────
+function openRequestStockModal() {
+  document.getElementById('request-stock-modal').classList.remove('hidden');
+}
+function closeRequestStockModal() {
+  document.getElementById('request-stock-modal').classList.add('hidden');
+}
+
+async function saveRequestStock() {
+  const clientId  = document.getElementById('rsm-client')?.value;
+  const productId = document.getElementById('rsm-product')?.value;
+  const variantId = document.getElementById('rsm-variant')?.value;
+  const qty       = parseInt(document.getElementById('rsm-qty')?.value || 0);
+  const notes     = document.getElementById('rsm-notes')?.value || '';
+
+  if (!clientId || !variantId || qty <= 0) {
+    showToast('اختر العميل والصنف والكمية', 'error'); return;
+  }
+
+  const product = products.find(p => p.id === productId);
+  const variant = product?.variants?.find(v => v.id === variantId);
+  const itemNote = 'طلب مخزون: ' + (product?.name || '') + (variant ? ' — ' + (variant.size_name || variant.size || '') : '');
+
+  try {
+    await window.apiFetch('/api/orders', {
+      method: 'POST',
+      body: {
+        client_id:      clientId,
+        status:         'production',
+        internal_notes: notes || itemNote,
+        items: [{
+          product_variant_id: variantId,
+          quantity:           qty,
+          unit_price:         0
+        }]
+      }
+    });
+    closeRequestStockModal();
+    document.getElementById('rsm-qty').value   = '';
+    document.getElementById('rsm-notes').value = '';
+    showToast('تم إنشاء أمر التشغيل بنجاح ✅');
+  } catch(e) {
+    showToast(e.message || 'خطأ في إنشاء الطلب', 'error');
+  }
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────────
+function showToast(msg, type) {
+  const container = document.getElementById('toast-container');
+  if (container) {
+    const toast = document.createElement('div');
+    toast.className = 'px-4 py-3 rounded-xl shadow-lg text-sm font-bold text-white ' + (type === 'error' ? 'bg-red-500' : 'bg-emerald-500');
+    toast.textContent = msg;
+    container.appendChild(toast);
+    setTimeout(() => toast.remove(), 3500);
+  } else {
+    alert(msg);
+  }
+}
+
+// ── Auto-init ─────────────────────────────────────────────────────────────
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initWarehousesView);
+} else {
+  initWarehousesView();
+}
+</script>

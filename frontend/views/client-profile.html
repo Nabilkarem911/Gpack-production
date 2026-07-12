@@ -1,0 +1,627 @@
+<!-- =============================================================================
+     G.PACK 2.0 - Client Profile View Fragment
+     Injected into #main-content by the SPA router.
+     Logic handled by /js/views/client-profile.js
+============================================================================= -->
+
+<!-- Page Header -->
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+    <div class="flex items-center gap-3">
+        <button onclick="window.navigateTo('clients')"
+                class="w-9 h-9 flex items-center justify-center rounded-xl bg-white border border-slate-200 text-slate-500 hover:text-brand-600 hover:border-brand-300 transition-colors shadow-sm">
+            <i class="fa-solid fa-arrow-right text-sm"></i>
+        </button>
+        <div>
+            <h1 id="cp-page-title" class="text-2xl font-extrabold text-slate-800">ملف العميل</h1>
+            <p id="cp-page-sub" class="text-slate-400 text-sm mt-0.5">جاري التحميل...</p>
+        </div>
+    </div>
+    <div class="flex items-center gap-2">
+        <button id="cp-print-btn" onclick="window._cpOpenPrintModal()"
+                class="hidden flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 hover:border-brand-400
+                       text-slate-700 text-sm font-bold rounded-xl shadow-sm transition-all active:scale-[0.98]">
+            <i class="fa-solid fa-print text-brand-600"></i>
+            <span>طباعة كشف الحساب</span>
+        </button>
+        <button id="cp-edit-btn" onclick="window.openClientModal(window._cpClientId)"
+                class="hidden flex items-center gap-2 px-5 py-2.5 bg-brand-600 hover:bg-brand-700
+                       text-white text-sm font-bold rounded-xl shadow-md transition-all active:scale-[0.98]">
+            <i class="fa-solid fa-pen-to-square"></i>
+            <span>تعديل بيانات العميل</span>
+        </button>
+    </div>
+</div>
+
+<!-- Loading skeleton -->
+<div id="cp-loading" class="space-y-4">
+    <div class="bg-white rounded-2xl p-6 animate-pulse">
+        <div class="h-5 bg-slate-100 rounded w-1/3 mb-3"></div>
+        <div class="h-4 bg-slate-100 rounded w-1/2"></div>
+    </div>
+</div>
+
+<!-- Error state -->
+<div id="cp-error" class="hidden bg-white rounded-2xl p-12 text-center">
+    <i class="fa-solid fa-circle-exclamation text-4xl text-red-300 mb-3"></i>
+    <p id="cp-error-msg" class="text-slate-500 text-sm">حدث خطأ أثناء تحميل البيانات.</p>
+</div>
+
+<!-- Main Content -->
+<div id="cp-content" class="hidden space-y-5">
+
+    <!-- ── Client Info Card ───────────────────────────────────────────────── -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+        <div class="bg-gradient-to-l from-brand-700 to-brand-900 px-6 py-5">
+            <div class="flex items-center gap-4">
+                <div class="w-14 h-14 rounded-2xl bg-white/20 flex items-center justify-center flex-shrink-0">
+                    <i class="fa-solid fa-building text-white text-xl"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h2 id="cp-name" class="text-xl font-black text-white truncate"></h2>
+                    <p id="cp-type-badge" class="mt-1"></p>
+                </div>
+                <div id="cp-status-badge"></div>
+            </div>
+        </div>
+        <div class="p-6">
+            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-5">
+                <div>
+                    <p class="text-xs text-slate-400 mb-1">جهة الاتصال</p>
+                    <p id="cp-contact" class="text-sm font-semibold text-slate-700">—</p>
+                </div>
+                <div>
+                    <p class="text-xs text-slate-400 mb-1">الهاتف</p>
+                    <p id="cp-phone" class="text-sm font-semibold text-slate-700">—</p>
+                </div>
+                <div>
+                    <p class="text-xs text-slate-400 mb-1">البريد الإلكتروني</p>
+                    <p id="cp-email" class="text-sm font-semibold text-slate-700">—</p>
+                </div>
+                <div>
+                    <p class="text-xs text-slate-400 mb-1">المدينة</p>
+                    <p id="cp-city" class="text-sm font-semibold text-slate-700">—</p>
+                </div>
+                <div>
+                    <p class="text-xs text-slate-400 mb-1">السجل التجاري</p>
+                    <p id="cp-cr" class="text-sm font-semibold text-slate-700">—</p>
+                </div>
+                <div>
+                    <p class="text-xs text-slate-400 mb-1">الرقم الضريبي</p>
+                    <p id="cp-tax" class="text-sm font-semibold text-slate-700">—</p>
+                </div>
+                <div>
+                    <p class="text-xs text-slate-400 mb-1">حد الائتمان</p>
+                    <p id="cp-credit" class="text-sm font-semibold text-slate-700">—</p>
+                </div>
+                <div id="cp-parent-wrap" class="hidden">
+                    <p class="text-xs text-slate-400 mb-1">تابع لـ</p>
+                    <p id="cp-parent" class="text-sm font-semibold text-slate-700">—</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Stats Row ──────────────────────────────────────────────────────── -->
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 text-center">
+            <p class="text-2xl font-black text-brand-600" id="stat-orders">—</p>
+            <p class="text-xs text-slate-400 mt-1">إجمالي الطلبات</p>
+        </div>
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 text-center">
+            <p class="text-2xl font-black text-amber-500" id="stat-quotes">—</p>
+            <p class="text-xs text-slate-400 mt-1">عروض أسعار</p>
+        </div>
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 text-center">
+            <p class="text-2xl font-black text-emerald-600" id="stat-value">—</p>
+            <p class="text-xs text-slate-400 mt-1">إجمالي قيمة الطلبات</p>
+        </div>
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 text-center">
+            <p class="text-2xl font-black text-blue-600" id="stat-paid">—</p>
+            <p class="text-xs text-slate-400 mt-1">إجمالي المدفوعات</p>
+        </div>
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 text-center">
+            <p class="text-2xl font-black text-red-500" id="stat-remaining">—</p>
+            <p class="text-xs text-slate-400 mt-1">المتبقي المستحق</p>
+        </div>
+    </div>
+
+    <!-- ── Tabs ───────────────────────────────────────────────────────────── -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+        <div class="flex border-b border-slate-100 overflow-x-auto">
+            <button onclick="cpTab('orders')"   id="tab-orders"   class="cp-tab active-tab">
+                <i class="fa-solid fa-cart-shopping ml-1.5"></i>الطلبات
+                <span id="tab-orders-badge"   class="cp-badge bg-brand-100 text-brand-700"></span>
+            </button>
+            <button onclick="cpTab('invoices')" id="tab-invoices" class="cp-tab">
+                <i class="fa-solid fa-file-invoice ml-1.5"></i>الفواتير
+                <span id="tab-invoices-badge" class="cp-badge bg-purple-100 text-purple-700"></span>
+            </button>
+            <button onclick="cpTab('payments')" id="tab-payments" class="cp-tab">
+                <i class="fa-solid fa-money-bill-wave ml-1.5"></i>الدفعات
+                <span id="tab-payments-badge" class="cp-badge bg-emerald-100 text-emerald-700"></span>
+            </button>
+            <button onclick="cpTab('designs')"  id="tab-designs"  class="cp-tab">
+                <i class="fa-solid fa-palette ml-1.5"></i>التصاميم
+                <span id="tab-designs-badge"  class="cp-badge bg-amber-100 text-amber-700"></span>
+            </button>
+            <button onclick="cpTab('branches')" id="tab-branches" class="cp-tab">
+                <i class="fa-solid fa-code-branch ml-1.5"></i>الفروع
+                <span id="tab-branches-badge" class="cp-badge bg-slate-100 text-slate-600"></span>
+            </button>
+            <button onclick="cpTab('items')" id="tab-items" class="cp-tab">
+                <i class="fa-solid fa-boxes-stacked ml-1.5"></i>الأصناف
+                <span id="tab-items-badge" class="cp-badge bg-teal-100 text-teal-700"></span>
+            </button>
+        </div>
+
+        <!-- Orders Tab -->
+        <div id="panel-orders" class="cp-panel p-0">
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="bg-slate-50 text-xs text-slate-500 border-b border-slate-100">
+                            <th class="py-3 px-4 text-right font-semibold">رقم الطلب</th>
+                            <th class="py-3 px-4 text-right font-semibold">الحالة</th>
+                            <th class="py-3 px-4 text-right font-semibold hidden sm:table-cell">التاريخ</th>
+                            <th class="py-3 px-4 text-right font-semibold hidden md:table-cell">الأصناف</th>
+                            <th class="py-3 px-4 text-right font-semibold">الإجمالي</th>
+                            <th class="py-3 px-4 text-right font-semibold hidden md:table-cell">المدفوع</th>
+                            <th class="py-3 px-4 text-right font-semibold hidden md:table-cell">المتبقي</th>
+                            <th class="py-3 px-4"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="cp-orders-tbody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Invoices Tab -->
+        <div id="panel-invoices" class="cp-panel hidden p-0">
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="bg-slate-50 text-xs text-slate-500 border-b border-slate-100">
+                            <th class="py-3 px-4 text-right font-semibold">رقم الفاتورة</th>
+                            <th class="py-3 px-4 text-right font-semibold">الطلب</th>
+                            <th class="py-3 px-4 text-right font-semibold hidden sm:table-cell">التاريخ</th>
+                            <th class="py-3 px-4 text-right font-semibold">الإجمالي</th>
+                            <th class="py-3 px-4 text-right font-semibold">الحالة</th>
+                            <th class="py-3 px-4"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="cp-invoices-tbody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Payments Tab -->
+        <div id="panel-payments" class="cp-panel hidden p-0">
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="bg-slate-50 text-xs text-slate-500 border-b border-slate-100">
+                            <th class="py-3 px-4 text-right font-semibold">التاريخ</th>
+                            <th class="py-3 px-4 text-right font-semibold">الطلب</th>
+                            <th class="py-3 px-4 text-right font-semibold">المبلغ</th>
+                            <th class="py-3 px-4 text-right font-semibold hidden sm:table-cell">طريقة الدفع</th>
+                            <th class="py-3 px-4 text-right font-semibold hidden md:table-cell">رقم المستند</th>
+                            <th class="py-3 px-4 text-right font-semibold hidden md:table-cell">الوصف</th>
+                            <th class="py-3 px-4"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="cp-payments-tbody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Designs Tab (includes Pantone Colors section) -->
+        <div id="panel-designs" class="cp-panel hidden p-4 space-y-6">
+
+            <!-- ── Pantone Colors Section ─────────────────────────────────── -->
+            <div>
+                <div class="flex items-center justify-between mb-3">
+                    <div class="flex items-center gap-2">
+                        <div class="w-7 h-7 rounded-lg bg-purple-100 flex items-center justify-center">
+                            <i class="fa-solid fa-palette text-purple-600 text-xs"></i>
+                        </div>
+                        <h4 class="text-sm font-black text-slate-700">ألوان البانتون</h4>
+                        <span id="cp-colors-badge" class="text-xs font-bold bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">0</span>
+                    </div>
+                    <button onclick="window._cpOpenAddColor()"
+                            class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-lg transition-colors">
+                        <i class="fa-solid fa-plus"></i> إضافة لون
+                    </button>
+                </div>
+                <div id="cp-colors-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3"></div>
+                <div id="cp-colors-empty" class="hidden py-8 text-center text-slate-400 border border-dashed border-slate-200 rounded-xl">
+                    <i class="fa-solid fa-droplet-slash text-3xl text-slate-200 mb-2 block"></i>
+                    <p class="text-xs">لم يُضَف أي لون بانتون بعد</p>
+                </div>
+            </div>
+
+            <!-- ── Divider ────────────────────────────────────────────────── -->
+            <div class="border-t border-slate-100"></div>
+
+            <!-- ── Designs Section ────────────────────────────────────────── -->
+            <div>
+                <div class="flex items-center gap-2 mb-3">
+                    <div class="w-7 h-7 rounded-lg bg-brand-100 flex items-center justify-center">
+                        <i class="fa-solid fa-image text-brand-600 text-xs"></i>
+                    </div>
+                    <h4 class="text-sm font-black text-slate-700">التصاميم</h4>
+                </div>
+                <div id="cp-designs-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4"></div>
+                <div id="cp-designs-empty" class="hidden py-12 text-center text-slate-400">
+                    <i class="fa-solid fa-palette text-4xl text-slate-200 mb-3 block"></i>
+                    <p class="text-sm">لا توجد تصاميم مرفوعة لهذا العميل</p>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Items Tab -->
+        <div id="panel-items" class="cp-panel hidden p-4">
+
+            <!-- Filter bar -->
+            <div class="flex flex-col sm:flex-row items-start sm:items-center gap-3 mb-4">
+                <div class="relative flex-1 max-w-xs">
+                    <span class="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 pointer-events-none">
+                        <i class="fa-solid fa-magnifying-glass text-xs"></i>
+                    </span>
+                    <input type="text" id="cp-items-search"
+                           placeholder="بحث باسم الصنف..."
+                           oninput="window._cpFilterItems(this.value)"
+                           class="w-full pr-9 pl-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                  text-slate-800 placeholder-slate-400 outline-none focus:border-teal-500
+                                  focus:ring-2 focus:ring-teal-500/20 transition-all" />
+                </div>
+                <!-- Period selector -->
+                <div class="flex items-center gap-1 bg-slate-100 rounded-xl p-1 shrink-0">
+                    <button onclick="window._cpSetItemsPeriod(1)"  id="cp-period-1"  class="cp-period-btn">شهر</button>
+                    <button onclick="window._cpSetItemsPeriod(3)"  id="cp-period-3"  class="cp-period-btn">3 أشهر</button>
+                    <button onclick="window._cpSetItemsPeriod(6)"  id="cp-period-6"  class="cp-period-btn">6 أشهر</button>
+                    <button onclick="window._cpSetItemsPeriod(12)" id="cp-period-12" class="cp-period-btn active-period">سنة</button>
+                    <button onclick="window._cpSetItemsPeriod(24)" id="cp-period-24" class="cp-period-btn">سنتين</button>
+                </div>
+            </div>
+
+            <!-- Summary cards -->
+            <div id="cp-items-stats" class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4"></div>
+
+            <div class="mb-3 rounded-xl border border-teal-100 bg-teal-50/70 px-4 py-3 text-xs text-teal-800">
+                <i class="fa-solid fa-circle-info ml-1"></i>
+                اختار الفترة من فوق، والنظام هيقولك كل صنف اتسحب كام، المخزون يكفي قد إيه، وهل محتاج متابعة أو إعادة طلب. اضغط على أي صنف لعرض سجل السحبيات.
+            </div>
+
+            <div id="cp-item-analysis" class="hidden mb-4 rounded-2xl border border-teal-100 bg-gradient-to-br from-teal-50 to-white p-4"></div>
+
+            <!-- Table -->
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="bg-slate-50 text-xs text-slate-500 border-b border-slate-100">
+                            <th class="py-3 px-4 text-right font-semibold">الصنف</th>
+                            <th class="py-3 px-4 text-right font-semibold hidden sm:table-cell">الكود</th>
+                            <th class="py-3 px-4 text-right font-semibold">اتسحب</th>
+                            <th class="py-3 px-4 text-right font-semibold">المتوفر الآن</th>
+                            <th class="py-3 px-4 text-right font-semibold hidden md:table-cell">يكفي تقريباً</th>
+                            <th class="py-3 px-4 text-right font-semibold hidden md:table-cell">الحالة</th>
+                            <th class="py-3 px-4 text-right font-semibold hidden lg:table-cell">آخر سحب</th>
+                        </tr>
+                    </thead>
+                    <tbody id="cp-items-tbody"></tbody>
+                </table>
+            </div>
+            <div id="cp-items-empty" class="hidden py-12 text-center text-slate-400">
+                <i class="fa-solid fa-boxes-stacked text-4xl text-slate-200 mb-3 block"></i>
+                <p class="text-sm">لا توجد أصناف مرتبطة بهذا العميل</p>
+            </div>
+        </div>
+
+        <!-- Branches Tab -->
+        <div id="panel-branches" class="cp-panel hidden p-0">
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="bg-slate-50 text-xs text-slate-500 border-b border-slate-100">
+                            <th class="py-3 px-4 text-right font-semibold">اسم الفرع</th>
+                            <th class="py-3 px-4 text-right font-semibold hidden sm:table-cell">الهاتف</th>
+                            <th class="py-3 px-4 text-right font-semibold hidden md:table-cell">المدينة</th>
+                            <th class="py-3 px-4 text-right font-semibold">الحالة</th>
+                            <th class="py-3 px-4"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="cp-branches-tbody"></tbody>
+                </table>
+            </div>
+            <div id="cp-branches-empty" class="hidden py-12 text-center text-slate-400">
+                <i class="fa-solid fa-code-branch text-4xl text-slate-200 mb-3 block"></i>
+                <p class="text-sm">لا توجد فروع لهذا العميل</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.cp-tab {
+    display: flex; align-items: center; gap: 4px;
+    padding: 12px 20px; font-size: 13px; font-weight: 700;
+    color: #64748b; border-bottom: 2px solid transparent;
+    white-space: nowrap; transition: all 0.15s; background: none; border-top: none; border-right: none; border-left: none; cursor: pointer;
+}
+.cp-tab:hover { color: #7c3aed; background: #f8f5ff; }
+.cp-tab.active-tab { color: #7c3aed; border-bottom-color: #7c3aed; }
+.cp-badge { font-size: 10px; font-weight: 800; padding: 1px 6px; border-radius: 999px; }
+.cp-period-btn { padding: 5px 12px; font-size: 12px; font-weight: 700; color: #64748b; border-radius: 9px; background: transparent; border: none; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+.cp-period-btn:hover { background: #fff; color: #0f766e; }
+.cp-period-btn.active-period { background: #fff; color: #0f766e; box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
+</style>
+
+<!-- ── Invoice Viewer Modal ──────────────────────────────────────────────── -->
+<div id="cp-invoice-modal"
+     style="display:none"
+     onclick="if(event.target===this) window._cpCloseInvoiceModal()"
+     class="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/60 opacity-0 transition-opacity duration-200">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden">
+        <!-- Header -->
+        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 shrink-0">
+            <div class="flex items-center gap-3">
+                <div class="w-9 h-9 bg-brand-50 rounded-xl flex items-center justify-center">
+                    <i class="fa-solid fa-file-invoice text-brand-600"></i>
+                </div>
+                <div>
+                    <h3 id="civ-title" class="text-sm font-black text-slate-800">تفاصيل الفاتورة</h3>
+                    <p id="civ-subtitle" class="text-xs text-slate-400"></p>
+                </div>
+            </div>
+            <div class="flex items-center gap-2">
+                <button id="civ-print-btn"
+                        onclick="window._cpPrintCurrentInvoice()"
+                        class="flex items-center gap-1.5 px-3 py-2 bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold rounded-lg transition-colors">
+                    <i class="fa-solid fa-print"></i> طباعة
+                </button>
+                <button onclick="window._cpCloseInvoiceModal()"
+                        class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+        </div>
+        <!-- Loading -->
+        <div id="civ-loading" class="flex-1 flex items-center justify-center py-16">
+            <i class="fa-solid fa-circle-notch fa-spin text-brand-600 text-2xl"></i>
+        </div>
+        <!-- Content -->
+        <div id="civ-body" class="hidden flex-1 overflow-y-auto p-5 space-y-5">
+            <!-- Client + Invoice meta -->
+            <div class="grid grid-cols-2 gap-4">
+                <div class="bg-slate-50 rounded-xl p-4 border border-slate-100">
+                    <p class="text-xs text-slate-400 font-bold mb-2">العميل</p>
+                    <p id="civ-client" class="text-sm font-bold text-slate-800"></p>
+                    <p id="civ-client-phone" class="text-xs text-slate-500 mt-0.5"></p>
+                </div>
+                <div class="bg-slate-50 rounded-xl p-4 border border-slate-100">
+                    <p class="text-xs text-slate-400 font-bold mb-2">بيانات الفاتورة</p>
+                    <p class="text-sm font-mono font-bold text-slate-800">رقم الطلب: <span id="civ-order-num"></span></p>
+                    <p class="text-xs text-slate-500 mt-0.5" id="civ-date"></p>
+                </div>
+            </div>
+            <!-- Items Table -->
+            <div class="rounded-xl border border-slate-100 overflow-hidden">
+                <table class="w-full text-sm">
+                    <thead class="bg-slate-800 text-white text-xs">
+                        <tr>
+                            <th class="py-2.5 px-3 text-center w-8">#</th>
+                            <th class="py-2.5 px-3 text-right">المنتج</th>
+                            <th class="py-2.5 px-3 text-center">الكمية</th>
+                            <th class="py-2.5 px-3 text-center">سعر الوحدة</th>
+                            <th class="py-2.5 px-3 text-center">الإجمالي</th>
+                        </tr>
+                    </thead>
+                    <tbody id="civ-items-tbody" class="divide-y divide-slate-100"></tbody>
+                </table>
+            </div>
+            <!-- Totals -->
+            <div class="flex justify-end">
+                <div class="w-72 bg-slate-50 rounded-xl border border-slate-100 p-4 space-y-2 text-sm">
+                    <div class="flex justify-between text-slate-600">
+                        <span>قبل الضريبة</span>
+                        <span id="civ-subtotal" class="font-mono font-semibold"></span>
+                    </div>
+                    <div class="flex justify-between text-slate-600 hidden" id="civ-discount-row">
+                        <span>خصم</span>
+                        <span id="civ-discount" class="font-mono font-semibold text-red-500"></span>
+                    </div>
+                    <div class="flex justify-between text-slate-600">
+                        <span id="civ-tax-label">ضريبة (15%)</span>
+                        <span id="civ-tax" class="font-mono"></span>
+                    </div>
+                    <div class="flex justify-between text-slate-800 font-black text-base border-t border-slate-200 pt-2">
+                        <span>الإجمالي</span>
+                        <span id="civ-grand" class="font-mono text-brand-700"></span>
+                    </div>
+                    <div class="flex justify-between text-emerald-700 font-bold border-t border-slate-100 pt-2">
+                        <span>المدفوع</span>
+                        <span id="civ-paid" class="font-mono"></span>
+                    </div>
+                    <div class="flex justify-between font-black border-t-2 border-dashed border-slate-200 pt-2">
+                        <span id="civ-remaining-label" class="text-slate-700">المتبقي</span>
+                        <span id="civ-remaining" class="font-mono"></span>
+                    </div>
+                </div>
+            </div>
+            <!-- Payments history -->
+            <div id="civ-payments-wrap" class="hidden">
+                <p class="text-xs font-bold text-slate-500 mb-2">سجل الدفعات</p>
+                <div class="rounded-xl border border-slate-100 overflow-hidden">
+                    <table class="w-full text-xs">
+                        <thead class="bg-amber-50 text-amber-800">
+                            <tr>
+                                <th class="py-2 px-3 text-right font-bold">التاريخ</th>
+                                <th class="py-2 px-3 text-right font-bold">طريقة الدفع</th>
+                                <th class="py-2 px-3 text-right font-bold">المبلغ</th>
+                                <th class="py-2 px-3 text-right font-bold hidden sm:table-cell">الوصف</th>
+                            </tr>
+                        </thead>
+                        <tbody id="civ-payments-tbody" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <!-- Error -->
+        <div id="civ-error" class="hidden flex-1 flex flex-col items-center justify-center py-12 text-slate-400">
+            <i class="fa-solid fa-circle-exclamation text-3xl mb-3 text-red-300"></i>
+            <p id="civ-error-msg" class="text-sm">تعذّر تحميل الفاتورة.</p>
+        </div>
+    </div>
+</div>
+
+<!-- ── Add Pantone Color Modal ───────────────────────────────────────────── -->
+<div id="cp-color-modal"
+     style="display:none"
+     onclick="if(event.target===this) window._cpCloseColorModal()"
+     class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 opacity-0 transition-opacity duration-200">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+        <div class="flex items-center justify-between mb-5">
+            <div class="flex items-center gap-2">
+                <div class="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center">
+                    <i class="fa-solid fa-palette text-purple-600 text-sm"></i>
+                </div>
+                <div>
+                    <h3 class="text-sm font-black text-slate-800">إضافة لون بانتون</h3>
+                    <p class="text-xs text-slate-400">ابحث في دليل البانتون أو أدخل يدوياً</p>
+                </div>
+            </div>
+            <button onclick="window._cpCloseColorModal()"
+                    class="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100">
+                <i class="fa-solid fa-xmark text-sm"></i>
+            </button>
+        </div>
+
+        <div class="space-y-4">
+            <!-- Pantone Search -->
+            <div class="relative">
+                <label class="block text-xs font-bold text-slate-500 mb-1">ابحث في دليل البانتون</label>
+                <div class="relative">
+                    <i class="fa-solid fa-magnifying-glass absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                    <input id="cp-pantone-search" type="text"
+                           placeholder="اكتب رقم أو اسم... مثال: 185 أو Red"
+                           autocomplete="off"
+                           class="w-full pr-8 pl-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all"
+                           oninput="window._cpSearchPantone(this.value)">
+                </div>
+                <!-- Dropdown results -->
+                <div id="cp-pantone-results"
+                     class="hidden absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-52 overflow-y-auto">
+                </div>
+            </div>
+
+            <!-- Selected / Manual color info -->
+            <div class="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                <div id="cp-color-preview"
+                     class="w-12 h-12 rounded-lg border-2 border-white shadow-md shrink-0 transition-colors"
+                     style="background:#cccccc"></div>
+                <div class="flex-1 min-w-0">
+                    <p id="cp-color-selected-code" class="text-xs font-black text-slate-700 truncate">لم يتم اختيار لون</p>
+                    <p id="cp-color-selected-name" class="text-xs text-slate-500 truncate">ابحث واختر من القائمة أو أدخل يدوياً</p>
+                    <p id="cp-color-selected-hex" class="text-xs font-mono text-slate-400"></p>
+                </div>
+            </div>
+
+            <!-- Manual fields (collapsed by default, expand if no pantone match) -->
+            <details id="cp-manual-details" class="group">
+                <summary class="cursor-pointer text-xs font-bold text-purple-600 hover:text-purple-800 list-none flex items-center gap-1">
+                    <i class="fa-solid fa-pencil text-xs"></i>
+                    <span>إدخال يدوي / تعديل</span>
+                    <i class="fa-solid fa-chevron-down text-xs mr-auto group-open:rotate-180 transition-transform"></i>
+                </summary>
+                <div class="mt-3 space-y-3 pt-3 border-t border-slate-100">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 mb-1">كود اللون <span class="text-red-400">*</span></label>
+                        <input id="cp-color-code" type="text" placeholder="مثال: Pantone 185 C"
+                               class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 mb-1">اسم اللون</label>
+                        <input id="cp-color-name" type="text" placeholder="مثال: أحمر العلامة التجارية"
+                               class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 mb-1">قيمة HEX</label>
+                        <div class="flex gap-2 items-center">
+                            <input id="cp-color-hex" type="color" value="#cccccc"
+                                   class="w-10 h-9 rounded-lg border border-slate-200 cursor-pointer p-0.5"
+                                   oninput="window._cpPreviewColor()">
+                            <input id="cp-color-hex-text" type="text" placeholder="#E03C31" maxlength="7"
+                                   class="flex-1 px-3 py-2 text-sm font-mono border border-slate-200 rounded-lg focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all"
+                                   oninput="window._cpSyncHexText()">
+                        </div>
+                    </div>
+                </div>
+            </details>
+
+            <div>
+                <label class="block text-xs font-bold text-slate-500 mb-1">ملاحظات (اختياري)</label>
+                <input id="cp-color-notes" type="text" placeholder="مثال: للشعار الرئيسي فقط"
+                       class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all">
+            </div>
+        </div>
+
+        <div class="flex gap-2 mt-6">
+            <button onclick="window._cpSaveColor()"
+                    id="cp-color-save-btn"
+                    class="flex-1 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-sm font-bold rounded-xl transition-colors">
+                <i class="fa-solid fa-check ml-1"></i> حفظ
+            </button>
+            <button onclick="window._cpCloseColorModal()"
+                    class="flex-1 py-2.5 border border-slate-200 text-slate-600 text-sm font-bold rounded-xl hover:bg-slate-50 transition-colors">
+                إلغاء
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ── Print Statement Date Filter Modal ─────────────────────────────────── -->
+<div id="cp-print-modal"
+     style="display:none"
+     class="fixed inset-0 z-50 items-center justify-center p-4 bg-black/50 opacity-0 transition-opacity duration-200">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+        <div class="flex items-center justify-between mb-5">
+            <h3 class="text-base font-bold text-slate-800">طباعة كشف الحساب</h3>
+            <button onclick="document.getElementById('cp-print-modal').classList.remove('opacity-100'); setTimeout(()=>document.getElementById('cp-print-modal').style.display='none',200)"
+                    class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        <div class="space-y-4">
+            <div>
+                <label class="block text-xs font-bold text-slate-600 mb-1.5">من تاريخ <span class="font-normal text-slate-400">(اختياري)</span></label>
+                <input type="date" id="cp-print-from"
+                       class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-700 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition-all" />
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-600 mb-1.5">إلى تاريخ <span class="font-normal text-slate-400">(اختياري)</span></label>
+                <input type="date" id="cp-print-to"
+                       class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-700 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition-all" />
+            </div>
+            <p class="text-xs text-slate-400">اتركهما فارغين لطباعة كامل السجل</p>
+        </div>
+        <div class="flex gap-3 mt-6">
+            <button onclick="
+                const from = document.getElementById('cp-print-from').value;
+                const to   = document.getElementById('cp-print-to').value;
+                document.getElementById('cp-print-modal').classList.remove('opacity-100');
+                setTimeout(()=>document.getElementById('cp-print-modal').style.display='none',200);
+                window.printClientStatement(from || null, to || null);"
+                    class="flex-1 flex items-center justify-center gap-2 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold rounded-xl transition-all">
+                <i class="fa-solid fa-print"></i> طباعة
+            </button>
+            <button onclick="document.getElementById('cp-print-modal').classList.remove('opacity-100'); setTimeout(()=>document.getElementById('cp-print-modal').style.display='none',200)"
+                    class="flex-1 py-2.5 border border-slate-200 text-slate-600 text-sm font-bold rounded-xl hover:bg-slate-50 transition-all">
+                إلغاء
+            </button>
+        </div>
+    </div>
+</div>
+
+<script src="/js/data/pantone-colors.js"></script>
+<script src="/js/views/client-profile.js?v=20260521h"></script>

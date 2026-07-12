@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>فاتورة مبيعات | G.PACK ERP</title>
+
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Cairo', 'Tajawal', 'sans-serif'] },
+                    colors: {
+                        brand: {
+                            50:'#f5f0fa', 100:'#ebe0f3', 200:'#d6c2e7', 300:'#b89ad6',
+                            400:'#9a72c4', 500:'#7e52b0', 600:'#6a3e9c', 700:'#5A246D',
+                            800:'#4a1d59', 900:'#3D226B',
+                        },
+                        gold: {
+                            50:'#fffbeb', 100:'#fef3c7', 200:'#fde68a', 300:'#fcd34d',
+                            400:'#FBC010', 500:'#e8a800', 600:'#c98c00', 700:'#a66e00',
+                            800:'#875500', 900:'#6b4400',
+                        }
+                    }
+                }
+            }
+        };
+    </script>
+
+    <!-- Google Fonts: Cairo -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+
+    <style>
+        * { font-family: 'Cairo', sans-serif; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 3px; }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 antialiased min-h-screen">
+
+    <!-- Header Bar -->
+    <header class="bg-white border-b border-slate-200 px-4 lg:px-8 h-14 flex items-center justify-between shadow-sm">
+        <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center flex-shrink-0">
+                <i class="fa-solid fa-box-open text-white text-sm"></i>
+            </div>
+            <span class="font-bold text-slate-700 text-base">G.PACK ERP</span>
+        </div>
+        <div class="flex items-center gap-2 text-slate-400 text-sm">
+            <i class="fa-solid fa-eye text-xs"></i>
+            <span>عرض فاتورة</span>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-4xl mx-auto px-4 py-8">
+
+        <!-- Loading State -->
+        <div id="pinv-loading" class="py-20 text-center">
+            <i class="fa-solid fa-circle-notch fa-spin text-5xl text-brand-500 mb-4 block"></i>
+            <p class="text-slate-500 text-base">جاري تحميل الفاتورة...</p>
+        </div>
+
+        <!-- Error State -->
+        <div id="pinv-error" class="hidden py-20 text-center">
+            <i class="fa-solid fa-circle-exclamation text-6xl mb-4 text-red-300 block"></i>
+            <p class="text-xl font-bold text-slate-600 mb-2">تعذّر تحميل الفاتورة</p>
+            <p class="text-sm text-slate-400">قد تكون الفاتورة غير موجودة أو تم إلغاؤها</p>
+        </div>
+
+        <!-- Invoice Card -->
+        <div id="pinv-card" class="hidden">
+
+            <!-- Print / Back Buttons -->
+            <div class="flex items-center justify-between mb-5 print:hidden">
+                <button onclick="window.history.back()"
+                    class="inline-flex items-center gap-2 px-4 py-2 bg-white text-slate-700 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors text-sm font-medium shadow-sm">
+                    <i class="fa-solid fa-arrow-right"></i>
+                    <span>العودة</span>
+                </button>
+                <button onclick="window.print()"
+                    class="inline-flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors text-sm font-medium shadow-sm">
+                    <i class="fa-solid fa-print"></i>
+                    <span>طباعة</span>
+                </button>
+            </div>
+
+            <div class="bg-white rounded-xl shadow border border-slate-200 overflow-hidden">
+
+                <!-- Invoice Header -->
+                <div class="bg-gradient-to-l from-brand-600 to-brand-700 p-6 text-white">
+                    <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+                        <div>
+                            <div class="flex items-center gap-3 mb-2">
+                                <i class="fa-solid fa-file-invoice text-2xl text-brand-200"></i>
+                                <h1 class="text-2xl font-black">
+                                    فاتورة مبيعات <span class="text-brand-200">#<span id="pinv-number">---</span></span>
+                                </h1>
+                            </div>
+                            <p class="text-brand-100 text-sm">
+                                <i class="fa-regular fa-calendar ml-1"></i>
+                                تاريخ الفاتورة: <span id="pinv-date">---</span>
+                            </p>
+                            <p class="text-brand-100 text-sm mt-1">
+                                <i class="fa-regular fa-clock ml-1"></i>
+                                تاريخ الاستحقاق: <span id="pinv-due">---</span>
+                            </p>
+                        </div>
+                        <div class="text-left md:text-right">
+                            <div class="text-brand-200 text-xs mb-1 font-semibold">العميل</div>
+                            <div id="pinv-client-name" class="text-lg font-bold">---</div>
+                            <div id="pinv-client-phone" class="text-brand-200 text-sm mt-1"></div>
+                            <span id="pinv-status" class="inline-block mt-2 px-3 py-1 rounded-full text-xs font-bold">---</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Invoice Items -->
+                <div class="p-6">
+                    <h3 class="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2">
+                        <i class="fa-solid fa-box text-brand-500"></i>
+                        أصناف الفاتورة
+                    </h3>
+                    <div class="overflow-x-auto rounded-lg border border-slate-200">
+                        <table class="w-full text-sm">
+                            <thead class="bg-slate-50 text-slate-600">
+                                <tr>
+                                    <th class="py-3 px-4 text-right font-semibold">الصنف</th>
+                                    <th class="py-3 px-4 text-center font-semibold">المقاس</th>
+                                    <th class="py-3 px-4 text-center font-semibold">الكمية</th>
+                                    <th class="py-3 px-4 text-center font-semibold">السعر</th>
+                                    <th class="py-3 px-4 text-center font-semibold">الخصم</th>
+                                    <th class="py-3 px-4 text-left font-semibold">الإجمالي</th>
+                                </tr>
+                            </thead>
+                            <tbody id="pinv-items" class="divide-y divide-slate-100">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Additional Expenses -->
+                <div id="pinv-expenses-section" class="hidden px-6 pb-4">
+                    <h3 class="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+                        <i class="fa-solid fa-circle-plus text-amber-500"></i>
+                        مصاريف إضافية
+                    </h3>
+                    <div class="bg-amber-50 rounded-lg border border-amber-100 p-4">
+                        <table class="w-full text-sm">
+                            <tbody id="pinv-expenses" class="divide-y divide-amber-100">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Totals -->
+                <div class="bg-slate-50 border-t border-slate-200 p-6">
+                    <div class="flex justify-end">
+                        <div class="w-full md:w-72 space-y-2.5">
+                            <div class="flex justify-between text-sm">
+                                <span class="text-slate-600">الإجمالي الفرعي:</span>
+                                <span id="pinv-subtotal" class="font-semibold font-mono">0.00</span>
+                            </div>
+                            <div class="flex justify-between text-sm">
+                                <span class="text-slate-600">الضريبة (15%):</span>
+                                <span id="pinv-tax" class="font-semibold font-mono">0.00</span>
+                            </div>
+                            <div id="pinv-expenses-total-row" class="hidden flex justify-between text-sm">
+                                <span class="text-slate-600">مصاريف إضافية:</span>
+                                <span id="pinv-expenses-total" class="font-semibold font-mono text-amber-700">0.00</span>
+                            </div>
+                            <div class="flex justify-between text-lg font-bold border-t border-slate-300 pt-3 mt-2">
+                                <span class="text-slate-800">الإجمالي الكلي:</span>
+                                <span id="pinv-grand-total" class="text-brand-600 font-mono">0.00</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Notes -->
+                <div id="pinv-notes-section" class="hidden px-6 pb-6">
+                    <div class="bg-amber-50 rounded-lg border border-amber-100 p-4 text-sm">
+                        <div class="font-semibold text-slate-700 mb-1 flex items-center gap-2">
+                            <i class="fa-solid fa-note-sticky text-amber-500"></i>
+                            ملاحظات:
+                        </div>
+                        <div id="pinv-notes" class="text-slate-600"></div>
+                    </div>
+                </div>
+
+                <!-- Footer -->
+                <div class="bg-slate-100 border-t border-slate-200 p-4 text-center text-xs text-slate-500">
+                    <p class="font-semibold">هذه الفاتورة صادرة من نظام G.PACK ERP</p>
+                    <p class="mt-1">تاريخ العرض: <span id="pinv-view-date">---</span></p>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+    (function () {
+        'use strict';
+
+        const _el = (id) => document.getElementById(id);
+        const fmt = (n) => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const esc = (s) => { if (!s) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); };
+
+        function _showError() {
+            _el('pinv-loading').style.display = 'none';
+            _el('pinv-error').style.display = 'block';
+        }
+
+        async function _init() {
+            // Get invoice identifier from query string: ?token=TOKEN or ?id=UUID
+            const params = new URLSearchParams(window.location.search);
+            const token = params.get('token');
+            const invoiceId = params.get('id');
+
+            let url;
+            if (token) {
+                url = '/api/public/invoice/' + encodeURIComponent(token);
+            } else if (invoiceId) {
+                url = '/api/public/invoice/' + encodeURIComponent(invoiceId);
+            } else {
+                _showError();
+                return;
+            }
+
+            try {
+                const res = await fetch(url);
+                if (!res.ok) throw new Error('Not found');
+                const json = await res.json();
+                _render(json.data);
+            } catch (err) {
+                console.error('[PublicInvoice]', err);
+                _showError();
+            }
+        }
+
+        function _render(inv) {
+            _el('pinv-loading').style.display = 'none';
+            _el('pinv-card').style.display = 'block';
+            _el('pinv-card').classList.remove('hidden');
+
+            _el('pinv-number').textContent    = inv.invoice_number || '---';
+            _el('pinv-date').textContent       = inv.invoice_date ? new Date(inv.invoice_date).toLocaleDateString('ar-EG') : '---';
+            _el('pinv-due').textContent        = inv.due_date ? new Date(inv.due_date).toLocaleDateString('ar-EG') : 'غير محدد';
+            _el('pinv-client-name').textContent = esc(inv.client_name || '---');
+            _el('pinv-client-phone').textContent = esc(inv.client_phone || '');
+            _el('pinv-view-date').textContent  = new Date().toLocaleDateString('ar-EG');
+
+            const statusMap = {
+                draft:     { cls: 'bg-slate-200 text-slate-700',      label: 'مسودة'  },
+                proforma:  { cls: 'bg-amber-200 text-amber-800',       label: 'صورية'  },
+                final:     { cls: 'bg-emerald-200 text-emerald-800',   label: 'نهائية' },
+                cancelled: { cls: 'bg-red-200 text-red-800',           label: 'ملغية'  },
+            };
+            const st = statusMap[inv.status] || statusMap.draft;
+            _el('pinv-status').className = 'inline-block mt-2 px-3 py-1 rounded-full text-xs font-bold ' + st.cls;
+            _el('pinv-status').textContent = st.label;
+
+            // Items
+            if (inv.items && inv.items.length > 0) {
+                _el('pinv-items').innerHTML = inv.items.map(item => `
+                    <tr class="hover:bg-slate-50/50">
+                        <td class="py-3 px-4 font-medium text-slate-800">${esc(item.product_name)}</td>
+                        <td class="py-3 px-4 text-center text-slate-600">${esc(item.size_name || '-')}</td>
+                        <td class="py-3 px-4 text-center font-semibold">${fmt(item.quantity)}</td>
+                        <td class="py-3 px-4 text-center font-mono">${fmt(item.unit_price)}</td>
+                        <td class="py-3 px-4 text-center text-slate-500">${item.discount_percent ? item.discount_percent + '%' : '-'}</td>
+                        <td class="py-3 px-4 text-left font-mono font-semibold text-slate-700">${fmt(item.line_total)}</td>
+                    </tr>`).join('');
+            } else {
+                _el('pinv-items').innerHTML = '<tr><td colspan="6" class="py-8 text-center text-slate-400">لا توجد أصناف</td></tr>';
+            }
+
+            // Expenses
+            if (inv.expenses && inv.expenses.length > 0) {
+                _el('pinv-expenses-section').style.display = 'block';
+                _el('pinv-expenses-section').classList.remove('hidden');
+                _el('pinv-expenses').innerHTML = inv.expenses.map(exp => `
+                    <tr>
+                        <td class="py-2 text-slate-700">${esc(exp.description)}</td>
+                        <td class="py-2 text-left font-mono font-semibold text-amber-700">${fmt(exp.amount)}</td>
+                    </tr>`).join('');
+                const expTotal = inv.expenses.reduce((s, e) => s + parseFloat(e.amount || 0), 0);
+                _el('pinv-expenses-total-row').style.display = 'flex';
+                _el('pinv-expenses-total-row').classList.remove('hidden');
+                _el('pinv-expenses-total').textContent = fmt(expTotal);
+            }
+
+            // Totals
+            _el('pinv-subtotal').textContent   = fmt(inv.subtotal);
+            _el('pinv-tax').textContent         = fmt(inv.tax_amount);
+            _el('pinv-grand-total').textContent = fmt(inv.grand_total);
+
+            // Notes
+            if (inv.notes) {
+                _el('pinv-notes-section').style.display = 'block';
+                _el('pinv-notes-section').classList.remove('hidden');
+                _el('pinv-notes').textContent = inv.notes;
+            }
+        }
+
+        _init();
+    })();
+    </script>
+
+</body>
+</html>

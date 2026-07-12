@@ -1,0 +1,169 @@
+<!-- =============================================================================
+     G.PACK 2.0 — Account Statement View
+     كشف حساب من الدليل المحاسبي
+============================================================================= -->
+
+<!-- Header -->
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+    <div class="flex items-center gap-3">
+        <button onclick="window.navigateTo('dashboard')"
+                class="w-9 h-9 flex items-center justify-center rounded-xl bg-white border border-slate-200
+                       text-slate-500 hover:text-brand-600 hover:border-brand-300 transition-colors shadow-sm">
+            <i class="fa-solid fa-arrow-right text-sm"></i>
+        </button>
+        <div>
+            <h1 class="text-2xl font-extrabold text-slate-800">كشف الحساب</h1>
+            <p class="text-slate-400 text-sm mt-0.5">تقرير حركات حساب من الدليل المحاسبي</p>
+        </div>
+    </div>
+</div>
+
+<!-- ── Account Selector ─────────────────────────────────────────────────────── -->
+<div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 mb-5">
+    <div class="flex flex-col md:flex-row gap-4">
+        <!-- Parent Account Dropdown -->
+        <div class="flex-1 relative">
+            <label class="block text-xs font-bold text-slate-500 mb-2">الحساب الرئيسي</label>
+            <div class="relative">
+                <button id="as-parent-btn" type="button" onclick="window.asToggleParentDropdown()"
+                        class="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-right flex items-center justify-between hover:border-brand-400 transition-colors focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 outline-none">
+                    <span id="as-parent-label" class="text-slate-400">اختر الحساب الرئيسي...</span>
+                    <i class="fa-solid fa-chevron-down text-slate-400 text-xs"></i>
+                </button>
+                <div id="as-parent-dropdown" class="hidden absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-50 max-h-64 overflow-hidden flex flex-col">
+                    <div class="p-2 border-b border-slate-100">
+                        <div class="relative">
+                            <input type="text" id="as-parent-search" placeholder="بحث بالاسم أو الكود..."
+                                   oninput="window.asFilterParent(this.value)"
+                                   class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm pr-8 focus:border-brand-400 outline-none">
+                            <i class="fa-solid fa-search absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                        </div>
+                    </div>
+                    <div id="as-parent-list" class="overflow-y-auto flex-1"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Child Account Dropdown -->
+        <div class="flex-1 relative">
+            <label class="block text-xs font-bold text-slate-500 mb-2">الحساب الفرعي</label>
+            <div class="relative">
+                <button id="as-child-btn" type="button" onclick="window.asToggleChildDropdown()"
+                        class="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-right flex items-center justify-between hover:border-brand-400 transition-colors focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled>
+                    <span id="as-child-label" class="text-slate-400">اختر الحساب الرئيسي أولاً...</span>
+                    <i class="fa-solid fa-chevron-down text-slate-400 text-xs"></i>
+                </button>
+                <div id="as-child-dropdown" class="hidden absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-50 max-h-64 overflow-hidden flex flex-col">
+                    <div class="p-2 border-b border-slate-100">
+                        <div class="relative">
+                            <input type="text" id="as-child-search" placeholder="بحث بالاسم أو الكود..."
+                                   oninput="window.asFilterChild(this.value)"
+                                   class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm pr-8 focus:border-brand-400 outline-none">
+                            <i class="fa-solid fa-search absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                        </div>
+                    </div>
+                    <div id="as-child-list" class="overflow-y-auto flex-1"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Date Range -->
+        <div class="flex gap-3">
+            <div>
+                <label class="block text-xs font-bold text-slate-500 mb-2">من تاريخ</label>
+                <input type="date" id="as-from-date"
+                       class="border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:border-brand-400 outline-none">
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-500 mb-2">إلى تاريخ</label>
+                <input type="date" id="as-to-date"
+                       class="border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:border-brand-400 outline-none">
+            </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="flex items-end">
+            <button onclick="window.asLoadStatement()"
+                    class="px-5 py-2.5 bg-brand-600 text-white rounded-xl text-sm font-bold hover:bg-brand-700 transition-colors">
+                <i class="fa-solid fa-file-invoice ml-1"></i> عرض الكشف
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ── Selected Account Info ────────────────────────────────────────────────── -->
+<div id="as-party-info" class="hidden bg-gradient-to-r from-brand-50 to-blue-50 rounded-2xl shadow-sm border border-brand-100 p-5 mb-5">
+    <div class="flex items-center justify-between">
+        <div class="flex items-center gap-4">
+            <div class="w-14 h-14 rounded-2xl bg-white flex items-center justify-center shadow-sm">
+                <i class="fa-solid fa-sitemap text-2xl text-brand-500"></i>
+            </div>
+            <div>
+                <p class="text-xs text-brand-500 font-bold mb-1" id="as-party-type">حساب</p>
+                <h3 class="text-xl font-bold text-slate-800" id="as-party-name">---</h3>
+                <p class="text-sm text-slate-500" id="as-party-details">---</p>
+            </div>
+        </div>
+        <div class="text-right">
+            <p class="text-xs text-slate-400 mb-1">الرصيد الحالي</p>
+            <p id="as-party-balance" class="text-3xl font-black text-slate-800">0.00</p>
+        </div>
+    </div>
+</div>
+
+<!-- ── Summary Cards ────────────────────────────────────────────────────────── -->
+<div id="as-summary-section" class="hidden grid grid-cols-3 gap-4 mb-5">
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
+        <p class="text-xs text-slate-400 mb-1">إجمالي مدين</p>
+        <p id="as-total-debit" class="text-2xl font-black text-red-600">0.00</p>
+    </div>
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
+        <p class="text-xs text-slate-400 mb-1">إجمالي دائن</p>
+        <p id="as-total-credit" class="text-2xl font-black text-emerald-600">0.00</p>
+    </div>
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
+        <p class="text-xs text-slate-400 mb-1">الرصيد النهائي</p>
+        <p id="as-final-balance" class="text-2xl font-black text-slate-800">0.00</p>
+    </div>
+</div>
+
+<!-- ── Statement Table ──────────────────────────────────────────────────────── -->
+<div id="as-statement-section" class="hidden bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="bg-slate-50 text-xs text-slate-500 border-b border-slate-100">
+                    <th class="py-3 px-4 text-right font-semibold">التاريخ</th>
+                    <th class="py-3 px-4 text-right font-semibold">الوثيقة</th>
+                    <th class="py-3 px-4 text-right font-semibold">الرقم</th>
+                    <th class="py-3 px-4 text-right font-semibold">مدين</th>
+                    <th class="py-3 px-4 text-right font-semibold">دائن</th>
+                    <th class="py-3 px-4 text-right font-semibold">الرصيد</th>
+                    <th class="py-3 px-4 text-right font-semibold">ملاحظات</th>
+                </tr>
+            </thead>
+            <tbody id="as-tbody">
+            </tbody>
+        </table>
+    </div>
+
+    <div id="as-empty" class="hidden flex flex-col items-center justify-center py-16 text-slate-400">
+        <div class="w-20 h-20 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
+            <i class="fa-solid fa-file-invoice text-3xl text-slate-300"></i>
+        </div>
+        <p class="text-lg font-semibold text-slate-500 mb-1">لا توجد حركات</p>
+        <p class="text-sm text-slate-400">لم يتم العثور على أي قيود لهذا الحساب في الفترة المحددة</p>
+    </div>
+</div>
+
+<!-- ── Initial State ────────────────────────────────────────────────────────── -->
+<div id="as-initial" class="flex flex-col items-center justify-center py-20 text-slate-400">
+    <div class="w-24 h-24 rounded-3xl bg-slate-100 flex items-center justify-center mb-6">
+        <i class="fa-solid fa-sitemap text-4xl text-slate-300"></i>
+    </div>
+    <p class="text-xl font-bold text-slate-500 mb-2">اختر الحساب</p>
+    <p class="text-sm text-slate-400">اختر الحساب الرئيسي ثم الحساب الفرعي لعرض كشف الحساب</p>
+</div>
+
+<script src="/js/views/account-statement.js?v=20260627"></script>

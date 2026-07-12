@@ -1,0 +1,47 @@
+# Environment Variables — NEVER push to GitHub
+.env
+.env.local
+.env.production
+
+# Node.js
+node_modules/
+npm-debug.log*
+
+# Docker volumes & temp
+postgres_data/
+backups/
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Scripts created during dev
+fix-all.ps1
+backend/scripts/run-migration.js
+
+
+#Ignore vscode AI rules
+.github\instructions\codacy.instructions.md
+_build_loan_pdf.js
+_gen_images.js
+_gen_standalone.js
+old site/ادوية.png
+old site/كراتين.png
+old site/صور المعدات/جهاز 1.png
+old site/صور المعدات/جهاز 2.png
+old site/صور المعدات/لقطة شاشة 2026-06-28 185550.png
+old site/صور المعدات/لقطة شاشة 2026-06-28 190010.png
+old site/صور المعدات/لقطة شاشة 2026-06-28 190125.png
+old site/صور المعدات/لقطة شاشة 2026-06-28 190156.png
+loan_editor.html
+loan_images.json
+_check_index_script.js
+_check_netlify_script.js
+_check_script.js
+_check_source_script.js
+_check_split_script.js
