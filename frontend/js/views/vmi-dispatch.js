@@ -264,10 +264,10 @@
             hideEl('dv-archive-loading');
             if (!notes.length) { showEl('dv-archive-empty'); return; }
 
-            const dispatchMap = {};
+            const itemMap = {};
             await Promise.all(notes.map(async dn => {
-                try { const r = await window.apiFetch('/api/delivery-notes/' + dn.id); dispatchMap[dn.id] = r.data?.dispatches || []; }
-                catch (_) { dispatchMap[dn.id] = []; }
+                try { const r = await window.apiFetch('/api/delivery-notes/' + dn.id); itemMap[dn.id] = r.data?.items || []; }
+                catch (_) { itemMap[dn.id] = []; }
             }));
 
             listEl.innerHTML = notes.map(dn => {
@@ -276,22 +276,18 @@
                     : dn.status === 'partial'
                         ? '<span class="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded-lg font-bold">جزئي</span>'
                         : '<span class="text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-lg font-bold">معلق</span>';
-                const disps = dispatchMap[dn.id] || [];
-                const dispRows = disps.map(d => {
-                    const dQty = (d.items || []).reduce((s, i) => s + parseFloat(i.quantity || 0), 0);
+                const dnItems = itemMap[dn.id] || [];
+                const itemRows = dnItems.map(i => {
+                    const req = parseFloat(i.requested_qty || i.quantity || 0);
+                    const del = parseFloat(i.delivered_qty || 0);
                     return `
                     <div class="flex items-center justify-between text-xs py-1.5 px-2 bg-slate-50 rounded-lg">
                         <div class="flex items-center gap-2">
-                            <span class="w-5 h-5 flex items-center justify-center bg-emerald-100 text-emerald-700 rounded-full font-bold text-[10px]">${d.dispatch_number}</span>
-                            <span class="text-slate-600">${fmtD(d.created_at)}</span>
-                            ${d.notes ? `<span class="text-slate-400 truncate max-w-[100px]">${esc(d.notes)}</span>` : ''}
+                            <span class="text-slate-600">${esc(i.product_name || '—')} ${i.variant_name ? esc(i.variant_name) : ''}</span>
                         </div>
                         <div class="flex items-center gap-2">
-                            <span class="font-bold text-slate-700">${dQty} قطعة</span>
-                            <button onclick="window.dvPrintDispatch('${esc(dn.id)}','${esc(d.id)}')"
-                                    class="text-slate-400 hover:text-brand-600 transition-colors">
-                                <i class="fa-solid fa-print text-[10px]"></i>
-                            </button>
+                            <span class="text-slate-400">مطلوب: ${req}</span>
+                            <span class="font-bold text-emerald-600">سلّم: ${del}</span>
                         </div>
                     </div>`;
                 }).join('');
@@ -300,7 +296,7 @@
                     <div class="flex flex-wrap justify-between items-start gap-2 mb-3">
                         <div>
                             <div class="flex items-center gap-2 flex-wrap">${stBadge}
-                                <span class="text-sm font-black text-slate-800">سند #${esc(String(dn.note_number || '—'))}</span>
+                                <span class="text-sm font-black text-slate-800">أمر فسح #${esc(String(dn.note_number || '—'))}</span>
                             </div>
                             <p class="text-xs text-slate-500 mt-1 font-bold">${esc(dn.client_name || '—')}</p>
                             <p class="text-xs text-slate-400">${dn.item_count || 0} أصناف — طلب #${esc(String(dn.order_number || '—'))} — ${fmtD(dn.created_at)}</p>
@@ -317,11 +313,11 @@
                             </button>
                         </div>
                     </div>
-                    ${disps.length
+                    ${dnItems.length
                         ? `<div class="border-t border-slate-100 pt-3 space-y-1.5">
-                               <p class="text-[10px] text-slate-400 font-bold mb-1">التسليمات المنفذة (${disps.length})</p>
-                               ${dispRows}</div>`
-                        : '<p class="text-xs text-slate-300 border-t border-slate-100 pt-2 mt-1">لا توجد تسليمات بعد</p>'}
+                               <p class="text-[10px] text-slate-400 font-bold mb-1">الأصناف (${dnItems.length})</p>
+                               ${itemRows}</div>`
+                        : '<p class="text-xs text-slate-300 border-t border-slate-100 pt-2 mt-1">لا توجد أصناف</p>'}
                 </div>`;
             }).join('');
         } catch (e) { hideEl('dv-archive-loading'); window.showToast('فشل تحميل الأرشيف', 'error'); }
@@ -363,50 +359,6 @@ td{font-size:13px}tr:nth-child(even) td{background:#f8fafc}
 </div>
 <table><thead><tr><th style="width:40px">#</th><th>الصنف / المقاس</th><th style="width:80px;text-align:center">المطلوب</th><th style="width:80px;text-align:center">المُسلَّم</th><th>ملاحظات</th></tr></thead>
 <tbody>${itemsHTML || '<tr><td colspan="5" style="text-align:center;padding:16px;color:#94a3b8">لا توجد أصناف</td></tr>'}</tbody></table>
-<div class="footer"><div class="sig-box"><div class="sig-line">توقيع المستلم</div></div><div class="sig-box"><div class="sig-line">توقيع المسلِّم</div></div><div class="sig-box"><div class="sig-line">الختم</div></div></div>
-</body></html>`;
-            const w = window.open('', '_blank', 'width=800,height=700');
-            w.document.write(html); w.document.close(); setTimeout(() => w.print(), 500);
-        } catch (e) { window.showToast('فشل التحميل', 'error'); }
-    };
-
-    // ── Print single dispatch ─────────────────────────────────────────────────
-    window.dvPrintDispatch = async function(dnId, dispatchId) {
-        try {
-            const res = await window.apiFetch('/api/delivery-notes/' + dnId);
-            const dn  = res?.data;
-            if (!dn) { window.showToast('فشل تحميل السند', 'error'); return; }
-            const dispatch = (dn.dispatches || []).find(d => d.id === dispatchId);
-            if (!dispatch) { window.showToast('لم يتم العثور على التسليمة', 'error'); return; }
-            const itemsHTML = (dispatch.items || []).map((item, i) =>
-                `<tr>
-                <td style="padding:8px;border:1px solid #ddd;text-align:right">${i + 1}</td>
-                <td style="padding:8px;border:1px solid #ddd;text-align:right">${item.product_name || '—'}${item.variant_name ? ' — ' + item.variant_name : ''}</td>
-                <td style="padding:8px;border:1px solid #ddd;text-align:center;font-weight:bold">${item.quantity || 0}</td>
-                </tr>`).join('');
-            const html = `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="UTF-8"><title>إيصال تسليم #${dn.note_number}-${dispatch.dispatch_number}</title>
-<style>body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;margin:0;padding:20px;color:#1e293b;direction:rtl}
-.header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #d97706;padding-bottom:16px;margin-bottom:20px}
-.company{font-size:22px;font-weight:bold;color:#2563eb}.doc-number{font-size:24px;font-weight:bold;color:#d97706}
-.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;background:#fffbeb;padding:16px;border-radius:8px;border:1px solid #fcd34d}
-.info-item label{font-size:11px;color:#64748b;display:block;margin-bottom:2px}.info-item span{font-weight:bold;font-size:14px}
-table{width:100%;border-collapse:collapse;margin-bottom:20px}
-th{background:#d97706;color:white;padding:10px 8px;text-align:right;font-size:13px;border:1px solid #d97706}
-td{font-size:13px}tr:nth-child(even) td{background:#fffbeb}
-.footer{margin-top:40px;display:flex;justify-content:space-between;padding-top:20px;border-top:1px solid #e2e8f0}
-.sig-box{text-align:center;width:160px}.sig-line{border-top:1px solid #333;margin-top:40px;padding-top:6px;font-size:12px;color:#64748b}
-@media print{body{padding:10px}}</style></head><body>
-<div class="header"><div><div class="company">G.PACK</div><div style="font-size:13px;color:#64748b">إيصال تسليم جزئي</div></div>
-<div style="text-align:left"><div style="font-size:11px;color:#64748b">سند #${dn.note_number} — تسليمة</div><div class="doc-number">#${dispatch.dispatch_number}</div></div></div>
-<div class="info-grid">
-<div class="info-item"><label>العميل</label><span>${dn.client_name || '—'}</span></div>
-<div class="info-item"><label>رقم الطلب</label><span>#${dn.order_number || '—'}</span></div>
-<div class="info-item"><label>تاريخ التسليم</label><span>${new Date(dispatch.created_at).toLocaleDateString('ar-SA-u-nu-latn')}</span></div>
-<div class="info-item"><label>بواسطة</label><span>${dispatch.created_by_name || '—'}</span></div>
-</div>
-<table><thead><tr><th style="width:40px">#</th><th>الصنف / المقاس</th><th style="width:100px;text-align:center">الكمية المُسلَّمة</th></tr></thead>
-<tbody>${itemsHTML || '<tr><td colspan="3" style="text-align:center;padding:16px;color:#94a3b8">لا توجد أصناف</td></tr>'}</tbody></table>
-${dispatch.notes ? `<div style="background:#fef3c7;padding:12px;border-radius:6px;margin-bottom:20px"><strong>ملاحظات:</strong> ${dispatch.notes}</div>` : ''}
 <div class="footer"><div class="sig-box"><div class="sig-line">توقيع المستلم</div></div><div class="sig-box"><div class="sig-line">توقيع المسلِّم</div></div><div class="sig-box"><div class="sig-line">الختم</div></div></div>
 </body></html>`;
             const w = window.open('', '_blank', 'width=800,height=700');

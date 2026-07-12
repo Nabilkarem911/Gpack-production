@@ -213,26 +213,10 @@ router.post('/:id/dispatch', restrictWrite, validateBody(deliveryNoteDispatch), 
                  WHERE dn.id = $1`,
                 [id]
             );
-            if (dnCheck.rowCount === 0) throw new Error('\u0633\u0646\u062f \u0627\u0644\u062a\u0633\u0644\u064a\u0645 \u063a\u064a\u0631 \u0645\u0648\u062c\u0648\u062f.');
+            if (dnCheck.rowCount === 0) throw new Error('أمر الفسح غير موجود.');
 
             const dn = dnCheck.rows[0];
-            if (dn.status === 'completed') throw new Error('\u0633\u0646\u062f \u0627\u0644\u062a\u0633\u0644\u064a\u0645 \u0645\u0643\u062a\u0645\u0644 \u0628\u0627\u0644\u0641\u0639\u0644 \u0648\u0644\u0627 \u064a\u0645\u0643\u0646 \u0627\u0644\u062a\u0639\u062f\u064a\u0644 \u0639\u0644\u064a\u0647.');
-
-            // Get next dispatch number for this delivery note
-            const seqRes = await client.query(
-                `SELECT COALESCE(MAX(dispatch_number), 0) + 1 AS next_num
-                 FROM delivery_note_dispatches WHERE delivery_note_id = $1`,
-                [id]
-            );
-            const dispatchNumber = seqRes.rows[0].next_num;
-
-            // Create dispatch record
-            const dispatchRes = await client.query(
-                `INSERT INTO delivery_note_dispatches (delivery_note_id, dispatch_number, notes, created_by)
-                 VALUES ($1, $2, $3, $4) RETURNING id`,
-                [id, dispatchNumber, deliveryNotes || null, req.user?.id]
-            );
-            const dispatchId = dispatchRes.rows[0].id;
+            if (dn.status === 'completed') throw new Error('أمر الفسح مكتمل بالفعل ولا يمكن التعديل عليه.');
 
             // Process each item
             for (const item of items) {
@@ -248,7 +232,7 @@ router.post('/:id/dispatch', restrictWrite, validateBody(deliveryNoteDispatch), 
                 const { requested_qty, delivered_qty } = dniCheck.rows[0];
                 const remaining = parseFloat(requested_qty) - parseFloat(delivered_qty);
                 if (item.quantity > remaining) {
-                    throw new Error(`\u0627\u0644\u0643\u0645\u064a\u0629 (${item.quantity}) \u062a\u062a\u062c\u0627\u0648\u0632 \u0627\u0644\u0645\u062a\u0628\u0642\u064a (${remaining}).`);
+                    throw new Error(`الكمية (${item.quantity}) تتجاوز المتبقي (${remaining}).`);
                 }
 
                 // Get variant + order item
@@ -272,17 +256,10 @@ router.post('/:id/dispatch', restrictWrite, validateBody(deliveryNoteDispatch), 
                 );
                 if (stockResult.rowCount === 0 || parseFloat(stockResult.rows[0].quantity) < item.quantity) {
                     const available = stockResult.rowCount > 0 ? stockResult.rows[0].quantity : 0;
-                    throw new Error(`\u0627\u0644\u0645\u062e\u0632\u0648\u0646 \u063a\u064a\u0631 \u0643\u0627\u0641\u064d \u2014 \u0627\u0644\u0645\u062a\u0627\u062d: ${available}\u060c \u0627\u0644\u0645\u0637\u0644\u0648\u0628: ${item.quantity}.`);
+                    throw new Error(`المخزون غير كافٍ — المتاح: ${available}، المطلوب: ${item.quantity}.`);
                 }
 
                 const stockId = stockResult.rows[0].id;
-
-                // Record dispatch item
-                await client.query(
-                    `INSERT INTO delivery_dispatch_items (dispatch_id, dn_item_id, quantity)
-                     VALUES ($1, $2, $3)`,
-                    [dispatchId, item.item_id, item.quantity]
-                );
 
                 // Update delivered_qty on delivery_note_items
                 await client.query(
@@ -306,7 +283,7 @@ router.post('/:id/dispatch', restrictWrite, validateBody(deliveryNoteDispatch), 
                 await client.query(
                     `INSERT INTO inventory_transactions (stock_id, variant_id, transaction_type, quantity, notes, reference_id, reference_type, created_by, created_at)
                      VALUES ($1, $2, 'dispense', $3, $4, $5, 'delivery_note', $6, NOW())`,
-                    [stockId, variantId, item.quantity, deliveryNotes || `تسليم - سند #${dn.note_number} دفعة #${dispatchNumber}`, id, req.user?.id]
+                    [stockId, variantId, item.quantity, deliveryNotes || `تسليم - أمر فسح #${dn.note_number}`, id, req.user?.id]
                 );
             }
 
@@ -324,10 +301,10 @@ router.post('/:id/dispatch', restrictWrite, validateBody(deliveryNoteDispatch), 
                 [newStatus, id]
             );
 
-            return { dispatch_number: dispatchNumber, status: newStatus };
+            return { status: newStatus };
         });
 
-        return res.status(200).json({ message: '\u062a\u0645 \u062a\u0633\u062c\u064a\u0644 \u0627\u0644\u062a\u0633\u0644\u064a\u0645\u0629 \u0628\u0646\u062c\u0627\u062d.', data: result });
+        return res.status(200).json({ message: 'تم تسجيل التسليم بنجاح.', data: result });
     } catch (err) {
         console.error('[DeliveryNotes] POST /:id/dispatch error:', err.message);
         return res.status(400).json({ error: err.message || 'Internal server error.' });
