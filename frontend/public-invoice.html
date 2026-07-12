@@ -135,7 +135,14 @@
         const _el = (id) => document.getElementById(id);
         const fmt = (n) => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         const esc = (s) => { if (!s) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); };
-        const fmtDate = (d) => d ? new Date(d).toLocaleDateString('ar-EG') : '---';
+        const fmtDate = (d) => {
+            if (!d) return '---';
+            const dt = new Date(d);
+            const day = String(dt.getDate()).padStart(2, '0');
+            const month = String(dt.getMonth() + 1).padStart(2, '0');
+            const year = dt.getFullYear();
+            return day + '/' + month + '/' + year;
+        };
 
         const PAY_M = { cash: 'نقدي', bank_transfer: 'تحويل بنكي', check: 'شيك', card: 'بطاقة' };
 

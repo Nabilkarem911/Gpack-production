@@ -27,7 +27,7 @@ router.get('/:identifier', async (req, res) => {
             c.id AS client_id, c.name AS client_name, c.phone AS client_phone,
             c.email AS client_email, c.address AS client_address,
             c.tax_id AS client_tax_number,
-            o.order_number
+            o.id AS order_id, o.order_number
         `;
 
         try {
@@ -100,13 +100,15 @@ router.get('/:identifier', async (req, res) => {
         `, [id]);
         invoice.expenses = expRes.rows;
 
-        // Payments (stored in client_transactions with type='receipt' linked to invoice)
+        // Payments (stored in client_transactions linked by invoice_id OR order_id)
+        const orderId = invoice.order_id;
         const payRes = await db.query(`
             SELECT id, amount, payment_method, description, created_at
             FROM client_transactions
-            WHERE invoice_id = $1 AND type IN ('receipt', 'payment')
+            WHERE (invoice_id = $1 OR (order_id = $2 AND type = 'payment'))
+              AND type IN ('receipt', 'payment')
             ORDER BY created_at ASC
-        `, [id]);
+        `, [id, orderId]);
         invoice.payments = payRes.rows;
 
         res.json({ data: invoice });
