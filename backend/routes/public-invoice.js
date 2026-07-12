@@ -18,16 +18,25 @@ router.get('/:identifier', async (req, res) => {
         // Try lookup by share_token_hash first (secure links)
         let viaToken = false;
         let invRes = null;
+
+        const selectFields = `
+            i.id, i.invoice_number, i.invoice_date, i.due_date,
+            i.status, i.subtotal, i.tax_rate, i.tax_amount, i.additional_expenses,
+            i.discount_amount, i.grand_total,
+            i.notes, i.created_at, i.share_token, i.token_expires_at,
+            c.id AS client_id, c.name AS client_name, c.phone AS client_phone,
+            c.email AS client_email, c.address AS client_address,
+            c.tax_number AS client_tax_number,
+            o.order_number
+        `;
+
         try {
             const tokenHash = hashToken(identifier);
             invRes = await db.query(`
-                SELECT
-                    i.id, i.invoice_number, i.invoice_date, i.due_date,
-                    i.status, i.subtotal, i.tax_amount, i.additional_expenses, i.grand_total,
-                    i.notes, i.created_at, i.share_token, i.token_expires_at,
-                    c.id AS client_id, c.name AS client_name, c.phone AS client_phone
+                SELECT ${selectFields}
                 FROM invoices i
                 LEFT JOIN clients c ON c.id = i.client_id
+                LEFT JOIN orders o ON o.id = i.order_id
                 WHERE i.share_token_hash = $1 AND i.status != 'cancelled'
             `, [tokenHash]);
             if (invRes.rows.length > 0) viaToken = true;
@@ -36,13 +45,10 @@ router.get('/:identifier', async (req, res) => {
         // Fallback: plaintext share_token (backward compatibility)
         if (!invRes || invRes.rows.length === 0) {
             invRes = await db.query(`
-                SELECT
-                    i.id, i.invoice_number, i.invoice_date, i.due_date,
-                    i.status, i.subtotal, i.tax_amount, i.additional_expenses, i.grand_total,
-                    i.notes, i.created_at, i.share_token, i.token_expires_at,
-                    c.id AS client_id, c.name AS client_name, c.phone AS client_phone
+                SELECT ${selectFields}
                 FROM invoices i
                 LEFT JOIN clients c ON c.id = i.client_id
+                LEFT JOIN orders o ON o.id = i.order_id
                 WHERE i.share_token = $1 AND i.status != 'cancelled'
             `, [identifier]);
             if (invRes.rows.length > 0) viaToken = true;
@@ -51,13 +57,10 @@ router.get('/:identifier', async (req, res) => {
         // Fallback to ID lookup for backward compatibility
         if (!invRes || invRes.rows.length === 0) {
             invRes = await db.query(`
-                SELECT
-                    i.id, i.invoice_number, i.invoice_date, i.due_date,
-                    i.status, i.subtotal, i.tax_amount, i.additional_expenses, i.grand_total,
-                    i.notes, i.created_at, i.share_token, i.token_expires_at,
-                    c.id AS client_id, c.name AS client_name, c.phone AS client_phone
+                SELECT ${selectFields}
                 FROM invoices i
                 LEFT JOIN clients c ON c.id = i.client_id
+                LEFT JOIN orders o ON o.id = i.order_id
                 WHERE i.id = $1 AND i.status != 'cancelled'
             `, [identifier]);
         }
@@ -96,6 +99,15 @@ router.get('/:identifier', async (req, res) => {
             WHERE invoice_id = $1
         `, [id]);
         invoice.expenses = expRes.rows;
+
+        // Payments
+        const payRes = await db.query(`
+            SELECT id, amount, payment_method, description, created_at
+            FROM invoice_payments
+            WHERE invoice_id = $1
+            ORDER BY created_at ASC
+        `, [id]);
+        invoice.payments = payRes.rows;
 
         res.json({ data: invoice });
 
