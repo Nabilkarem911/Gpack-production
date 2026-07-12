@@ -2,22 +2,15 @@
 <html dir="rtl" lang="ar">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>فاتورة | G.PACK</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
         * { margin:0; padding:0; box-sizing:border-box; }
-        body { font-family: 'Cairo', 'Segoe UI', Tahoma, Arial, sans-serif; background:#f1f5f9; color:#1e293b; }
-        @media print { body { background:#fff; padding:0; } .no-print { display:none !important; } @page { margin:15mm; } }
-        .invoice-container { max-width:800px; margin:30px auto; background:#fff; padding:30px; }
-        @media print { .invoice-container { margin:0; padding:0; box-shadow:none; } }
+        body { font-family: 'Segoe UI', Tahoma, Arial, sans-serif; background:#fff; color:#1e293b; padding:30px; }
+        @media print { body { padding:15px; } .no-print { display:none !important; } @page { margin:15mm; } }
+        .invoice-container { max-width:800px; margin:0 auto; }
         .header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:30px; padding-bottom:20px; border-bottom:3px solid #4b0082; }
         .logo-section { display:flex; align-items:center; gap:12px; }
-        .logo-section .logo-icon { width:58px; height:58px; background:#4b0082; border-radius:12px; display:flex; align-items:center; justify-content:center; }
-        .logo-section .logo-icon i { font-size:28px; color:#ffd700; }
+        .logo-section img { width:58px; height:58px; object-fit:contain; }
         .logo-text h1 { font-size:24px; font-weight:900; color:#4b0082; margin-bottom:4px; }
         .logo-text p { font-size:12px; color:#64748b; }
         .invoice-meta { text-align:left; }
@@ -27,7 +20,6 @@
         .badge-final { background:#ffd700; color:#4b0082; }
         .badge-proforma { background:#fff7cc; color:#5d198e; }
         .client-section { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom:25px; background:#f8fafc; border-radius:12px; padding:20px; border:1px solid #e2e8f0; }
-        @media (max-width:640px) { .client-section { grid-template-columns:1fr; } }
         .client-section h4 { font-size:11px; color:#94a3b8; font-weight:700; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.5px; }
         .client-section p { font-size:14px; color:#1e293b; font-weight:600; }
         .client-section .sub { font-size:12px; color:#64748b; margin-top:2px; }
@@ -38,7 +30,6 @@
         table.items tbody tr:last-child td { border-bottom:none; }
         table.items tbody tr:hover { background:#f8fafc; }
         .totals-grid { display:grid; grid-template-columns:1fr 280px; gap:20px; margin-bottom:25px; }
-        @media (max-width:640px) { .totals-grid { grid-template-columns:1fr; } }
         .totals-box { background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; }
         .total-row { display:flex; justify-content:space-between; padding:8px 0; font-size:14px; border-bottom:1px solid #f1f5f9; }
         .total-row:last-child { border-bottom:none; }
@@ -55,9 +46,8 @@
         .print-btn { position:fixed; bottom:20px; left:20px; padding:12px 24px; background:#4b0082; color:#ffd700; border:none; border-radius:10px; font-size:14px; font-weight:700; cursor:pointer; box-shadow:0 4px 12px rgba(75,0,130,0.3); }
         .print-btn:hover { background:#5d198e; }
         .loading-state { text-align:center; padding:80px 20px; }
-        .loading-state i { font-size:48px; color:#4b0082; margin-bottom:16px; display:block; }
+        .loading-state p { font-size:16px; color:#64748b; }
         .error-state { text-align:center; padding:80px 20px; }
-        .error-state i { font-size:64px; color:#fca5a5; margin-bottom:16px; display:block; }
         .error-state h2 { font-size:20px; font-weight:700; color:#64748b; margin-bottom:8px; }
         .error-state p { font-size:14px; color:#94a3b8; }
     </style>
@@ -66,13 +56,11 @@
 
     <!-- Loading State -->
     <div id="pinv-loading" class="loading-state">
-        <i class="fa-solid fa-circle-notch fa-spin"></i>
-        <p style="font-size:16px; color:#64748b;">جاري تحميل الفاتورة...</p>
+        <p>جاري تحميل الفاتورة...</p>
     </div>
 
     <!-- Error State -->
     <div id="pinv-error" class="error-state" style="display:none;">
-        <i class="fa-solid fa-circle-exclamation"></i>
         <h2>تعذّر تحميل الفاتورة</h2>
         <p>قد تكون الفاتورة غير موجودة أو انتهت صلاحية الرابط</p>
     </div>
@@ -82,7 +70,7 @@
         <div class="invoice-container">
             <div class="header">
                 <div class="logo-section">
-                    <div class="logo-icon"><i class="fa-solid fa-box"></i></div>
+                    <img id="pinv-logo" src="" alt="G.PACK Logo" style="display:none;">
                     <div class="logo-text">
                         <h1>G.PACK</h1>
                         <p>حلول التعبئة والتغليف</p>
@@ -182,10 +170,25 @@
             }
         }
 
-        function _render(inv) {
+        async function _render(inv) {
             _el('pinv-loading').style.display = 'none';
             _el('pinv-card').style.display = 'block';
             _el('pinv-print-btn').style.display = 'block';
+
+            // Load logo (same as print invoice)
+            try {
+                const logoRes = await fetch('/images/logo.png');
+                if (logoRes.ok) {
+                    const blob = await logoRes.blob();
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                        const logoEl = _el('pinv-logo');
+                        logoEl.src = reader.result;
+                        logoEl.style.display = 'block';
+                    };
+                    reader.readAsDataURL(blob);
+                }
+            } catch (_e) { /* logo optional */ }
 
             const isProforma = inv.status !== 'issued';
             const invoiceTitle = isProforma ? 'فاتورة أولية' : 'فاتورة نهائية';
