@@ -227,13 +227,21 @@
                                data-item-id="${item.id}"
                                data-order-item-id="${item.order_item_id || ''}"
                                data-variant-id="${item.variant_id || ''}"
-                               value="${remQty}" min="0"
+                               data-rem-qty="${remQty}"
+                               value="${remQty}" min="0" max="${remQty}"
                                ${remQty === 0 ? 'disabled' : ''}
+                               oninput="window.rvUpdateRowState(this)"
                                class="w-20 px-2 py-1 border border-slate-200 rounded-lg text-center text-xs focus:border-brand-500 outline-none">
                     </td>
                     <td class="py-2.5 px-3 text-center">
+                        <input type="checkbox" ${remQty === 0 ? 'disabled checked' : 'checked'}
+                               class="w-4 h-4 text-emerald-500 rounded"
+                               title="استلام كلي"
+                               onchange="window.rvToggleFull(this)">
+                    </td>
+                    <td class="py-2.5 px-3 text-center">
                         <input type="checkbox" ${remQty === 0 ? 'disabled' : ''}
-                               class="w-4 h-4 text-amber-500 rounded" title="جاية بفاتورة مورد">
+                               class="w-4 h-4 text-amber-500 rounded" title="جاية بفاتورة">
                     </td>
                 </tr>`;
                 idx++;
@@ -241,8 +249,9 @@
         }
 
         _el('rv-receive-items').innerHTML = html ||
-            '<tr><td colspan="6" class="py-8 text-center text-slate-400 text-xs">لا توجد أصناف</td></tr>';
+            '<tr><td colspan="7" class="py-8 text-center text-slate-400 text-xs">لا توجد أصناف</td></tr>';
 
+        rvUpdateSummary();
         openModal('rv-receive-modal');
     };
 
@@ -250,6 +259,91 @@
         closeModal('rv-receive-modal');
         _currentGrouped = null;
     };
+
+    // ── استلام كلي / جزئي ──
+    window.rvReceiveAll = function () {
+        const rows = _el('rv-receive-items').querySelectorAll('tr');
+        rows.forEach(row => {
+            const qtyInput = row.querySelector('input[type="number"]');
+            const fullChk  = row.querySelectorAll('input[type="checkbox"]')[0];
+            if (!qtyInput || qtyInput.disabled) return;
+            const rem = parseFloat(qtyInput.dataset.remQty || 0);
+            qtyInput.value = rem;
+            if (fullChk) fullChk.checked = true;
+            row.classList.remove('bg-amber-50');
+            row.classList.add('bg-emerald-50');
+        });
+        rvUpdateSummary();
+    };
+
+    window.rvReceiveNone = function () {
+        const rows = _el('rv-receive-items').querySelectorAll('tr');
+        rows.forEach(row => {
+            const qtyInput = row.querySelector('input[type="number"]');
+            const fullChk  = row.querySelectorAll('input[type="checkbox"]')[0];
+            if (!qtyInput || qtyInput.disabled) return;
+            qtyInput.value = 0;
+            if (fullChk) fullChk.checked = false;
+            row.classList.remove('bg-emerald-50', 'bg-amber-50');
+        });
+        rvUpdateSummary();
+    };
+
+    window.rvToggleFull = function (chk) {
+        const row   = chk.closest('tr');
+        const input = row.querySelector('input[type="number"]');
+        if (!input || input.disabled) return;
+        const rem = parseFloat(input.dataset.remQty || 0);
+        if (chk.checked) {
+            input.value = rem;
+            row.classList.remove('bg-amber-50');
+            row.classList.add('bg-emerald-50');
+        } else {
+            row.classList.remove('bg-emerald-50');
+        }
+        rvUpdateSummary();
+    };
+
+    window.rvUpdateRowState = function (input) {
+        const row   = input.closest('tr');
+        const rem   = parseFloat(input.dataset.remQty || 0);
+        const val   = parseFloat(input.value || 0);
+        const fullChk = row.querySelectorAll('input[type="checkbox"]')[0];
+        if (val >= rem && rem > 0) {
+            if (fullChk) fullChk.checked = true;
+            row.classList.remove('bg-amber-50');
+            row.classList.add('bg-emerald-50');
+        } else if (val > 0) {
+            if (fullChk) fullChk.checked = false;
+            row.classList.remove('bg-emerald-50');
+            row.classList.add('bg-amber-50');
+        } else {
+            if (fullChk) fullChk.checked = false;
+            row.classList.remove('bg-emerald-50', 'bg-amber-50');
+        }
+        rvUpdateSummary();
+    };
+
+    function rvUpdateSummary() {
+        const rows = _el('rv-receive-items').querySelectorAll('tr');
+        let full = 0, partial = 0, none = 0;
+        rows.forEach(row => {
+            const input = row.querySelector('input[type="number"]');
+            if (!input) return;
+            if (input.disabled) return;
+            const rem = parseFloat(input.dataset.remQty || 0);
+            const val = parseFloat(input.value || 0);
+            if (val >= rem && rem > 0) full++;
+            else if (val > 0) partial++;
+            else none++;
+        });
+        const elFull    = _el('rv-sum-full');
+        const elPartial = _el('rv-sum-partial');
+        const elNone    = _el('rv-sum-none');
+        if (elFull)    elFull.textContent    = full;
+        if (elPartial) elPartial.textContent = partial;
+        if (elNone)    elNone.textContent    = none;
+    }
 
     window.rvConfirmReceiving = async function () {
         const warehouseId = _el('rv-receive-warehouse')?.value;
