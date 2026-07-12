@@ -2395,16 +2395,70 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
     }
 
     // ── Payment Modal ──────────────────────────────────────────────────────────
-    function _openPaymentModal() {
+    async function _openPaymentModal() {
         const remaining = Math.max(0,
             parseFloat(_hubOrder.grand_total || 0) - parseFloat(_hubOrder.paid_amount || 0)
         );
         _setText('payment-remaining-display', `${_fmt(remaining)} ر.س`);
         _setVal('payment-amount', '');
         _setVal('payment-notes',  '');
+
+        // Reset to cash
+        _setVal('payment-method', 'cash');
+        _onPaymentMethodChange('cash');
+
+        // Load cash boxes, bank accounts, POS terminals in parallel
+        await Promise.all([
+            _loadCashBoxes(),
+            _loadBankAccounts(),
+            _loadPosTerminals(),
+        ]);
+
         const amtEl = _el('payment-amount');
         if (amtEl) setTimeout(() => amtEl.focus(), 100);
         _showModal('po-payment-modal');
+    }
+
+    async function _loadCashBoxes() {
+        try {
+            const res = await window.apiFetch('/api/orders/lookup/cash-accounts');
+            const sel = _el('payment-cash-box');
+            if (!sel) return;
+            const items = res?.data || [];
+            sel.innerHTML = '<option value="">— اختر الصندوق —</option>' +
+                items.map(a => `<option value="${a.code}">${a.name}</option>`).join('');
+        } catch { /* no-op */ }
+    }
+
+    async function _loadBankAccounts() {
+        try {
+            const res = await window.apiFetch('/api/orders/lookup/bank-accounts');
+            const sel = _el('payment-bank-account');
+            if (!sel) return;
+            const items = res?.data || [];
+            sel.innerHTML = '<option value="">— اختر الحساب البنكي —</option>' +
+                items.map(a => `<option value="${a.code}">${a.name}</option>`).join('');
+        } catch { /* no-op */ }
+    }
+
+    async function _loadPosTerminals() {
+        try {
+            const res = await window.apiFetch('/api/orders/lookup/pos-terminals');
+            const sel = _el('payment-pos-terminal');
+            if (!sel) return;
+            const items = res?.data || [];
+            sel.innerHTML = '<option value="">— اختر جهاز نقاط البيع —</option>' +
+                items.map(a => `<option value="${a.code}">${a.name}</option>`).join('');
+        } catch { /* no-op */ }
+    }
+
+    function _onPaymentMethodChange(method) {
+        const cashEl = _el('payment-cash-fields');
+        const bankEl = _el('payment-bank-fields');
+        const posEl  = _el('payment-pos-fields');
+        if (cashEl) cashEl.classList.toggle('hidden', method !== 'cash');
+        if (bankEl) bankEl.classList.toggle('hidden', method !== 'bank_transfer');
+        if (posEl)  posEl.classList.toggle('hidden', method !== 'pos');
     }
 
     async function _savePayment() {
@@ -2414,10 +2468,30 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
 
         if (!amount || amount <= 0) { _toast('أدخل مبلغاً صحيحاً', 'error'); return; }
 
+        const body = { amount, payment_method: method, notes };
+
+        if (method === 'cash') {
+            const cashBox = _el('payment-cash-box')?.value || '';
+            if (!cashBox) { _toast('اختر الصندوق', 'error'); return; }
+            body.cash_box = cashBox;
+        } else if (method === 'bank_transfer') {
+            const bankAccount = _el('payment-bank-account')?.value || '';
+            const bankRef = _el('payment-bank-ref')?.value || '';
+            if (!bankAccount) { _toast('اختر الحساب البنكي', 'error'); return; }
+            body.bank_account = bankAccount;
+            body.bank_ref = bankRef;
+        } else if (method === 'pos') {
+            const posTerminal = _el('payment-pos-terminal')?.value || '';
+            const posRef = _el('payment-pos-ref')?.value || '';
+            if (!posTerminal) { _toast('اختر جهاز نقاط البيع', 'error'); return; }
+            body.pos_terminal = posTerminal;
+            body.pos_ref = posRef;
+        }
+
         try {
             const res = await window.apiFetch(`/api/orders/${_hubOrderId}/payment`, {
                 method: 'POST',
-                body: { amount, payment_method: method, notes },
+                body,
             });
             _toast('تم تسجيل الدفعة بنجاح');
             _hideModal('po-payment-modal');
@@ -3221,6 +3295,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         saveEditInvoice:    _saveEditInvoice,
         openPaymentModal:   _openPaymentModal,
         closePaymentModal:  () => _hideModal('po-payment-modal'),
+        onPaymentMethodChange: _onPaymentMethodChange,
         savePayment:        _savePayment,
         openDeliveryModal:  _openDeliveryModal,
         closeDeliveryModal: () => _hideModal('po-delivery-modal'),
