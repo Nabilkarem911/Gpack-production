@@ -491,7 +491,7 @@
             <div class="flex justify-end mb-4">
                 <button onclick="window.poView.openDeliveryModal()"
                         class="flex items-center gap-2 px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-sm font-bold rounded-xl shadow transition-all active:scale-[0.98]">
-                    <i class="fa-solid fa-truck-fast"></i> إصدار سند تسليم
+                    <i class="fa-solid fa-truck-fast"></i> إصدار أمر فسح
                 </button>
             </div>
             <div id="hub-delivery-list"><div class="py-8 text-center text-slate-400"><i class="fa-solid fa-circle-notch fa-spin"></i></div></div>`;

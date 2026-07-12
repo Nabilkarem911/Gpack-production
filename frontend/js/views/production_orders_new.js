@@ -1645,7 +1645,7 @@ ${designPages}
             const win = window.open('', '_blank', 'width=800,height=600');
             win.document.write(`<!DOCTYPE html>
 <html dir="rtl" lang="ar">
-<head><meta charset="UTF-8"><title>سند تسليم #${dn.note_number}</title>
+<head><meta charset="UTF-8"><title>أمر فسح #${dn.note_number}</title>
 <style>
   body { font-family: 'Segoe UI', Arial, sans-serif; padding: 30px; color: #1e293b; direction: rtl; }
   h1 { font-size: 20px; } .sub { color: #64748b; font-size: 13px; margin-bottom: 24px; }
@@ -1662,7 +1662,7 @@ ${designPages}
 </head>
 <body>
 <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px">
-  <div><h1>سند تسليم</h1><div class="sub">G.PACK ERP 2.0</div></div>
+  <div><h1>أمر فسح</h1><div class="sub">G.PACK ERP 2.0</div></div>
   <div style="text-align:left;font-size:22px;font-weight:900;color:#7c3aed">#${dn.note_number}</div>
 </div>
 <div class="info-grid">

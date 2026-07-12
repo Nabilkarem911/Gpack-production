@@ -264,7 +264,7 @@
                 <td style="padding:8px;border:1px solid #ddd;text-align:center">${item.delivered_qty || 0}</td>
                 <td style="padding:8px;border:1px solid #ddd">${item.notes || ''}</td>
                 </tr>`).join('');
-            const html = `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="UTF-8"><title>سند تسليم #${dn.note_number}</title>
+            const html = `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="UTF-8"><title>أمر فسح #${dn.note_number}</title>
 <style>body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;margin:0;padding:20px;color:#1e293b;direction:rtl}
 .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #2563eb;padding-bottom:16px;margin-bottom:20px}
 .company{font-size:22px;font-weight:bold;color:#2563eb}.doc-number{font-size:24px;font-weight:bold}
@@ -276,7 +276,7 @@ td{font-size:13px}tr:nth-child(even) td{background:#f8fafc}
 .footer{margin-top:40px;display:flex;justify-content:space-between;padding-top:20px;border-top:1px solid #e2e8f0}
 .sig-box{text-align:center;width:160px}.sig-line{border-top:1px solid #333;margin-top:40px;padding-top:6px;font-size:12px;color:#64748b}
 @media print{body{padding:10px}}</style></head><body>
-<div class="header"><div><div class="company">G.PACK</div><div style="font-size:13px;color:#64748b">سند تسليم بضاعة</div></div>
+<div class="header"><div><div class="company">G.PACK</div><div style="font-size:13px;color:#64748b">أمر فسح بضاعة</div></div>
 <div style="text-align:left"><div style="font-size:12px;color:#64748b">رقم السند</div><div class="doc-number">#${dn.note_number}</div></div></div>
 <div class="info-grid">
 <div class="info-item"><label>العميل</label><span>${dn.client_name || '—'}</span></div>
