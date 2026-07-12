@@ -503,7 +503,7 @@
             if (!listEl) return;
 
             if (!notes.length) {
-                listEl.innerHTML = '<div class="bg-slate-50 rounded-xl py-8 text-center text-slate-400 text-sm">لا توجد سندات تسليم</div>';
+                listEl.innerHTML = '<div class="bg-slate-50 rounded-xl py-8 text-center text-slate-400 text-sm">لا توجد أوامر فسح</div>';
                 return;
             }
 

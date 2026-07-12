@@ -1,8 +1,8 @@
 'use strict';
 
 // =============================================================================
-// G.PACK 2.0 — سندات التسليم (Delivery Vouchers)
-// تسليم البضاعة للعملاء ضد سندات التسليم المفتوحة
+// G.PACK 2.0 — أوامر الفسح (Delivery Vouchers)
+// تسليم البضاعة للعملاء ضد أوامر الفسح المفتوحة
 // =============================================================================
 
 (function () {
@@ -52,7 +52,7 @@
             _pendingNotes = (res.data || []).filter(dn => dn.status === 'pending' || dn.status === 'partial');
             _renderGrid();
         } catch (e) {
-            window.showToast('فشل تحميل سندات التسليم', 'error');
+            window.showToast('فشل تحميل أوامر الفسح', 'error');
         } finally { hideEl('dv-loading'); }
         const badge = _el('dv-tab-pending-badge');
         if (badge) { badge.textContent = _pendingNotes.length; _pendingNotes.length > 0 ? badge.classList.remove('hidden') : badge.classList.add('hidden'); }

@@ -1,12 +1,12 @@
 <!-- =============================================================================
-     G.PACK 2.0 — سندات التسليم
-     تسليم البضاعة للعملاء ضد سندات التسليم المفتوحة
+     G.PACK 2.0 — أوامر الفسح
+     تسليم البضاعة للعملاء ضد أوامر الفسح المفتوحة
 ============================================================================= -->
 
 <!-- Header -->
 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
     <div>
-        <h1 class="text-2xl font-black text-slate-800">سندات التسليم</h1>
+        <h1 class="text-2xl font-black text-slate-800">أوامر الفسح</h1>
         <p class="text-slate-400 text-sm mt-0.5">تسليم البضاعة للعملاء ضد الطلبات</p>
     </div>
     <button onclick="window.dvInit()"
@@ -37,7 +37,7 @@
     <!-- Loading -->
     <div id="dv-loading" class="bg-white rounded-2xl shadow-sm border border-slate-100 py-16 text-center mb-5">
         <i class="fa-solid fa-circle-notch fa-spin text-2xl text-brand-400 mb-3"></i>
-        <p class="text-slate-400 text-sm">جاري تحميل سندات التسليم...</p>
+        <p class="text-slate-400 text-sm">جاري تحميل أوامر الفسح...</p>
     </div>
 
     <!-- Delivery Notes Grid -->
@@ -46,8 +46,8 @@
     <!-- Empty -->
     <div id="dv-empty" class="hidden bg-white rounded-2xl shadow-sm border border-slate-100 py-16 text-center mb-5">
         <i class="fa-solid fa-truck text-4xl text-slate-200 mb-3 block"></i>
-        <p class="text-slate-400 text-sm font-medium">لا توجد سندات تسليم معلقة</p>
-        <p class="text-slate-300 text-xs mt-1">جميع الطلبات تم تسليمها أو لم يُصدر لها سند بعد</p>
+        <p class="text-slate-400 text-sm font-medium">لا توجد أوامر فسح معلقة</p>
+        <p class="text-slate-300 text-xs mt-1">جميع الطلبات تم تسليمها أو لم يُصدر لها أمر فسح بعد</p>
     </div>
 
 </div>

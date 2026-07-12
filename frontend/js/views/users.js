@@ -32,7 +32,7 @@ const usersView = (() => {
         { key: 'warehouses',         label: 'المخازن' },
         { key: 'inventory',          label: 'إدارة المخزون' },
         { key: 'products',           label: 'الأصناف' },
-        { key: 'vmi_dispatch',       label: 'سندات التسليم' },
+        { key: 'vmi_dispatch',       label: 'أوامر الفسح' },
         { key: 'receiving',          label: 'سندات الاستلام' },
         // ── الإدارة ───────────────────────────────────
         { key: 'tasks',              label: 'المهام' },

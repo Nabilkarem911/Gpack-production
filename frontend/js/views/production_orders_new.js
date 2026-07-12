@@ -739,7 +739,7 @@
             const notes = res?.data || [];
 
             if (!notes.length) {
-                tbody.innerHTML = '<tr><td colspan="5" class="py-6 text-center text-slate-400 text-xs">لا توجد سندات تسليم</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="5" class="py-6 text-center text-slate-400 text-xs">لا توجد أوامر فسح</td></tr>';
                 return;
             }
 

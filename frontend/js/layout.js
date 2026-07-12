@@ -68,7 +68,7 @@ var NAV_ITEMS = [ // var allows re-declaration if script loads more than once in
     { view: 'inventory',         label: 'إدارة المخزون',     icon: 'fa-boxes-stacked',          permission: 'inventory' }, // ✅ inventory.html
     { view: 'products',            label: 'الأصناف',          icon: 'fa-box-open',             permission: 'products' }, // ✅ products.html (نُقل من المبيعات)
     { view: 'product-movements',   label: 'حركات الأصناف',    icon: 'fa-arrow-right-arrow-left', permission: 'products', hidden: true }, // ✅ product-movements.html
-    { view: 'vmi-dispatch',       label: 'سندات التسليم',     icon: 'fa-truck-fast',             permission: 'vmi_dispatch' }, // ✅ vmi-dispatch.html
+    { view: 'vmi-dispatch',       label: 'أوامر الفسح',     icon: 'fa-truck-fast',             permission: 'vmi_dispatch' }, // ✅ vmi-dispatch.html
     { view: 'receiving-vouchers', label: 'سندات الاستلام',     icon: 'fa-clipboard-check', permission: 'receiving' }, // ✅ receiving-vouchers.html
 
     // ─────────────────────────────────────────────────────────────────────────────
