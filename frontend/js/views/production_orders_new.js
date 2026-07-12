@@ -1632,7 +1632,7 @@ ${designPages}
         try {
             const res = await window.apiFetch(`/api/delivery-notes/${dnId}`);
             const dn  = res?.data;
-            if (!dn) { _toast('فشل تحميل بيانات السند', 'error'); return; }
+            if (!dn) { _toast('فشل تحميل بيانات أمر الفسح', 'error'); return; }
 
             const items = (dn.items || []).map(i =>
                 `<tr>
@@ -1642,8 +1642,7 @@ ${designPages}
                 </tr>`
             ).join('');
 
-            const win = window.open('', '_blank', 'width=800,height=600');
-            win.document.write(`<!DOCTYPE html>
+            const html = `<!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head><meta charset="UTF-8"><title>أمر فسح #${dn.note_number}</title>
 <style>
@@ -1690,10 +1689,18 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
 </div>
 <br>
 <button onclick="window.print()" style="padding:10px 24px;background:#7c3aed;color:white;border:none;border-radius:8px;font-size:14px;cursor:pointer;font-weight:700">🖨️ طباعة</button>
-</body></html>`);
+</body></html>`;
+
+            const win = window.open('', '_blank', 'width=800,height=600');
+            if (!win) {
+                _toast('المتصفح يحظر النوافذ المنبثقة. يرجى السماح بالنوافذ المنبثقة لهذا الموقع.', 'error');
+                return;
+            }
+            win.document.write(html);
             win.document.close();
+            win.focus();
         } catch (err) {
-            _toast('فشل تحميل بيانات السند', 'error');
+            _toast('فشل تحميل بيانات أمر الفسح', 'error');
             console.error('[poView] printDN:', err);
         }
     }
