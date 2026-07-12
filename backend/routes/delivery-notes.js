@@ -128,35 +128,6 @@ router.get('/:id', async (req, res) => {
         
         deliveryNote.items = itemsResult.rows;
 
-        // Get dispatches (partial deliveries) for this note
-        const dispatchesResult = await db.query(
-            `SELECT
-                d.id,
-                d.dispatch_number,
-                d.notes,
-                d.created_at,
-                u.name AS created_by_name,
-                json_agg(json_build_object(
-                    'dn_item_id', di.dn_item_id,
-                    'quantity',   di.quantity,
-                    'product_name', p.name,
-                    'variant_name', pv.size_name
-                ) ORDER BY p.name) AS items
-             FROM delivery_note_dispatches d
-             LEFT JOIN delivery_dispatch_items di ON di.dispatch_id = d.id
-             LEFT JOIN delivery_note_items dni ON dni.id = di.dn_item_id
-             LEFT JOIN order_items oi ON oi.id = dni.order_item_id
-             LEFT JOIN product_variants pv ON pv.id = oi.variant_id
-             LEFT JOIN products p ON p.id = pv.product_id
-             LEFT JOIN users u ON u.id = d.created_by
-             WHERE d.delivery_note_id = $1
-             GROUP BY d.id, d.dispatch_number, d.notes, d.created_at, u.name
-             ORDER BY d.dispatch_number ASC`,
-            [id]
-        );
-
-        deliveryNote.dispatches = dispatchesResult.rows;
-        
         return res.status(200).json({ data: deliveryNote });
     } catch (err) {
         console.error('[DeliveryNotes] GET /:id error:', err.message);
