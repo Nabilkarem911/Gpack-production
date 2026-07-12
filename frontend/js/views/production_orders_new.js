@@ -133,7 +133,12 @@
         }
         if (DESIGN_PDF_EXTENSIONS.has(ext)) {
             if (isLarge) {
-                return `<div style="${baseStyle}"><object data="${normalized}#toolbar=0&navpanes=0" type="application/pdf" style="width:100%;height:600px;border:0;background:#fff;" aria-label="${safeName}"><span style="font-size:14px;color:#94a3b8;">تعذّر تحميل ملف PDF</span></object></div>`;
+                return `<div style="${baseStyle};flex-direction:column;">
+                    <iframe src="${normalized}#toolbar=1" style="width:100%;height:600px;border:0;background:#fff;" aria-label="${safeName}"></iframe>
+                    <div style="text-align:center;margin-top:12px;">
+                        <a href="${normalized}" target="_blank" style="display:inline-flex;align-items:center;gap:6px;padding:8px 18px;background:#dc2626;color:white;text-decoration:none;border-radius:8px;font-size:12px;font-weight:700;">📄 فتح PDF في تبويب جديد</a>
+                    </div>
+                </div>`;
             }
             return `<div style="${baseStyle};flex-direction:column;font-weight:700;color:#dc2626;">PDF</div>`;
         }
@@ -1557,7 +1562,8 @@ ${designPages}
     var btn = document.getElementById('print-trigger-btn');
     var status = document.getElementById('print-status');
     var imgs = Array.prototype.slice.call(document.images);
-    var total = imgs.length;
+    var iframes = Array.prototype.slice.call(document.querySelectorAll('iframe'));
+    var total = imgs.length + iframes.length;
     var loaded = 0;
 
     function checkDone() {
@@ -1581,6 +1587,15 @@ ${designPages}
         img.addEventListener('error', checkDone);
       }
     });
+
+    // For iframes (PDF embeds), use a shorter timeout since iframe load events are unreliable for PDFs
+    iframes.forEach(function(iframe) {
+      iframe.addEventListener('load', checkDone);
+    });
+    // If there are iframes, finish after 5s regardless (PDFs in iframes may not fire load reliably)
+    if (iframes.length > 0) {
+      setTimeout(function() { if (btn && btn.disabled) finishLoad(); }, 5000);
+    }
 
     // Safety timeout: 15s max
     setTimeout(function() { if (btn && btn.disabled) finishLoad(); }, 15000);
