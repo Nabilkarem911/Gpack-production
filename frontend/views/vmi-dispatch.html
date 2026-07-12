@@ -135,4 +135,52 @@
     </div>
 </div>
 
-<script src="/js/views/vmi-dispatch.js?v=20260520d"></script>
+<!-- ══════════════════════════════════════════════════════════════════════════
+     Modal: تعديل أمر الفسح
+══════════════════════════════════════════════════════════════════════════ -->
+<div id="dv-edit-modal"
+     style="display:none"
+     class="fixed inset-0 z-50 flex items-start justify-center p-4 pt-6 bg-black/50 opacity-0 transition-opacity duration-200 overflow-y-auto">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mb-8">
+
+        <!-- Modal Header -->
+        <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+            <div>
+                <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
+                    <i class="fa-solid fa-pen text-blue-500"></i> تعديل أمر الفسح
+                </h3>
+                <p id="dv-edit-modal-subtitle" class="text-xs text-slate-400 mt-0.5"></p>
+            </div>
+            <button onclick="window.dvCloseEditModal()"
+                    class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <!-- Items -->
+        <div class="p-6">
+            <div id="dv-edit-modal-items" class="space-y-3 max-h-[50vh] overflow-y-auto mb-4"></div>
+
+            <!-- Notes -->
+            <div>
+                <label class="block text-xs font-bold text-slate-500 mb-1.5">ملاحظات</label>
+                <input id="dv-edit-modal-notes" type="text" placeholder="اختياري..."
+                       class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:border-blue-500 outline-none" />
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="px-6 pb-6 flex gap-3">
+            <button id="dv-edit-modal-confirm-btn" onclick="window.dvConfirmEdit()"
+                    class="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl transition-colors">
+                <i class="fa-solid fa-check ml-1.5"></i> حفظ التعديلات
+            </button>
+            <button onclick="window.dvCloseEditModal()"
+                    class="flex-1 py-2.5 border border-slate-200 text-slate-600 text-sm font-bold rounded-xl hover:bg-slate-50">
+                إلغاء
+            </button>
+        </div>
+    </div>
+</div>
+
+<script src="/js/views/vmi-dispatch.js?v=20260712b"></script>

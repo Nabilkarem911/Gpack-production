@@ -510,4 +510,53 @@ router.delete('/:id', restrictWrite, async (req, res) => {
     }
 });
 
+// =============================================================================
+// PUT /api/delivery-notes/:id
+// Edit delivery note items (requested_qty) and notes. Only allowed if status is 'pending'.
+// =============================================================================
+
+router.put('/:id', restrictWrite, async (req, res) => {
+    const { id } = req.params;
+    const { items, notes } = req.body;
+
+    if (!items || !Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ error: 'يجب إدراج أصناف.' });
+    }
+
+    try {
+        const result = await db.withTransaction(async (client) => {
+            const dnCheck = await client.query(
+                `SELECT id, status, note_number FROM delivery_notes WHERE id = $1 FOR UPDATE`,
+                [id]
+            );
+            if (dnCheck.rowCount === 0) throw new Error('أمر الفسح غير موجود.');
+            if (dnCheck.rows[0].status !== 'pending') {
+                throw new Error('يمكن تعديل أوامر الفسح في حالة "معلق" فقط.');
+            }
+
+            for (const item of items) {
+                if (!item.item_id || !item.quantity || item.quantity <= 0) continue;
+                await client.query(
+                    `UPDATE delivery_note_items SET requested_qty = $1 WHERE id = $2 AND delivery_note_id = $3`,
+                    [item.quantity, item.item_id, id]
+                );
+            }
+
+            if (notes !== undefined) {
+                await client.query(
+                    `UPDATE delivery_notes SET notes = $1, updated_at = NOW() WHERE id = $2`,
+                    [notes || null, id]
+                );
+            }
+
+            return { note_number: dnCheck.rows[0].note_number };
+        });
+
+        return res.status(200).json({ data: result, message: 'تم تعديل أمر الفسح بنجاح.' });
+    } catch (err) {
+        console.error('[DeliveryNotes] PUT /:id error:', err.message);
+        return res.status(400).json({ error: err.message || 'Internal server error.' });
+    }
+});
+
 module.exports = router;

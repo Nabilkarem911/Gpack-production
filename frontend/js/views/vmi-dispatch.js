@@ -84,6 +84,11 @@
                             class="flex-1 py-2 bg-amber-50 hover:bg-amber-100 text-amber-700 text-sm font-bold rounded-xl transition-colors">
                         <i class="fa-solid fa-truck ml-1 text-xs"></i>تسليم جديد
                     </button>
+                    ${dn.status === 'pending'
+                        ? `<button onclick="window.dvOpenEditModal('${esc(dn.id)}')"
+                                class="w-10 flex items-center justify-center bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-xl transition-colors">
+                            <i class="fa-solid fa-pen text-sm"></i>
+                        </button>` : ''}
                     <button onclick="window.dvPrintNote('${esc(dn.id)}')"
                             class="w-10 flex items-center justify-center bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl transition-colors">
                         <i class="fa-solid fa-print text-sm"></i>
@@ -140,6 +145,78 @@
     };
 
     window.dvCloseModal = function() { closeModalEl('dv-dispatch-modal'); _currentDN = null; };
+
+    // ── Edit delivery note ────────────────────────────────────────────────────
+    let _editDN = null;
+
+    window.dvOpenEditModal = async function(dnId) {
+        try {
+            const res = await window.apiFetch('/api/delivery-notes/' + dnId);
+            _editDN = res.data;
+            if (!_editDN) { window.showToast('فشل تحميل أمر الفسح', 'error'); return; }
+            if (_editDN.status !== 'pending') {
+                window.showToast('يمكن تعديل أوامر الفسح في حالة "معلق" فقط', 'error');
+                return;
+            }
+            const dn = _editDN;
+            const sub = _el('dv-edit-modal-subtitle');
+            if (sub) sub.textContent = `أمر فسح #${dn.note_number || '—'} — ${dn.client_name || '—'} — طلب #${dn.order_number || '—'}`;
+            const container = _el('dv-edit-modal-items');
+            if (container) {
+                container.innerHTML = (dn.items || []).map(item => {
+                    return `
+                    <div class="bg-slate-50 rounded-xl p-3 border border-slate-200">
+                        <div class="flex justify-between items-start mb-2">
+                            <div>
+                                <p class="text-sm font-bold text-slate-800">${esc(item.product_name || '—')}</p>
+                                ${item.variant_name ? `<p class="text-xs text-slate-500">${esc(item.variant_name)}</p>` : ''}
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <div class="flex-1">
+                                <label class="text-xs text-slate-500 block mb-1">الكمية المطلوبة</label>
+                                <input type="number" min="1" step="1" value="${item.requested_qty || item.quantity || 0}"
+                                       data-edit-item-id="${esc(item.id)}"
+                                       class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm text-center outline-none focus:border-blue-400" />
+                            </div>
+                        </div>
+                    </div>`;
+                }).join('') || '<p class="text-sm text-slate-400 text-center py-4">لا توجد أصناف</p>';
+            }
+            const notesEl = _el('dv-edit-modal-notes');
+            if (notesEl) notesEl.value = dn.notes || '';
+            openModal('dv-edit-modal');
+        } catch (e) { window.showToast('خطأ في تحميل البيانات', 'error'); }
+    };
+
+    window.dvCloseEditModal = function() { closeModalEl('dv-edit-modal'); _editDN = null; };
+
+    window.dvConfirmEdit = async function() {
+        if (!_editDN) return;
+        const inputs = document.querySelectorAll('#dv-edit-modal-items input[data-edit-item-id]');
+        const items  = [];
+        let valErr   = null;
+        inputs.forEach(inp => {
+            const q = parseFloat(inp.value) || 0;
+            if (q <= 0) valErr = 'الكمية يجب أن تكون أكبر من صفر';
+            if (q > 0)  items.push({ item_id: inp.dataset.editItemId, quantity: q });
+        });
+        if (valErr)        { window.showToast(valErr, 'error'); return; }
+        if (!items.length) { window.showToast('أدخل كمية واحدة على الأقل', 'error'); return; }
+        const notes = _el('dv-edit-modal-notes')?.value || '';
+        const btn   = _el('dv-edit-modal-confirm-btn');
+        if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin ml-2"></i> جاري الحفظ...'; }
+        try {
+            await window.apiFetch('/api/delivery-notes/' + _editDN.id, { method: 'PUT', body: { items, notes } });
+            window.dvCloseEditModal();
+            window.showToast('تم تعديل أمر الفسح بنجاح ✅');
+            await window.dvInit();
+        } catch (e) {
+            window.showToast(e.message || 'فشل تعديل أمر الفسح', 'error');
+        } finally {
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-check ml-1.5"></i> حفظ التعديلات'; }
+        }
+    };
 
     // ── Confirm dispatch ──────────────────────────────────────────────────────
     window.dvConfirmDispatch = async function() {
