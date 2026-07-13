@@ -541,7 +541,20 @@
         }
         moEmptyEl?.classList.add('hidden');
 
-        moListEl.innerHTML = _hubMOs.map(mo => {
+        // Color palette for supplier cards — each MO gets a distinct color
+        const _cardColors = [
+            { border: 'border-blue-200',    bg: 'bg-blue-50/30',    icon: 'text-blue-500',      headerBg: 'bg-blue-50/50' },
+            { border: 'border-emerald-200', bg: 'bg-emerald-50/30', icon: 'text-emerald-500',   headerBg: 'bg-emerald-50/50' },
+            { border: 'border-amber-200',   bg: 'bg-amber-50/30',   icon: 'text-amber-500',     headerBg: 'bg-amber-50/50' },
+            { border: 'border-purple-200',  bg: 'bg-purple-50/30',  icon: 'text-purple-500',    headerBg: 'bg-purple-50/50' },
+            { border: 'border-rose-200',    bg: 'bg-rose-50/30',    icon: 'text-rose-500',      headerBg: 'bg-rose-50/50' },
+            { border: 'border-cyan-200',    bg: 'bg-cyan-50/30',    icon: 'text-cyan-500',      headerBg: 'bg-cyan-50/50' },
+            { border: 'border-indigo-200',  bg: 'bg-indigo-50/30',  icon: 'text-indigo-500',    headerBg: 'bg-indigo-50/50' },
+            { border: 'border-teal-200',    bg: 'bg-teal-50/30',    icon: 'text-teal-500',      headerBg: 'bg-teal-50/50' },
+        ];
+
+        moListEl.innerHTML = _hubMOs.map((mo, moIdx) => {
+            const color = _cardColors[moIdx % _cardColors.length];
             const canReceive    = ['sent','partially_received'].includes(mo.status);
             const canMarkOrdered= mo.status === 'pending';
             const canEditMO     = mo.status === 'pending';
@@ -573,7 +586,7 @@
                 const remQty = Math.max(0, moQty - recQty);
                 const pct    = moQty > 0 ? Math.round((recQty / moQty) * 100) : 0;
                 const barColor = pct >= 100 ? 'bg-emerald-500' : pct > 0 ? 'bg-blue-500' : 'bg-slate-200';
-                return `<div class="bg-slate-50 rounded-lg px-3 py-2">
+                return `<div class="bg-white/70 rounded-lg px-3 py-2">
                     <div class="flex justify-between text-xs mb-1">
                         <span class="text-slate-600 font-semibold">${i.product_name || ''} ${i.size_name || ''}</span>
                         <span class="font-bold ${pct >= 100 ? 'text-emerald-600' : 'text-slate-700'}">
@@ -587,10 +600,10 @@
                 </div>`;
             }).join('');
 
-            return `<div class="bg-white border border-slate-200 rounded-xl p-4">
-                <div class="flex flex-wrap items-start justify-between gap-2 mb-2">
+            return `<div class="${color.bg} border-2 ${color.border} rounded-xl p-4">
+                <div class="flex flex-wrap items-start justify-between gap-2 mb-2 ${color.headerBg} -mx-4 -mt-4 px-4 py-2.5 rounded-t-xl border-b ${color.border}">
                     <div class="flex items-center gap-2">
-                        <i class="fa-solid fa-truck-ramp-box text-purple-400"></i>
+                        <i class="fa-solid fa-truck-ramp-box ${color.icon}"></i>
                         <span class="text-sm font-bold text-slate-800">${mo.supplier_name || '—'}</span>
                         ${_badge(mo.status, MO_STATUS_CFG)}
                         <span class="text-xs text-slate-400 font-mono">#${mo.po_number || ''}</span>
