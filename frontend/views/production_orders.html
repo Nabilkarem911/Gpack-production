@@ -51,48 +51,42 @@
 </div>
 
 <!-- Tabs + Search -->
-<div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden mb-4">
-    <!-- Tab Bar -->
-    <div class="flex border-b border-slate-100 overflow-x-auto">
-        <button onclick="window.poView.switchTab('pending_assignment')" id="po-tab-pending_assignment"
-                class="po-tab-btn active flex items-center gap-2 px-5 py-3.5 text-sm font-semibold
-                       text-brand-600 border-b-2 border-brand-600 whitespace-nowrap">
-            <i class="fa-solid fa-hourglass-half"></i> الطلبات المعلقة
-        </button>
-        <button onclick="window.poView.switchTab('active')" id="po-tab-active"
-                class="po-tab-btn flex items-center gap-2 px-5 py-3.5 text-sm font-semibold
-                       text-slate-500 hover:text-slate-700 border-b-2 border-transparent hover:border-slate-200 whitespace-nowrap transition-colors">
-            <i class="fa-solid fa-industry"></i> الأوامر الجارية
-        </button>
-        <button onclick="window.poView.switchTab('completed')" id="po-tab-completed"
-                class="po-tab-btn flex items-center gap-2 px-5 py-3.5 text-sm font-semibold
-                       text-slate-500 hover:text-slate-700 border-b-2 border-transparent hover:border-slate-200 whitespace-nowrap transition-colors">
-            <i class="fa-solid fa-check-double"></i> المكتملة
-        </button>
-        <button onclick="window.poView.switchTab('archived')" id="po-tab-archived"
-                class="po-tab-btn flex items-center gap-2 px-5 py-3.5 text-sm font-semibold
-                       text-slate-500 hover:text-slate-700 border-b-2 border-transparent hover:border-slate-200 whitespace-nowrap transition-colors">
-            <i class="fa-solid fa-box-archive"></i> الأرشيف
-        </button>
-    </div>
+<div class="flex items-center gap-2 mb-4 border-b border-slate-200">
+    <button onclick="window.poView.switchTab('pending_assignment')" id="po-tab-pending_assignment"
+            class="po-tab-btn active px-5 py-2.5 text-sm font-bold border-b-2 border-brand-600 text-brand-600 transition-all whitespace-nowrap">
+        <i class="fa-solid fa-hourglass-half ml-1"></i> الطلبات المعلقة
+    </button>
+    <button onclick="window.poView.switchTab('active')" id="po-tab-active"
+            class="po-tab-btn px-5 py-2.5 text-sm font-bold border-b-2 border-transparent text-slate-400 hover:text-slate-600 transition-all whitespace-nowrap">
+        <i class="fa-solid fa-industry ml-1"></i> الأوامر الجارية
+    </button>
+    <button onclick="window.poView.switchTab('completed')" id="po-tab-completed"
+            class="po-tab-btn px-5 py-2.5 text-sm font-bold border-b-2 border-transparent text-slate-400 hover:text-slate-600 transition-all whitespace-nowrap">
+        <i class="fa-solid fa-check-double ml-1"></i> المكتملة
+    </button>
+    <button onclick="window.poView.switchTab('archived')" id="po-tab-archived"
+            class="po-tab-btn px-5 py-2.5 text-sm font-bold border-b-2 border-transparent text-slate-400 hover:text-slate-600 transition-all whitespace-nowrap">
+        <i class="fa-solid fa-box-archive ml-1"></i> الأرشيف
+    </button>
+</div>
 
-    <!-- Search Bar -->
-    <div class="p-3 border-b border-slate-50 bg-slate-50/50">
-        <div class="relative max-w-sm">
-            <span class="absolute inset-y-0 right-0 flex items-center pr-3.5 text-slate-400 pointer-events-none">
-                <i class="fa-solid fa-magnifying-glass text-sm"></i>
-            </span>
-            <input type="text" id="po-search"
-                   oninput="window.poView.applySearch()"
-                   placeholder="بحث برقم الأمر أو اسم العميل..."
-                   class="w-full pr-10 pl-4 py-2 bg-white border border-slate-200 rounded-xl text-sm
-                          text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
-                          focus:ring-2 focus:ring-brand-500/20 transition-all" />
-        </div>
+<!-- Search Bar -->
+<div class="mb-4">
+    <div class="relative max-w-sm">
+        <span class="absolute inset-y-0 right-0 flex items-center pr-3.5 text-slate-400 pointer-events-none">
+            <i class="fa-solid fa-magnifying-glass text-sm"></i>
+        </span>
+        <input type="text" id="po-search"
+               oninput="window.poView.applySearch()"
+               placeholder="بحث برقم الأمر أو اسم العميل..."
+               class="w-full pr-10 pl-4 py-2 bg-white border border-slate-200 rounded-xl text-sm
+                      text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                      focus:ring-2 focus:ring-brand-500/20 transition-all" />
     </div>
+</div>
 
-    <!-- Table -->
-    <div class="overflow-x-auto">
+<!-- Table -->
+<div class="overflow-x-auto">
         <table class="w-full">
             <thead>
                 <tr class="bg-slate-50 border-b border-slate-100">
@@ -118,7 +112,6 @@
         <i class="fa-solid fa-industry text-5xl mb-3 text-slate-200"></i>
         <p class="font-semibold text-slate-500">لا توجد أوامر تشغيل</p>
     </div>
-</div>
 
 <!-- ═══════════════════════════════════════ ORDER HUB MODAL ═══════════════════════════════════════ -->
 <div id="po-hub-modal" class="fixed inset-0 z-50 hidden">
