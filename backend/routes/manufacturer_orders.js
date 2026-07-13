@@ -959,7 +959,7 @@ router.post('/:id/receive', restrictEdit, validateBody(manufacturerOrderReceive)
                     `INSERT INTO purchase_invoice_items
                        (purchase_invoice_id, manufacturer_order_item_id, variant_id, quantity, unit_cost, total_cost)
                      VALUES ($1, $2, $3, $4, 0, 0)`,
-                    [purchaseInvoiceId, ii.manufacturer_order_item_id, ii.variant_id, ii.quantity, ii.total_cost]
+                    [purchaseInvoiceId, ii.manufacturer_order_item_id, ii.variant_id, ii.quantity]
                 );
             }
 
