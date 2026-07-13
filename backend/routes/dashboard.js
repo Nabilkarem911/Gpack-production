@@ -198,7 +198,7 @@ router.get('/alerts', authenticate, async (req, res) => {
                     EXTRACT(DAY FROM NOW() - mo.created_at) as days_pending
                  FROM manufacturer_orders mo
                  LEFT JOIN suppliers s ON s.id = mo.manufacturer_id
-                 WHERE mo.status IN ('sent', 'partially_received')
+                 WHERE mo.status IN ('pending', 'sent', 'partially_received')
                  ORDER BY mo.created_at ASC
                  LIMIT 5`
             );

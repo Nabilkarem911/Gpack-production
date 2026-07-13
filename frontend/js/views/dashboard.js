@@ -76,7 +76,7 @@ const dashboardView = {
             this._updateStat('stat-receivables', this._formatCurrency(data.outstanding_receivables || 0));
 
             const mo = data.manufacturer_orders || {};
-            const pendingReceiving = mo.awaiting_receiving || ((mo.sent || 0) + (mo.pending || 0));
+            const pendingReceiving = mo.awaiting_receiving ?? 0;
             this._updateStat('stat-pending-receiving', pendingReceiving);
             this._renderReceivingAlertBanner(pendingReceiving);
 
