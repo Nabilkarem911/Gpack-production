@@ -184,11 +184,6 @@
                            text-slate-500 hover:text-slate-700 border-b-2 border-transparent whitespace-nowrap transition-colors">
                 <i class="fa-solid fa-comments"></i> ملاحظات
             </button>
-            <button onclick="window.poView.switchHubTab('pricing')" id="hub-tab-pricing"
-                    class="hub-tab flex items-center gap-2 px-5 py-3 text-sm font-semibold
-                           text-slate-500 hover:text-slate-700 border-b-2 border-transparent whitespace-nowrap transition-colors">
-                <i class="fa-solid fa-tags"></i> تكاليف الشراء
-            </button>
         </div>
 
         <!-- Hub Content Area -->
@@ -348,12 +343,6 @@
                 </div>
             </div>
 
-            <!-- ── TAB: PRICING (Purchase Costs) ── -->
-            <div id="hub-tab-pricing-content" class="hidden">
-                <div id="hub-pricing-container">
-                    <div class="py-8 text-center text-slate-400 text-sm">جاري تحميل تكاليف الشراء...</div>
-                </div>
-            </div>
 
             <!-- ── TAB: NOTES (Internal Chat) ── -->
             <div id="hub-tab-notes-content" class="hidden flex flex-col h-full">
@@ -946,21 +935,23 @@
                 </div>
             </div>
 
+            <!-- Invoice Toggle (warehouse keeper only marks if goods came with invoice) -->
+            <div class="bg-slate-50 border border-slate-200 rounded-xl p-3">
+                <label class="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" id="receive-has-invoice" checked
+                           class="w-4 h-4 accent-emerald-500"
+                           onchange="window.poView._onReceiveInvoiceToggle()">
+                    <span class="text-sm font-bold text-slate-700">استلام بفاتورة</span>
+                </label>
+                <p class="text-xs text-slate-400 mt-1">إذا كانت البضاعة وصلت بفاتورة من المورد — الأسعار والضريبة والدفع يحددها المدير لاحقاً</p>
+            </div>
+
             <!-- Items with Qty + Unit Price -->
             <div>
                 <label class="block text-sm font-bold text-slate-700 mb-2">الأصناف المستلمة والأسعار</label>
                 <div id="receive-items-container" class="space-y-2 bg-slate-50 rounded-xl p-3 border border-slate-200"></div>
             </div>
 
-            <!-- Info for warehouse keeper -->
-            <div class="bg-blue-50 border border-blue-200 rounded-xl p-4">
-                <div class="flex items-center gap-3 text-blue-800">
-                    <i class="fa-solid fa-info-circle text-blue-600"></i>
-                    <div class="text-sm">
-                        <span class="font-bold">تنبيه:</span> التسعير والدفع يتم من قبل المدير في صفحة "تكاليف الشراء"
-                    </div>
-                </div>
-            </div>
         </div>
         <div class="flex justify-end gap-2 px-5 py-4 border-t border-slate-100 sticky bottom-0 bg-white">
             <button onclick="window.poView.closeReceiveModal()"

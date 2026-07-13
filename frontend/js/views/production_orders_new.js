@@ -433,7 +433,7 @@
     function _switchHubTab(tab) {
         _activeHubTab = tab;
         console.log('[poView] Switching to tab:', tab, 'OrderID:', _hubOrderId);
-        ['items','financial','delivery','notes','pricing'].forEach(t => {
+        ['items','financial','delivery','notes'].forEach(t => {
             const btn  = _el(`hub-tab-${t}`);
             const cont = _el(`hub-tab-${t}-content`);
             if (!btn || !cont) return;
@@ -454,7 +454,6 @@
         if (tab === 'items')     { console.log('[poView] Rendering items'); _renderHubItems(); }
         if (tab === 'financial') { console.log('[poView] Rendering financial'); _renderHubFinancial(); }
         if (tab === 'delivery')  { console.log('[poView] Rendering delivery'); _renderHubDelivery(); }
-        if (tab === 'pricing')   { console.log('[poView] Rendering pricing'); _renderHubPricing(); }
         if (tab === 'notes')     { _renderHubNotes(); }
     }
 
@@ -767,380 +766,6 @@
         } catch (err) {
             console.error('[poView] delivery:', err);
             _el('hub-delivery-tbody').innerHTML = '<tr><td colspan="5" class="py-6 text-center text-red-400 text-xs">فشل تحميل السندات</td></tr>';
-        }
-    }
-
-    // ── Hub Tab: Pricing (Purchase Costs) ────────────────────────────────────
-    async function _renderHubPricing() {
-        const container = _el('hub-pricing-container');
-        if (!container) return;
-
-        container.innerHTML = '<div class="py-8 text-center text-slate-400"><i class="fa-solid fa-circle-notch fa-spin text-2xl"></i></div>';
-
-        try {
-            // Reload MOs to get latest received quantities and costs
-            const res = await window.apiFetch(`/api/manufacturer-orders/by-order/${_hubOrderId}`);
-            _hubMOs = res?.data || [];
-            console.log('[pricing] MOs loaded:', _hubMOs.length, _hubMOs);
-
-            if (!_hubMOs.length) {
-                container.innerHTML = '<div class="py-8 text-center text-slate-400 text-sm">لا توجد أوامر تشغيل لهذا الطلب</div>';
-                return;
-            }
-
-            // Group items by supplier
-            const suppliersData = {};
-            let totalUnpriced = 0;
-            let totalReceived = 0;
-
-            for (const mo of _hubMOs) {
-                const supName = mo.supplier_name || '—';
-                if (!suppliersData[supName]) {
-                    suppliersData[supName] = { mo: mo, items: [] };
-                }
-
-                for (const item of (mo.items || [])) {
-                    const moQty = parseFloat(item.mo_quantity || item.po_quantity || 0);
-                    const received = parseFloat(item.received_qty || 0);
-                    totalReceived += received;
-
-                    // Show all items, but mark unreceived ones
-                    const hasCost = parseFloat(item.unit_cost || 0) > 0;
-                    if (received > 0 && !hasCost) totalUnpriced++;
-
-                    suppliersData[supName].items.push({
-                        ...item,
-                        mo_id: mo.id,
-                        hasCost: hasCost,
-                        moQty: moQty,
-                        receivedQty: received
-                    });
-                }
-            }
-
-            // Build HTML
-            let html = '';
-            const supNames = Object.keys(suppliersData);
-            const colors = ['amber', 'blue', 'emerald', 'purple', 'rose'];
-
-            console.log('[pricing] Suppliers data:', suppliersData, 'Total items:', totalReceived);
-
-        console.log('[pricing] Suppliers data:', suppliersData, 'Total items:', totalReceived);
-
-        // Show empty message if no data
-        if (!supNames.length || totalReceived === 0) {
-            container.innerHTML = `
-                <div class="py-12 text-center">
-                    <div class="text-5xl mb-4">📦</div>
-                    <div class="text-slate-500 text-lg font-medium mb-2">لا توجد بيانات تسعير</div>
-                    <div class="text-slate-400 text-sm">يجب استلام البضاعة أولاً وإدخال أسعار الشراء</div>
-                </div>`;
-            return;
-        }
-
-        // Summary header
-
-        html += `
-        <div class="mb-4 p-3 bg-slate-50 rounded-lg border border-slate-200">
-            <div class="flex items-center gap-4 text-sm">
-                <span class="text-slate-600">📦 إجمالي مستلم: <b class="text-slate-800">${totalReceived} قطعة</b></span>
-                <span class="text-slate-400">|</span>
-                <span class="text-slate-600">🏭 موردين: <b class="text-slate-800">${supNames.length}</b></span>
-                <span class="text-slate-400">|</span>
-                ${totalUnpriced > 0
-                    ? `<span class="text-amber-600 font-bold">⚠️ بدون تسعير: ${totalUnpriced}</span>`
-                    : `<span class="text-emerald-600 font-bold">✓ تم التسعير</span>`}
-            </div>
-        </div>`;
-
-        // Supplier sections
-        supNames.forEach((supName, idx) => {
-            const { mo, items } = suppliersData[supName];
-            const color = colors[idx % colors.length];
-            const supTotal = items.reduce((sum, i) => sum + (parseFloat(i.unit_cost || 0) * parseFloat(i.received_qty || 0)), 0);
-
-            html += `
-            <div class="mb-4 border border-${color}-200 rounded-lg overflow-hidden">
-                <div class="bg-${color}-50 px-4 py-2 border-b border-${color}-200">
-                    <div class="flex items-center justify-between">
-                        <div class="flex items-center gap-2">
-                            <span class="text-${color}-700 font-bold">🏭 ${supName}</span>
-                            <span class="text-xs text-${color}-600 bg-${color}-100 px-2 py-0.5 rounded">${items.length} صنف</span>
-                        </div>
-                        <span class="text-sm text-${color}-700 font-bold">إجمالي: ${supTotal.toFixed(2)} ر.س</span>
-                    </div>
-                </div>
-                <div class="p-3">
-                    <table class="w-full text-sm">
-                        <thead>
-                            <tr class="text-slate-500 text-xs border-b border-slate-100">
-                                <th class="py-2 text-right font-medium">الصنف</th>
-                                <th class="py-2 text-center font-medium w-20">مستلم</th>
-                                <th class="py-2 text-center font-medium w-28">سعر الوحدة</th>
-                                <th class="py-2 text-center font-medium w-24">الإجمالي</th>
-                            </tr>
-                        </thead>
-                        <tbody>`;
-
-            items.forEach((item, iidx) => {
-                const moQty = parseFloat(item.moQty || 0);
-                const received = parseFloat(item.receivedQty || 0);
-                const unitCost = parseFloat(item.unit_cost || 0);
-                const lineTotal = received * unitCost;
-                const itemId = item.id || item.manufacturer_order_item_id;
-                const isReceived = received > 0;
-
-                html += `
-                            <tr class="border-b border-slate-50 ${item.hasCost ? '' : isReceived ? 'bg-amber-50/30' : 'bg-slate-50/50'}">
-                                <td class="py-2">
-                                    <div class="font-medium ${isReceived ? 'text-slate-700' : 'text-slate-400'}">${item.product_name || '—'}</div>
-                                    ${item.size_name ? `<div class="text-xs ${isReceived ? 'text-slate-400' : 'text-slate-300'}">${item.size_name}</div>` : ''}
-                                    ${!isReceived ? `<span class="text-xs text-slate-400">(غير مستلم)</span>` : ''}
-                                </td>
-                                <td class="py-2 text-center">
-                                    <span class="font-bold ${isReceived ? 'text-slate-600' : 'text-slate-400'}">${received}</span>
-                                    <span class="text-xs text-slate-400">/ ${moQty}</span>
-                                </td>
-                                <td class="py-2 text-center">
-                                    ${isReceived
-                                        ? `<input type="number" min="0" step="0.01"
-                                               value="${unitCost > 0 ? unitCost.toFixed(2) : ''}"
-                                               data-pricing-id="${itemId}"
-                                               data-pricing-mo="${mo.id}"
-                                               data-pricing-qty="${received}"
-                                               class="w-24 px-2 py-1 border ${item.hasCost ? 'border-slate-200' : 'border-amber-300'} rounded text-center text-sm font-medium focus:border-${color}-500 focus:ring-1 focus:ring-${color}-500 outline-none"
-                                               oninput="window.poView._updatePricingLine(this)">`
-                                        : `<span class="text-xs text-slate-400">—</span>`
-                                    }
-                                </td>
-                                <td class="py-2 text-center font-bold ${lineTotal > 0 ? 'text-slate-700' : 'text-slate-400'}" data-pricing-total="${itemId}">
-                                    ${lineTotal > 0 ? lineTotal.toFixed(2) : '—'}
-                                </td>
-                            </tr>`;
-            });
-
-            html += `
-                        </tbody>
-                    </table>
-                </div>
-            </div>`;
-        });
-
-        // Get tax rate from first MO (all MOs should have same tax setting)
-        const firstMO = _hubMOs[0];
-        const hasTaxRate = parseFloat(firstMO?.tax_rate || 0) > 0;
-
-        // Tax and Payment Section (for manager)
-        html += `
-        <div class="mt-6 space-y-4 border-t border-slate-200 pt-4">
-            <!-- Tax -->
-            <div class="bg-slate-50 border border-slate-200 rounded-lg p-4">
-                <label class="flex items-center gap-3 cursor-pointer mb-3">
-                    <input type="checkbox" id="pricing-tax-toggle" ${hasTaxRate ? 'checked' : ''} onchange="window.poView._updatePricingTax()" class="w-4 h-4 accent-orange-500">
-                    <span class="text-sm font-bold text-slate-700">فاتورة ضريبية (15% VAT)</span>
-                </label>
-                <div class="grid grid-cols-3 gap-3 text-center">
-                    <div class="bg-white rounded p-2 border border-slate-200">
-                        <div class="text-xs text-slate-400">المجموع</div>
-                        <div id="pricing-subtotal" class="text-sm font-extrabold text-slate-700">0.00</div>
-                    </div>
-                    <div class="bg-white rounded p-2 border border-slate-200">
-                        <div class="text-xs text-slate-400">الضريبة</div>
-                        <div id="pricing-tax" class="text-sm font-extrabold text-orange-600">0.00</div>
-                    </div>
-                    <div class="bg-emerald-50 rounded p-2 border border-emerald-200">
-                        <div class="text-xs text-emerald-600">الإجمالي</div>
-                        <div id="pricing-total" class="text-sm font-extrabold text-emerald-700">0.00</div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Payment -->
-            <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <label class="flex items-center gap-3 cursor-pointer mb-3">
-                    <input type="checkbox" id="pricing-pay-toggle" onchange="window.poView._togglePricingPay(this.checked)" class="w-4 h-4 accent-blue-600">
-                    <span class="text-sm font-bold text-slate-700">دفع للمورد الآن</span>
-                </label>
-                <div id="pricing-pay-section" class="hidden grid grid-cols-2 gap-3">
-                    <div>
-                        <label class="text-xs font-bold text-slate-600">المبلغ</label>
-                        <input type="number" id="pricing-pay-amount" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" placeholder="0.00">
-                    </div>
-                    <div>
-                        <label class="text-xs font-bold text-slate-600">ملاحظة</label>
-                        <input type="text" id="pricing-pay-notes" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" placeholder="رقم التحويل...">
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Action Buttons -->
-        <div class="flex justify-end gap-3 pt-4 border-t border-slate-200 mt-4">
-            <button onclick="window.poView._savePricing()" 
-                    class="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold rounded-lg transition-all">
-                <i class="fa-solid fa-save ml-1"></i> حفظ مؤقت
-            </button>
-            <button onclick="window.poView._confirmFinalReceive()" 
-                    class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-lg shadow transition-all active:scale-[0.98]">
-                <i class="fa-solid fa-check-double ml-1"></i> تاكيد الاستلام النهائي
-            </button>
-        </div>`;
-
-        container.innerHTML = html;
-        } catch (err) {
-            console.error('[pricing] Error:', err);
-            container.innerHTML = `<div class="py-8 text-center text-red-400 text-sm">خطأ في تحميل البيانات: ${err.message}</div>`;
-        }
-    }
-
-    function _updatePricingLine(input) {
-        const id = input.dataset.pricingId;
-        const qty = parseFloat(input.dataset.pricingQty || 0);
-        const cost = parseFloat(input.value || 0);
-        const totalEl = document.querySelector(`[data-pricing-total="${id}"]`);
-        if (totalEl) {
-            totalEl.textContent = (cost > 0 && qty > 0) ? (cost * qty).toFixed(2) : '—';
-        }
-    }
-
-    async function _savePricing() {
-        const inputs = document.querySelectorAll('[data-pricing-id]');
-        const pricingByMO = {};
-
-        inputs.forEach(input => {
-            const moId = input.dataset.pricingMo;
-            const itemId = input.dataset.pricingId;
-            const cost = parseFloat(input.value || 0);
-
-            if (cost > 0) {
-                if (!pricingByMO[moId]) pricingByMO[moId] = [];
-                pricingByMO[moId].push({
-                    manufacturer_order_item_id: itemId,
-                    unit_cost: cost
-                });
-            }
-        });
-
-        const moIds = Object.keys(pricingByMO);
-        if (!moIds.length) {
-            _toast('أدخل سعراً واحداً على الأقل', 'error');
-            return;
-        }
-
-        // Get tax and payment settings
-        const hasTax = _el('pricing-tax-toggle')?.checked || false;
-        const payNow = _el('pricing-pay-toggle')?.checked || false;
-        const payAmount = parseFloat(_el('pricing-pay-amount')?.value || 0);
-        const payNotes = _el('pricing-pay-notes')?.value || '';
-
-        try {
-            let savedCount = 0;
-            for (const moId of moIds) {
-                await window.apiFetch(`/api/manufacturer-orders/${moId}/pricing`, {
-                    method: 'POST',
-                    body: { 
-                        items: pricingByMO[moId],
-                        tax_rate: hasTax ? 0.15 : 0,
-                        pay_now: payNow,
-                        pay_amount: payNow ? payAmount : 0,
-                        pay_notes: payNotes
-                    }
-                });
-                savedCount += pricingByMO[moId].length;
-            }
-
-            _toast(`تم حفظ أسعار ${savedCount} صنف بنجاح`);
-            // Don't reload - keep tax/payment settings
-        } catch (err) {
-            _toast(err.message || 'فشل حفظ الأسعار', 'error');
-        }
-    }
-
-    // ── Pricing Tab Helpers ──────────────────────────────────────────────────
-    function _updatePricingTax() {
-        const hasTax = _el('pricing-tax-toggle')?.checked || false;
-        const taxRate = hasTax ? 0.15 : 0;
-        
-        // Calculate totals from visible inputs
-        const inputs = document.querySelectorAll('[data-pricing-id]');
-        let subtotal = 0;
-        inputs.forEach(input => {
-            const cost = parseFloat(input.value || 0);
-            const qty = parseFloat(input.dataset.pricingQty || 0);
-            subtotal += cost * qty;
-        });
-        
-        const tax = subtotal * taxRate;
-        const total = subtotal + tax;
-        
-        _setText('pricing-subtotal', subtotal.toFixed(2));
-        _setText('pricing-tax', tax.toFixed(2));
-        _setText('pricing-total', total.toFixed(2));
-    }
-
-    function _togglePricingPay(show) {
-        const section = _el('pricing-pay-section');
-        if (section) {
-            section.classList.toggle('hidden', !show);
-        }
-    }
-
-    async function _confirmFinalReceive() {
-        // Validate: check all received items have pricing
-        const inputs = document.querySelectorAll('[data-pricing-id]');
-        let unpricedCount = 0;
-        let totalItems = 0;
-        
-        inputs.forEach(input => {
-            const cost = parseFloat(input.value || 0);
-            const receivedQty = parseFloat(input.dataset.pricingQty || 0);
-            if (receivedQty > 0) {
-                totalItems++;
-                if (cost <= 0) unpricedCount++;
-            }
-        });
-        
-        if (totalItems === 0) {
-            _toast('لا توجد أصناف مستلمة للتأكيد', 'error');
-            return;
-        }
-        
-        if (unpricedCount > 0) {
-            _toast(`يوجد ${unpricedCount} صنف مستلم بدون سعر! أدخل الأسعار أولاً.`, 'error');
-            return;
-        }
-        
-        if (!confirm('تأكيد الاستلام النهائي؟\nسيتم:\n• إغلاق أمر المورد\n• تحديث المخزون\n• إصدار القيود المحاسبية')) {
-            return;
-        }
-        
-        try {
-            // First save any pending pricing
-            await _savePricing();
-            
-            // Get tax and payment info
-            const hasTax = _el('pricing-tax-toggle')?.checked || false;
-            const payNow = _el('pricing-pay-toggle')?.checked || false;
-            const payAmount = parseFloat(_el('pricing-pay-amount')?.value || 0);
-            const payNotes = _el('pricing-pay-notes')?.value || '';
-            
-            // Call API to finalize
-            const res = await window.apiFetch(`/api/manufacturer-orders/by-order/${_hubOrderId}/finalize`, {
-                method: 'POST',
-                body: {
-                    tax_rate: hasTax ? 0.15 : 0,
-                    pay_now: payNow,
-                    pay_amount: payNow ? payAmount : 0,
-                    pay_notes: payNotes
-                }
-            });
-            
-            _toast('تم تأكيد الاستلام النهائي بنجاح');
-            await _renderHubPricing();
-            await _renderHubItems();
-        } catch (err) {
-            console.error('[confirmFinalReceive] Error:', err);
-            _toast(err.message || 'فشل تأكيد الاستلام', 'error');
         }
     }
 
@@ -1749,20 +1374,21 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
                                         <span class="text-slate-400">المطلوب: <b class="text-blue-600">${moQty}</b></span>
                                         ${recQty > 0 ? `<span class="text-slate-400">مستلم سابقاً: <b class="text-emerald-600">${recQty}</b></span>` : ''}
                                         <span class="text-slate-400">المتبقي: <b class="text-orange-600">${remQty}</b></span>
+                                        <span class="text-slate-400">سعر الوحدة: <b class="text-purple-600">${estCost.toFixed(2)}</b></span>
                                     </div>
                                 </div>
                             </div>
                             <input type="hidden" data-receive-moi="${item.manufacturer_order_item_id || item.id}"
                                                  data-receive-variant="${item.variant_id || ''}"
                                                  data-receive-oi="${item.order_item_id || ''}">
+                            <input type="hidden" data-receive-unit-cost value="${estCost}">
                             <div class="grid grid-cols-2 gap-2">
                                 <div class="flex flex-col">
                                     <label class="text-xs text-slate-500 mb-0.5">الكمية المستلمة</label>
                                     <input type="number" min="0" max="${remQty}" step="1"
                                            value="${remQty}"
                                            data-receive-qty
-                                           class="px-2 py-1.5 border border-slate-200 rounded-lg text-sm text-center font-bold outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all"
-                                           oninput="window.poView._updateReceiveTotal()">
+                                           class="px-2 py-1.5 border border-slate-200 rounded-lg text-sm text-center font-bold outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all" />
                                 </div>
                                 <div class="flex flex-col">
                                     <label class="text-xs text-slate-500 mb-0.5">ملاحظات الصنف</label>
@@ -1781,58 +1407,29 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         // Reset fields
         _setVal('receive-notes', '');
         _setVal('receive-supplier-invoice-ref', '');
-        _setVal('receive-pay-amount', '');
-        const taxToggle = _el('receive-tax-toggle');
-        if (taxToggle) taxToggle.checked = false;
-        const payToggle = _el('receive-pay-now-toggle');
-        if (payToggle) { payToggle.checked = false; }
-        const paySection = _el('receive-pay-section');
-        if (paySection) paySection.classList.add('hidden');
+        const hasInvoiceToggle = _el('receive-has-invoice');
+        if (hasInvoiceToggle) hasInvoiceToggle.checked = true;
 
-        _updateReceiveTotal();
         _showModal('po-receive-modal');
     }
 
-    function _updateReceiveTotal() {
-        const container = _el('receive-items-container');
-        if (!container) return;
-
-        const qtyEls      = container.querySelectorAll('[data-receive-qty]');
-        const costEls     = container.querySelectorAll('[data-receive-unit-cost]');
-        const lineTotalEls = container.querySelectorAll('[data-receive-line-total]');
-
-        let subtotal = 0;
-        for (let i = 0; i < qtyEls.length; i++) {
-            const qty  = parseFloat(qtyEls[i]?.value || 0);
-            const cost = parseFloat(costEls[i]?.value || 0);
-            const lineTotal = qty * cost;
-            subtotal += lineTotal;
-            if (lineTotalEls[i]) lineTotalEls[i].textContent = _fmt(lineTotal);
+    function _onReceiveInvoiceToggle() {
+        const hasInvoice = _el('receive-has-invoice')?.checked || false;
+        const refInput = _el('receive-supplier-invoice-ref');
+        if (refInput) {
+            refInput.disabled = !hasInvoice;
+            if (!hasInvoice) refInput.value = '';
         }
-
-        const hasTax   = _el('receive-tax-toggle')?.checked || false;
-        const taxRate  = hasTax ? 0.15 : 0;
-        const taxAmt   = subtotal * taxRate;
-        const grandTotal = subtotal + taxAmt;
-
-        _setText('receive-subtotal-display', _fmt(subtotal));
-        _setText('receive-tax-display', hasTax ? _fmt(taxAmt) : '0.00');
-        _setText('receive-total-display', `${_fmt(grandTotal)} ر.س`);
     }
 
     async function _saveReceive() {
         const moId        = _el('receive-mo-id')?.value;
         const warehouseId = _el('receive-warehouse-select')?.value;
         const notes       = _el('receive-notes')?.value || '';
+        const hasInvoice  = _el('receive-has-invoice')?.checked || false;
         const supplierInvoiceRef = _el('receive-supplier-invoice-ref')?.value || '';
-        const hasTax      = _el('receive-tax-toggle')?.checked || false;
-        const taxRate     = hasTax ? 0.15 : 0;
-        const payNow      = _el('receive-pay-now-toggle')?.checked || false;
-        const payAmount   = parseFloat(_el('receive-pay-amount')?.value || 0);
-        const payNotes    = _el('receive-pay-notes')?.value || '';
 
         if (!warehouseId) { _toast('اختر المستودع أولاً', 'error'); return; }
-        if (payNow && (!payAmount || payAmount <= 0)) { _toast('أدخل مبلغ الدفع', 'error'); return; }
 
         const container = _el('receive-items-container');
         if (!container) return;
@@ -1869,12 +1466,9 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
                 body: {
                     warehouse_id: warehouseId,
                     items,
-                    tax_rate:    taxRate,
+                    has_supplier_invoice: hasInvoice,
                     supplier_invoice_ref: supplierInvoiceRef,
                     notes,
-                    pay_now:    payNow,
-                    pay_amount: payNow ? payAmount : 0,
-                    pay_notes:  payNotes,
                 },
             });
             _toast(res?.message || 'تم تسجيل الاستلام بنجاح');
@@ -3276,11 +2870,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         openReceiveModal:   _openReceiveModal,
         closeReceiveModal:  () => _hideModal('po-receive-modal'),
         saveReceive:        _saveReceive,
-        _updateReceiveTotal: _updateReceiveTotal,
-        togglePaySection:   (checked) => {
-            const s = _el('receive-pay-section');
-            if (s) s.classList.toggle('hidden', !checked);
-        },
+        _onReceiveInvoiceToggle: _onReceiveInvoiceToggle,
         openAssignModal:      _openAssignModal,
         closeAssignModal:     () => _hideModal('po-assign-modal'),
         openAssignPreview:    _openAssignPreview,
@@ -3309,11 +2899,6 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         saveDelivery:       _saveDelivery,
         saveNotes:          _saveNotes,
         sendNote:           _sendNote,
-        _updatePricingLine: _updatePricingLine,
-        _savePricing:       _savePricing,
-        _updatePricingTax:  _updatePricingTax,
-        _togglePricingPay:  _togglePricingPay,
-        _confirmFinalReceive: _confirmFinalReceive,
         // Design management
         _openDesignSelector:   _openDesignSelector,
         _closeDesignSelector:  _closeDesignSelector,

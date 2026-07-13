@@ -936,136 +936,52 @@ router.post('/:id/receive', restrictEdit, validateBody(manufacturerOrderReceive)
                 );
             }
 
-            // ── 5. Create Purchase Invoice ───────────────────────────────────
-            const taxAmt    = subtotal * parseFloat(tax_rate || 0);
-            const grandTotal = subtotal + taxAmt;
+            // ── 5. Create Purchase Invoice (DRAFT — manager will set prices and approve) ──
             let purchaseInvoiceId = null;
 
-            if (subtotal > 0) {
-                const invRes = await client.query(
-                    `INSERT INTO purchase_invoices
-                       (supplier_id, manufacturer_order_id, supplier_invoice_ref, invoice_date, subtotal, tax_rate, tax_amount, grand_total, status, notes, created_by)
-                     VALUES ($1, $2, $3, CURRENT_DATE, $4, $5, $6, $7, 'posted', $8, $9)
-                     RETURNING id, invoice_number`,
-                    [
-                        mo.manufacturer_id, id, supplier_invoice_ref,
-                        subtotal, parseFloat(tax_rate || 0), taxAmt, grandTotal,
-                        notes, req.user?.id
-                    ]
-                );
-                purchaseInvoiceId = invRes.rows[0].id;
-                const invoiceNumber = invRes.rows[0].invoice_number;
+            // Always create a draft invoice with quantities (prices = 0, manager fills later)
+            const invRes = await client.query(
+                `INSERT INTO purchase_invoices
+                   (supplier_id, manufacturer_order_id, supplier_invoice_ref, invoice_date, subtotal, tax_rate, tax_amount, grand_total, status, notes, created_by, has_supplier_invoice)
+                 VALUES ($1, $2, $3, CURRENT_DATE, 0, 0, 0, 0, 'draft', $4, $5, $6)
+                 RETURNING id, invoice_number`,
+                [
+                    mo.manufacturer_id, id, supplier_invoice_ref,
+                    notes, req.user?.id, has_supplier_invoice
+                ]
+            );
+            purchaseInvoiceId = invRes.rows[0].id;
+            const invoiceNumber = invRes.rows[0].invoice_number;
 
-                // Insert invoice items
-                for (const ii of invoiceItems) {
-                    await client.query(
-                        `INSERT INTO purchase_invoice_items
-                           (purchase_invoice_id, manufacturer_order_item_id, variant_id, quantity, unit_cost, total_cost)
-                         VALUES ($1, $2, $3, $4, $5, $6)`,
-                        [purchaseInvoiceId, ii.manufacturer_order_item_id, ii.variant_id, ii.quantity, ii.unit_cost, ii.total_cost]
-                    );
-                }
-
-                // ── 6. Accounting — Purchase voucher ─────────────────────────
-                const voucherRes = await client.query(
-                    `INSERT INTO accounting_vouchers
-                       (voucher_type, voucher_date, description, total_amount, status, reference_type, reference_id, created_by)
-                     VALUES ('purchase', CURRENT_DATE, $1, $2, 'posted', 'purchase_invoice', $3, $4)
-                     RETURNING id`,
-                    [
-                        `فاتورة مشتريات #${invoiceNumber} — أمر مورد ${mo.mo_number}`,
-                        grandTotal,
-                        purchaseInvoiceId,
-                        req.user?.id
-                    ]
-                );
-                const voucherId = voucherRes.rows[0].id;
-
-                // DR Inventory Asset (subtotal only — cost of goods)
+            // Insert invoice items with quantities but unit_cost = 0 (manager sets later)
+            for (const ii of invoiceItems) {
                 await client.query(
-                    `INSERT INTO accounting_voucher_lines (voucher_id, account_id, debit, credit, sub_account_type, sub_account_id, description)
-                     VALUES ($1, $2, $3, 0, 'purchase_invoice', $4, $5)`,
-                    [voucherId, ACCOUNT_INVENTORY, subtotal, purchaseInvoiceId,
-                     `تكلفة بضاعة — فاتورة #${invoiceNumber}`]
-                );
-
-                // DR VAT Input (if tax > 0)
-                if (taxAmt > 0) {
-                    await client.query(
-                        `INSERT INTO accounting_voucher_lines (voucher_id, account_id, debit, credit, sub_account_type, sub_account_id, description)
-                         VALUES ($1, $2, $3, 0, 'purchase_invoice', $4, $5)`,
-                        [voucherId, ACCOUNT_VAT_INPUT, taxAmt, purchaseInvoiceId,
-                         `ضريبة مدخلات — فاتورة #${invoiceNumber}`]
-                    );
-                }
-
-                // CR Accounts Payable (grand total = subtotal + tax)
-                await client.query(
-                    `INSERT INTO accounting_voucher_lines (voucher_id, account_id, debit, credit, sub_account_type, sub_account_id, description)
-                     VALUES ($1, $2, 0, $3, 'supplier', $4, $5)`,
-                    [voucherId, ACCOUNT_PAYABLE, grandTotal, mo.manufacturer_id,
-                     `مستحق للمورد — فاتورة #${invoiceNumber}`]
+                    `INSERT INTO purchase_invoice_items
+                       (purchase_invoice_id, manufacturer_order_item_id, variant_id, quantity, unit_cost, total_cost)
+                     VALUES ($1, $2, $3, $4, 0, 0)`,
+                    [purchaseInvoiceId, ii.manufacturer_order_item_id, ii.variant_id, ii.quantity, ii.total_cost]
                 );
             }
 
-            // ── 6b. Link purchase invoice + voucher to session ───────────────
+            // ── 6. Link purchase invoice to session (no accounting voucher yet) ──
             if (purchaseInvoiceId) {
                 await client.query(
                     `UPDATE mo_receipt_sessions
-                     SET purchase_invoice_id = $1, accounting_voucher_id = $2
-                     WHERE id = $3`,
-                    [purchaseInvoiceId, voucherId, sessionId]
+                     SET purchase_invoice_id = $1
+                     WHERE id = $2`,
+                    [purchaseInvoiceId, sessionId]
                 );
             }
 
-            // ── 7. Immediate payment (optional) ─────────────────────────────
-            let paymentVoucherId = null;
-            if (pay_now && parseFloat(pay_amount) > 0) {
-                const paidAmt = parseFloat(pay_amount);
+            // No accounting vouchers or payments — manager approves invoice later
 
-                const payVoucherRes = await client.query(
-                    `INSERT INTO accounting_vouchers
-                       (voucher_type, voucher_date, description, total_amount, status, reference_type, reference_id, created_by)
-                     VALUES ('payment', CURRENT_DATE, $1, $2, 'posted', 'manufacturer_order', $3, $4)
-                     RETURNING id`,
-                    [
-                        `دفع للمورد — أمر ${mo.mo_number}${pay_notes ? ' — ' + pay_notes : ''}`,
-                        paidAmt,
-                        id,
-                        req.user?.id
-                    ]
-                );
-                paymentVoucherId = payVoucherRes.rows[0].id;
-
-                // DR Accounts Payable (reduces liability)
-                await client.query(
-                    `INSERT INTO accounting_voucher_lines (voucher_id, account_id, debit, credit, sub_account_type, sub_account_id, description)
-                     VALUES ($1, $2, $3, 0, 'supplier', $4, $5)`,
-                    [paymentVoucherId, ACCOUNT_PAYABLE, paidAmt, mo.manufacturer_id,
-                     `تسوية ذمة مورد — ${mo.mo_number}`]
-                );
-                // CR Bank
-                await client.query(
-                    `INSERT INTO accounting_voucher_lines (voucher_id, account_id, debit, credit, sub_account_type, sub_account_id, description)
-                     VALUES ($1, $2, 0, $3, 'manufacturer_order', $4, $5)`,
-                    [paymentVoucherId, ACCOUNT_BANK, paidAmt, id,
-                     `دفع بنكي — ${mo.mo_number}`]
-                );
-
-                // Track paid_amount on MO
-                await client.query(
-                    `UPDATE manufacturer_orders SET paid_amount = COALESCE(paid_amount,0) + $1, updated_at = NOW() WHERE id = $2`,
-                    [paidAmt, id]
-                );
-            }
-
-            return { newStatus, subtotal, taxAmt, grandTotal, purchaseInvoiceId, paymentVoucherId };
+            return { newStatus, purchaseInvoiceId, invoiceNumber };
         });
 
         return res.status(200).json({
             message: result.newStatus === 'received'
-                ? 'تم استلام البضاعة بالكامل وإصدار فاتورة المشتريات وتحديث المخزون والحسابات.'
-                : 'تم تسجيل الاستلام الجزئي وإصدار الفاتورة. يمكنك إكمال الاستلام لاحقاً.',
+                ? 'تم استلام البضاعة بالكامل وإنشاء فاتورة مشتريات (مسودة). المدير يجب اعتماد الفاتورة وإدخال الأسعار.'
+                : 'تم تسجيل الاستلام الجزئي وإنشاء فاتورة مشتريات (مسودة). يمكنك إكمال الاستلام لاحقاً.',
             data: result,
         });
     } catch (err) {

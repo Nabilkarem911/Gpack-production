@@ -13,121 +13,13 @@
         </button>
         <div>
             <h1 class="text-2xl font-extrabold text-slate-800">فواتير المشتريات</h1>
-            <p class="text-slate-400 text-sm mt-0.5">إنشاء وإدارة فواتير الموردين</p>
+            <p class="text-slate-400 text-sm mt-0.5">فواتير الموردين الناتجة من استلام البضاعة</p>
         </div>
     </div>
 </div>
-
-<!-- ── Tabs ─────────────────────────────────────────────────────────────────── -->
-<div class="flex gap-1 bg-slate-100 p-1 rounded-2xl mb-5 w-fit">
-    <button id="pi-tab-orders" onclick="window.piSwitchTab('orders')"
-            class="px-5 py-2 rounded-xl text-sm font-bold transition-all bg-white text-slate-800 shadow-sm">
-        <i class="fa-solid fa-truck-ramp-box ml-1.5"></i> أوامر جاهزة للفوترة
-        <span id="pi-tab-badge" class="mr-1.5 px-1.5 py-0.5 rounded-full text-xs bg-purple-100 text-purple-700">0</span>
-    </button>
-    <button id="pi-tab-archive" onclick="window.piSwitchTab('archive')"
-            class="px-5 py-2 rounded-xl text-sm font-bold transition-all text-slate-500 hover:text-slate-700">
-        <i class="fa-solid fa-file-invoice ml-1.5"></i> أرشيف الفواتير
-    </button>
-</div>
-
-<!-- ── Orders Tab Filters ───────────────────────────────────────────────────── -->
-<div id="pi-panel-orders">
-<div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 mb-5">
-    <div class="flex flex-col sm:flex-row gap-3">
-        <div class="flex-1">
-            <div class="relative">
-                <i class="fa-solid fa-magnifying-glass absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
-                <input id="pi-search" type="text" placeholder="بحث برقم الأمر أو المورد..."
-                       class="w-full pr-10 pl-3 py-2.5 border border-slate-200 rounded-xl text-sm
-                              focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition-all"
-                       oninput="window.piOnFilterChange()" />
-            </div>
-        </div>
-        <div class="sm:w-52">
-            <select id="pi-supplier"
-                    class="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-700
-                           focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none bg-white transition-all"
-                    onchange="window.piOnFilterChange()">
-                <option value="">— كل الموردين —</option>
-            </select>
-        </div>
-    </div>
-</div>
-
-<!-- ── Stats Summary ────────────────────────────────────────────────────────── -->
-<div class="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-5">
-    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
-        <p class="text-xs text-slate-400 mb-1">أوامر جاهزة للفوترة</p>
-        <p class="text-2xl font-black text-slate-800" id="pi-stat-total">0</p>
-    </div>
-    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
-        <p class="text-xs text-slate-400 mb-1">إجمالي التكلفة (شامل 15% ضريبة)</p>
-        <p class="text-2xl font-black text-purple-600" id="pi-stat-amount">0.00</p>
-    </div>
-    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
-        <p class="text-xs text-slate-400 mb-1">عدد الأصناف</p>
-        <p class="text-2xl font-black text-blue-600" id="pi-stat-items">0</p>
-    </div>
-</div>
-
-<!-- ── Table ───────────────────────────────────────────────────────────────── -->
-<div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-    <div class="overflow-x-auto">
-        <table class="w-full text-sm">
-            <thead>
-                <tr class="bg-slate-50 text-xs text-slate-500 border-b border-slate-100">
-                    <th class="py-3 px-4 text-right font-semibold">رقم الأمر</th>
-                    <th class="py-3 px-4 text-right font-semibold">التاريخ</th>
-                    <th class="py-3 px-4 text-right font-semibold">المورد</th>
-                    <th class="py-3 px-4 text-right font-semibold">العميل</th>
-                    <th class="py-3 px-4 text-center font-semibold">عدد الأصناف</th>
-                    <th class="py-3 px-4 text-right font-semibold">التكلفة المتوقعة</th>
-                    <th class="py-3 px-4 text-center font-semibold w-36">إجراء</th>
-                </tr>
-            </thead>
-            <tbody id="pi-tbody">
-                <tr>
-                    <td colspan="7" class="py-16 text-center text-slate-400">
-                        <i class="fa-solid fa-circle-notch fa-spin text-2xl"></i>
-                    </td>
-                </tr>
-            </tbody>
-        </table>
-    </div>
-    <div class="flex items-center justify-between px-4 py-3 border-t border-slate-100 bg-slate-50/50">
-        <p class="text-xs text-slate-500">
-            عرض <span id="pi-showing" class="font-bold">0</span> من <span id="pi-total" class="font-bold">0</span>
-        </p>
-        <div class="flex items-center gap-2">
-            <button id="pi-prev" onclick="window.piChangePage(-1)" disabled
-                    class="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-500 text-xs font-bold
-                           hover:bg-white hover:border-brand-300 hover:text-brand-600 transition-all disabled:opacity-40">
-                <i class="fa-solid fa-chevron-right"></i>
-            </button>
-            <span id="pi-page" class="text-xs font-bold text-slate-600">1</span>
-            <button id="pi-next" onclick="window.piChangePage(1)" disabled
-                    class="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-500 text-xs font-bold
-                           hover:bg-white hover:border-brand-300 hover:text-brand-600 transition-all disabled:opacity-40">
-                <i class="fa-solid fa-chevron-left"></i>
-            </button>
-        </div>
-    </div>
-</div>
-
-<!-- ── Empty State (Orders) ──────────────────────────────────────────────── -->
-<div id="pi-empty" class="hidden flex flex-col items-center justify-center py-16 text-slate-400">
-    <div class="w-20 h-20 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
-        <i class="fa-solid fa-truck-ramp-box text-3xl text-slate-300"></i>
-    </div>
-    <p class="text-lg font-semibold text-slate-500 mb-1">لا توجد أوامر تصنيع جاهزة للفوترة</p>
-    <p class="text-sm text-slate-400">يجب أن تكون أوامر التصنيع في حالة "مستلم" أو "مُرسل" لتظهر هنا</p>
-</div>
-</div>
-<!-- end #pi-panel-orders -->
 
 <!-- ── Archive Tab Panel ──────────────────────────────────────────────────── -->
-<div id="pi-panel-archive" class="hidden">
+<div id="pi-panel-archive">
 
     <!-- Archive Filters -->
     <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 mb-5">
@@ -147,10 +39,21 @@
                                focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none bg-white"
                         onchange="window.piArcFilterChange()">
                     <option value="">— كل الحالات —</option>
+                    <option value="draft">مسودة (بانتظار الاعتماد)</option>
                     <option value="unpaid">غير مدفوعة</option>
                     <option value="partially_paid">مدفوعة جزئياً</option>
                     <option value="paid">مدفوعة</option>
                     <option value="cancelled">ملغية</option>
+                </select>
+            </div>
+            <div class="sm:w-44">
+                <select id="pi-arc-has-invoice"
+                        class="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-700
+                               focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none bg-white"
+                        onchange="window.piArcFilterChange()">
+                    <option value="">— الكل —</option>
+                    <option value="true">بفاتورة مورد</option>
+                    <option value="false">بدون فاتورة</option>
                 </select>
             </div>
         </div>
@@ -167,13 +70,14 @@
                         <th class="py-3 px-4 text-right font-semibold">المورد</th>
                         <th class="py-3 px-4 text-right font-semibold hidden sm:table-cell">مرجع المورد</th>
                         <th class="py-3 px-4 text-right font-semibold">الإجمالي</th>
+                        <th class="py-3 px-4 text-center font-semibold">الفاتورة</th>
                         <th class="py-3 px-4 text-center font-semibold">الحالة</th>
                         <th class="py-3 px-4 text-center font-semibold w-20">طباعة</th>
                     </tr>
                 </thead>
                 <tbody id="pi-arc-tbody">
                     <tr>
-                        <td colspan="7" class="py-16 text-center text-slate-400">
+                        <td colspan="8" class="py-16 text-center text-slate-400">
                             <i class="fa-solid fa-circle-notch fa-spin text-2xl"></i>
                         </td>
                     </tr>
@@ -206,25 +110,25 @@
             <i class="fa-solid fa-file-invoice text-3xl text-slate-300"></i>
         </div>
         <p class="text-lg font-semibold text-slate-500 mb-1">لا توجد فواتير مشتريات بعد</p>
-        <p class="text-sm text-slate-400">أنشئ فاتورة من أوامر التصنيع الجاهزة</p>
+        <p class="text-sm text-slate-400">الفواتير تُنشأ تلقائياً عند استلام البضاعة من المورد</p>
     </div>
 
 </div>
 <!-- end #pi-panel-archive -->
 
-<!-- ── Create Invoice Modal ─────────────────────────────────────────────────── -->
-<div id="pi-modal-overlay" class="fixed inset-0 bg-black/50 z-50 hidden" onclick="window.piCloseModal()"></div>
-<div id="pi-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4">
-    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col"
+<!-- ── Approve Invoice Modal ──────────────────────────────────────────────── -->
+<div id="pi-approve-overlay" class="fixed inset-0 bg-black/50 z-50 hidden" onclick="window.piCloseApproveModal()"></div>
+<div id="pi-approve-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col"
          onclick="event.stopPropagation()">
 
         <!-- Modal Header -->
         <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50">
             <div>
-                <h3 class="text-lg font-bold text-slate-800">إنشاء فاتورة مشتريات</h3>
-                <p class="text-xs text-slate-400 mt-0.5">من أمر التصنيع <span id="pi-m-order-num" class="font-bold text-purple-600"></span></p>
+                <h3 class="text-lg font-bold text-slate-800">اعتماد فاتورة المشتريات</h3>
+                <p class="text-xs text-slate-400 mt-0.5">فاتورة رقم <span id="pi-apr-num" class="font-bold text-purple-600"></span> — أدخل أسعار الشراء</p>
             </div>
-            <button onclick="window.piCloseModal()"
+            <button onclick="window.piCloseApproveModal()"
                     class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all">
                 <i class="fa-solid fa-xmark"></i>
             </button>
@@ -232,43 +136,14 @@
 
         <!-- Modal Body -->
         <div class="flex-1 overflow-y-auto p-6">
-            <input type="hidden" id="pi-m-mo-id" />
-            <input type="hidden" id="pi-m-supplier-id" />
+            <input type="hidden" id="pi-apr-id" />
 
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
-                <!-- Supplier (read-only) -->
-                <div class="md:col-span-2">
-                    <label class="block text-xs font-bold text-slate-500 mb-1.5">المورد</label>
-                    <input id="pi-m-supplier-name" type="text" readonly
-                           class="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-700 font-bold" />
-                </div>
-                <!-- Invoice Date -->
-                <div>
-                    <label class="block text-xs font-bold text-slate-500 mb-1.5">تاريخ الفاتورة *</label>
-                    <input id="pi-m-date" type="date"
-                           class="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm
-                                  focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none" />
-                </div>
-                <!-- Due Date -->
-                <div>
-                    <label class="block text-xs font-bold text-slate-500 mb-1.5">تاريخ الاستحقاق</label>
-                    <input id="pi-m-due" type="date"
-                           class="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm
-                                  focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none" />
-                </div>
-                <!-- Supplier Ref -->
-                <div>
-                    <label class="block text-xs font-bold text-slate-500 mb-1.5">رقم فاتورة المورد</label>
-                    <input id="pi-m-ref" type="text" placeholder="رقم الفاتورة من المورد"
-                           class="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm
-                                  focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none" />
-                </div>
-                <!-- Tax Rate -->
-                <div>
-                    <label class="block text-xs font-bold text-slate-500 mb-1.5">نسبة الضريبة (%)</label>
-                    <input id="pi-m-tax" type="number" value="15" min="0" max="100" step="0.01"
-                           class="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-center font-bold
-                                  focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none" />
+            <!-- Supplier info -->
+            <div class="mb-4 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                <div class="flex items-center gap-2 text-sm">
+                    <i class="fa-solid fa-industry text-slate-400"></i>
+                    <span class="text-slate-500">المورد:</span>
+                    <span id="pi-apr-supplier" class="font-bold text-slate-800"></span>
                 </div>
             </div>
 
@@ -278,54 +153,70 @@
                     <thead class="bg-slate-50">
                         <tr>
                             <th class="py-2 px-3 text-right text-xs font-bold text-slate-500">المنتج</th>
-                            <th class="py-2 px-3 text-center text-xs font-bold text-slate-500 w-28">الكمية المستلمة</th>
+                            <th class="py-2 px-3 text-center text-xs font-bold text-slate-500 w-24">الكمية</th>
                             <th class="py-2 px-3 text-center text-xs font-bold text-slate-500 w-32">سعر الشراء</th>
                             <th class="py-2 px-3 text-center text-xs font-bold text-slate-500 w-28">الإجمالي</th>
                         </tr>
                     </thead>
-                    <tbody id="pi-m-items">
-                    </tbody>
+                    <tbody id="pi-apr-items"></tbody>
                 </table>
             </div>
 
-            <!-- Notes -->
-            <div class="mb-4">
-                <label class="block text-xs font-bold text-slate-500 mb-1.5">ملاحظات</label>
-                <textarea id="pi-m-notes" rows="2"
-                          class="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm
-                                 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none resize-none"
-                          placeholder="أي ملاحظات إضافية..."></textarea>
+            <!-- Tax + Payment -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                <div class="bg-slate-50 border border-slate-200 rounded-xl p-3">
+                    <label class="flex items-center gap-2 cursor-pointer mb-2">
+                        <input type="checkbox" id="pi-apr-tax-toggle"
+                               class="w-4 h-4 accent-orange-500"
+                               onchange="window.piAprUpdateTotals()">
+                        <span class="text-sm font-bold text-slate-700">فاتورة ضريبية (15%)</span>
+                    </label>
+                </div>
+                <div class="bg-slate-50 border border-slate-200 rounded-xl p-3">
+                    <label class="flex items-center gap-2 cursor-pointer mb-2">
+                        <input type="checkbox" id="pi-apr-pay-toggle"
+                               class="w-4 h-4 accent-blue-600"
+                               onchange="window.piAprTogglePay(this.checked)">
+                        <span class="text-sm font-bold text-slate-700">دفع للمورد الآن</span>
+                    </label>
+                    <div id="pi-apr-pay-section" class="hidden space-y-2">
+                        <input type="number" id="pi-apr-pay-amount" placeholder="المبلغ"
+                               class="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-sm text-center">
+                        <input type="text" id="pi-apr-pay-notes" placeholder="رقم التحويل..."
+                               class="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-sm text-center">
+                    </div>
+                </div>
             </div>
 
             <!-- Totals -->
             <div class="bg-slate-50 rounded-xl p-4">
                 <div class="flex justify-between items-center mb-2">
-                    <span class="text-sm text-slate-500">الإجمالي قبل الضريبة:</span>
-                    <span class="text-sm font-bold text-slate-700" id="pi-m-subtotal">0.00</span>
+                    <span class="text-sm text-slate-500">المجموع قبل الضريبة:</span>
+                    <span class="text-sm font-bold text-slate-700" id="pi-apr-subtotal">0.00</span>
                 </div>
                 <div class="flex justify-between items-center mb-2">
-                    <span class="text-sm text-slate-500">الضريبة (<span id="pi-m-tax-display">15</span>%):</span>
-                    <span class="text-sm font-bold text-amber-600" id="pi-m-tax-amount">0.00</span>
+                    <span class="text-sm text-slate-500">الضريبة (15%):</span>
+                    <span class="text-sm font-bold text-amber-600" id="pi-apr-tax-amount">0.00</span>
                 </div>
                 <div class="flex justify-between items-center pt-2 border-t border-slate-200">
                     <span class="text-base font-bold text-slate-700">الإجمالي النهائي:</span>
-                    <span class="text-xl font-black text-purple-600" id="pi-m-grand">0.00</span>
+                    <span class="text-xl font-black text-purple-600" id="pi-apr-grand">0.00</span>
                 </div>
             </div>
         </div>
 
         <!-- Modal Footer -->
         <div class="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50/50">
-            <button onclick="window.piCloseModal()"
+            <button onclick="window.piCloseApproveModal()"
                     class="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-200 transition-all">
                 إلغاء
             </button>
-            <button onclick="window.piSaveInvoice()"
-                    class="px-5 py-2.5 rounded-xl text-sm font-bold bg-purple-600 text-white hover:bg-purple-700 transition-all">
-                <i class="fa-solid fa-file-invoice ml-1"></i> إنشاء الفاتورة
+            <button onclick="window.piApproveInvoice()"
+                    class="px-5 py-2.5 rounded-xl text-sm font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition-all">
+                <i class="fa-solid fa-check-double ml-1"></i> اعتماد الفاتورة
             </button>
         </div>
     </div>
 </div>
 
-<script src="/js/views/purchase-invoices.js?v=20260517"></script>
+<script src="/js/views/purchase-invoices.js?v=20260713b"></script>

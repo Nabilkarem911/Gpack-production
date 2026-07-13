@@ -25,7 +25,7 @@ const restrictDelete = authorize('purchasing', 'delete');
 // =============================================================================
 router.get('/', async (req, res) => {
     try {
-        const { supplier_id, search, status, from, to, limit = 20, offset = 0 } = req.query;
+        const { supplier_id, search, status, from, to, has_invoice, limit = 20, offset = 0 } = req.query;
 
         let where = ['1=1'];
         const params = [];
@@ -52,6 +52,10 @@ router.get('/', async (req, res) => {
             where.push(`pi.invoice_date <= $${paramIdx++}`);
             params.push(to);
         }
+        if (has_invoice === 'true' || has_invoice === 'false') {
+            where.push(`pi.has_supplier_invoice = $${paramIdx++}`);
+            params.push(has_invoice === 'true');
+        }
 
         const whereClause = where.join(' AND ');
 
@@ -69,7 +73,7 @@ router.get('/', async (req, res) => {
         const dataRes = await db.query(`
             SELECT pi.id, pi.invoice_number, pi.invoice_date, pi.supplier_invoice_ref,
                    pi.subtotal, pi.tax_rate, pi.tax_amount, pi.grand_total, pi.paid_amount,
-                   pi.status, pi.notes, pi.created_at,
+                   pi.status, pi.has_supplier_invoice, pi.notes, pi.created_at,
                    s.id AS supplier_id, s.company_name AS supplier_name,
                    mo.id AS mo_id, mo.mo_number,
                    c.id AS client_id, c.name AS client_name
@@ -108,7 +112,7 @@ router.get('/:id', async (req, res) => {
         const invRes = await db.query(`
             SELECT pi.id, pi.invoice_number, pi.invoice_date, pi.due_date, pi.supplier_invoice_ref,
                    pi.subtotal, pi.tax_rate, pi.tax_amount, pi.grand_total, pi.paid_amount,
-                   pi.status, pi.notes, pi.created_at,
+                   pi.status, pi.has_supplier_invoice, pi.notes, pi.created_at,
                    s.id AS supplier_id, s.company_name AS supplier_name,
                    s.phone AS supplier_phone, s.city AS supplier_city,
                    s.commercial_register, s.tax_id AS supplier_tax_id,
@@ -285,6 +289,169 @@ router.get('/suppliers/:supplierId/orders-ready', async (req, res) => {
     } catch (err) {
         console.error('[PurchaseInvoices] GET /orders-ready error:', err.message);
         res.status(500).json({ error: 'Internal server error.' });
+    }
+});
+
+// =============================================================================
+// POST /api/purchase-invoices/:id/approve
+// Manager approves a draft invoice: sets unit costs, tax, optional payment
+// Creates accounting vouchers and updates invoice status to 'posted'
+// =============================================================================
+const ACCOUNT_INVENTORY  = 'c1ad0786-b968-4bc9-abd7-3a508e6f4e52';
+const ACCOUNT_PAYABLE    = '3e118831-0022-47de-acfe-b06a1cd8b9d2';
+const ACCOUNT_BANK       = 'c715d163-4bd7-41f4-8251-dcd8fed13297';
+const ACCOUNT_VAT_INPUT  = 'a1b2c3d4-5678-9abc-def0-111222333444';
+
+router.post('/:id/approve', restrictEdit, async (req, res) => {
+    const { id } = req.params;
+    const { items, tax_rate = 0, pay_now = false, pay_amount = 0, pay_notes = '' } = req.body;
+
+    if (!items || !Array.isArray(items) || !items.length) {
+        return res.status(400).json({ error: 'يجب إدخال أسعار الأصناف' });
+    }
+
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+
+        // 1. Load invoice and verify it's draft
+        const invRes = await client.query(
+            `SELECT pi.id, pi.invoice_number, pi.supplier_id, pi.manufacturer_order_id, pi.status, pi.has_supplier_invoice
+             FROM purchase_invoices pi WHERE pi.id = $1 FOR UPDATE`,
+            [id]
+        );
+        if (invRes.rowCount === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'الفاتورة غير موجودة' });
+        }
+        const inv = invRes.rows[0];
+        if (inv.status !== 'draft') {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'الفاتورة ليست مسودة — تم اعتمادها بالفعل' });
+        }
+
+        // 2. Update each invoice item with unit_cost
+        let subtotal = 0;
+        for (const item of items) {
+            const unitCost = parseFloat(item.unit_cost || 0);
+            const itemRes = await client.query(
+                `SELECT quantity FROM purchase_invoice_items WHERE id = $1 AND purchase_invoice_id = $2`,
+                [item.id, id]
+            );
+            if (itemRes.rowCount === 0) continue;
+            const qty = parseFloat(itemRes.rows[0].quantity || 0);
+            const lineTotal = qty * unitCost;
+            subtotal += lineTotal;
+
+            await client.query(
+                `UPDATE purchase_invoice_items SET unit_cost = $1, total_cost = $2 WHERE id = $3`,
+                [unitCost, lineTotal, item.id]
+            );
+        }
+
+        // 3. Update invoice totals and status
+        const taxAmt = subtotal * parseFloat(tax_rate || 0);
+        const grandTotal = subtotal + taxAmt;
+
+        await client.query(
+            `UPDATE purchase_invoices
+             SET subtotal = $1, tax_rate = $2, tax_amount = $3, grand_total = $4, status = 'posted', updated_at = NOW()
+             WHERE id = $5`,
+            [subtotal, parseFloat(tax_rate || 0), taxAmt, grandTotal, id]
+        );
+
+        // 4. Create accounting voucher
+        const voucherRes = await client.query(
+            `INSERT INTO accounting_vouchers
+               (voucher_type, voucher_date, description, total_amount, status, reference_type, reference_id, created_by)
+             VALUES ('purchase', CURRENT_DATE, $1, $2, 'posted', 'purchase_invoice', $3, $4)
+             RETURNING id`,
+            [
+                `فاتورة مشتريات #${inv.invoice_number}`,
+                grandTotal,
+                id,
+                req.user?.id
+            ]
+        );
+        const voucherId = voucherRes.rows[0].id;
+
+        // DR Inventory Asset
+        await client.query(
+            `INSERT INTO accounting_voucher_lines (voucher_id, account_id, debit, credit, sub_account_type, sub_account_id, description)
+             VALUES ($1, $2, $3, 0, 'purchase_invoice', $4, $5)`,
+            [voucherId, ACCOUNT_INVENTORY, subtotal, id, `تكلفة بضاعة — فاتورة #${inv.invoice_number}`]
+        );
+
+        // DR VAT Input (if tax > 0)
+        if (taxAmt > 0) {
+            await client.query(
+                `INSERT INTO accounting_voucher_lines (voucher_id, account_id, debit, credit, sub_account_type, sub_account_id, description)
+                 VALUES ($1, $2, $3, 0, 'purchase_invoice', $4, $5)`,
+                [voucherId, ACCOUNT_VAT_INPUT, taxAmt, id, `ضريبة مدخلات — فاتورة #${inv.invoice_number}`]
+            );
+        }
+
+        // CR Accounts Payable
+        await client.query(
+            `INSERT INTO accounting_voucher_lines (voucher_id, account_id, debit, credit, sub_account_type, sub_account_id, description)
+             VALUES ($1, $2, 0, $3, 'supplier', $4, $5)`,
+            [voucherId, ACCOUNT_PAYABLE, grandTotal, inv.supplier_id, `مستحق للمورد — فاتورة #${inv.invoice_number}`]
+        );
+
+        // Link voucher to receipt sessions
+        await client.query(
+            `UPDATE mo_receipt_sessions SET accounting_voucher_id = $1 WHERE purchase_invoice_id = $2`,
+            [voucherId, id]
+        );
+
+        // 5. Optional immediate payment
+        let paymentVoucherId = null;
+        if (pay_now && parseFloat(pay_amount) > 0) {
+            const paidAmt = parseFloat(pay_amount);
+
+            const payVoucherRes = await client.query(
+                `INSERT INTO accounting_vouchers
+                   (voucher_type, voucher_date, description, total_amount, status, reference_type, reference_id, created_by)
+                 VALUES ('payment', CURRENT_DATE, $1, $2, 'posted', 'purchase_invoice', $3, $4)
+                 RETURNING id`,
+                [
+                    `دفع للمورد — فاتورة #${inv.invoice_number}${pay_notes ? ' — ' + pay_notes : ''}`,
+                    paidAmt,
+                    id,
+                    req.user?.id
+                ]
+            );
+            paymentVoucherId = payVoucherRes.rows[0].id;
+
+            await client.query(
+                `INSERT INTO accounting_voucher_lines (voucher_id, account_id, debit, credit, sub_account_type, sub_account_id, description)
+                 VALUES ($1, $2, $3, 0, 'supplier', $4, $5)`,
+                [paymentVoucherId, ACCOUNT_PAYABLE, paidAmt, inv.supplier_id, `تسوية ذمة مورد — فاتورة #${inv.invoice_number}`]
+            );
+            await client.query(
+                `INSERT INTO accounting_voucher_lines (voucher_id, account_id, debit, credit, sub_account_type, sub_account_id, description)
+                 VALUES ($1, $2, 0, $3, 'purchase_invoice', $4, $5)`,
+                [paymentVoucherId, ACCOUNT_BANK, paidAmt, id, `دفع بنكي — فاتورة #${inv.invoice_number}`]
+            );
+
+            await client.query(
+                `UPDATE purchase_invoices SET paid_amount = $1 WHERE id = $2`,
+                [paidAmt, id]
+            );
+        }
+
+        await client.query('COMMIT');
+
+        return res.json({
+            message: 'تم اعتماد الفاتورة وإنشاء القيود المحاسبية بنجاح',
+            data: { invoice_id: id, subtotal, tax_amount: taxAmt, grand_total: grandTotal, voucher_id: voucherId, payment_voucher_id: paymentVoucherId }
+        });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('[PurchaseInvoices] POST /:id/approve error:', err.message);
+        return res.status(400).json({ error: err.message || 'Internal server error.' });
+    } finally {
+        client.release();
     }
 });
 
