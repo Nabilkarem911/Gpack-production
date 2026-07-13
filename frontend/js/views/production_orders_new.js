@@ -1399,7 +1399,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
                                 <div class="flex flex-col">
                                     <label class="text-xs text-slate-500 mb-0.5">الكمية المستلمة</label>
                                     <input type="number" min="0" max="${remQty}" step="1"
-                                           value="${remQty}"
+                                           value="0"
                                            data-receive-qty
                                            class="px-2 py-1.5 border border-slate-200 rounded-lg text-sm text-center font-bold outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all" />
                                 </div>
@@ -1421,7 +1421,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         _setVal('receive-notes', '');
         _setVal('receive-supplier-invoice-ref', '');
         const hasInvoiceToggle = _el('receive-has-invoice');
-        if (hasInvoiceToggle) hasInvoiceToggle.checked = true;
+        if (hasInvoiceToggle) hasInvoiceToggle.checked = false;
 
         _showModal('po-receive-modal');
     }
