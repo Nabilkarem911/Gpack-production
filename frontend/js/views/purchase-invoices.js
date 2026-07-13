@@ -12,7 +12,136 @@
     const esc  = (s) => String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     const _el  = (id) => document.getElementById(id);
 
-    // ── Archive ───────────────────────────────────────────────────────────────
+    // ── Tab Switching ─────────────────────────────────────────────────────────
+    let _activeTab = 'invoices';
+
+    window.piSwitchTab = function(tab) {
+        _activeTab = tab;
+        const tabInv  = _el('pi-tab-invoices');
+        const tabArc  = _el('pi-tab-archive');
+        const pnlInv  = _el('pi-panel-invoices');
+        const pnlArc  = _el('pi-panel-archive');
+
+        if (tab === 'invoices') {
+            tabInv.className = 'px-5 py-2.5 text-sm font-bold border-b-2 border-blue-500 text-blue-600 transition-all';
+            tabArc.className = 'px-5 py-2.5 text-sm font-bold border-b-2 border-transparent text-slate-400 hover:text-slate-600 transition-all';
+            pnlInv?.classList.remove('hidden');
+            pnlArc?.classList.add('hidden');
+            _loadInvoices(0);
+        } else {
+            tabArc.className = 'px-5 py-2.5 text-sm font-bold border-b-2 border-blue-500 text-blue-600 transition-all';
+            tabInv.className = 'px-5 py-2.5 text-sm font-bold border-b-2 border-transparent text-slate-400 hover:text-slate-600 transition-all';
+            pnlArc?.classList.remove('hidden');
+            pnlInv?.classList.add('hidden');
+            _loadArchive(0);
+        }
+    };
+
+    // ── Invoices Tab (Drafts) ─────────────────────────────────────────────────
+    let _invPage    = 0;
+    let _invTotal   = 0;
+    let _invList    = [];
+
+    async function _loadInvoices(page = 0) {
+        _invPage   = page;
+        const tbody = _el('pi-inv-tbody');
+        const empty = _el('pi-inv-empty');
+
+        if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="py-12 text-center text-slate-400"><i class="fa-solid fa-circle-notch fa-spin text-xl"></i></td></tr>`;
+        if (empty) empty.classList.add('hidden');
+
+        const params = new URLSearchParams({
+            limit:  PAGE_SIZE,
+            offset: page * PAGE_SIZE,
+            status: 'draft',
+            _t:     Date.now(),
+        });
+        const search      = _el('pi-inv-search')?.value?.trim();
+        const hasInvoice  = _el('pi-inv-has-invoice')?.value;
+        if (search)      params.set('search', search);
+        if (hasInvoice)  params.set('has_invoice', hasInvoice);
+
+        try {
+            const res = await window.apiFetch(`/api/purchase-invoices?${params}`);
+            _invList  = res.data  || [];
+            _invTotal = res.total || _invList.length;
+            _renderInvoices();
+            _updateInvPagination();
+            _updateInvBadge();
+        } catch (err) {
+            if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-red-400 text-sm"><i class="fa-solid fa-triangle-exclamation ml-2"></i>${esc(err.message)}</td></tr>`;
+        }
+    }
+
+    function _renderInvoices() {
+        const tbody = _el('pi-inv-tbody');
+        const empty = _el('pi-inv-empty');
+        if (!tbody) return;
+
+        if (!_invList.length) {
+            tbody.innerHTML = '';
+            if (empty) empty.classList.remove('hidden');
+            return;
+        }
+        if (empty) empty.classList.add('hidden');
+
+        const _s = (id, v) => { const el = _el(id); if (el) el.textContent = v; };
+        _s('pi-inv-showing', _invList.length);
+        _s('pi-inv-total',   _invTotal);
+
+        tbody.innerHTML = _invList.map(inv => {
+            const date = new Date(inv.invoice_date).toLocaleDateString('ar-SA-u-nu-latn');
+            const hasInv = inv.has_supplier_invoice !== false;
+            const invBadge = hasInv
+                ? '<span class="px-2 py-1 rounded-lg text-xs font-bold bg-emerald-100 text-emerald-700"><i class="fa-solid fa-file-invoice ml-1"></i>بفاتورة</span>'
+                : '<span class="px-2 py-1 rounded-lg text-xs font-bold bg-amber-100 text-amber-700"><i class="fa-solid fa-triangle-exclamation ml-1"></i>بدون فاتورة</span>';
+            return `<tr class="border-b border-slate-100 hover:bg-blue-50/30 transition-colors bg-blue-50/20">
+                <td class="py-3 px-4 font-bold font-mono text-slate-700">#${inv.invoice_number}</td>
+                <td class="py-3 px-4 text-slate-500 text-xs">${date}</td>
+                <td class="py-3 px-4 font-semibold text-slate-800">${esc(inv.supplier_name || '—')}</td>
+                <td class="py-3 px-4 text-slate-500 text-xs hidden sm:table-cell">${esc(inv.supplier_invoice_ref || '—')}</td>
+                <td class="py-3 px-4 text-center">${invBadge}</td>
+                <td class="py-3 px-4 text-center">
+                    <span class="px-2 py-1 rounded-lg text-xs font-bold bg-blue-100 text-blue-700"><i class="fa-solid fa-clock ml-1"></i> بانتظار الاعتماد</span>
+                </td>
+                <td class="py-3 px-4 text-center">
+                    <button onclick="window.piOpenApproveModal('${esc(inv.id)}')"
+                        class="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 transition-all">
+                        <i class="fa-solid fa-check-double ml-1"></i> اعتماد
+                    </button>
+                </td>
+            </tr>`;
+        }).join('');
+    }
+
+    function _updateInvPagination() {
+        const pageEl  = _el('pi-inv-page');
+        const prevBtn = _el('pi-inv-prev');
+        const nextBtn = _el('pi-inv-next');
+        if (pageEl)  pageEl.textContent = _invPage + 1;
+        if (prevBtn) prevBtn.disabled = _invPage === 0;
+        if (nextBtn) nextBtn.disabled = (_invPage + 1) * PAGE_SIZE >= _invTotal;
+    }
+
+    function _updateInvBadge() {
+        const badge = _el('pi-tab-invoices-badge');
+        if (!badge) return;
+        if (_invTotal > 0) {
+            badge.textContent = _invTotal;
+            badge.classList.remove('hidden');
+        } else {
+            badge.classList.add('hidden');
+        }
+    }
+
+    window.piInvChangePage = function(dir) { _loadInvoices(_invPage + dir); };
+
+    window.piInvFilterChange = function() {
+        clearTimeout(window._piInvDebounce);
+        window._piInvDebounce = setTimeout(() => _loadInvoices(0), 300);
+    };
+
+    // ── Archive Tab (Approved/Posted) ─────────────────────────────────────────
     let _arcPage    = 0;
     let _arcTotal   = 0;
     let _arcList    = [];
@@ -36,6 +165,8 @@
         if (search)      params.set('search', search);
         if (status)      params.set('status', status);
         if (hasInvoice)  params.set('has_invoice', hasInvoice);
+        // Exclude drafts from archive — they show in the Invoices tab
+        params.set('exclude_status', 'draft');
 
         try {
             const res = await window.apiFetch(`/api/purchase-invoices?${params}`);
@@ -261,7 +392,8 @@
 
             alert(`✅ ${res.message || 'تم اعتماد الفاتورة بنجاح'}`);
             window.piCloseApproveModal();
-            await _loadArchive(0);
+            await _loadInvoices(0);
+            if (_activeTab === 'archive') await _loadArchive(0);
         } catch (err) {
             alert(`❌ خطأ: ${err.message}`);
         } finally {
@@ -414,7 +546,8 @@
 
             alert(`✅ ${res.message || 'تم تعديل الفاتورة بنجاح'}`);
             window.piCloseEditModal();
-            await _loadArchive(0);
+            if (_activeTab === 'archive') await _loadArchive(0);
+            else await _loadInvoices(0);
         } catch (err) {
             alert(`❌ خطأ: ${err.message}`);
         } finally {
@@ -551,7 +684,7 @@
 
     // ── Init ──────────────────────────────────────────────────────────────────
     async function _init() {
-        await _loadArchive(0);
+        await _loadInvoices(0);
     }
 
     _init();

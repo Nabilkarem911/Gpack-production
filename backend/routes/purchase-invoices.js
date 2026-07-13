@@ -25,7 +25,7 @@ const restrictDelete = authorize('purchasing', 'delete');
 // =============================================================================
 router.get('/', async (req, res) => {
     try {
-        const { supplier_id, search, status, from, to, has_invoice, limit = 20, offset = 0 } = req.query;
+        const { supplier_id, search, status, exclude_status, from, to, has_invoice, limit = 20, offset = 0 } = req.query;
 
         let where = ['1=1'];
         const params = [];
@@ -43,6 +43,10 @@ router.get('/', async (req, res) => {
         if (status) {
             where.push(`pi.status = $${paramIdx++}`);
             params.push(status);
+        }
+        if (exclude_status) {
+            where.push(`pi.status != $${paramIdx++}`);
+            params.push(exclude_status);
         }
         if (from) {
             where.push(`pi.invoice_date >= $${paramIdx++}`);
