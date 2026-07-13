@@ -97,7 +97,7 @@ router.get('/stats', authenticate, async (req, res) => {
                 COUNT(*) FILTER (WHERE status = 'pending') as pending_mo,
                 COUNT(*) FILTER (WHERE status = 'sent') as sent_mo,
                 COUNT(*) FILTER (WHERE status = 'received') as received_mo,
-                COUNT(*) FILTER (WHERE status IN ('pending','sent','partially_received')) as awaiting_receiving
+                COUNT(*) FILTER (WHERE status IN ('sent','partially_received')) as awaiting_receiving
              FROM manufacturer_orders`;
         if (isSalesRep) {
             moQuery = `SELECT 0 as pending_mo, 0 as sent_mo, 0 as received_mo, 0 as awaiting_receiving`;
@@ -198,7 +198,7 @@ router.get('/alerts', authenticate, async (req, res) => {
                     EXTRACT(DAY FROM NOW() - mo.created_at) as days_pending
                  FROM manufacturer_orders mo
                  LEFT JOIN suppliers s ON s.id = mo.manufacturer_id
-                 WHERE mo.status IN ('pending', 'sent', 'partially_received')
+                 WHERE mo.status IN ('sent', 'partially_received')
                  ORDER BY mo.created_at ASC
                  LIMIT 5`
             );
