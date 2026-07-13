@@ -80,15 +80,22 @@
                 ? '<span class="px-2 py-1 rounded-lg text-xs font-bold bg-emerald-100 text-emerald-700"><i class="fa-solid fa-file-invoice ml-1"></i>بفاتورة</span>'
                 : '<span class="px-2 py-1 rounded-lg text-xs font-bold bg-amber-100 text-amber-700"><i class="fa-solid fa-triangle-exclamation ml-1"></i>بدون فاتورة</span>';
             const isDraft = inv.status === 'draft';
+            const isPosted = !isDraft && inv.status !== 'cancelled';
             const actions = isDraft
                 ? `<button onclick="window.piOpenApproveModal('${esc(inv.id)}')"
                         class="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 transition-all">
                         <i class="fa-solid fa-check-double ml-1"></i> اعتماد
                     </button>`
-                : `<button onclick="window.piViewInvoice('${esc(inv.id)}')"
+                : `<div class="flex items-center justify-center gap-1">
+                    ${isPosted ? `<button onclick="window.piOpenEditModal('${esc(inv.id)}')"
+                        class="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 hover:bg-amber-100 transition-all" title="تعديل">
+                        <i class="fa-solid fa-pen-to-square text-xs"></i>
+                    </button>` : ''}
+                    <button onclick="window.piViewInvoice('${esc(inv.id)}')"
                         class="w-8 h-8 rounded-lg bg-purple-50 text-purple-600 hover:bg-purple-100 transition-all" title="طباعة">
                         <i class="fa-solid fa-print text-xs"></i>
-                    </button>`;
+                    </button>
+                </div>`;
             return `<tr class="border-b border-slate-100 hover:bg-slate-50 transition-colors ${isDraft ? 'bg-blue-50/30' : ''}">
                 <td class="py-3 px-4 font-bold font-mono text-slate-700">#${inv.invoice_number}</td>
                 <td class="py-3 px-4 text-slate-500 text-xs">${date}</td>
@@ -259,6 +266,159 @@
             alert(`❌ خطأ: ${err.message}`);
         } finally {
             if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-check-double ml-1"></i> اعتماد الفاتورة'; }
+        }
+    };
+
+    // ── Edit Modal ───────────────────────────────────────────────────────────
+    let _edtItems = [];
+
+    window.piOpenEditModal = async function(invId) {
+        try {
+            const res   = await window.apiFetch(`/api/purchase-invoices/${invId}`);
+            const inv   = res.data?.invoice || res.invoice;
+            const items = res.data?.items || res.items || [];
+
+            if (!inv) {
+                alert('الفاتورة غير موجودة');
+                return;
+            }
+            if (inv.status === 'draft') {
+                alert('الفاتورة مسودة — استخدم الاعتماد');
+                return;
+            }
+            if (inv.status === 'cancelled') {
+                alert('الفاتورة ملغية — لا يمكن تعديلها');
+                return;
+            }
+
+            _edtItems = items.map(i => ({
+                id:           i.id,
+                product_name: i.product_name,
+                size_name:    i.size_name || '',
+                quantity:     parseFloat(i.quantity || 0),
+                unit_cost:    parseFloat(i.unit_cost || i.unit_price || 0),
+                line_total:   parseFloat(i.quantity || 0) * parseFloat(i.unit_cost || i.unit_price || 0),
+            }));
+
+            _el('pi-edt-id').value       = invId;
+            _el('pi-edt-num').textContent = `#${inv.invoice_number}`;
+            _el('pi-edt-supplier').textContent = inv.supplier_name || '—';
+
+            const hasTax = parseFloat(inv.tax_rate || 0) > 0;
+            _el('pi-edt-tax-toggle').checked = hasTax;
+            _el('pi-edt-pay-toggle').checked = false;
+            _el('pi-edt-pay-section').classList.add('hidden');
+            _el('pi-edt-pay-amount').value = '';
+            _el('pi-edt-pay-notes').value = '';
+
+            _renderEdtItems();
+            _piEdtUpdateTotals();
+
+            _el('pi-edit-overlay')?.classList.remove('hidden');
+            _el('pi-edit-modal')?.classList.remove('hidden');
+        } catch (err) {
+            alert('خطأ في تحميل الفاتورة: ' + err.message);
+        }
+    };
+
+    window.piCloseEditModal = function() {
+        _el('pi-edit-overlay')?.classList.add('hidden');
+        _el('pi-edit-modal')?.classList.add('hidden');
+        _edtItems = [];
+    };
+
+    function _renderEdtItems() {
+        const tbody = _el('pi-edt-items');
+        if (!tbody) return;
+        tbody.innerHTML = _edtItems.map((item, i) => {
+            const label = `${esc(item.product_name)} — ${esc(item.size_name || 'بدون مقاس')}`;
+            return `<tr class="border-b border-slate-100">
+                <td class="py-3 px-3"><div class="text-sm font-semibold text-slate-800">${label}</div></td>
+                <td class="py-3 px-3 text-center"><span class="text-sm font-bold text-slate-700">${item.quantity}</span></td>
+                <td class="py-3 px-3 text-center">
+                    <input type="number" min="0" step="0.01" value="${item.unit_cost.toFixed(2)}"
+                           id="pi-edt-price-${i}"
+                           oninput="window.piEdtUpdatePrice(${i}, this.value)"
+                           class="w-28 border border-slate-200 rounded-lg px-2 py-1.5 text-sm text-center font-mono focus:border-amber-400 outline-none"
+                           placeholder="0.00" />
+                </td>
+                <td class="py-3 px-3 text-center font-mono text-sm font-bold text-amber-600" id="pi-edt-line-${i}">${fmt(item.line_total)}</td>
+            </tr>`;
+        }).join('');
+    }
+
+    window.piEdtUpdatePrice = function(idx, value) {
+        _edtItems[idx].unit_cost = parseFloat(value) || 0;
+        _edtItems[idx].line_total = _edtItems[idx].quantity * _edtItems[idx].unit_cost;
+        const el = _el(`pi-edt-line-${idx}`);
+        if (el) el.textContent = fmt(_edtItems[idx].line_total);
+        _piEdtUpdateTotals();
+    };
+
+    function _piEdtUpdateTotals() {
+        let subtotal = 0;
+        for (const item of _edtItems) subtotal += item.line_total;
+        const hasTax = _el('pi-edt-tax-toggle')?.checked || false;
+        const taxRate = hasTax ? 0.15 : 0;
+        const taxAmt = subtotal * taxRate;
+        const grand = subtotal + taxAmt;
+        const _s = (id, v) => { const el = _el(id); if (el) el.textContent = v; };
+        _s('pi-edt-subtotal', fmt(subtotal));
+        _s('pi-edt-tax-amount', hasTax ? fmt(taxAmt) : '0.00');
+        _s('pi-edt-grand', fmt(grand));
+    }
+
+    window.piEdtUpdateTotals = _piEdtUpdateTotals;
+
+    window.piEdtTogglePay = function(show) {
+        const section = _el('pi-edt-pay-section');
+        if (section) section.classList.toggle('hidden', !show);
+    };
+
+    window.piEditInvoice = async function() {
+        const invId = _el('pi-edt-id')?.value;
+        if (!invId) return;
+
+        const unpriced = _edtItems.filter(i => i.unit_cost <= 0);
+        if (unpriced.length) {
+            alert(`يوجد ${unpriced.length} صنف بدون سعر! أدخل جميع الأسعار أولاً.`);
+            return;
+        }
+
+        const hasTax = _el('pi-edt-tax-toggle')?.checked || false;
+        const payNow = _el('pi-edt-pay-toggle')?.checked || false;
+        const payAmount = parseFloat(_el('pi-edt-pay-amount')?.value || 0);
+        const payNotes = _el('pi-edt-pay-notes')?.value || '';
+
+        if (payNow && (!payAmount || payAmount <= 0)) {
+            alert('أدخل مبلغ الدفع');
+            return;
+        }
+
+        if (!confirm('تأكيد تعديل الفاتورة؟ سيتم حذف القيود المحاسبية الحالية وإعادة إنشائها.')) return;
+
+        const btn = document.querySelector('#pi-edit-modal button[onclick="window.piEditInvoice()"]');
+        if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin ml-1"></i> جاري الحفظ...'; }
+
+        try {
+            const res = await window.apiFetch(`/api/purchase-invoices/${invId}/edit`, {
+                method: 'POST',
+                body: {
+                    items: _edtItems.map(i => ({ id: i.id, unit_cost: i.unit_cost })),
+                    tax_rate: hasTax ? 0.15 : 0,
+                    pay_now: payNow,
+                    pay_amount: payNow ? payAmount : 0,
+                    pay_notes: payNotes,
+                },
+            });
+
+            alert(`✅ ${res.message || 'تم تعديل الفاتورة بنجاح'}`);
+            window.piCloseEditModal();
+            await _loadArchive(0);
+        } catch (err) {
+            alert(`❌ خطأ: ${err.message}`);
+        } finally {
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-pen-to-square ml-1"></i> حفظ التعديلات'; }
         }
     };
 

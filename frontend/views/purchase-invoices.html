@@ -72,7 +72,7 @@
                         <th class="py-3 px-4 text-right font-semibold">الإجمالي</th>
                         <th class="py-3 px-4 text-center font-semibold">الفاتورة</th>
                         <th class="py-3 px-4 text-center font-semibold">الحالة</th>
-                        <th class="py-3 px-4 text-center font-semibold w-20">طباعة</th>
+                        <th class="py-3 px-4 text-center font-semibold w-28">إجراءات</th>
                     </tr>
                 </thead>
                 <tbody id="pi-arc-tbody">
@@ -219,4 +219,113 @@
     </div>
 </div>
 
-<script src="/js/views/purchase-invoices.js?v=20260713b"></script>
+<!-- ── Edit Invoice Modal ─────────────────────────────────────────────────── -->
+<div id="pi-edit-overlay" class="fixed inset-0 bg-black/50 z-50 hidden" onclick="window.piCloseEditModal()"></div>
+<div id="pi-edit-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col"
+         onclick="event.stopPropagation()">
+
+        <!-- Modal Header -->
+        <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-amber-50/50">
+            <div>
+                <h3 class="text-lg font-bold text-slate-800">تعديل فاتورة مشتريات</h3>
+                <p class="text-xs text-slate-400 mt-0.5">فاتورة رقم <span id="pi-edt-num" class="font-bold text-amber-600"></span> — تعديل الأسعار وإعادة إنشاء القيود</p>
+            </div>
+            <button onclick="window.piCloseEditModal()"
+                    class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <!-- Modal Body -->
+        <div class="flex-1 overflow-y-auto p-6">
+            <input type="hidden" id="pi-edt-id" />
+
+            <!-- Warning -->
+            <div class="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2">
+                <i class="fa-solid fa-triangle-exclamation text-amber-500 mt-0.5"></i>
+                <p class="text-xs text-amber-700">تعديل الفاتورة سيحذف القيود المحاسبية الحالية ويعيد إنشائها بالأسعار الجديدة</p>
+            </div>
+
+            <!-- Supplier info -->
+            <div class="mb-4 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                <div class="flex items-center gap-2 text-sm">
+                    <i class="fa-solid fa-industry text-slate-400"></i>
+                    <span class="text-slate-500">المورد:</span>
+                    <span id="pi-edt-supplier" class="font-bold text-slate-800"></span>
+                </div>
+            </div>
+
+            <!-- Items Table -->
+            <div class="border border-slate-200 rounded-xl overflow-hidden mb-4">
+                <table class="w-full text-sm">
+                    <thead class="bg-slate-50">
+                        <tr>
+                            <th class="py-2 px-3 text-right text-xs font-bold text-slate-500">المنتج</th>
+                            <th class="py-2 px-3 text-center text-xs font-bold text-slate-500 w-24">الكمية</th>
+                            <th class="py-2 px-3 text-center text-xs font-bold text-slate-500 w-32">سعر الشراء</th>
+                            <th class="py-2 px-3 text-center text-xs font-bold text-slate-500 w-28">الإجمالي</th>
+                        </tr>
+                    </thead>
+                    <tbody id="pi-edt-items"></tbody>
+                </table>
+            </div>
+
+            <!-- Tax + Payment -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                <div class="bg-slate-50 border border-slate-200 rounded-xl p-3">
+                    <label class="flex items-center gap-2 cursor-pointer mb-2">
+                        <input type="checkbox" id="pi-edt-tax-toggle"
+                               class="w-4 h-4 accent-orange-500"
+                               onchange="window.piEdtUpdateTotals()">
+                        <span class="text-sm font-bold text-slate-700">فاتورة ضريبية (15%)</span>
+                    </label>
+                </div>
+                <div class="bg-slate-50 border border-slate-200 rounded-xl p-3">
+                    <label class="flex items-center gap-2 cursor-pointer mb-2">
+                        <input type="checkbox" id="pi-edt-pay-toggle"
+                               class="w-4 h-4 accent-blue-600"
+                               onchange="window.piEdtTogglePay(this.checked)">
+                        <span class="text-sm font-bold text-slate-700">دفع للمورد الآن</span>
+                    </label>
+                    <div id="pi-edt-pay-section" class="hidden space-y-2">
+                        <input type="number" id="pi-edt-pay-amount" placeholder="المبلغ"
+                               class="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-sm text-center">
+                        <input type="text" id="pi-edt-pay-notes" placeholder="رقم التحويل..."
+                               class="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-sm text-center">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Totals -->
+            <div class="bg-slate-50 rounded-xl p-4">
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-sm text-slate-500">المجموع قبل الضريبة:</span>
+                    <span class="text-sm font-bold text-slate-700" id="pi-edt-subtotal">0.00</span>
+                </div>
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-sm text-slate-500">الضريبة (15%):</span>
+                    <span class="text-sm font-bold text-amber-600" id="pi-edt-tax-amount">0.00</span>
+                </div>
+                <div class="flex justify-between items-center pt-2 border-t border-slate-200">
+                    <span class="text-base font-bold text-slate-700">الإجمالي النهائي:</span>
+                    <span class="text-xl font-black text-amber-600" id="pi-edt-grand">0.00</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal Footer -->
+        <div class="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50/50">
+            <button onclick="window.piCloseEditModal()"
+                    class="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-200 transition-all">
+                إلغاء
+            </button>
+            <button onclick="window.piEditInvoice()"
+                    class="px-5 py-2.5 rounded-xl text-sm font-bold bg-amber-600 text-white hover:bg-amber-700 transition-all">
+                <i class="fa-solid fa-pen-to-square ml-1"></i> حفظ التعديلات
+            </button>
+        </div>
+    </div>
+</div>
+
+<script src="/js/views/purchase-invoices.js?v=20260713c"></script>

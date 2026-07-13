@@ -455,4 +455,175 @@ router.post('/:id/approve', restrictEdit, async (req, res) => {
     }
 });
 
+// =============================================================================
+// POST /api/purchase-invoices/:id/edit
+// Edit an approved/posted invoice: revert old vouchers, update prices/tax, recreate vouchers
+// =============================================================================
+router.post('/:id/edit', restrictEdit, async (req, res) => {
+    const { id } = req.params;
+    const { items, tax_rate = 0, pay_now = false, pay_amount = 0, pay_notes = '' } = req.body;
+
+    if (!items || !Array.isArray(items) || !items.length) {
+        return res.status(400).json({ error: 'يجب إدخال أسعار الأصناف' });
+    }
+
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+
+        // 1. Load invoice
+        const invRes = await client.query(
+            `SELECT pi.id, pi.invoice_number, pi.supplier_id, pi.manufacturer_order_id, pi.status, pi.has_supplier_invoice
+             FROM purchase_invoices pi WHERE pi.id = $1 FOR UPDATE`,
+            [id]
+        );
+        if (invRes.rowCount === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'الفاتورة غير موجودة' });
+        }
+        const inv = invRes.rows[0];
+        if (inv.status === 'draft') {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'الفاتورة مسودة — استخدم الاعتماد بدلاً من التعديل' });
+        }
+        if (inv.status === 'cancelled') {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'الفاتورة ملغية — لا يمكن تعديلها' });
+        }
+
+        // 2. Revert old accounting vouchers (delete all vouchers linked to this invoice)
+        const oldVouchers = await client.query(
+            `SELECT id FROM accounting_vouchers WHERE reference_type = 'purchase_invoice' AND reference_id = $1`,
+            [id]
+        );
+        for (const v of oldVouchers.rows) {
+            await client.query(`DELETE FROM accounting_voucher_lines WHERE voucher_id = $1`, [v.id]);
+            await client.query(`DELETE FROM accounting_vouchers WHERE id = $1`, [v.id]);
+        }
+
+        // 3. Update each invoice item with new unit_cost
+        let subtotal = 0;
+        for (const item of items) {
+            const unitCost = parseFloat(item.unit_cost || 0);
+            const itemRes = await client.query(
+                `SELECT quantity FROM purchase_invoice_items WHERE id = $1 AND purchase_invoice_id = $2`,
+                [item.id, id]
+            );
+            if (itemRes.rowCount === 0) continue;
+            const qty = parseFloat(itemRes.rows[0].quantity || 0);
+            const lineTotal = qty * unitCost;
+            subtotal += lineTotal;
+
+            await client.query(
+                `UPDATE purchase_invoice_items SET unit_cost = $1, total_cost = $2 WHERE id = $3`,
+                [unitCost, lineTotal, item.id]
+            );
+        }
+
+        // 4. Update invoice totals
+        const taxAmt = subtotal * parseFloat(tax_rate || 0);
+        const grandTotal = subtotal + taxAmt;
+
+        await client.query(
+            `UPDATE purchase_invoices
+             SET subtotal = $1, tax_rate = $2, tax_amount = $3, grand_total = $4, paid_amount = 0, updated_at = NOW()
+             WHERE id = $5`,
+            [subtotal, parseFloat(tax_rate || 0), taxAmt, grandTotal, id]
+        );
+
+        // 5. Create new accounting voucher
+        const voucherRes = await client.query(
+            `INSERT INTO accounting_vouchers
+               (voucher_type, voucher_date, description, total_amount, status, reference_type, reference_id, created_by)
+             VALUES ('purchase', CURRENT_DATE, $1, $2, 'posted', 'purchase_invoice', $3, $4)
+             RETURNING id`,
+            [
+                `فاتورة مشتريات #${inv.invoice_number} (تعديل)`,
+                grandTotal,
+                id,
+                req.user?.id
+            ]
+        );
+        const voucherId = voucherRes.rows[0].id;
+
+        // DR Inventory Asset
+        await client.query(
+            `INSERT INTO accounting_voucher_lines (voucher_id, account_id, debit, credit, sub_account_type, sub_account_id, description)
+             VALUES ($1, $2, $3, 0, 'purchase_invoice', $4, $5)`,
+            [voucherId, ACCOUNT_INVENTORY, subtotal, id, `تكلفة بضاعة — فاتورة #${inv.invoice_number} (تعديل)`]
+        );
+
+        // DR VAT Input (if tax > 0)
+        if (taxAmt > 0) {
+            await client.query(
+                `INSERT INTO accounting_voucher_lines (voucher_id, account_id, debit, credit, sub_account_type, sub_account_id, description)
+                 VALUES ($1, $2, $3, 0, 'purchase_invoice', $4, $5)`,
+                [voucherId, ACCOUNT_VAT_INPUT, taxAmt, id, `ضريبة مدخلات — فاتورة #${inv.invoice_number} (تعديل)`]
+            );
+        }
+
+        // CR Accounts Payable
+        await client.query(
+            `INSERT INTO accounting_voucher_lines (voucher_id, account_id, debit, credit, sub_account_type, sub_account_id, description)
+             VALUES ($1, $2, 0, $3, 'supplier', $4, $5)`,
+            [voucherId, ACCOUNT_PAYABLE, grandTotal, inv.supplier_id, `مستحق للمورد — فاتورة #${inv.invoice_number} (تعديل)`]
+        );
+
+        // Link voucher to receipt sessions
+        await client.query(
+            `UPDATE mo_receipt_sessions SET accounting_voucher_id = $1 WHERE purchase_invoice_id = $2`,
+            [voucherId, id]
+        );
+
+        // 6. Optional immediate payment
+        let paymentVoucherId = null;
+        if (pay_now && parseFloat(pay_amount) > 0) {
+            const paidAmt = parseFloat(pay_amount);
+
+            const payVoucherRes = await client.query(
+                `INSERT INTO accounting_vouchers
+                   (voucher_type, voucher_date, description, total_amount, status, reference_type, reference_id, created_by)
+                 VALUES ('payment', CURRENT_DATE, $1, $2, 'posted', 'purchase_invoice', $3, $4)
+                 RETURNING id`,
+                [
+                    `دفع للمورد — فاتورة #${inv.invoice_number} (تعديل)${pay_notes ? ' — ' + pay_notes : ''}`,
+                    paidAmt,
+                    id,
+                    req.user?.id
+                ]
+            );
+            paymentVoucherId = payVoucherRes.rows[0].id;
+
+            await client.query(
+                `INSERT INTO accounting_voucher_lines (voucher_id, account_id, debit, credit, sub_account_type, sub_account_id, description)
+                 VALUES ($1, $2, $3, 0, 'supplier', $4, $5)`,
+                [paymentVoucherId, ACCOUNT_PAYABLE, paidAmt, inv.supplier_id, `تسوية ذمة مورد — فاتورة #${inv.invoice_number} (تعديل)`]
+            );
+            await client.query(
+                `INSERT INTO accounting_voucher_lines (voucher_id, account_id, debit, credit, sub_account_type, sub_account_id, description)
+                 VALUES ($1, $2, 0, $3, 'purchase_invoice', $4, $5)`,
+                [paymentVoucherId, ACCOUNT_BANK, paidAmt, id, `دفع بنكي — فاتورة #${inv.invoice_number} (تعديل)`]
+            );
+
+            await client.query(
+                `UPDATE purchase_invoices SET paid_amount = $1 WHERE id = $2`,
+                [paidAmt, id]
+            );
+        }
+
+        await client.query('COMMIT');
+
+        return res.json({
+            message: 'تم تعديل الفاتورة وإعادة إنشاء القيود المحاسبية بنجاح',
+            data: { invoice_id: id, subtotal, tax_amount: taxAmt, grand_total: grandTotal, voucher_id: voucherId, payment_voucher_id: paymentVoucherId }
+        });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('[PurchaseInvoices] POST /:id/edit error:', err.message);
+        return res.status(400).json({ error: err.message || 'Internal server error.' });
+    } finally {
+        client.release();
+    }
+});
+
 module.exports = router;
