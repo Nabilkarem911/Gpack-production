@@ -44,7 +44,13 @@ router.get('/warehouses', async (req, res) => {
 
         if (client_id) {
             params.push(client_id);
-            conditions.push(`(w.client_id = $${params.length} OR w.client_id IS NULL OR w.id IN (SELECT DISTINCT warehouse_id FROM warehouse_stock WHERE client_id = $${params.length}))`);
+            conditions.push(`(
+                w.client_id = $${params.length}
+                OR w.client_id IS NULL
+                OR w.id IN (SELECT DISTINCT warehouse_id FROM warehouse_stock WHERE client_id = $${params.length})
+                OR w.client_id IN (SELECT parent_id FROM clients WHERE id = $${params.length})
+                OR w.id IN (SELECT DISTINCT warehouse_id FROM warehouse_stock WHERE client_id IN (SELECT parent_id FROM clients WHERE id = $${params.length}))
+            )`);
         }
 
         if (status) {
@@ -214,7 +220,8 @@ router.get('/stock', async (req, res) => {
 
         if (client_id) {
             params.push(client_id);
-            conditions.push(`ws.client_id = $${params.length}`);
+            params.push(client_id);
+            conditions.push(`(ws.client_id = $${params.length - 1} OR ws.client_id IN (SELECT parent_id FROM clients WHERE id = $${params.length}))`);
         }
 
         if (warehouse_id) {
