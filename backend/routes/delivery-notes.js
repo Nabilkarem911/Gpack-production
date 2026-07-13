@@ -193,7 +193,7 @@ router.get('/:id', async (req, res) => {
                 dni.id,
                 dni.delivery_note_id,
                 dni.order_item_id,
-                oi.variant_id,
+                dni.variant_id,
                 p.name AS product_name,
                 pv.size_name AS variant_name,
                 dni.requested_qty,
@@ -201,8 +201,8 @@ router.get('/:id', async (req, res) => {
                 dni.delivered_qty,
                 dni.notes
              FROM delivery_note_items dni
-             JOIN order_items oi ON oi.id = dni.order_item_id
-             LEFT JOIN product_variants pv ON pv.id = oi.variant_id
+             LEFT JOIN order_items oi ON oi.id = dni.order_item_id
+             LEFT JOIN product_variants pv ON pv.id = COALESCE(dni.variant_id, oi.variant_id)
              LEFT JOIN products p ON p.id = pv.product_id
              WHERE dni.delivery_note_id = $1`,
             [id]
@@ -317,17 +317,18 @@ router.post('/:id/dispatch', restrictWrite, validateBody(deliveryNoteDispatch), 
                     throw new Error(`الكمية (${item.quantity}) تتجاوز المتبقي (${remaining}).`);
                 }
 
-                // Get variant + order item
+                // Get variant + order item (use LEFT JOIN since standalone notes have no order_item_id)
                 const itemResult = await client.query(
-                    `SELECT dni.order_item_id, oi.variant_id
+                    `SELECT dni.order_item_id, COALESCE(dni.variant_id, oi.variant_id) AS variant_id
                      FROM delivery_note_items dni
-                     JOIN order_items oi ON oi.id = dni.order_item_id
+                     LEFT JOIN order_items oi ON oi.id = dni.order_item_id
                      WHERE dni.id = $1`,
                     [item.item_id]
                 );
                 if (itemResult.rowCount === 0) continue;
 
                 const { order_item_id: orderItemId, variant_id: variantId } = itemResult.rows[0];
+                if (!variantId) continue;
 
                 // Validate: sufficient stock (include parent client's stock)
                 const stockResult = await client.query(
@@ -350,11 +351,13 @@ router.post('/:id/dispatch', restrictWrite, validateBody(deliveryNoteDispatch), 
                     [item.quantity, item.item_id]
                 );
 
-                // Update order item delivered quantity
-                await client.query(
-                    `UPDATE order_items SET delivered_qty = COALESCE(delivered_qty, 0) + $1 WHERE id = $2`,
-                    [item.quantity, orderItemId]
-                );
+                // Update order item delivered quantity (only if linked to an order)
+                if (orderItemId) {
+                    await client.query(
+                        `UPDATE order_items SET delivered_qty = COALESCE(delivered_qty, 0) + $1 WHERE id = $2`,
+                        [item.quantity, orderItemId]
+                    );
+                }
 
                 // Deduct from stock
                 await client.query(
@@ -443,11 +446,11 @@ router.post('/:id/confirm', restrictWrite, validateBody(deliveryNoteDispatch), a
                     throw new Error(`الكمية المُسلَّمة (${item.quantity}) تتجاوز المتبقي (${remaining}) للصنف.`);
                 }
 
-                // Get order item details
+                // Get variant + order item (use LEFT JOIN since standalone notes have no order_item_id)
                 const itemResult = await client.query(
-                    `SELECT dni.order_item_id, oi.variant_id
+                    `SELECT dni.order_item_id, COALESCE(dni.variant_id, oi.variant_id) AS variant_id
                      FROM delivery_note_items dni
-                     JOIN order_items oi ON oi.id = dni.order_item_id
+                     LEFT JOIN order_items oi ON oi.id = dni.order_item_id
                      WHERE dni.id = $1`,
                     [item.item_id]
                 );
@@ -456,6 +459,7 @@ router.post('/:id/confirm', restrictWrite, validateBody(deliveryNoteDispatch), a
                 
                 const orderItemId = itemResult.rows[0].order_item_id;
                 const variantId = itemResult.rows[0].variant_id;
+                if (!variantId) continue;
 
                 // ── Validate: sufficient stock (include parent client's stock) ──
                 const stockResult = await client.query(
@@ -481,11 +485,13 @@ router.post('/:id/confirm', restrictWrite, validateBody(deliveryNoteDispatch), a
                     [item.quantity, item.item_id]
                 );
                 
-                // Update order item delivered quantity
-                await client.query(
-                    `UPDATE order_items SET delivered_qty = COALESCE(delivered_qty, 0) + $1 WHERE id = $2`,
-                    [item.quantity, orderItemId]
-                );
+                // Update order item delivered quantity (only if linked to an order)
+                if (orderItemId) {
+                    await client.query(
+                        `UPDATE order_items SET delivered_qty = COALESCE(delivered_qty, 0) + $1 WHERE id = $2`,
+                        [item.quantity, orderItemId]
+                    );
+                }
                 
                 // Deduct from stock
                 await client.query(
@@ -561,7 +567,7 @@ router.post('/:id/reverse', restrictWrite, async (req, res) => {
                 `SELECT dni.id, dni.order_item_id, dni.variant_id, dni.delivered_qty,
                         oi.id AS oi_id
                  FROM delivery_note_items dni
-                 JOIN order_items oi ON oi.id = dni.order_item_id
+                 LEFT JOIN order_items oi ON oi.id = dni.order_item_id
                  WHERE dni.delivery_note_id = $1 AND dni.delivered_qty > 0`,
                 [id]
             );
@@ -594,11 +600,13 @@ router.post('/:id/reverse', restrictWrite, async (req, res) => {
                     );
                 }
 
-                // Reverse order_items delivered_qty
-                await client.query(
-                    `UPDATE order_items SET delivered_qty = GREATEST(0, COALESCE(delivered_qty, 0) - $1) WHERE id = $2`,
-                    [delQty, item.order_item_id]
-                );
+                // Reverse order_items delivered_qty (only if linked to an order)
+                if (item.order_item_id) {
+                    await client.query(
+                        `UPDATE order_items SET delivered_qty = GREATEST(0, COALESCE(delivered_qty, 0) - $1) WHERE id = $2`,
+                        [delQty, item.order_item_id]
+                    );
+                }
 
                 // Reset delivery_note_items delivered_qty
                 await client.query(
