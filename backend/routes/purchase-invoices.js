@@ -301,10 +301,20 @@ router.get('/suppliers/:supplierId/orders-ready', async (req, res) => {
 // Manager approves a draft invoice: sets unit costs, tax, optional payment
 // Creates accounting vouchers and updates invoice status to 'posted'
 // =============================================================================
-const ACCOUNT_INVENTORY  = 'c1ad0786-b968-4bc9-abd7-3a508e6f4e52';
-const ACCOUNT_PAYABLE    = '3e118831-0022-47de-acfe-b06a1cd8b9d2';
-const ACCOUNT_BANK       = 'c715d163-4bd7-41f4-8251-dcd8fed13297';
-const ACCOUNT_VAT_INPUT  = 'a1b2c3d4-5678-9abc-def0-111222333444';
+
+async function _getAccountIds(client) {
+    const res = await client.query(
+        `SELECT code, id FROM accounts WHERE code IN ('1400','2100','1200','2200')`
+    );
+    const map = {};
+    for (const r of res.rows) map[r.code] = r.id;
+    return {
+        inventory: map['1400'],
+        payable:   map['2100'],
+        bank:      map['1200'],
+        vatInput:  map['2200'],
+    };
+}
 
 router.post('/:id/approve', restrictEdit, async (req, res) => {
     const { id } = req.params;
@@ -332,6 +342,13 @@ router.post('/:id/approve', restrictEdit, async (req, res) => {
         if (inv.status !== 'draft') {
             await client.query('ROLLBACK');
             return res.status(400).json({ error: 'الفاتورة ليست مسودة — تم اعتمادها بالفعل' });
+        }
+
+        // Get account IDs dynamically from DB
+        const acct = await _getAccountIds(client);
+        if (!acct.inventory || !acct.payable || !acct.bank) {
+            await client.query('ROLLBACK');
+            return res.status(500).json({ error: 'حسابات المحاسبة غير موجودة — تأكد من seed الـ accounts' });
         }
 
         // 2. Update each invoice item with unit_cost
@@ -383,7 +400,7 @@ router.post('/:id/approve', restrictEdit, async (req, res) => {
         await client.query(
             `INSERT INTO accounting_voucher_lines (voucher_id, account_id, debit, credit, sub_account_type, sub_account_id, description)
              VALUES ($1, $2, $3, 0, 'purchase_invoice', $4, $5)`,
-            [voucherId, ACCOUNT_INVENTORY, subtotal, id, `تكلفة بضاعة — فاتورة #${inv.invoice_number}`]
+            [voucherId, acct.inventory, subtotal, id, `تكلفة بضاعة — فاتورة #${inv.invoice_number}`]
         );
 
         // DR VAT Input (if tax > 0)
@@ -391,7 +408,7 @@ router.post('/:id/approve', restrictEdit, async (req, res) => {
             await client.query(
                 `INSERT INTO accounting_voucher_lines (voucher_id, account_id, debit, credit, sub_account_type, sub_account_id, description)
                  VALUES ($1, $2, $3, 0, 'purchase_invoice', $4, $5)`,
-                [voucherId, ACCOUNT_VAT_INPUT, taxAmt, id, `ضريبة مدخلات — فاتورة #${inv.invoice_number}`]
+                [voucherId, acct.vatInput, taxAmt, id, `ضريبة مدخلات — فاتورة #${inv.invoice_number}`]
             );
         }
 
@@ -399,7 +416,7 @@ router.post('/:id/approve', restrictEdit, async (req, res) => {
         await client.query(
             `INSERT INTO accounting_voucher_lines (voucher_id, account_id, debit, credit, sub_account_type, sub_account_id, description)
              VALUES ($1, $2, 0, $3, 'supplier', $4, $5)`,
-            [voucherId, ACCOUNT_PAYABLE, grandTotal, inv.supplier_id, `مستحق للمورد — فاتورة #${inv.invoice_number}`]
+            [voucherId, acct.payable, grandTotal, inv.supplier_id, `مستحق للمورد — فاتورة #${inv.invoice_number}`]
         );
 
         // Link voucher to receipt sessions
@@ -430,12 +447,12 @@ router.post('/:id/approve', restrictEdit, async (req, res) => {
             await client.query(
                 `INSERT INTO accounting_voucher_lines (voucher_id, account_id, debit, credit, sub_account_type, sub_account_id, description)
                  VALUES ($1, $2, $3, 0, 'supplier', $4, $5)`,
-                [paymentVoucherId, ACCOUNT_PAYABLE, paidAmt, inv.supplier_id, `تسوية ذمة مورد — فاتورة #${inv.invoice_number}`]
+                [paymentVoucherId, acct.payable, paidAmt, inv.supplier_id, `تسوية ذمة مورد — فاتورة #${inv.invoice_number}`]
             );
             await client.query(
                 `INSERT INTO accounting_voucher_lines (voucher_id, account_id, debit, credit, sub_account_type, sub_account_id, description)
                  VALUES ($1, $2, 0, $3, 'purchase_invoice', $4, $5)`,
-                [paymentVoucherId, ACCOUNT_BANK, paidAmt, id, `دفع بنكي — فاتورة #${inv.invoice_number}`]
+                [paymentVoucherId, acct.bank, paidAmt, id, `دفع بنكي — فاتورة #${inv.invoice_number}`]
             );
 
             await client.query(
@@ -493,6 +510,13 @@ router.post('/:id/edit', restrictEdit, async (req, res) => {
         if (inv.status === 'cancelled') {
             await client.query('ROLLBACK');
             return res.status(400).json({ error: 'الفاتورة ملغية — لا يمكن تعديلها' });
+        }
+
+        // Get account IDs dynamically from DB
+        const acct = await _getAccountIds(client);
+        if (!acct.inventory || !acct.payable || !acct.bank) {
+            await client.query('ROLLBACK');
+            return res.status(500).json({ error: 'حسابات المحاسبة غير موجودة — تأكد من seed الـ accounts' });
         }
 
         // 2. Revert old accounting vouchers (delete all vouchers linked to this invoice)
@@ -554,7 +578,7 @@ router.post('/:id/edit', restrictEdit, async (req, res) => {
         await client.query(
             `INSERT INTO accounting_voucher_lines (voucher_id, account_id, debit, credit, sub_account_type, sub_account_id, description)
              VALUES ($1, $2, $3, 0, 'purchase_invoice', $4, $5)`,
-            [voucherId, ACCOUNT_INVENTORY, subtotal, id, `تكلفة بضاعة — فاتورة #${inv.invoice_number} (تعديل)`]
+            [voucherId, acct.inventory, subtotal, id, `تكلفة بضاعة — فاتورة #${inv.invoice_number} (تعديل)`]
         );
 
         // DR VAT Input (if tax > 0)
@@ -562,7 +586,7 @@ router.post('/:id/edit', restrictEdit, async (req, res) => {
             await client.query(
                 `INSERT INTO accounting_voucher_lines (voucher_id, account_id, debit, credit, sub_account_type, sub_account_id, description)
                  VALUES ($1, $2, $3, 0, 'purchase_invoice', $4, $5)`,
-                [voucherId, ACCOUNT_VAT_INPUT, taxAmt, id, `ضريبة مدخلات — فاتورة #${inv.invoice_number} (تعديل)`]
+                [voucherId, acct.vatInput, taxAmt, id, `ضريبة مدخلات — فاتورة #${inv.invoice_number} (تعديل)`]
             );
         }
 
@@ -570,7 +594,7 @@ router.post('/:id/edit', restrictEdit, async (req, res) => {
         await client.query(
             `INSERT INTO accounting_voucher_lines (voucher_id, account_id, debit, credit, sub_account_type, sub_account_id, description)
              VALUES ($1, $2, 0, $3, 'supplier', $4, $5)`,
-            [voucherId, ACCOUNT_PAYABLE, grandTotal, inv.supplier_id, `مستحق للمورد — فاتورة #${inv.invoice_number} (تعديل)`]
+            [voucherId, acct.payable, grandTotal, inv.supplier_id, `مستحق للمورد — فاتورة #${inv.invoice_number} (تعديل)`]
         );
 
         // Link voucher to receipt sessions
@@ -601,12 +625,12 @@ router.post('/:id/edit', restrictEdit, async (req, res) => {
             await client.query(
                 `INSERT INTO accounting_voucher_lines (voucher_id, account_id, debit, credit, sub_account_type, sub_account_id, description)
                  VALUES ($1, $2, $3, 0, 'supplier', $4, $5)`,
-                [paymentVoucherId, ACCOUNT_PAYABLE, paidAmt, inv.supplier_id, `تسوية ذمة مورد — فاتورة #${inv.invoice_number} (تعديل)`]
+                [paymentVoucherId, acct.payable, paidAmt, inv.supplier_id, `تسوية ذمة مورد — فاتورة #${inv.invoice_number} (تعديل)`]
             );
             await client.query(
                 `INSERT INTO accounting_voucher_lines (voucher_id, account_id, debit, credit, sub_account_type, sub_account_id, description)
                  VALUES ($1, $2, 0, $3, 'purchase_invoice', $4, $5)`,
-                [paymentVoucherId, ACCOUNT_BANK, paidAmt, id, `دفع بنكي — فاتورة #${inv.invoice_number} (تعديل)`]
+                [paymentVoucherId, acct.bank, paidAmt, id, `دفع بنكي — فاتورة #${inv.invoice_number} (تعديل)`]
             );
 
             await client.query(
