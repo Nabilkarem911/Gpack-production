@@ -44,7 +44,7 @@ router.get('/warehouses', async (req, res) => {
 
         if (client_id) {
             params.push(client_id);
-            conditions.push(`w.client_id = $${params.length}`);
+            conditions.push(`(w.client_id = $${params.length} OR w.client_id IS NULL OR w.id IN (SELECT DISTINCT warehouse_id FROM warehouse_stock WHERE client_id = $${params.length}))`);
         }
 
         if (status) {

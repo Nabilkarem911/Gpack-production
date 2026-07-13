@@ -227,9 +227,9 @@
                 <div>
                     <label class="block text-xs font-bold text-slate-500 mb-1.5">المستودع</label>
                     <select id="dv-create-warehouse"
-                            onchange="window.dvLoadStockForCreate()"
+                            onchange="window.dvOnWarehouseChange()"
                             class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:border-brand-500 outline-none">
-                        <option value="">— كل المستودعات —</option>
+                        <option value="">— اختر المستودع —</option>
                     </select>
                 </div>
             </div>
@@ -248,11 +248,24 @@
                 </div>
             </div>
 
-            <!-- Stock Items -->
+            <!-- Search + Add Items -->
             <div>
-                <label class="block text-xs font-bold text-slate-500 mb-1.5">الأصناف المتاحة</label>
-                <div id="dv-create-stock" class="space-y-2 max-h-[40vh] overflow-y-auto border border-slate-200 rounded-xl p-3 bg-slate-50">
-                    <p class="text-sm text-slate-400 text-center py-4">اختر العميل والمستودع لعرض الأصناف</p>
+                <label class="block text-xs font-bold text-slate-500 mb-1.5">إضافة أصناف</label>
+                <div class="relative">
+                    <input id="dv-create-item-search" type="text" placeholder="ابحث عن صنف..."
+                           oninput="window.dvSearchItems()"
+                           disabled
+                           class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:border-brand-500 outline-none disabled:bg-slate-100 disabled:text-slate-400" />
+                    <div id="dv-create-search-results"
+                         class="hidden absolute z-10 mt-1 w-full bg-white border border-slate-200 rounded-xl shadow-lg max-h-48 overflow-y-auto"></div>
+                </div>
+            </div>
+
+            <!-- Selected Items -->
+            <div>
+                <label class="block text-xs font-bold text-slate-500 mb-1.5">الأصناف المختارة</label>
+                <div id="dv-create-selected" class="space-y-2 max-h-[30vh] overflow-y-auto border border-slate-200 rounded-xl p-3 bg-slate-50 min-h-[60px]">
+                    <p class="text-sm text-slate-400 text-center py-3">لم يتم اختيار أصناف بعد</p>
                 </div>
             </div>
 
@@ -278,4 +291,4 @@
     </div>
 </div>
 
-<script src="/js/views/vmi-dispatch.js?v=20260712e"></script>
+<script src="/js/views/vmi-dispatch.js?v=20260713a"></script>
