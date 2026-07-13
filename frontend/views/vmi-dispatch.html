@@ -23,16 +23,16 @@
 </div>
 
 <!-- Tabs -->
-<div class="flex gap-1 bg-slate-100 rounded-2xl p-1 mb-5">
+<div class="flex items-center gap-2 mb-5 border-b border-slate-200">
     <button id="dv-tab-pending" onclick="window.dvSwitchTab('pending')"
-            class="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-sm font-bold transition-all bg-white text-brand-700 shadow-sm">
-        <i class="fa-solid fa-truck-fast"></i>
+            class="px-5 py-2.5 text-sm font-bold border-b-2 border-brand-600 text-brand-600 transition-all whitespace-nowrap">
+        <i class="fa-solid fa-truck-fast ml-1"></i>
         <span>أوامر التسليم</span>
-        <span id="dv-tab-pending-badge" class="hidden px-2 py-0.5 bg-amber-500 text-white rounded-full text-xs font-black">0</span>
+        <span id="dv-tab-pending-badge" class="hidden px-2 py-0.5 bg-amber-500 text-white rounded-full text-xs font-black mr-1">0</span>
     </button>
     <button id="dv-tab-archive" onclick="window.dvSwitchTab('archive')"
-            class="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-sm font-bold transition-all text-slate-500 hover:text-slate-700">
-        <i class="fa-solid fa-clock-rotate-left"></i>
+            class="px-5 py-2.5 text-sm font-bold border-b-2 border-transparent text-slate-400 hover:text-slate-600 transition-all whitespace-nowrap">
+        <i class="fa-solid fa-clock-rotate-left ml-1"></i>
         <span>الأرشيف</span>
     </button>
 </div>
@@ -303,4 +303,4 @@
     </div>
 </div>
 
-<script src="/js/views/vmi-dispatch.js?v=20260713c"></script>
+<script src="/js/views/vmi-dispatch.js?v=20260713d"></script>

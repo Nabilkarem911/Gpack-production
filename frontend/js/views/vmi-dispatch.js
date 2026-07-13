@@ -35,8 +35,8 @@
     // ── Tab switching ─────────────────────────────────────────────────────────
     window.dvSwitchTab = function(tab) {
         const isPending = tab === 'pending';
-        const activeClass   = 'flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-sm font-bold transition-all bg-white text-brand-700 shadow-sm';
-        const inactiveClass = 'flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-sm font-bold transition-all text-slate-500 hover:text-slate-700';
+        const activeClass   = 'px-5 py-2.5 text-sm font-bold border-b-2 border-brand-600 text-brand-600 transition-all whitespace-nowrap';
+        const inactiveClass = 'px-5 py-2.5 text-sm font-bold border-b-2 border-transparent text-slate-400 hover:text-slate-600 transition-all whitespace-nowrap';
         const tp = _el('dv-tab-pending'), ta = _el('dv-tab-archive');
         if (tp) tp.className = isPending  ? activeClass : inactiveClass;
         if (ta) ta.className = !isPending ? activeClass : inactiveClass;
