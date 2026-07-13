@@ -338,7 +338,7 @@
             const rem = Math.max(0, gt - pd);
             const recv = RECV_CFG[o.receive_status] || RECV_CFG.none;
             const recvPct = o.total_mo_qty > 0 ? Math.round((o.total_received / o.total_mo_qty) * 100) : 0;
-            const rowBg = idx % 2 === 0 ? '' : 'bg-slate-100/50';
+            const rowBg = idx % 2 === 0 ? 'bg-white' : 'bg-slate-100';
 
             return `<tr class="border-b border-slate-50 ${rowBg} hover:bg-brand-50/30 transition-colors cursor-pointer"
                         onclick="window.poView.openHub('${o.id}')">
