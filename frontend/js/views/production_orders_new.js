@@ -1899,9 +1899,10 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         // received specifically for this order.
         container.innerHTML = billableItems.map(item => {
             const whReceived = Math.floor(parseFloat(item.wh_received_qty || 0));
-            const qty        = isProforma ? 0 : whReceived;
+            const orderQty   = Math.floor(parseFloat(item.quantity || 0));
+            const qty        = isProforma ? orderQty : whReceived;
             const available  = whReceived;
-            const maxAttr    = `max="${available}"`;
+            const maxAttr    = isProforma ? `max="${orderQty}"` : `max="${available}"`;
             const stockBadge = available <= 0
                 ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-600" title="الكمية المستلمة للطلب">لم يُستلم بعد</span>`
                 : `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700" title="الكمية المستلمة للطلب">${available}</span>`;
