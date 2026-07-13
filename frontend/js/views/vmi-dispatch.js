@@ -225,10 +225,21 @@
 
         try {
             const res = await window.apiFetch('/api/clients');
-            const clients = res.data || [];
+            const allClients = res.data || [];
             if (clientSel) {
-                clients.forEach(c => {
-                    clientSel.innerHTML += `<option value="${esc(c.id)}">${esc(c.name)}</option>`;
+                const mains = allClients.filter(c => !c.parent_id);
+                mains.forEach(main => {
+                    const branches = allClients.filter(b => b.parent_id === main.id);
+                    if (branches.length) {
+                        clientSel.innerHTML += `<optgroup label="${esc(main.name)}">`;
+                        clientSel.innerHTML += `<option value="${esc(main.id)}">${esc(main.name)} (رئيسي)</option>`;
+                        branches.forEach(b => {
+                            clientSel.innerHTML += `<option value="${esc(b.id)}">— ${esc(b.name)}</option>`;
+                        });
+                        clientSel.innerHTML += `</optgroup>`;
+                    } else {
+                        clientSel.innerHTML += `<option value="${esc(main.id)}">${esc(main.name)}</option>`;
+                    }
                 });
             }
         } catch (e) { window.showToast('فشل تحميل العملاء', 'error'); }
