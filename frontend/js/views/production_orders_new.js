@@ -348,9 +348,9 @@
                 <td class="py-3 px-4 text-xs text-slate-400 hidden sm:table-cell">${_fmtDate(o.order_date)}</td>
                 <td class="py-3 px-4 text-sm font-bold text-slate-800 hidden md:table-cell">${_fmt(gt)} ر.س</td>
                 <td class="py-3 px-4 text-sm hidden md:table-cell">
-                    ${rem > 0
-                        ? `<span class="text-red-600 font-bold">${_fmt(rem)} ر.س</span>`
-                        : `<span class="text-emerald-600 font-bold text-xs">مسدَّد</span>`}
+                    ${pd > 0
+                        ? `<span class="text-emerald-600 font-bold">${_fmt(pd)} ر.س</span>`
+                        : `<span class="text-slate-400 font-bold text-xs">لم يُدفع</span>`}
                 </td>
                 <td class="py-3 px-4">
                     <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold ${cfg.cls}">
