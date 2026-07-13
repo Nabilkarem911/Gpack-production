@@ -2,6 +2,7 @@ services:
   backend:
     build: ./backend
     restart: unless-stopped
+    stop_grace_period: 10s
     environment:
       DATABASE_HOST: ${DATABASE_HOST}
       DATABASE_PORT: 5432
