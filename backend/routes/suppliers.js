@@ -178,7 +178,7 @@ router.get('/:id/profile', async (req, res) => {
         const invoicesRes = await db.query(
             `SELECT pi.id, pi.invoice_number, pi.invoice_date, pi.supplier_invoice_ref,
                     pi.subtotal, pi.tax_rate, pi.tax_amount, pi.grand_total,
-                    pi.status, pi.created_at,
+                    pi.paid_amount, pi.status, pi.created_at,
                     mo.mo_number
              FROM purchase_invoices pi
              LEFT JOIN manufacturer_orders mo ON mo.id = pi.manufacturer_order_id
@@ -187,15 +187,15 @@ router.get('/:id/profile', async (req, res) => {
             [id]
         );
 
-        // 4. Financial stats
+        // 4. Financial stats — calculated from purchase_invoices (not MO, since VMI orders have no financials)
         const statsRes = await db.query(
             `SELECT
                 COUNT(DISTINCT mo.id)::int                                          AS total_orders,
                 COUNT(DISTINCT CASE WHEN mo.status = 'pending'    THEN mo.id END)::int AS pending_count,
                 COUNT(DISTINCT CASE WHEN mo.status = 'completed'  THEN mo.id END)::int AS completed_count,
-                COALESCE(SUM(mo.total_amount), 0)                                   AS total_value,
-                COALESCE(SUM(mo.paid_amount),  0)                                   AS total_paid,
-                COALESCE(SUM(mo.total_amount) - SUM(mo.paid_amount), 0)             AS total_remaining,
+                COALESCE(SUM(pi.grand_total), 0)                                    AS total_value,
+                COALESCE(SUM(pi.paid_amount),  0)                                   AS total_paid,
+                COALESCE(SUM(pi.grand_total) - SUM(pi.paid_amount), 0)              AS total_remaining,
                 COUNT(DISTINCT pi.id)::int                                          AS invoice_count
              FROM manufacturer_orders mo
              LEFT JOIN purchase_invoices pi ON pi.manufacturer_order_id = mo.id
