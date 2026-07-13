@@ -391,6 +391,90 @@ router.get('/price-history', async (req, res) => {
 });
 
 // =============================================================================
+// GET /api/orders/last-purchase-price
+// Returns the most recent purchase unit_cost for a given variant from purchase invoices.
+// Query: ?variant_id=Y
+// =============================================================================
+
+router.get('/last-purchase-price', async (req, res) => {
+    try {
+        const { variant_id } = req.query;
+
+        if (!variant_id) {
+            return res.status(400).json({ error: 'variant_id is required.' });
+        }
+
+        const result = await db.query(
+            `SELECT pii.unit_cost, pi.invoice_number, pi.invoice_date,
+                    s.company_name AS supplier_name
+             FROM purchase_invoice_items pii
+             JOIN purchase_invoices pi ON pi.id = pii.purchase_invoice_id
+             LEFT JOIN suppliers s ON s.id = pi.supplier_id
+             WHERE pii.variant_id = $1
+               AND pi.status != 'draft'
+               AND pii.unit_cost > 0
+             ORDER BY pi.invoice_date DESC
+             LIMIT 1`,
+            [variant_id]
+        );
+
+        if (result.rowCount > 0) {
+            return res.status(200).json({
+                last_price: Number(result.rows[0].unit_cost),
+                supplier_name: result.rows[0].supplier_name,
+                invoice_number: result.rows[0].invoice_number,
+                invoice_date: result.rows[0].invoice_date
+            });
+        }
+        return res.status(200).json({ last_price: null });
+    } catch (err) {
+        console.error('[Orders] GET /last-purchase-price error:', err.message);
+        return res.status(500).json({ error: 'Internal server error.' });
+    }
+});
+
+// =============================================================================
+// GET /api/orders/purchase-price-history
+// Returns purchase price history for a variant from all suppliers.
+// Query: ?variant_id=Y
+// =============================================================================
+
+router.get('/purchase-price-history', async (req, res) => {
+    try {
+        const { variant_id } = req.query;
+
+        if (!variant_id) {
+            return res.status(400).json({ error: 'variant_id is required.' });
+        }
+
+        const result = await db.query(
+            `SELECT pi.id AS invoice_id,
+                    pi.invoice_number,
+                    pi.invoice_date,
+                    pi.status,
+                    s.company_name AS supplier_name,
+                    pii.quantity,
+                    pii.unit_cost,
+                    pii.total_cost
+             FROM purchase_invoice_items pii
+             JOIN purchase_invoices pi ON pi.id = pii.purchase_invoice_id
+             LEFT JOIN suppliers s ON s.id = pi.supplier_id
+             WHERE pii.variant_id = $1
+               AND pi.status != 'draft'
+               AND pii.unit_cost > 0
+             ORDER BY pi.invoice_date DESC
+             LIMIT 10`,
+            [variant_id]
+        );
+
+        return res.status(200).json({ history: result.rows });
+    } catch (err) {
+        console.error('[Orders] GET /purchase-price-history error:', err.message);
+        return res.status(500).json({ error: 'Internal server error.' });
+    }
+});
+
+// =============================================================================
 // GET /api/orders/:id/details
 // Returns full order details with items for popup display.
 // =============================================================================

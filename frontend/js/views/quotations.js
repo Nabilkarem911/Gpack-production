@@ -1240,13 +1240,20 @@
         // Async: fetch last price for this client + variant
         const hintEl    = row.querySelector('.last-price-hint');
         if (variantId && clientId && hintEl) {
-            window.apiFetch(`/api/orders/last-price?client_id=${clientId}&variant_id=${variantId}`)
-                .then(res => {
-                    if (res && res.last_price !== null && res.last_price !== undefined) {
-                        hintEl.innerHTML = `<span class="text-green-600 font-bold text-[10px] whitespace-nowrap block truncate cursor-pointer hover:underline" onclick="window.openPriceHistoryModal('${clientId}', '${variantId}', this.closest('.quote-item-row').querySelector('.row-product')?.selectedOptions?.[0]?.textContent || '')"><i class="fa-solid fa-clock-rotate-left ml-1"></i>\u0627\u0644\u0633\u0627\u0628\u0642: ${Number(res.last_price).toFixed(2)} \u0631.\u0633 (\u0627\u0636\u063a\u0637 \u0644\u0644\u062a\u0641\u0627\u0635\u064a\u0644)</span>`;
-                    } else {
-                        hintEl.innerHTML = '';
+            Promise.all([
+                window.apiFetch(`/api/orders/last-price?client_id=${clientId}&variant_id=${variantId}`),
+                window.apiFetch(`/api/orders/last-purchase-price?variant_id=${variantId}`)
+            ])
+                .then(([sellRes, buyRes]) => {
+                    let html = '';
+                    if (sellRes && sellRes.last_price !== null && sellRes.last_price !== undefined) {
+                        html += `<span class="text-green-600 font-bold text-[10px] whitespace-nowrap cursor-pointer hover:underline" onclick="window.openPriceHistoryModal('${clientId}', '${variantId}', this.closest('.quote-item-row').querySelector('.row-product')?.selectedOptions?.[0]?.textContent || '')"><i class="fa-solid fa-clock-rotate-left ml-1"></i>السابق: ${Number(sellRes.last_price).toFixed(2)} ر.س</span>`;
                     }
+                    if (buyRes && buyRes.last_price !== null && buyRes.last_price !== undefined) {
+                        const supplier = buyRes.supplier_name ? ` — ${buyRes.supplier_name}` : '';
+                        html += `<span class="text-blue-600 font-bold text-[10px] whitespace-nowrap cursor-pointer hover:underline mr-2" onclick="window.openPurchasePriceHistoryModal('${variantId}', this.closest('.quote-item-row').querySelector('.row-product')?.selectedOptions?.[0]?.textContent || '')"><i class="fa-solid fa-truck ml-1"></i>شراء: ${Number(buyRes.last_price).toFixed(2)} ر.س${supplier}</span>`;
+                    }
+                    hintEl.innerHTML = html;
                 })
                 .catch(() => { hintEl.innerHTML = ''; });
         } else if (hintEl) {
@@ -3457,6 +3464,93 @@
             modal.classList.remove('opacity-100');
             modal.querySelector('div').classList.remove('scale-100');
             setTimeout(() => { modal.style.display = 'none'; }, 200);
+        }
+    };
+
+    // ==========================================================================
+    // Purchase Price History Modal
+    // ==========================================================================
+
+    window.openPurchasePriceHistoryModal = async function(variantId, productName = '') {
+        const modal = document.getElementById('price-history-modal');
+        const body  = document.getElementById('price-history-body');
+        const subtitle = document.getElementById('price-history-subtitle');
+        if (!modal || !body) return;
+
+        if (subtitle) {
+            subtitle.textContent = `أسعار شراء: ${productName}`;
+        }
+
+        body.innerHTML = `
+            <div class="text-center py-8">
+                <i class="fa-solid fa-circle-notch fa-spin text-2xl text-slate-300"></i>
+                <p class="text-xs text-slate-400 mt-2">جاري تحميل أسعار الشراء...</p>
+            </div>
+        `;
+        modal.style.display = 'flex';
+        requestAnimationFrame(() => { modal.classList.add('opacity-100'); modal.querySelector('div').classList.add('scale-100'); });
+
+        try {
+            const res = await window.apiFetch(`/api/orders/purchase-price-history?variant_id=${variantId}`);
+            const history = (res && res.history) ? res.history : [];
+
+            if (!history.length) {
+                body.innerHTML = `
+                    <div class="text-center py-8">
+                        <i class="fa-solid fa-inbox text-3xl text-slate-200 mb-3"></i>
+                        <p class="text-sm text-slate-500">لا توجد فواتير شراء سابقة لهذا الصنف</p>
+                    </div>
+                `;
+                return;
+            }
+
+            body.innerHTML = history.map((h, idx) => {
+                const dateStr = h.invoice_date ? new Date(h.invoice_date).toLocaleDateString('en-GB') : '—';
+                const price = Number(h.unit_cost || 0).toFixed(2);
+                const qty   = Math.round(Number(h.quantity || 0));
+                const total = Number(h.total_cost || 0).toFixed(2);
+                const supplier = h.supplier_name || '—';
+
+                return `
+                    <div class="mb-3 rounded-xl border border-slate-100 bg-slate-50/50 overflow-hidden ${idx === 0 ? 'ring-1 ring-blue-200 bg-blue-50/30' : ''}">
+                        <!-- Header: Invoice Info -->
+                        <div class="px-4 py-3 flex items-center justify-between border-b border-slate-100 bg-white">
+                            <div class="flex items-center gap-2">
+                                <span class="font-mono font-bold text-blue-600 text-sm">#${h.invoice_number || '—'}</span>
+                                <span class="text-xs text-slate-400">|</span>
+                                <span class="text-xs font-semibold text-slate-600"><i class="fa-solid fa-industry ml-1 text-slate-400"></i>${supplier}</span>
+                            </div>
+                            <span class="text-xs text-slate-500 font-medium">${dateStr}</span>
+                        </div>
+
+                        <!-- Item Details -->
+                        <div class="px-4 py-3">
+                            <div class="grid grid-cols-3 gap-3 text-center">
+                                <div class="bg-white rounded-lg border border-slate-100 p-2">
+                                    <p class="text-xs text-slate-400 mb-1">الكمية</p>
+                                    <p class="text-sm font-bold text-slate-700">${qty}</p>
+                                </div>
+                                <div class="bg-white rounded-lg border border-slate-100 p-2">
+                                    <p class="text-xs text-slate-400 mb-1">سعر الشراء</p>
+                                    <p class="text-sm font-bold text-blue-600">${price}</p>
+                                </div>
+                                <div class="bg-white rounded-lg border border-slate-100 p-2">
+                                    <p class="text-xs text-slate-400 mb-1">إجمالي الصنف</p>
+                                    <p class="text-sm font-bold text-slate-700">${total}</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        } catch (err) {
+            body.innerHTML = `
+                <div class="text-center py-8">
+                    <i class="fa-solid fa-circle-exclamation text-2xl text-red-300 mb-2"></i>
+                    <p class="text-sm text-red-500">فشل تحميل أسعار الشراء</p>
+                    <p class="text-xs text-slate-400 mt-1">${err.message || ''}</p>
+                </div>
+            `;
         }
     };
 
