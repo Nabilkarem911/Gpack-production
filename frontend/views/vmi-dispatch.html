@@ -214,10 +214,10 @@
         <!-- Body -->
         <div class="p-6 space-y-4">
 
-            <!-- Client + Warehouse -->
+            <!-- Main Client + Branch -->
             <div class="grid grid-cols-2 gap-3">
                 <div>
-                    <label class="block text-xs font-bold text-slate-500 mb-1.5">العميل</label>
+                    <label class="block text-xs font-bold text-slate-500 mb-1.5">العميل الرئيسي</label>
                     <select id="dv-create-client"
                             onchange="window.dvOnClientChange()"
                             class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:border-brand-500 outline-none">
@@ -225,13 +225,25 @@
                     </select>
                 </div>
                 <div>
-                    <label class="block text-xs font-bold text-slate-500 mb-1.5">المستودع</label>
-                    <select id="dv-create-warehouse"
-                            onchange="window.dvOnWarehouseChange()"
-                            class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:border-brand-500 outline-none">
-                        <option value="">— اختر المستودع —</option>
+                    <label class="block text-xs font-bold text-slate-500 mb-1.5">الفرع (اختياري)</label>
+                    <select id="dv-create-branch"
+                            onchange="window.dvOnBranchChange()"
+                            disabled
+                            class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:border-brand-500 outline-none disabled:bg-slate-100 disabled:text-slate-400">
+                        <option value="">— العميل الرئيسي —</option>
                     </select>
                 </div>
+            </div>
+
+            <!-- Warehouse -->
+            <div>
+                <label class="block text-xs font-bold text-slate-500 mb-1.5">المستودع</label>
+                <select id="dv-create-warehouse"
+                        onchange="window.dvOnWarehouseChange()"
+                        disabled
+                        class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:border-brand-500 outline-none disabled:bg-slate-100 disabled:text-slate-400">
+                        <option value="">— اختر المستودع —</option>
+                    </select>
             </div>
 
             <!-- Driver + Vehicle -->
@@ -291,4 +303,4 @@
     </div>
 </div>
 
-<script src="/js/views/vmi-dispatch.js?v=20260713b"></script>
+<script src="/js/views/vmi-dispatch.js?v=20260713c"></script>

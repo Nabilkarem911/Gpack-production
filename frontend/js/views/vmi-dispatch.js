@@ -207,39 +207,39 @@
     // ── Create standalone delivery note ───────────────────────────────────────
     let _createStock = [];
     let _createSelected = {};
+    let _allClients = [];
+
+    function _effectiveClientId() {
+        const branch = _el('dv-create-branch')?.value;
+        const main   = _el('dv-create-client')?.value;
+        return branch || main || '';
+    }
 
     window.dvOpenCreateModal = async function() {
-        const clientSel = _el('dv-create-client');
-        const whSel     = _el('dv-create-warehouse');
-        const searchInp = _el('dv-create-item-search');
-        const selDiv    = _el('dv-create-selected');
-        if (clientSel) clientSel.innerHTML = '<option value="">— اختر العميل —</option>';
-        if (whSel)     whSel.innerHTML     = '<option value="">— اختر المستودع —</option>';
-        if (searchInp) searchInp.disabled  = true;
-        if (selDiv)    selDiv.innerHTML    = '<p class="text-sm text-slate-400 text-center py-3">لم يتم اختيار أصناف بعد</p>';
+        const clientSel  = _el('dv-create-client');
+        const branchSel  = _el('dv-create-branch');
+        const whSel      = _el('dv-create-warehouse');
+        const searchInp  = _el('dv-create-item-search');
+        const selDiv     = _el('dv-create-selected');
+        if (clientSel)  clientSel.innerHTML  = '<option value="">— اختر العميل —</option>';
+        if (branchSel)  { branchSel.innerHTML = '<option value="">— العميل الرئيسي —</option>'; branchSel.disabled = true; }
+        if (whSel)      { whSel.innerHTML = '<option value="">— اختر المستودع —</option>'; whSel.disabled = true; }
+        if (searchInp)  { searchInp.disabled = true; searchInp.value = ''; }
+        if (selDiv)     selDiv.innerHTML = '<p class="text-sm text-slate-400 text-center py-3">لم يتم اختيار أصناف بعد</p>';
         const dEl = _el('dv-create-driver');   if (dEl) dEl.value = '';
         const vEl = _el('dv-create-vehicle');  if (vEl) vEl.value = '';
         const nEl = _el('dv-create-notes');    if (nEl) nEl.value = '';
         _createStock = [];
         _createSelected = {};
+        _allClients = [];
 
         try {
             const res = await window.apiFetch('/api/clients');
-            const allClients = res.data || [];
+            _allClients = res.data || [];
+            const mains = _allClients.filter(c => !c.parent_id);
             if (clientSel) {
-                const mains = allClients.filter(c => !c.parent_id);
-                mains.forEach(main => {
-                    const branches = allClients.filter(b => b.parent_id === main.id);
-                    if (branches.length) {
-                        clientSel.innerHTML += `<optgroup label="${esc(main.name)}">`;
-                        clientSel.innerHTML += `<option value="${esc(main.id)}">${esc(main.name)} (رئيسي)</option>`;
-                        branches.forEach(b => {
-                            clientSel.innerHTML += `<option value="${esc(b.id)}">— ${esc(b.name)}</option>`;
-                        });
-                        clientSel.innerHTML += `</optgroup>`;
-                    } else {
-                        clientSel.innerHTML += `<option value="${esc(main.id)}">${esc(main.name)}</option>`;
-                    }
+                mains.forEach(m => {
+                    clientSel.innerHTML += `<option value="${esc(m.id)}">${esc(m.name)}</option>`;
                 });
             }
         } catch (e) { window.showToast('فشل تحميل العملاء', 'error'); }
@@ -249,31 +249,70 @@
 
     window.dvCloseCreateModal = function() { closeModalEl('dv-create-modal'); };
 
-    window.dvOnClientChange = async function() {
-        const clientId = _el('dv-create-client')?.value;
-        const whSel    = _el('dv-create-warehouse');
+    window.dvOnClientChange = function() {
+        const mainId = _el('dv-create-client')?.value;
+        const branchSel = _el('dv-create-branch');
+        const whSel     = _el('dv-create-warehouse');
         const searchInp = _el('dv-create-item-search');
         const selDiv    = _el('dv-create-selected');
-        if (whSel)     whSel.innerHTML = '<option value="">— اختر المستودع —</option>';
-        if (searchInp) searchInp.disabled = true;
+        if (whSel)     { whSel.innerHTML = '<option value="">— اختر المستودع —</option>'; whSel.disabled = true; }
+        if (searchInp) { searchInp.disabled = true; searchInp.value = ''; }
         if (selDiv)    selDiv.innerHTML = '<p class="text-sm text-slate-400 text-center py-3">لم يتم اختيار أصناف بعد</p>';
         _createStock = [];
         _createSelected = {};
-        if (!clientId) return;
+        if (!mainId) {
+            if (branchSel) { branchSel.innerHTML = '<option value="">— العميل الرئيسي —</option>'; branchSel.disabled = true; }
+            return;
+        }
+        const branches = _allClients.filter(c => c.parent_id === mainId);
+        if (branchSel) {
+            branchSel.innerHTML = '<option value="">— العميل الرئيسي —</option>';
+            if (branches.length) {
+                branches.forEach(b => {
+                    branchSel.innerHTML += `<option value="${esc(b.id)}">${esc(b.name)}</option>`;
+                });
+                branchSel.disabled = false;
+            } else {
+                branchSel.disabled = true;
+            }
+        }
+        window.dvLoadWarehouses();
+    };
+
+    window.dvOnBranchChange = function() {
+        const whSel     = _el('dv-create-warehouse');
+        const searchInp = _el('dv-create-item-search');
+        const selDiv    = _el('dv-create-selected');
+        if (searchInp) { searchInp.disabled = true; searchInp.value = ''; }
+        if (selDiv)    selDiv.innerHTML = '<p class="text-sm text-slate-400 text-center py-3">لم يتم اختيار أصناف بعد</p>';
+        _createSelected = {};
+        window.dvLoadWarehouses();
+    };
+
+    window.dvLoadWarehouses = async function() {
+        const effId = _effectiveClientId();
+        const whSel = _el('dv-create-warehouse');
+        if (whSel) { whSel.innerHTML = '<option value="">— اختر المستودع —</option>'; whSel.disabled = true; }
+        if (!effId) return;
         try {
-            const res = await window.apiFetch('/api/inventory/warehouses?client_id=' + clientId);
+            const res = await window.apiFetch('/api/inventory/warehouses?client_id=' + effId);
             const warehouses = res.data || [];
             if (whSel) {
-                warehouses.forEach(w => {
-                    whSel.innerHTML += `<option value="${esc(w.id)}">${esc(w.name)}</option>`;
-                });
+                if (warehouses.length === 0) {
+                    whSel.innerHTML = '<option value="">لا توجد مستودعات</option>';
+                } else {
+                    warehouses.forEach(w => {
+                        whSel.innerHTML += `<option value="${esc(w.id)}">${esc(w.name)}</option>`;
+                    });
+                    whSel.disabled = false;
+                }
             }
         } catch (_) {}
     };
 
     window.dvOnWarehouseChange = async function() {
-        const clientId = _el('dv-create-client')?.value;
-        const whId     = _el('dv-create-warehouse')?.value;
+        const effId = _effectiveClientId();
+        const whId  = _el('dv-create-warehouse')?.value;
         const searchInp = _el('dv-create-item-search');
         const selDiv    = _el('dv-create-selected');
         if (searchInp) { searchInp.disabled = true; searchInp.value = ''; }
@@ -281,10 +320,10 @@
         if (resultsDiv) resultsDiv.classList.add('hidden');
         if (selDiv)    selDiv.innerHTML = '<p class="text-sm text-slate-400 text-center py-3">لم يتم اختيار أصناف بعد</p>';
         _createSelected = {};
-        if (!clientId || !whId) return;
+        if (!effId || !whId) return;
 
         try {
-            const res = await window.apiFetch('/api/inventory/stock?client_id=' + clientId + '&warehouse_id=' + whId);
+            const res = await window.apiFetch('/api/inventory/stock?client_id=' + effId + '&warehouse_id=' + whId);
             _createStock = (res.data || []).filter(s => parseFloat(s.quantity || s.available_qty || 0) > 0);
             if (searchInp) searchInp.disabled = false;
         } catch (e) {
@@ -378,14 +417,16 @@
     }
 
     window.dvConfirmCreate = async function() {
-        const clientId  = _el('dv-create-client')?.value;
+        const mainId    = _el('dv-create-client')?.value;
+        const branchId  = _el('dv-create-branch')?.value;
+        const effId     = branchId || mainId;
         const whId      = _el('dv-create-warehouse')?.value;
         const driver    = _el('dv-create-driver')?.value || null;
         const vehicle   = _el('dv-create-vehicle')?.value || null;
         const notes     = _el('dv-create-notes')?.value || null;
 
-        if (!clientId) { window.showToast('اختر العميل', 'error'); return; }
-        if (!whId)     { window.showToast('اختر المستودع', 'error'); return; }
+        if (!mainId)    { window.showToast('اختر العميل الرئيسي', 'error'); return; }
+        if (!whId)      { window.showToast('اختر المستودع', 'error'); return; }
 
         const items = Object.values(_createSelected).map(v => ({ variant_id: v.variant_id, requested_qty: parseFloat(v.qty) || 0 }));
         if (!items.length) { window.showToast('أضف صنفاً واحداً على الأقل', 'error'); return; }
@@ -397,7 +438,7 @@
         if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin ml-2"></i> جاري الإصدار...'; }
 
         try {
-            const body = { client_id: clientId, warehouse_id: whId, items, notes, driver_name: driver, vehicle_number: vehicle };
+            const body = { client_id: effId, warehouse_id: whId, items, notes, driver_name: driver, vehicle_number: vehicle };
             await window.apiFetch('/api/delivery-notes', { method: 'POST', body });
             window.dvCloseCreateModal();
             window.showToast('تم إصدار أمر الفسح بنجاح ✅');
