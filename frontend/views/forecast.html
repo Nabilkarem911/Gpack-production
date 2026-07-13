@@ -19,7 +19,7 @@
     <div class="px-5 py-4 border-b border-slate-200 bg-gradient-to-r from-purple-50 to-indigo-50 flex justify-between items-center">
         <div>
             <h2 class="text-base font-bold text-slate-800"><i class="fa-solid fa-users-viewfinder ml-1 text-purple-600"></i> تصنيف العملاء (RFM)</h2>
-            <p class="text-xs text-slate-500 mt-0.5">ذكاء اصطناعي يقسم عملاءك لأربع فئات بناءً على نشاطهم وقيمتهم</p>
+            <p class="text-xs text-slate-500 mt-0.5">تحليل ذكي يصنف العملاء إلى أربع فئات بناءً على نشاطهم وقيمتهم</p>
         </div>
         <button id="rfm-refresh" class="text-xs bg-white border border-slate-300 rounded-lg px-3 py-1.5 hover:bg-slate-50 transition-colors">
             <i class="fa-solid fa-rotate ml-1"></i> تحديث
@@ -58,7 +58,7 @@
                     <i class="fa-solid fa-triangle-exclamation text-orange-500"></i>
                 </div>
                 <p class="text-2xl font-bold text-orange-900" id="rfm-at_risk-count">0</p>
-                <p class="text-xs text-orange-600">بدأوا يتباطؤوا</p>
+                <p class="text-xs text-orange-600">بدأ نشاطهم بالتباطؤ</p>
             </div>
             <!-- Dormant -->
             <div class="bg-gradient-to-br from-red-50 to-rose-50 rounded-xl p-4 border border-red-200 cursor-pointer hover:shadow-md transition-shadow" onclick="forecastView.toggleRfmSegment('dormant')">
@@ -67,7 +67,7 @@
                     <i class="fa-solid fa-bed text-red-500"></i>
                 </div>
                 <p class="text-2xl font-bold text-red-900" id="rfm-dormant-count">0</p>
-                <p class="text-xs text-red-600">ماطلبوش من فترة</p>
+                <p class="text-xs text-red-600">لم يطلبوا منذ فترة</p>
             </div>
         </div>
 
@@ -100,7 +100,7 @@
     <div class="px-5 py-4 border-b border-slate-200 bg-gradient-to-r from-red-50 to-rose-50 flex justify-between items-center">
         <div>
             <h2 class="text-base font-bold text-slate-800"><i class="fa-solid fa-bell ml-1 text-red-500"></i> تنبيهات التقاعس</h2>
-            <p class="text-xs text-slate-500 mt-0.5">عملاء ماطلبوش من 30 يوم — يستحقون متابعة</p>
+            <p class="text-xs text-slate-500 mt-0.5">عملاء لم يطلبوا منذ 30 يوماً — يستحقون المتابعة</p>
         </div>
         <button id="churn-refresh" class="text-xs bg-white border border-slate-300 rounded-lg px-3 py-1.5 hover:bg-slate-50 transition-colors">
             <i class="fa-solid fa-rotate ml-1"></i> تحديث
@@ -131,7 +131,7 @@
         </div>
         <div id="churn-empty" class="hidden px-5 py-6 text-center text-emerald-600 text-sm">
             <i class="fa-solid fa-check-circle text-xl mb-1 block"></i>
-            كل العملاء نشطين! مفيش تنبيهات دلوقتي.
+            جميع العملاء نشطون، لا توجد تنبيهات حالياً.
         </div>
     </div>
 </div>
@@ -142,7 +142,7 @@
 <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mb-6">
     <div class="px-5 py-4 border-b border-slate-200 bg-gradient-to-r from-blue-50 to-indigo-50">
         <h2 class="text-base font-bold text-slate-800"><i class="fa-solid fa-chart-line ml-1 text-blue-600"></i> توقع الطلب</h2>
-        <p class="text-xs text-slate-500 mt-0.5">يتنبأ بالكميات المطلوبة بناءً على تاريخ المبيعات</p>
+        <p class="text-xs text-slate-500 mt-0.5">توقعات بالكميات المطلوبة بناءً على تاريخ المبيعات</p>
     </div>
 
     <div class="p-5">
@@ -167,7 +167,7 @@
             <div>
                 <button id="forecast-btn" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg px-4 py-2 text-sm transition-colors">
                     <i class="fa-solid fa-wand-magic-sparkles ml-1"></i>
-                    شغل التوقع
+                    تشغيل التوقعات
                 </button>
             </div>
         </div>
@@ -228,4 +228,4 @@
     </div>
 </div>
 
-<script src="/js/views/forecast.js?v=202506134"></script>
+<script src="/js/views/forecast.js?v=20260713a"></script>

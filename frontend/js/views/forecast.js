@@ -42,7 +42,7 @@ var forecastView = {
             const clients = res.data || res || [];
             console.log('[Forecast] Clients count:', clients.length);
             if (!clients.length) {
-                select.innerHTML = '<option value="">مفيش عملاء</option>';
+                select.innerHTML = '<option value="">لا يوجد عملاء</option>';
                 return;
             }
             select.innerHTML = '<option value="">اختر عميل...</option>' +
@@ -70,7 +70,7 @@ var forecastView = {
             this.currentData = data;
 
             if (!data.ready) {
-                this.showStatus(data.message || 'مفيش بيانات كافية للتوقع', 'warning');
+                this.showStatus(data.message || 'لا توجد بيانات كافية للتوقعات', 'warning');
                 return;
             }
 
@@ -197,14 +197,14 @@ var forecastView = {
         title.textContent = labels[segment] || 'التفاصيل';
 
         if (!clients.length) {
-            tbody.innerHTML = '<tr><td colspan="4" class="px-4 py-4 text-center text-slate-400 text-sm">مفيش عملاء في الفئة دي</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="4" class="px-4 py-4 text-center text-slate-400 text-sm">لا يوجد عملاء في هذه الفئة</td></tr>';
         } else {
             tbody.innerHTML = clients.map(c => `
                 <tr class="hover:bg-slate-50 transition-colors cursor-pointer" onclick="window.navigateTo('client-profile?id=${c.id}')">
                     <td class="px-4 py-2 text-slate-800 font-medium">${c.name}</td>
                     <td class="px-4 py-2 text-slate-600">${c.last_order || '—'}</td>
                     <td class="px-4 py-2 text-slate-600">${c.frequency}</td>
-                    <td class="px-4 py-2 text-slate-800 font-bold">${Number(c.monetary).toLocaleString()} ج.م</td>
+                    <td class="px-4 py-2 text-slate-800 font-bold">${Number(c.monetary).toLocaleString()} ر.س</td>
                 </tr>
             `).join('');
         }
@@ -251,9 +251,9 @@ var forecastView = {
                 <tr class="hover:bg-slate-50 transition-colors cursor-pointer" onclick="window.navigateTo('client-profile?id=${c.id}')">
                     <td class="px-4 py-3 text-slate-800 font-medium">${c.name}</td>
                     <td class="px-4 py-3 text-slate-600">${c.last_order || '—'}</td>
-                    <td class="px-4 py-3 ${daysClass}">${c.inactive_days === 999 ? 'ماطلبوش قبل كدا' : c.inactive_days + ' يوم'}</td>
+                    <td class="px-4 py-3 ${daysClass}">${c.inactive_days === 999 ? 'لم يسبق له الطلب' : c.inactive_days + ' يوم'}</td>
                     <td class="px-4 py-3 text-slate-600">${c.total_orders}</td>
-                    <td class="px-4 py-3 text-slate-800 font-bold">${Number(c.total_value).toLocaleString()} ج.م</td>
+                    <td class="px-4 py-3 text-slate-800 font-bold">${Number(c.total_value).toLocaleString()} ر.س</td>
                 </tr>
             `;
         }).join('');
