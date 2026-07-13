@@ -105,7 +105,7 @@ const dashboardView = {
                             <i class="fa-solid fa-truck-ramp-box text-xl"></i>
                         </div>
                         <div>
-                            <h4 class="font-bold text-lg">${pendingCount} أمر تشغيل بانتظار الاستلام</h4>
+                            <h4 class="font-bold text-lg">${pendingCount} طلب بانتظار الاستلام</h4>
                             <p class="text-white/80 text-sm">يوجد بضاعة مرسلة للموردين بانتظار اعتماد الاستلام</p>
                         </div>
                     </div>

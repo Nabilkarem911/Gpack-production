@@ -97,7 +97,7 @@ router.get('/stats', authenticate, async (req, res) => {
                 COUNT(*) FILTER (WHERE status = 'pending') as pending_mo,
                 COUNT(*) FILTER (WHERE status = 'sent') as sent_mo,
                 COUNT(*) FILTER (WHERE status = 'received') as received_mo,
-                COUNT(*) FILTER (WHERE status IN ('sent','partially_received')) as awaiting_receiving
+                COUNT(DISTINCT order_id) FILTER (WHERE status IN ('sent','partially_received')) as awaiting_receiving
              FROM manufacturer_orders`;
         if (isSalesRep) {
             moQuery = `SELECT 0 as pending_mo, 0 as sent_mo, 0 as received_mo, 0 as awaiting_receiving`;
