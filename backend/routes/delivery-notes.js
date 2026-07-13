@@ -100,12 +100,14 @@ router.post('/', restrictWrite, async (req, res) => {
             if (clientCheck.rowCount === 0) throw new Error('العميل غير موجود.');
 
             // Validate items against warehouse_stock
+            // Stock can be tied to: the client itself, its parent (main client), or NULL (general)
             for (const item of items) {
                 if (!item.variant_id || !item.requested_qty || item.requested_qty <= 0) continue;
 
                 const stockRes = await client.query(
                     `SELECT id, quantity, available_qty FROM warehouse_stock
-                     WHERE variant_id = $1 AND client_id = $2
+                     WHERE variant_id = $1
+                     AND (client_id = $2 OR client_id IS NULL OR client_id IN (SELECT parent_id FROM clients WHERE id = $2))
                      ${warehouse_id ? 'AND warehouse_id = $3' : ''}
                      ORDER BY quantity DESC LIMIT 1`,
                     warehouse_id ? [item.variant_id, client_id, warehouse_id] : [item.variant_id, client_id]
@@ -327,10 +329,11 @@ router.post('/:id/dispatch', restrictWrite, validateBody(deliveryNoteDispatch), 
 
                 const { order_item_id: orderItemId, variant_id: variantId } = itemResult.rows[0];
 
-                // Validate: sufficient stock
+                // Validate: sufficient stock (include parent client's stock)
                 const stockResult = await client.query(
                     `SELECT id, quantity FROM warehouse_stock
-                     WHERE variant_id = $1 AND (client_id = $2 OR (client_id IS NULL AND $2 IS NULL))
+                     WHERE variant_id = $1
+                     AND (client_id = $2 OR client_id IS NULL OR client_id IN (SELECT parent_id FROM clients WHERE id = $2))
                      ORDER BY quantity DESC LIMIT 1`,
                     [variantId, dn.client_id]
                 );
@@ -454,10 +457,11 @@ router.post('/:id/confirm', restrictWrite, validateBody(deliveryNoteDispatch), a
                 const orderItemId = itemResult.rows[0].order_item_id;
                 const variantId = itemResult.rows[0].variant_id;
 
-                // ── Validate: sufficient stock ─────────────────────────────────
+                // ── Validate: sufficient stock (include parent client's stock) ──
                 const stockResult = await client.query(
-                    `SELECT id, quantity FROM warehouse_stock 
-                     WHERE variant_id = $1 AND (client_id = $2 OR (client_id IS NULL AND $2 IS NULL))
+                    `SELECT id, quantity FROM warehouse_stock
+                     WHERE variant_id = $1
+                     AND (client_id = $2 OR client_id IS NULL OR client_id IN (SELECT parent_id FROM clients WHERE id = $2))
                      ORDER BY quantity DESC LIMIT 1`,
                     [variantId, dn.client_id]
                 );
@@ -468,7 +472,7 @@ router.post('/:id/confirm', restrictWrite, validateBody(deliveryNoteDispatch), a
                 }
 
                 const stockId = stockResult.rows[0].id;
-                
+
                 // Update delivered quantity
                 await client.query(
                     `UPDATE delivery_note_items 
@@ -566,10 +570,11 @@ router.post('/:id/reverse', restrictWrite, async (req, res) => {
                 const delQty = parseFloat(item.delivered_qty);
                 if (delQty <= 0) continue;
 
-                // Return stock
+                // Return stock (include parent client's stock)
                 const stockRes = await client.query(
                     `SELECT id, quantity FROM warehouse_stock
-                     WHERE variant_id = $1 AND (client_id = $2 OR (client_id IS NULL AND $2 IS NULL))
+                     WHERE variant_id = $1
+                     AND (client_id = $2 OR client_id IS NULL OR client_id IN (SELECT parent_id FROM clients WHERE id = $2))
                      ORDER BY quantity DESC LIMIT 1`,
                     [item.variant_id, dn.client_id]
                 );
@@ -579,11 +584,13 @@ router.post('/:id/reverse', restrictWrite, async (req, res) => {
                         [delQty, stockRes.rows[0].id]
                     );
                 } else {
-                    // Re-create stock record if it was deleted
+                    // Re-create stock record — use parent client_id if this is a branch
+                    const parentRes = await client.query('SELECT parent_id FROM clients WHERE id = $1', [dn.client_id]);
+                    const stockClientId = parentRes.rowCount > 0 && parentRes.rows[0].parent_id ? parentRes.rows[0].parent_id : dn.client_id;
                     await client.query(
                         `INSERT INTO warehouse_stock (variant_id, client_id, quantity, last_updated)
                          VALUES ($1, $2, $3, NOW())`,
-                        [item.variant_id, dn.client_id, delQty]
+                        [item.variant_id, stockClientId, delQty]
                     );
                 }
 
