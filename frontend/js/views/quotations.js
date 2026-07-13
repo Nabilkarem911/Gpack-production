@@ -1011,12 +1011,13 @@
             </div>
 
             <!-- Line Total (readonly) -->
-            <div>
+            <div class="relative">
                 <input type="number"
                        class="row-total w-full px-2.5 py-2 bg-slate-100 border border-slate-200 rounded-lg
                               text-sm font-bold text-slate-700 text-center outline-none cursor-default"
                        placeholder="0.00" readonly tabindex="-1"
                        value="" />
+                <div class="purchase-price-hint absolute -bottom-3.5 right-0 left-0 text-center"></div>
             </div>
 
             <!-- Design Section -->
@@ -1237,27 +1238,35 @@
             console.log('[_onRowVariantChange] NOT calling loadDesignsForRow - missing IDs');
         }
 
-        // Async: fetch last price for this client + variant
-        const hintEl    = row.querySelector('.last-price-hint');
+        // Async: fetch last sell price + last purchase price separately
+        const hintEl  = row.querySelector('.last-price-hint');
+        const buyHint = row.querySelector('.purchase-price-hint');
         if (variantId && clientId && hintEl) {
-            Promise.all([
-                window.apiFetch(`/api/orders/last-price?client_id=${clientId}&variant_id=${variantId}`),
-                window.apiFetch(`/api/orders/last-purchase-price?variant_id=${variantId}`)
-            ])
-                .then(([sellRes, buyRes]) => {
-                    let html = '';
-                    if (sellRes && sellRes.last_price !== null && sellRes.last_price !== undefined) {
-                        html += `<span class="text-green-600 font-bold text-[10px] whitespace-nowrap cursor-pointer hover:underline" onclick="window.openPriceHistoryModal('${clientId}', '${variantId}', this.closest('.quote-item-row').querySelector('.row-product')?.selectedOptions?.[0]?.textContent || '')"><i class="fa-solid fa-clock-rotate-left ml-1"></i>السابق: ${Number(sellRes.last_price).toFixed(2)} ر.س</span>`;
+            window.apiFetch(`/api/orders/last-price?client_id=${clientId}&variant_id=${variantId}`)
+                .then(res => {
+                    if (res && res.last_price !== null && res.last_price !== undefined) {
+                        hintEl.innerHTML = `<span class="text-green-600 font-bold text-[10px] whitespace-nowrap cursor-pointer hover:underline" onclick="window.openPriceHistoryModal('${clientId}', '${variantId}', this.closest('.quote-item-row').querySelector('.row-product')?.selectedOptions?.[0]?.textContent || '')"><i class="fa-solid fa-clock-rotate-left ml-1"></i>السابق: ${Number(res.last_price).toFixed(2)}</span>`;
+                    } else {
+                        hintEl.innerHTML = '';
                     }
-                    if (buyRes && buyRes.last_price !== null && buyRes.last_price !== undefined) {
-                        const supplier = buyRes.supplier_name ? ` — ${buyRes.supplier_name}` : '';
-                        html += `<span class="text-blue-600 font-bold text-[10px] whitespace-nowrap cursor-pointer hover:underline mr-2" onclick="window.openPurchasePriceHistoryModal('${variantId}', this.closest('.quote-item-row').querySelector('.row-product')?.selectedOptions?.[0]?.textContent || '')"><i class="fa-solid fa-truck ml-1"></i>شراء: ${Number(buyRes.last_price).toFixed(2)} ر.س${supplier}</span>`;
-                    }
-                    hintEl.innerHTML = html;
                 })
                 .catch(() => { hintEl.innerHTML = ''; });
         } else if (hintEl) {
             hintEl.innerHTML = '';
+        }
+
+        if (variantId && buyHint) {
+            window.apiFetch(`/api/orders/last-purchase-price?variant_id=${variantId}`)
+                .then(res => {
+                    if (res && res.last_price !== null && res.last_price !== undefined) {
+                        buyHint.innerHTML = `<span class="text-blue-600 font-bold text-[10px] whitespace-nowrap cursor-pointer hover:underline" onclick="window.openPurchasePriceHistoryModal('${variantId}', this.closest('.quote-item-row').querySelector('.row-product')?.selectedOptions?.[0]?.textContent || '')"><i class="fa-solid fa-truck ml-1"></i>شراء: ${Number(res.last_price).toFixed(2)}</span>`;
+                    } else {
+                        buyHint.innerHTML = '';
+                    }
+                })
+                .catch(() => { buyHint.innerHTML = ''; });
+        } else if (buyHint) {
+            buyHint.innerHTML = '';
         }
     };
 
