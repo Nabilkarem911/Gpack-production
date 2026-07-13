@@ -331,15 +331,16 @@
             full:    { label: 'كامل',  cls: 'bg-emerald-100 text-emerald-700', icon: 'fa-check-circle' }
         };
 
-        tbody.innerHTML = orders.map(o => {
+        tbody.innerHTML = orders.map((o, idx) => {
             const cfg = STATUS_CFG[o.status] || STATUS_CFG.production;
             const gt  = parseFloat(o.grand_total  || 0);
             const pd  = parseFloat(o.paid_amount  || 0);
             const rem = Math.max(0, gt - pd);
             const recv = RECV_CFG[o.receive_status] || RECV_CFG.none;
             const recvPct = o.total_mo_qty > 0 ? Math.round((o.total_received / o.total_mo_qty) * 100) : 0;
+            const rowBg = idx % 2 === 0 ? '' : 'bg-slate-50/60';
 
-            return `<tr class="border-b border-slate-50 hover:bg-brand-50/30 transition-colors cursor-pointer"
+            return `<tr class="border-b border-slate-50 ${rowBg} hover:bg-brand-50/30 transition-colors cursor-pointer"
                         onclick="window.poView.openHub('${o.id}')">
                 <td class="py-3 px-4">
                     <span class="font-mono font-bold text-slate-800">#${o.order_number}</span>
@@ -351,6 +352,11 @@
                     ${pd > 0
                         ? `<span class="text-emerald-600 font-bold">${_fmt(pd)} ر.س</span>`
                         : `<span class="text-slate-400 font-bold text-xs">لم يُدفع</span>`}
+                </td>
+                <td class="py-3 px-4 text-sm hidden md:table-cell">
+                    ${rem > 0
+                        ? `<span class="text-red-600 font-bold">${_fmt(rem)} ر.س</span>`
+                        : `<span class="text-emerald-600 font-bold text-xs">مسدَّد</span>`}
                 </td>
                 <td class="py-3 px-4">
                     <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold ${cfg.cls}">
