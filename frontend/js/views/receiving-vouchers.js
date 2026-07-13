@@ -228,13 +228,13 @@
                                data-order-item-id="${item.order_item_id || ''}"
                                data-variant-id="${item.variant_id || ''}"
                                data-rem-qty="${remQty}"
-                               value="${remQty}" min="0" max="${remQty}"
+                               value="0" min="0" max="${remQty}"
                                ${remQty === 0 ? 'disabled' : ''}
                                oninput="window.rvUpdateRowState(this)"
                                class="w-20 px-2 py-1 border border-slate-200 rounded-lg text-center text-xs focus:border-brand-500 outline-none">
                     </td>
                     <td class="py-2.5 px-3 text-center">
-                        <input type="checkbox" ${remQty === 0 ? 'disabled checked' : 'checked'}
+                        <input type="checkbox" ${remQty === 0 ? 'disabled' : ''}
                                class="w-4 h-4 text-emerald-500 rounded"
                                title="استلام كلي"
                                onchange="window.rvToggleFull(this)">
