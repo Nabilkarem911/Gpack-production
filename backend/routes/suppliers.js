@@ -187,19 +187,35 @@ router.get('/:id/profile', async (req, res) => {
             [id]
         );
 
-        // 4. Financial stats — calculated from purchase_invoices (not MO, since VMI orders have no financials)
+        // 4. Financial stats — total_value from invoices, total_paid from payment vouchers
         const statsRes = await db.query(
             `SELECT
-                COUNT(DISTINCT mo.id)::int                                          AS total_orders,
-                COUNT(DISTINCT CASE WHEN mo.status = 'pending'    THEN mo.id END)::int AS pending_count,
-                COUNT(DISTINCT CASE WHEN mo.status = 'completed'  THEN mo.id END)::int AS completed_count,
-                COALESCE(SUM(pi.grand_total), 0)                                    AS total_value,
-                COALESCE(SUM(pi.paid_amount),  0)                                   AS total_paid,
-                COALESCE(SUM(pi.grand_total) - SUM(pi.paid_amount), 0)              AS total_remaining,
-                COUNT(DISTINCT pi.id)::int                                          AS invoice_count
-             FROM manufacturer_orders mo
-             LEFT JOIN purchase_invoices pi ON pi.manufacturer_order_id = mo.id
-             WHERE mo.manufacturer_id = $1`,
+                (SELECT COUNT(*)::int FROM manufacturer_orders WHERE manufacturer_id = $1) AS total_orders,
+                (SELECT COUNT(*)::int FROM manufacturer_orders WHERE manufacturer_id = $1 AND status = 'pending') AS pending_count,
+                (SELECT COUNT(*)::int FROM manufacturer_orders WHERE manufacturer_id = $1 AND status = 'completed') AS completed_count,
+                COALESCE((SELECT SUM(grand_total) FROM purchase_invoices WHERE supplier_id = $1 AND status != 'draft'), 0) AS total_value,
+                COALESCE((
+                    SELECT SUM(av.total_amount) FROM accounting_vouchers av
+                    WHERE av.voucher_type = 'payment' AND av.status = 'posted'
+                      AND (
+                        (av.reference_type = 'supplier' AND av.reference_id = $1)
+                        OR
+                        (av.reference_type = 'purchase_invoice' AND av.reference_id IN
+                          (SELECT id FROM purchase_invoices WHERE supplier_id = $1))
+                      )
+                ), 0) AS total_paid,
+                COALESCE((SELECT SUM(grand_total) FROM purchase_invoices WHERE supplier_id = $1 AND status != 'draft'), 0)
+                  - COALESCE((
+                    SELECT SUM(av.total_amount) FROM accounting_vouchers av
+                    WHERE av.voucher_type = 'payment' AND av.status = 'posted'
+                      AND (
+                        (av.reference_type = 'supplier' AND av.reference_id = $1)
+                        OR
+                        (av.reference_type = 'purchase_invoice' AND av.reference_id IN
+                          (SELECT id FROM purchase_invoices WHERE supplier_id = $1))
+                      )
+                ), 0) AS total_remaining,
+                (SELECT COUNT(*)::int FROM purchase_invoices WHERE supplier_id = $1) AS invoice_count`,
             [id]
         );
 

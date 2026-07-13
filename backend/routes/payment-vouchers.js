@@ -349,6 +349,26 @@ router.post('/:id/cancel', restrictDelete, validateBody(voucherCancel), async (r
         const reversalId = await db.withTransaction(async (txClient) => {
             await txClient.query("UPDATE accounting_vouchers SET status = 'cancelled' WHERE id = $1", [id]);
 
+            // Revert purchase invoice paid_amount if this voucher was linked to an invoice
+            if (orig.reference_type === 'purchase_invoice' && orig.reference_id) {
+                const invRes = await txClient.query(
+                    `SELECT grand_total, paid_amount, status FROM purchase_invoices WHERE id = $1 FOR UPDATE`,
+                    [orig.reference_id]
+                );
+                if (invRes.rows.length) {
+                    const inv = invRes.rows[0];
+                    const newPaid = Math.max(0, parseFloat(inv.paid_amount || 0) - parseFloat(orig.total_amount || 0));
+                    const grandTotal = parseFloat(inv.grand_total || 0);
+                    const newStatus = newPaid >= grandTotal - 0.01 ? 'paid'
+                                   : newPaid > 0                  ? 'partially_paid'
+                                   : 'unpaid';
+                    await txClient.query(
+                        `UPDATE purchase_invoices SET paid_amount = $1, status = $2 WHERE id = $3`,
+                        [newPaid, newStatus, orig.reference_id]
+                    );
+                }
+            }
+
             const reversalRes = await txClient.query(`
                 INSERT INTO accounting_vouchers
                     (voucher_type, voucher_date, description, total_amount, status, reference_type, reference_id, created_by)
