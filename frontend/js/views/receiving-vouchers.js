@@ -46,8 +46,8 @@
         const secActive  = _el('rv-section-active');
         const secArchive = _el('rv-section-archive');
 
-        const activeClass   = ['bg-white', 'text-brand-700', 'shadow-sm'];
-        const inactiveClass = ['text-slate-500', 'hover:text-slate-700'];
+        const activeClass   = ['border-brand-600', 'text-brand-600'];
+        const inactiveClass = ['border-transparent', 'text-slate-400', 'hover:text-slate-600'];
 
         if (isActive) {
             tabActive.classList.add(...activeClass);
