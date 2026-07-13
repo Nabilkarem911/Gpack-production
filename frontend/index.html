@@ -117,6 +117,58 @@
         ::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 3px; }
         ::-webkit-scrollbar-thumb:hover { background: #64748b; }
 
+        /* Notification dropdown panel */
+        #notif-panel {
+            position: absolute;
+            top: calc(100% + 8px);
+            left: 0;
+            width: 380px;
+            max-height: 480px;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.12);
+            border: 1px solid #e2e8f0;
+            z-index: 1000;
+            overflow: hidden;
+            display: none;
+            flex-direction: column;
+        }
+        #notif-panel.open { display: flex; }
+        #notif-panel .notif-header {
+            padding: 14px 18px;
+            border-bottom: 1px solid #f1f5f9;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        #notif-panel .notif-body {
+            overflow-y: auto;
+            flex: 1;
+        }
+        #notif-panel .notif-item {
+            padding: 12px 18px;
+            border-bottom: 1px solid #f8fafc;
+            display: flex;
+            gap: 10px;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        #notif-panel .notif-item:hover { background: #f8fafc; }
+        #notif-panel .notif-item:last-child { border-bottom: none; }
+        #notif-panel .notif-dot {
+            width: 8px; height: 8px; border-radius: 50%;
+            margin-top: 6px; flex-shrink: 0;
+        }
+        #notif-panel .notif-dot.critical { background: #ef4444; }
+        #notif-panel .notif-dot.warning  { background: #f59e0b; }
+        #notif-panel .notif-dot.info     { background: #3b82f6; }
+        #notif-panel .notif-empty {
+            padding: 40px 20px;
+            text-align: center;
+            color: #94a3b8;
+            font-size: 14px;
+        }
+
         /* Toast notification */
         #toast-container {
             position: fixed;
@@ -190,10 +242,21 @@
 
                 <!-- Right side: header actions -->
                 <div class="flex items-center gap-2">
-                    <button class="relative p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors">
-                        <i class="fa-regular fa-bell text-lg"></i>
-                        <span class="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full"></span>
-                    </button>
+                    <div class="relative">
+                        <button id="notif-bell" onclick="window.notifToggle(event)" class="relative p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors">
+                            <i class="fa-regular fa-bell text-lg"></i>
+                            <span id="notif-badge" class="absolute top-1 right-1 min-w-[16px] h-4 px-1 bg-red-500 rounded-full text-white text-[10px] font-bold flex items-center justify-center hidden">0</span>
+                        </button>
+                        <div id="notif-panel">
+                            <div class="notif-header">
+                                <span class="font-bold text-slate-800 text-sm">الإشعارات</span>
+                                <button onclick="window.notifMarkAllRead()" class="text-xs text-brand-600 hover:text-brand-700 font-medium">تعليم الكل كمقروء</button>
+                            </div>
+                            <div class="notif-body" id="notif-body">
+                                <div class="notif-empty">جارٍ التحميل...</div>
+                            </div>
+                        </div>
+                    </div>
                     <div id="header-user" class="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-slate-100 cursor-pointer transition-colors">
                         <div id="header-avatar" class="w-8 h-8 rounded-full bg-brand-700 flex items-center justify-center text-white text-sm font-bold flex-shrink-0"></div>
                         <span id="header-username" class="text-sm font-medium text-slate-700 hidden sm:block"></span>
@@ -220,6 +283,7 @@
     <script src="/js/utils/searchable-select.js?v=20260712"></script>
     <script src="/js/api.js?v=20260501"></script>
     <script src="/js/auth.js?v=20260501"></script>
+    <script src="/js/notifications.js?v=20260713a"></script>
     <script src="/js/layout.js?v=20260601"></script>
     <script src="/js/app.js?v=20260501"></script>
 
