@@ -169,6 +169,61 @@
             font-size: 14px;
         }
 
+        /* User dropdown panel */
+        #user-panel {
+            position: absolute;
+            top: calc(100% + 8px);
+            left: 0;
+            width: 280px;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.12);
+            border: 1px solid #e2e8f0;
+            z-index: 1000;
+            overflow: hidden;
+            display: none;
+            flex-direction: column;
+        }
+        #user-panel.open { display: flex; }
+        #user-panel .user-header {
+            padding: 16px 18px;
+            background: linear-gradient(135deg, #1e293b, #334155);
+            color: white;
+        }
+        #user-panel .user-menu-item {
+            padding: 11px 18px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+            transition: background 0.15s;
+            font-size: 14px;
+            color: #334155;
+        }
+        #user-panel .user-menu-item:hover { background: #f8fafc; }
+        #user-panel .user-menu-item i { width: 18px; text-align: center; color: #64748b; }
+        #user-panel .user-menu-item.danger { color: #ef4444; }
+        #user-panel .user-menu-item.danger i { color: #ef4444; }
+        #user-panel .user-menu-item.danger:hover { background: #fef2f2; }
+        #user-panel .user-divider { height: 1px; background: #f1f5f9; }
+        #user-panel .user-shortcuts {
+            padding: 8px 18px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        #user-panel .user-shortcut {
+            padding: 5px 10px;
+            background: #f1f5f9;
+            border-radius: 8px;
+            font-size: 11px;
+            font-weight: 600;
+            color: #475569;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        #user-panel .user-shortcut:hover { background: #e2e8f0; color: #1e293b; }
+
         /* Toast notification */
         #toast-container {
             position: fixed;
@@ -257,10 +312,29 @@
                             </div>
                         </div>
                     </div>
-                    <div id="header-user" class="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-slate-100 cursor-pointer transition-colors">
+                    <div id="header-user" class="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-slate-100 cursor-pointer transition-colors relative" onclick="window.userMenuToggle(event)">
                         <div id="header-avatar" class="w-8 h-8 rounded-full bg-brand-700 flex items-center justify-center text-white text-sm font-bold flex-shrink-0"></div>
                         <span id="header-username" class="text-sm font-medium text-slate-700 hidden sm:block"></span>
                         <i class="fa-solid fa-chevron-down text-xs text-slate-400"></i>
+                        <div id="user-panel">
+                            <div class="user-header">
+                                <p id="user-panel-name" class="font-bold text-white text-sm"></p>
+                                <p id="user-panel-role" class="text-slate-300 text-xs mt-0.5"></p>
+                                <p id="user-panel-email" class="text-slate-400 text-xs mt-0.5"></p>
+                            </div>
+                            <div class="user-shortcuts" id="user-shortcuts"></div>
+                            <div class="user-divider"></div>
+                            <div class="user-menu-item" onclick="window.userMenuChangePassword()">
+                                <i class="fa-solid fa-key"></i> تغيير كلمة المرور
+                            </div>
+                            <div class="user-menu-item" onclick="window.userMenuSettings()">
+                                <i class="fa-solid fa-gear"></i> الإعدادات
+                            </div>
+                            <div class="user-divider"></div>
+                            <div class="user-menu-item danger" onclick="window.logout()">
+                                <i class="fa-solid fa-right-from-bracket"></i> تسجيل الخروج
+                            </div>
+                        </div>
                     </div>
                 </div>
             </header>
@@ -284,6 +358,7 @@
     <script src="/js/api.js?v=20260501"></script>
     <script src="/js/auth.js?v=20260501"></script>
     <script src="/js/notifications.js?v=20260713b"></script>
+    <script src="/js/user-menu.js?v=20260713a"></script>
     <script src="/js/layout.js?v=20260601"></script>
     <script src="/js/app.js?v=20260501"></script>
 
