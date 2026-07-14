@@ -2410,7 +2410,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
                     ? unitPrice
                     : (item.line_total || parseFloat(item.quantity || 0) * parseFloat(item.unit_price || 0));
                 const nameCell = item.isExpense
-                    ? `<div class="flex items-center gap-2 justify-end"><span>${item.product_name || 'مصاريف إضافية'}</span></div>`
+                    ? `${item.product_name || 'مصاريف إضافية'}`
                     : `${item.product_name || '—'} ${item.size_name || ''}`;
                 const qtyCell = item.isExpense ? qty : qty;
                 return `

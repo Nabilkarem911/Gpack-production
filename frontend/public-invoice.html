@@ -241,7 +241,7 @@
                 const unitPrice = item.isExpense ? item.unit_price : parseFloat(item.unit_price || 0);
                 const lineTotal = item.isExpense ? unitPrice : (item.line_total || parseFloat(item.quantity || 0) * parseFloat(item.unit_price || 0));
                 const nameCell = item.isExpense
-                    ? '<div style="display:flex;align-items:center;gap:8px;justify-content:flex-end;"><span>' + esc(item.product_name) + '</span></div>'
+                    ? esc(item.product_name)
                     : esc(item.product_name || '—') + ' ' + esc(item.size_name || '');
                 return '<tr>' +
                     '<td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:center;color:#64748b;font-size:13px;">' + (idx + 1) + '</td>' +
