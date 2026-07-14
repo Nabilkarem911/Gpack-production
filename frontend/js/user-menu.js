@@ -13,12 +13,12 @@
     };
 
     const SHORTCUTS = [
-        { label: 'عروض الأسعار',  route: 'quotations',    icon: 'fa-file-invoice' },
-        { label: 'أوامر التشغيل',  route: 'production-orders', icon: 'fa-gears' },
-        { label: 'المخزون',        route: 'inventory',     icon: 'fa-boxes-stacked' },
-        { label: 'العملاء',        route: 'clients',       icon: 'fa-users' },
-        { label: 'الفواتير',       route: 'sales-invoices', icon: 'fa-receipt' },
-        { label: 'الذكاء الاصطناعي', route: 'forecast',    icon: 'fa-brain' },
+        { label: 'عروض الأسعار',   route: 'quotations',         icon: 'fa-file-invoice',   perm: 'quotations' },
+        { label: 'أوامر التشغيل',   route: 'production_orders',  icon: 'fa-gears',          perm: 'production_orders' },
+        { label: 'المخزون',         route: 'inventory',          icon: 'fa-boxes-stacked',  perm: 'inventory' },
+        { label: 'العملاء',         route: 'clients',            icon: 'fa-users',          perm: 'clients' },
+        { label: 'الفواتير',        route: 'sales-invoices',     icon: 'fa-receipt',        perm: 'sales' },
+        { label: 'الذكاء الاصطناعي', route: 'forecast',          icon: 'fa-brain',          perm: 'forecast' },
     ];
 
     function _el(id) { return document.getElementById(id); }
@@ -38,11 +38,22 @@
         _renderShortcuts();
     }
 
+    function _hasPerm(permKey) {
+        if (!permKey) return true;
+        if (window.GpackPerms && window.GpackPerms.all_access === true) return true;
+        const mod = window.GpackPerms && window.GpackPerms[permKey];
+        if (!mod) return false;
+        if (typeof mod === 'object') return mod.view === true;
+        return !!mod;
+    }
+
     function _renderShortcuts() {
         const container = _el('user-shortcuts');
         if (!container) return;
-        container.innerHTML = SHORTCUTS.map(s =>
-            `<span class="user-shortcut" onclick="window.userMenuNavigate('${s.route}')">
+        const visible = SHORTCUTS.filter(s => _hasPerm(s.perm));
+        if (!visible.length) { container.innerHTML = ''; return; }
+        container.innerHTML = visible.map(s =>
+            `<span class="user-shortcut" onclick="window.userMenuNavigate(event, '${s.route}')">
                 <i class="fa-solid ${s.icon} text-[10px] ml-1"></i>${s.label}
             </span>`
         ).join('');
@@ -61,19 +72,28 @@
         }
     };
 
-    window.userMenuNavigate = function (route) {
+    window.userMenuNavigate = function (e, route) {
+        if (e) e.stopPropagation();
         _closePanel();
         if (window.navigateTo) window.navigateTo(route);
     };
 
-    window.userMenuSettings = function () {
+    window.userMenuSettings = function (e) {
+        if (e) e.stopPropagation();
         _closePanel();
         if (window.navigateTo) window.navigateTo('settings');
     };
 
-    window.userMenuChangePassword = function () {
+    window.userMenuChangePassword = function (e) {
+        if (e) e.stopPropagation();
         _closePanel();
         _showChangePasswordModal();
+    };
+
+    window.userMenuLogout = function (e) {
+        if (e) e.stopPropagation();
+        _closePanel();
+        if (window.logout) window.logout();
     };
 
     function _closePanel() {

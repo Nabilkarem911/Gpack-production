@@ -324,14 +324,14 @@
                             </div>
                             <div class="user-shortcuts" id="user-shortcuts"></div>
                             <div class="user-divider"></div>
-                            <div class="user-menu-item" onclick="window.userMenuChangePassword()">
+                            <div class="user-menu-item" onclick="window.userMenuChangePassword(event)">
                                 <i class="fa-solid fa-key"></i> تغيير كلمة المرور
                             </div>
-                            <div class="user-menu-item" onclick="window.userMenuSettings()">
+                            <div class="user-menu-item" onclick="window.userMenuSettings(event)">
                                 <i class="fa-solid fa-gear"></i> الإعدادات
                             </div>
                             <div class="user-divider"></div>
-                            <div class="user-menu-item danger" onclick="window.logout()">
+                            <div class="user-menu-item danger" onclick="window.userMenuLogout(event)">
                                 <i class="fa-solid fa-right-from-bracket"></i> تسجيل الخروج
                             </div>
                         </div>
@@ -358,7 +358,7 @@
     <script src="/js/api.js?v=20260501"></script>
     <script src="/js/auth.js?v=20260501"></script>
     <script src="/js/notifications.js?v=20260713b"></script>
-    <script src="/js/user-menu.js?v=20260713a"></script>
+    <script src="/js/user-menu.js?v=20260714a"></script>
     <script src="/js/layout.js?v=20260601"></script>
     <script src="/js/app.js?v=20260501"></script>
 
