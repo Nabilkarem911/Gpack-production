@@ -151,8 +151,8 @@ app.use(cors({
 // Default 'http://localhost' is safe for development only.
 
 app.use(cookieParser());
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 
 // =============================================================================
 // Request Logger (development-friendly)
@@ -285,11 +285,34 @@ app.use((err, req, res, next) => {
 
 runMigrations()
     .then(() => {
-        app.listen(PORT, () => {
+        const server = app.listen(PORT, () => {
             console.log(`[Server] G.PACK 2.0 Backend running on port ${PORT}`);
             console.log(`[Server] Environment: ${process.env.NODE_ENV || 'development'}`);
             console.log(`[Server] Health check: http://localhost:${PORT}/api/health`);
         });
+
+        // Graceful shutdown — close HTTP server then drain DB pool
+        const shutdown = async (signal) => {
+            console.log(`[Server] ${signal} received, shutting down gracefully...`);
+            server.close(async () => {
+                try {
+                    await db.pool.end();
+                    console.log('[DB] Pool closed successfully.');
+                    process.exit(0);
+                } catch (err) {
+                    console.error('[DB] Error closing pool:', err.message);
+                    process.exit(1);
+                }
+            });
+            // Force exit after 10s if connections hang
+            setTimeout(() => {
+                console.error('[Server] Forced shutdown after 10s timeout.');
+                process.exit(1);
+            }, 10000);
+        };
+
+        process.on('SIGTERM', () => shutdown('SIGTERM'));
+        process.on('SIGINT', () => shutdown('SIGINT'));
     })
     .catch((err) => {
         console.error('[Server] Migration failed, aborting startup:', err.message);

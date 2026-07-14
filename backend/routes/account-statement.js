@@ -79,10 +79,10 @@ router.get('/client/:clientId', async (req, res) => {
                     av.id as reference_id
                 FROM accounting_vouchers av
                 JOIN accounting_voucher_lines avl ON avl.voucher_id = av.id
-                JOIN accounts a ON a.id = avl.account_id
                 WHERE av.voucher_type = 'receipt' 
                     AND av.status = 'posted'
-                    AND a.name LIKE '%' || (SELECT name FROM clients WHERE id = $1) || '%'
+                    AND avl.sub_account_type = 'client'
+                    AND avl.sub_account_id = $1
                     ${dateFilter.replace(/date/g, 'av.voucher_date')}
             ) transactions
             ORDER BY trans_date ASC, document_number ASC
@@ -114,10 +114,10 @@ router.get('/client/:clientId', async (req, res) => {
                 SELECT 'payment' as doc_type, avl.credit as amount
                 FROM accounting_vouchers av
                 JOIN accounting_voucher_lines avl ON avl.voucher_id = av.id
-                JOIN accounts a ON a.id = avl.account_id
                 WHERE av.voucher_type = 'receipt' 
                     AND av.status = 'posted'
-                    AND a.name LIKE '%' || (SELECT name FROM clients WHERE id = $1) || '%'
+                    AND avl.sub_account_type = 'client'
+                    AND avl.sub_account_id = $1
                     ${dateFilter.replace(/date/g, 'av.voucher_date')}
             ) totals
         `, params);
@@ -208,10 +208,10 @@ router.get('/supplier/:supplierId', async (req, res) => {
                     av.id as reference_id
                 FROM accounting_vouchers av
                 JOIN accounting_voucher_lines avl ON avl.voucher_id = av.id
-                JOIN accounts a ON a.id = avl.account_id
                 WHERE av.voucher_type = 'payment' 
                     AND av.status = 'posted'
-                    AND a.name LIKE '%' || (SELECT company_name FROM suppliers WHERE id = $1) || '%'
+                    AND avl.sub_account_type = 'supplier'
+                    AND avl.sub_account_id = $1
                     ${dateFilter.replace(/date/g, 'av.voucher_date')}
             ) transactions
             ORDER BY trans_date DESC, document_number DESC
@@ -241,10 +241,10 @@ router.get('/supplier/:supplierId', async (req, res) => {
                 SELECT 'payment' as doc_type, avl.debit as amount
                 FROM accounting_vouchers av
                 JOIN accounting_voucher_lines avl ON avl.voucher_id = av.id
-                JOIN accounts a ON a.id = avl.account_id
                 WHERE av.voucher_type = 'payment' 
                     AND av.status = 'posted'
-                    AND a.name LIKE '%' || (SELECT company_name FROM suppliers WHERE id = $1) || '%'
+                    AND avl.sub_account_type = 'supplier'
+                    AND avl.sub_account_id = $1
                     ${dateFilter.replace(/date/g, 'av.voucher_date')}
             ) totals
         `, params);

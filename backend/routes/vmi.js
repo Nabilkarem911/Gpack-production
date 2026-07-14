@@ -187,7 +187,7 @@ router.post('/dispatch', restrictWrite, validateBody(vmiDispatch), async (req, r
         for (const item of items) {
             const { stock_id, variant_id, quantity, unit_price } = item;
             const qty = parseFloat(quantity);
-            if (!qty || qty <= 0) continue;
+            if (!qty || qty <= 0) throw new Error(`الكمية (${qty}) للصنف ${variant_id} يجب أن تكون أكبر من صفر`);
 
             // Validate available stock
             const stockCheck = await client.query(

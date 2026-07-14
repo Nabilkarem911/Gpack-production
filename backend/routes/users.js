@@ -235,32 +235,36 @@ router.put('/:id/permissions', restrictToAdmin, validateBody(userPermissionsUpda
         const roleName = 'custom_role_' + id.substring(0, 8);
         const description = 'صلاحيات مخصصة للمستخدم';
 
-        const existingRole = await db.query(
-            'SELECT id FROM roles WHERE role_name = $1',
-            [roleName]
-        );
-
-        let roleId;
-        if (existingRole.rows.length > 0) {
-            await db.query(
-                'UPDATE roles SET permissions = $1 WHERE role_name = $2',
-                [JSON.stringify(permissions), roleName]
+        const result = await db.withTransaction(async (txClient) => {
+            const existingRole = await txClient.query(
+                'SELECT id FROM roles WHERE role_name = $1',
+                [roleName]
             );
-            roleId = existingRole.rows[0].id;
-        } else {
-            const roleResult = await db.query(
-                `INSERT INTO roles (role_name, description, permissions)
-                 VALUES ($1, $2, $3)
-                 RETURNING id`,
-                [roleName, description, JSON.stringify(permissions)]
-            );
-            roleId = roleResult.rows[0].id;
-        }
 
-        await db.query(
-            'UPDATE users SET role_id = $1, updated_at = NOW() WHERE id = $2',
-            [roleId, id]
-        );
+            let roleId;
+            if (existingRole.rows.length > 0) {
+                await txClient.query(
+                    'UPDATE roles SET permissions = $1 WHERE role_name = $2',
+                    [JSON.stringify(permissions), roleName]
+                );
+                roleId = existingRole.rows[0].id;
+            } else {
+                const roleResult = await txClient.query(
+                    `INSERT INTO roles (role_name, description, permissions)
+                     VALUES ($1, $2, $3)
+                     RETURNING id`,
+                    [roleName, description, JSON.stringify(permissions)]
+                );
+                roleId = roleResult.rows[0].id;
+            }
+
+            await txClient.query(
+                'UPDATE users SET role_id = $1, token_version = token_version + 1, updated_at = NOW() WHERE id = $2',
+                [roleId, id]
+            );
+
+            return { roleId };
+        });
 
         return success(res, { message: 'تم تحديث الصلاحيات بنجاح' });
 

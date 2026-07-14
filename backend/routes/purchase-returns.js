@@ -173,11 +173,12 @@ router.post('/', restrictWrite, validateBody(purchaseReturnCreate), async (req, 
             `, [returnId, it.variant_id, it.quantity, it.unit_cost, lineTotal]);
 
             // Deduct from warehouse_stock (LIFO: deduct from any client stock)
-            // Find stock entries to deduct from
+            // Find stock entries to deduct from (FOR UPDATE prevents race condition)
             const stockRes = await client.query(`
                 SELECT id, quantity FROM warehouse_stock
                 WHERE variant_id = $1 AND quantity > 0
                 ORDER BY last_updated DESC
+                FOR UPDATE
             `, [it.variant_id]);
 
             let remaining = it.quantity;
