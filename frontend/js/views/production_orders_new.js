@@ -1948,6 +1948,8 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
                     </div>
                 </div>`;
         }).join('') || '<p class="text-sm text-slate-400 text-center py-3">\u0644\u0627 \u062a\u0648\u062c\u062f \u0628\u0646\u0648\u062f</p>';
+
+        _calcInvoiceTotal();
     }
 
     function _calcInvoiceTotal() {
