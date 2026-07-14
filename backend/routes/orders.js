@@ -1468,6 +1468,34 @@ router.post('/:id/invoice', restrictAdmin, validateBody(orderInvoice), async (re
                 throw new Error('لا يمكن إصدار فاتورة إلا لأوامر الإنتاج.');
             }
 
+            // ── Prevent duplicate final invoices ──
+            // Only ONE final (issued) invoice per order is allowed.
+            if (type === 'final') {
+                const existingFinal = await client.query(
+                    `SELECT id, invoice_number FROM invoices
+                     WHERE order_id = $1 AND status = 'issued'
+                     LIMIT 1`,
+                    [id]
+                );
+                if (existingFinal.rowCount > 0) {
+                    throw new Error(`تم إصدار فاتورة نهائية لهذا الطلب بالفعل (رقم ${existingFinal.rows[0].invoice_number}). لا يمكن إصدار أكثر من فاتورة نهائية.`);
+                }
+            }
+
+            // ── Prevent duplicate proforma invoices ──
+            // Only ONE draft invoice per order is allowed.
+            if (type === 'proforma') {
+                const existingDraft = await client.query(
+                    `SELECT id, invoice_number FROM invoices
+                     WHERE order_id = $1 AND status = 'draft'
+                     LIMIT 1`,
+                    [id]
+                );
+                if (existingDraft.rowCount > 0) {
+                    throw new Error(`تم إصدار فاتورة أولية لهذا الطلب بالفعل (رقم ${existingDraft.rows[0].invoice_number}). يمكنك تعديلها بدلاً من إنشاء واحدة جديدة.`);
+                }
+            }
+
             // ── Validate received qty per order item (final invoices only) ──
             // A final invoice must not exceed the quantity physically received for
             // THIS order. We check wh_received_qty on order_items, not total
