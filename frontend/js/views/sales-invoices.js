@@ -246,9 +246,8 @@
             subtotal += item.line_total;
         }
 
-        const afterDiscount = Math.max(0, subtotal - discount);
-        const taxAmount = afterDiscount * taxRate;
-        const grand = afterDiscount + taxAmount;
+        const taxAmount = subtotal * taxRate;
+        const grand = Math.max(0, subtotal + taxAmount - discount);
 
         const _s = (id, v) => { const el = _el(id); if (el) el.textContent = v; };
         _s('si-m-subtotal', fmt(subtotal));

@@ -113,30 +113,15 @@
             `;
         }
 
-        // Additional expenses
-        if (inv.expenses && inv.expenses.length > 0) {
-            _el('pinv-expenses-section').classList.remove('hidden');
-            _el('pinv-expenses').innerHTML = inv.expenses.map(exp => `
-                <tr>
-                    <td class="py-2 text-slate-700">${esc(exp.description)}</td>
-                    <td class="py-2 text-left font-mono font-semibold text-amber-700">${fmt(exp.amount)}</td>
-                </tr>
-            `).join('');
-            
-            const expensesTotal = inv.expenses.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
-            _el('pinv-expenses-total-row').classList.remove('hidden');
-            _el('pinv-expenses-total').textContent = fmt(expensesTotal);
-        }
-
         // Totals
         _el('pinv-subtotal').textContent = fmt(inv.subtotal);
+        _el('pinv-tax').textContent = fmt(inv.tax_amount);
         if (parseFloat(inv.discount_amount || 0) > 0) {
             _el('pinv-discount-row').classList.remove('hidden');
             _el('pinv-discount').textContent = '- ' + fmt(inv.discount_amount);
         } else {
             _el('pinv-discount-row').classList.add('hidden');
         }
-        _el('pinv-tax').textContent = fmt(inv.tax_amount);
         _el('pinv-grand-total').textContent = fmt(inv.grand_total);
 
         // Notes

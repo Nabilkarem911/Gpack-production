@@ -269,9 +269,8 @@ router.post('/', restrictWrite, validateBody(invoiceCreate), async (req, res) =>
         }
 
         const discount = parseFloat(discount_amount || 0);
-        const afterDiscount = Math.max(0, subtotal - discount);
-        const taxAmount = parseFloat((afterDiscount * effectiveTaxRate).toFixed(2));
-        const grandTotal = parseFloat((afterDiscount + taxAmount + parseFloat(additional_expenses)).toFixed(2));
+        const taxAmount = parseFloat((subtotal * effectiveTaxRate).toFixed(2));
+        const grandTotal = parseFloat((subtotal + taxAmount + parseFloat(additional_expenses) - discount).toFixed(2));
 
         // Insert invoice
         const invRes = await client.query(`
@@ -378,10 +377,9 @@ router.put('/:id', restrictEdit, validateBody(invoiceUpdate), async (req, res) =
             subtotal += lineTotal;
         }
         const discount = parseFloat(discount_amount || 0);
-        const afterDiscount = Math.max(0, subtotal - discount);
-        const taxAmount = parseFloat((afterDiscount * effectiveTaxRate).toFixed(2));
+        const taxAmount = parseFloat((subtotal * effectiveTaxRate).toFixed(2));
         const addExp = parseFloat(additional_expenses || 0);
-        const grandTotal = parseFloat((afterDiscount + taxAmount + addExp).toFixed(2));
+        const grandTotal = parseFloat((subtotal + taxAmount + addExp - discount).toFixed(2));
 
         // Update invoice header
         await client.query(`

@@ -1946,9 +1946,8 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         });
         const discount = parseFloat(_el('invoice-discount')?.value || 0);
         const extra    = parseFloat(_el('invoice-extra-expenses')?.value || 0);
-        const afterDiscount = Math.max(0, subtotal - discount);
-        const tax   = afterDiscount * 0.15;
-        const total = afterDiscount + tax + extra;
+        const tax   = subtotal * 0.15;
+        const total = Math.max(0, subtotal + tax + extra - discount);
         _setText('invoice-total-display', `${_fmt(total)} ر.س`);
 
         // Calculate net remaining (total - previous payments)
@@ -2540,12 +2539,11 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
                     <span>المجموع</span>
                     <span>${_fmt(inv.subtotal)} ر.س</span>
                 </div>
-                ${parseFloat(inv.discount_amount || 0) > 0 ? `<div class="total-row"><span>خصم</span><span>- ${_fmt(inv.discount_amount)} ر.س</span></div>` : ''}
                 <div class="total-row">
                     <span>الضريبة (${Math.round(parseFloat(inv.tax_rate || 0.15) * 100)}%)</span>
                     <span>${_fmt(inv.tax_amount)} ر.س</span>
                 </div>
-                ${parseFloat(inv.additional_expenses || 0) > 0 ? `<div class="total-row"><span>مصاريف إضافية</span><span>${_fmt(inv.additional_expenses)} ر.س</span></div>` : ''}
+                ${parseFloat(inv.discount_amount || 0) > 0 ? `<div class="total-row"><span>خصم</span><span>- ${_fmt(inv.discount_amount)} ر.س</span></div>` : ''}
                 <div class="total-row grand">
                     <span>الإجمالي</span>
                     <span>${_fmt(inv.grand_total)} ر.س</span>

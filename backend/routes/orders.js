@@ -1461,10 +1461,9 @@ router.post('/:id/invoice', restrictAdmin, validateBody(orderInvoice), async (re
             }
             subtotal = Math.round(subtotal * 100) / 100;
             const discount = Math.round(parseFloat(discount_amount || 0) * 100) / 100;
-            const afterDiscount = Math.max(0, subtotal - discount);
-            const taxAmount = Math.round(afterDiscount * vatRate * 100) / 100;
+            const taxAmount = Math.round(subtotal * vatRate * 100) / 100;
             const addExp = Math.round(parseFloat(additional_expenses || 0) * 100) / 100;
-            const grandTotal = Math.round((afterDiscount + taxAmount + addExp) * 100) / 100;
+            const grandTotal = Math.max(0, Math.round((subtotal + taxAmount + addExp - discount) * 100) / 100);
 
             // Insert invoice
             const invRes = await client.query(

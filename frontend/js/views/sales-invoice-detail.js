@@ -155,17 +155,6 @@
             itemsTbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-slate-400">لا توجد أصناف</td></tr>`;
         }
 
-        // Expenses
-        if (inv.expenses && inv.expenses.length > 0) {
-            _el('sid-expenses-section').classList.remove('hidden');
-            _el('sid-expenses-tbody').innerHTML = inv.expenses.map(exp => `
-                <tr class="border-b border-slate-100">
-                    <td class="py-2 px-4 text-slate-700">${esc(exp.description)}</td>
-                    <td class="py-2 px-4 font-mono text-slate-700">${fmt(exp.amount)}</td>
-                </tr>
-            `).join('');
-        }
-
         // Totals
         _el('sid-subtotal').textContent = fmt(inv.subtotal);
         if (parseFloat(inv.discount_amount || 0) > 0) {
@@ -315,8 +304,6 @@
     <tbody>${itemsRows}</tbody>
   </table>
 
-  ${expensesSection}
-
   <!-- Totals -->
   <div style="display:flex;justify-content:flex-end;margin-top:20px">
     <div style="width:260px">
@@ -324,15 +311,15 @@
         <span style="color:#64748b">المجموع الفرعي</span>
         <span style="font-family:monospace;font-weight:600">${fmt(inv.subtotal)} ريال</span>
       </div>
+      <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:13px">
+        <span style="color:#64748b">الضريبة (${Math.round((inv.tax_rate || 0) * 100)}%)</span>
+        <span style="font-family:monospace;font-weight:600">${fmt(inv.tax_amount)} ريال</span>
+      </div>
       ${parseFloat(inv.discount_amount || 0) > 0 ? `
       <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:13px">
         <span style="color:#dc2626">خصم</span>
         <span style="font-family:monospace;font-weight:600;color:#dc2626">- ${fmt(inv.discount_amount)} ريال</span>
       </div>` : ''}
-      <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:13px">
-        <span style="color:#64748b">الضريبة (${Math.round((inv.tax_rate || 0) * 100)}%)</span>
-        <span style="font-family:monospace;font-weight:600">${fmt(inv.tax_amount)} ريال</span>
-      </div>
       <div style="display:flex;justify-content:space-between;padding:8px 0;font-size:16px;font-weight:900;border-top:2px solid #e2e8f0;margin-top:4px">
         <span>الإجمالي</span>
         <span style="color:#15803d;font-family:monospace">${fmt(inv.grand_total)} ريال</span>
