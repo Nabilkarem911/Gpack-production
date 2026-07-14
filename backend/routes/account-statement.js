@@ -83,6 +83,7 @@ router.get('/client/:clientId', async (req, res) => {
                     AND av.status = 'posted'
                     AND avl.sub_account_type = 'client'
                     AND avl.sub_account_id = $1
+                    AND avl.credit > 0
                     ${dateFilter.replace(/date/g, 'av.voucher_date')}
             ) transactions
             ORDER BY trans_date ASC, document_number ASC
@@ -118,6 +119,7 @@ router.get('/client/:clientId', async (req, res) => {
                     AND av.status = 'posted'
                     AND avl.sub_account_type = 'client'
                     AND avl.sub_account_id = $1
+                    AND avl.credit > 0
                     ${dateFilter.replace(/date/g, 'av.voucher_date')}
             ) totals
         `, params);
@@ -212,6 +214,7 @@ router.get('/supplier/:supplierId', async (req, res) => {
                     AND av.status = 'posted'
                     AND avl.sub_account_type = 'supplier'
                     AND avl.sub_account_id = $1
+                    AND avl.debit > 0
                     ${dateFilter.replace(/date/g, 'av.voucher_date')}
             ) transactions
             ORDER BY trans_date DESC, document_number DESC
@@ -245,6 +248,7 @@ router.get('/supplier/:supplierId', async (req, res) => {
                     AND av.status = 'posted'
                     AND avl.sub_account_type = 'supplier'
                     AND avl.sub_account_id = $1
+                    AND avl.debit > 0
                     ${dateFilter.replace(/date/g, 'av.voucher_date')}
             ) totals
         `, params);
