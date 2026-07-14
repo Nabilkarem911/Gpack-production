@@ -13,15 +13,17 @@
         pending_receiving:{ icon: 'fa-truck-ramp-box',  color: 'text-blue-500' },
         low_stock:        { icon: 'fa-triangle-exclamation', color: 'text-orange-500' },
         out_of_stock:     { icon: 'fa-box-open',        color: 'text-red-500' },
-        churn:            { icon: 'fa-user-slash',      color: 'text-rose-500' }
+        churn:            { icon: 'fa-user-slash',      color: 'text-rose-500' },
+        task:             { icon: 'fa-list-check',      color: 'text-purple-500' }
     };
 
     const TYPE_ROUTES = {
-        pending_order:     'production-orders',
+        pending_order:     'production_orders',
         pending_receiving: 'receiving-vouchers',
         low_stock:         'inventory',
         out_of_stock:      'inventory',
-        churn:             'forecast'
+        churn:             'forecast',
+        task:              'tasks'
     };
 
     const TYPE_LABELS = {
@@ -29,13 +31,14 @@
         pending_receiving: 'بانتظار الاستلام',
         low_stock:         'مخزون منخفض',
         out_of_stock:      'نفاد المخزون',
-        churn:             'عميل متقاعس'
+        churn:             'عميل متقاعس',
+        task:              'مهمة'
     };
 
     function _el(id) { return document.getElementById(id); }
 
     function _alertKey(a) {
-        return a.type + ':' + (a.order_id || a.mo_id || a.stock_id || a.title || '');
+        return a.type + ':' + (a.order_id || a.mo_id || a.stock_id || a.task_id || a.title || '');
     }
 
     function _loadReadState() {

@@ -272,6 +272,42 @@ router.get('/alerts', authenticate, async (req, res) => {
             });
         }
 
+        // 3. Pending & Overdue Tasks (for all authenticated users)
+        const userRole = (req.user.role || '').toLowerCase();
+        const isTaskAdmin = ['super_admin', 'admin', 'manager'].includes(userRole);
+        const tasksQuery = isTaskAdmin
+            ? `SELECT t.id, t.title, t.due_date, t.priority, t.status, t.assigned_to,
+                      u.name as assigned_to_name,
+                      CASE WHEN t.due_date < NOW() THEN true ELSE false END as is_overdue
+               FROM tasks t
+               LEFT JOIN users u ON u.id = t.assigned_to
+               WHERE t.status IN ('pending', 'in_progress')
+               ORDER BY t.due_date ASC
+               LIMIT 10`
+            : `SELECT t.id, t.title, t.due_date, t.priority, t.status, t.assigned_to,
+                      u.name as assigned_to_name,
+                      CASE WHEN t.due_date < NOW() THEN true ELSE false END as is_overdue
+               FROM tasks t
+               LEFT JOIN users u ON u.id = t.assigned_to
+               WHERE t.status IN ('pending', 'in_progress')
+                 AND t.assigned_to = $1
+               ORDER BY t.due_date ASC
+               LIMIT 10`;
+        const tasksResult = await db.query(tasksQuery, isTaskAdmin ? [] : [req.user.id]);
+
+        tasksResult.rows.forEach(row => {
+            const overdue = row.is_overdue;
+            const priority = row.priority || 'medium';
+            alerts.push({
+                type: 'task',
+                severity: overdue ? 'critical' : (priority === 'high' ? 'warning' : 'info'),
+                title: overdue ? `مهمة متأخرة: ${row.title}` : `مهمة مستحقة: ${row.title}`,
+                message: `${row.assigned_to_name || 'غير محدد'} - موعد التنفيذ: ${new Date(row.due_date).toLocaleDateString('en-GB')}`,
+                task_id: row.id,
+                created_at: row.due_date
+            });
+        });
+
         // Sort by severity (critical first)
         alerts.sort((a, b) => {
             const severityOrder = { critical: 0, warning: 1, info: 2 };
