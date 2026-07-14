@@ -787,7 +787,8 @@ router.post('/:id/receive', restrictEdit, validateBody(manufacturerOrderReceive)
                 `SELECT mo.*, o.client_id
                  FROM manufacturer_orders mo
                  JOIN orders o ON o.id = mo.order_id
-                 WHERE mo.id = $1`,
+                 WHERE mo.id = $1
+                 FOR UPDATE OF mo`,
                 [id]
             );
             if (moCheck.rowCount === 0) throw new Error('أمر التشغيل غير موجود.');

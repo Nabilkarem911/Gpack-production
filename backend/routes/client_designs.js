@@ -64,14 +64,17 @@ function validateUuid(value) {
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 }
 
-async function getNextDesignNumber(clientId, variantId) {
-    const result = await db.query(
-        `SELECT COALESCE(MAX(design_number), 0) + 1 as next_num 
-         FROM client_designs 
-         WHERE client_id = $1 AND variant_id = $2`,
+async function getNextDesignNumber(client, clientId, variantId) {
+    // Lock the table in SHARE ROW EXCLUSIVE mode to prevent concurrent inserts
+    // This ensures only one transaction can compute the next design_number at a time
+    await client.query('LOCK TABLE client_designs IN SHARE ROW EXCLUSIVE MODE');
+    const result = await client.query(
+        `SELECT design_number FROM client_designs
+         WHERE client_id = $1 AND variant_id = $2
+         ORDER BY design_number DESC LIMIT 1`,
         [clientId, variantId]
     );
-    return result.rows[0].next_num;
+    return (result.rows.length > 0 ? result.rows[0].design_number : 0) + 1;
 }
 
 // ============================================================================
@@ -220,56 +223,57 @@ router.post('/', authenticate, authorize(['admin', 'manager', 'super_admin', 'sa
         if (!client_id || !variant_id) {
             return res.status(400).json({ success: false, error: 'client_id and variant_id required' });
         }
-        
-        // Get next design number
-        const designNumber = await getNextDesignNumber(client_id, variant_id);
-        
-        // Create design record
-        const designResult = await db.query(
-            `INSERT INTO client_designs 
-             (client_id, variant_id, design_number, design_name, description, is_active)
-             VALUES ($1, $2, $3, $4, $5, $6)
-             RETURNING *`,
-            [client_id, variant_id, designNumber, design_name || `تصميم ${designNumber}`, description, true]
-        );
-        
-        const design = designResult.rows[0];
         if (!validateUuid(client_id)) {
             return error(res, 'Invalid client_id', 400);
         }
-        const designDir = path.join(UPLOAD_BASE, client_id, design.id);
-        fs.mkdirSync(designDir, { recursive: true });
-        
-        // Move temp files to design directory if uploaded
-        const files = req.files;
-        const fileRecords = [];
-        
-        if (files) {
-            for (const [fieldName, fileArray] of Object.entries(files)) {
-                for (const file of fileArray) {
-                    // Move from temp to design folder
-                    const tempPath = file.path;
-                    const finalPath = path.join(designDir, file.filename);
-                    fs.renameSync(tempPath, finalPath);
-                    
-                    // Save to database
-                    const fileType = fieldName === 'source' ? 
-                        path.extname(file.originalname).slice(1) : fieldName;
-                    
-                    // Store as relative URL path for frontend access
-                    const relativeUrl = `/uploads/clients/${client_id}/${design.id}/${file.filename}`;
-                    
-                    const fileResult = await db.query(
-                        `INSERT INTO client_design_files 
-                         (design_id, file_type, file_path, original_name, file_size, mime_type, uploaded_by)
-                         VALUES ($1, $2, $3, $4, $5, $6, $7)
-                         RETURNING *`,
-                        [design.id, fileType, relativeUrl, file.originalname, file.size, file.mimetype, req.user.id]
-                    );
-                    fileRecords.push(fileResult.rows[0]);
+
+        const { design, fileRecords } = await db.withTransaction(async (txClient) => {
+            // Get next design number (FOR UPDATE locks the row to prevent race condition)
+            const designNumber = await getNextDesignNumber(txClient, client_id, variant_id);
+
+            // Create design record
+            const designResult = await txClient.query(
+                `INSERT INTO client_designs 
+                 (client_id, variant_id, design_number, design_name, description, is_active)
+                 VALUES ($1, $2, $3, $4, $5, $6)
+                 RETURNING *`,
+                [client_id, variant_id, designNumber, design_name || `تصميم ${designNumber}`, description, true]
+            );
+            const design = designResult.rows[0];
+
+            // Create directory and move files
+            const designDir = path.join(UPLOAD_BASE, client_id, design.id);
+            fs.mkdirSync(designDir, { recursive: true });
+
+            const files = req.files;
+            const fileRecords = [];
+
+            if (files) {
+                for (const [fieldName, fileArray] of Object.entries(files)) {
+                    for (const file of fileArray) {
+                        const tempPath = file.path;
+                        const finalPath = path.join(designDir, file.filename);
+                        fs.renameSync(tempPath, finalPath);
+
+                        const fileType = fieldName === 'source' ? 
+                            path.extname(file.originalname).slice(1) : fieldName;
+
+                        const relativeUrl = `/uploads/clients/${client_id}/${design.id}/${file.filename}`;
+
+                        const fileResult = await txClient.query(
+                            `INSERT INTO client_design_files 
+                             (design_id, file_type, file_path, original_name, file_size, mime_type, uploaded_by)
+                             VALUES ($1, $2, $3, $4, $5, $6, $7)
+                             RETURNING *`,
+                            [design.id, fileType, relativeUrl, file.originalname, file.size, file.mimetype, req.user.id]
+                        );
+                        fileRecords.push(fileResult.rows[0]);
+                    }
                 }
             }
-        }
+
+            return { design, fileRecords };
+        });
         
         return res.json({
             success: true,
