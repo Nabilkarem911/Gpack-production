@@ -1875,17 +1875,32 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
     async function _openInvoiceModal() {
         _setVal('invoice-notes', '');
         _setVal('invoice-extra-expenses', '');
+        _setVal('invoice-extra-desc', '');
         _setVal('invoice-discount', '');
 
-        // Load previous payments + render items in parallel
-        const [, fin] = await Promise.all([
+        // Load previous payments, render items, and fetch proforma data in parallel
+        const [, fin, proforma] = await Promise.all([
             _renderInvoiceItems(),
             window.apiFetch(`/api/orders/${_hubOrderId}/financial`).catch(() => null),
+            window.apiFetch(`/api/orders/${_hubOrderId}/proforma`).catch(() => null),
         ]);
 
         const totalPaid = (fin?.data?.payments || []).reduce((s, p) => s + parseFloat(p.amount || 0), 0);
         _invoicePrevPaid = totalPaid;
         _setText('invoice-prev-paid', `${_fmt(totalPaid)} ر.س`);
+
+        // Pre-fill expenses & discount from existing proforma (if any)
+        const proformaData = proforma?.data;
+        if (proformaData) {
+            if (parseFloat(proformaData.additional_expenses || 0) > 0) {
+                _setVal('invoice-extra-expenses', parseFloat(proformaData.additional_expenses).toFixed(2));
+                const expDesc = (proformaData.expenses && proformaData.expenses[0]?.description) || '';
+                _setVal('invoice-extra-desc', expDesc);
+            }
+            if (parseFloat(proformaData.discount_amount || 0) > 0) {
+                _setVal('invoice-discount', parseFloat(proformaData.discount_amount).toFixed(2));
+            }
+        }
 
         _calcInvoiceTotal();
         _showModal('po-invoice-modal');

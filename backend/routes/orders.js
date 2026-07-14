@@ -1335,6 +1335,46 @@ router.get('/:orderId/invoice/:invoiceId', async (req, res) => {
 });
 
 // =============================================================================
+// GET /api/orders/:id/proforma
+// Returns the latest proforma invoice for this order (with expenses & discount).
+// Used to pre-fill final invoice modal with same expenses/discount.
+// =============================================================================
+
+router.get('/:id/proforma', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const invRes = await db.query(
+            `SELECT i.id, i.invoice_number, i.subtotal, i.tax_rate, i.tax_amount,
+                    i.additional_expenses, i.discount_amount, i.grand_total, i.notes
+             FROM invoices i
+             WHERE i.order_id = $1 AND i.status = 'draft'
+             ORDER BY i.created_at DESC
+             LIMIT 1`,
+            [id]
+        );
+        if (invRes.rowCount === 0) {
+            return success(res, null);
+        }
+
+        const invoice = invRes.rows[0];
+
+        const expRes = await db.query(
+            `SELECT id, description, amount
+             FROM invoice_expenses
+             WHERE invoice_id = $1
+             ORDER BY created_at ASC`,
+            [invoice.id]
+        );
+        invoice.expenses = expRes.rows;
+
+        return success(res, invoice);
+    } catch (err) {
+        console.error('[Orders] GET /:id/proforma error:', err.message);
+        return res.status(500).json({ error: 'Internal server error.' });
+    }
+});
+
+// =============================================================================
 // GET /api/orders/:id/financial
 // Returns full financial summary for an order:
 // invoices list, payments list, totals.
