@@ -149,19 +149,16 @@ router.post('/', restrictWrite, validateBody(receivingVoucherCreate), async (req
     try {
         await client.query('BEGIN');
 
-        // 1. Generate voucher number
-        const seqRes = await client.query(`SELECT COALESCE(MAX(voucher_number), 0) + 1 AS next FROM receiving_vouchers`);
-        const voucherNumber = seqRes.rows[0].next;
-
-        // 2. Create voucher header
+        // 1. Create voucher header (voucher_number auto-generated via sequence DEFAULT)
         const vRes = await client.query(`
             INSERT INTO receiving_vouchers
-                (voucher_number, receiving_date, supplier_id, purchase_invoice_id, manufacturer_order_id, warehouse_id, total_amount, notes, status, created_by)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'completed', $9)
+                (receiving_date, supplier_id, purchase_invoice_id, manufacturer_order_id, warehouse_id, total_amount, notes, status, created_by)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, 'completed', $8)
             RETURNING *
-        `, [voucherNumber, receiving_date, supplier_id, purchase_invoice_id || null, manufacturer_order_id || null, warehouse_id, totalAmount, notes || null, req.user?.id || null]);
+        `, [receiving_date, supplier_id, purchase_invoice_id || null, manufacturer_order_id || null, warehouse_id, totalAmount, notes || null, req.user?.id || null]);
 
-        const voucherId = vRes.rows[0].id;
+        const voucherId     = vRes.rows[0].id;
+        const voucherNumber = vRes.rows[0].voucher_number;
 
         // 3. Create items and add to stock
         for (const it of items) {
@@ -201,7 +198,7 @@ router.post('/', restrictWrite, validateBody(receivingVoucherCreate), async (req
                 const acVRes = await client.query(`
                     INSERT INTO accounting_vouchers
                         (voucher_type, voucher_number, voucher_date, description, total_amount, status, reference_type, reference_id, created_by)
-                    VALUES ('journal', (SELECT COALESCE(MAX(voucher_number),0)+1 FROM accounting_vouchers), $1, $2, $3, 'posted', 'receiving_voucher', $4, $5)
+                    VALUES ('journal', nextval('voucher_number_seq'), $1, $2, $3, 'posted', 'receiving_voucher', $4, $5)
                     RETURNING id, voucher_number
                 `, [receiving_date, `استلام بضاعة #${voucherNumber} — ${notes || ''}`, totalAmount, voucherId, req.user?.id || null]);
 

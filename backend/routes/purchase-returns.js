@@ -208,7 +208,7 @@ router.post('/', restrictWrite, validateBody(purchaseReturnCreate), async (req, 
         const vRes = await client.query(`
             INSERT INTO accounting_vouchers
                 (voucher_type, voucher_number, voucher_date, description, total_amount, status, reference_type, reference_id, created_by)
-            VALUES ('journal', (SELECT COALESCE(MAX(voucher_number),0)+1 FROM accounting_vouchers), $1, $2, $3, 'posted', 'purchase_return', $4, $5)
+            VALUES ('journal', nextval('voucher_number_seq'), $1, $2, $3, 'posted', 'purchase_return', $4, $5)
             RETURNING id, voucher_number
         `, [return_date, `مرتجع مشتريات #${returnNumber} — ${notes || ''}`, totalAmount, returnId, req.user?.id || null]);
 

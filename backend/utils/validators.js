@@ -731,6 +731,15 @@ const moFinalize = z.object({
     tax_rate: z.coerce.number().min(0).max(1).optional().nullable(),
 }).passthrough();
 
+// =============================================================================
+// Change Password
+// =============================================================================
+
+const changePasswordBody = z.object({
+    current_password: z.string().min(1, 'كلمة المرور الحالية مطلوبة').max(255),
+    new_password: z.string().min(6, 'كلمة المرور الجديدة يجب أن تكون 6 أحرف على الأقل').max(255),
+});
+
 module.exports = {
     idParam,
     loginBody,
@@ -767,6 +776,7 @@ module.exports = {
     userUpdate,
     roleCreate,
     roleUpdate,
+    changePasswordBody,
     supplierCreate,
     supplierUpdate,
     receivingVoucherCreate,

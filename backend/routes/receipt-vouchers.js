@@ -250,7 +250,7 @@ router.post('/', restrictWrite, validateBody(receiptVoucherCreate), async (req, 
         }
 
         // For client/supplier types: look up the contra account (1300 or 2100)
-        const arAccRes = await db.query(`SELECT id FROM accounts WHERE code = '${contraAccountCode}' LIMIT 1`);
+        const arAccRes = await db.query('SELECT id FROM accounts WHERE code = $1 LIMIT 1', [contraAccountCode]);
         if (!arAccRes.rows.length) return res.status(500).json({ error: `Account ${contraAccountCode} not found in chart of accounts` });
         const arAccountId = arAccRes.rows[0].id;
 

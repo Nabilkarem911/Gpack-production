@@ -5,7 +5,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const db = require('../db');
 const { authenticate } = require('../middleware/authMiddleware');
-const { loginBody, validateBody } = require('../utils/validators');
+const { loginBody, changePasswordBody, validateBody } = require('../utils/validators');
 
 const router = express.Router();
 
@@ -154,16 +154,9 @@ router.get('/me', authenticate, async (req, res) => {
 // Requires: current_password, new_password
 // =============================================================================
 
-router.post('/change-password', authenticate, async (req, res) => {
+router.post('/change-password', authenticate, validateBody(changePasswordBody), async (req, res) => {
   try {
-    const { current_password, new_password } = req.body;
-
-    if (!current_password || !new_password) {
-      return res.status(400).json({ error: 'كلمة المرور الحالية والجديدة مطلوبة' });
-    }
-    if (new_password.length < 6) {
-      return res.status(400).json({ error: 'كلمة المرور الجديدة يجب أن تكون 6 أحرف على الأقل' });
-    }
+    const { current_password, new_password } = req.validatedBody;
 
     const userRes = await db.query('SELECT password_hash FROM users WHERE id = $1', [req.user.id]);
     if (userRes.rowCount === 0) {
@@ -176,7 +169,7 @@ router.post('/change-password', authenticate, async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(new_password, 10);
-    await db.query('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [hashedPassword, req.user.id]);
+    await db.query('UPDATE users SET password_hash = $1, token_version = token_version + 1, updated_at = NOW() WHERE id = $2', [hashedPassword, req.user.id]);
 
     return res.status(200).json({ message: 'تم تغيير كلمة المرور بنجاح' });
   } catch (err) {

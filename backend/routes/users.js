@@ -332,6 +332,11 @@ router.put('/:id', restrictToAdmin, validateBody(userUpdate), async (req, res) =
             values.push(hashedPassword);
         }
 
+        // Bump token_version if role_id, password, or status changed — invalidates old JWTs
+        if (role_id !== undefined || password || status) {
+            updates.push(`token_version = token_version + 1`);
+        }
+
         if (updates.length === 0) {
             return errorResponse(res, 'لا يوجد بيانات للتحديث', 400);
         }

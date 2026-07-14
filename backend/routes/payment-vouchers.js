@@ -258,7 +258,7 @@ router.post('/', restrictWrite, validateBody(paymentVoucherCreate), async (req, 
         const cashAccRes = await db.query('SELECT id, name FROM accounts WHERE id = $1 AND is_active = true', [cash_account_id]);
         if (!cashAccRes.rows.length) return res.status(404).json({ error: 'Cash/Bank account not found' });
 
-        const contraAccRes = await db.query(`SELECT id FROM accounts WHERE code = '${contraAccountCode}' LIMIT 1`);
+        const contraAccRes = await db.query('SELECT id FROM accounts WHERE code = $1 LIMIT 1', [contraAccountCode]);
         if (!contraAccRes.rows.length) return res.status(500).json({ error: `Account ${contraAccountCode} not found in chart of accounts` });
         const contraAccountId = contraAccRes.rows[0].id;
 

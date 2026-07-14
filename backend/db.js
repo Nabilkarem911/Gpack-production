@@ -98,6 +98,7 @@ const withTransaction = async (callback) => {
 };
 
 module.exports = {
+  pool,
   query,
   getClient,
   begin,
