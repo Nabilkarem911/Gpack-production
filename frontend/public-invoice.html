@@ -262,7 +262,8 @@
             const totalPaid = payments.reduce((s, p) => s + parseFloat(p.amount || 0), 0);
             const remaining = Math.max(0, parseFloat(inv.grand_total || 0) - totalPaid);
 
-            let totalsHtml = '<div class="total-row"><span>المجموع</span><span>' + fmt(inv.subtotal) + ' ر.س</span></div>';
+            const subtotalWithExp = parseFloat(inv.subtotal || 0) + parseFloat(inv.additional_expenses || 0);
+            let totalsHtml = '<div class="total-row"><span>المجموع</span><span>' + fmt(subtotalWithExp) + ' ر.س</span></div>';
             totalsHtml += '<div class="total-row"><span>الضريبة (' + Math.round(parseFloat(inv.tax_rate || 0.15) * 100) + '%)</span><span>' + fmt(inv.tax_amount) + ' ر.س</span></div>';
             if (parseFloat(inv.discount_amount || 0) > 0) {
                 totalsHtml += '<div class="total-row"><span>خصم</span><span>- ' + fmt(inv.discount_amount) + ' ر.س</span></div>';

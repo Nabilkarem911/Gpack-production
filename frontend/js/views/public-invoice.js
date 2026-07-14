@@ -114,7 +114,7 @@
         }
 
         // Totals
-        _el('pinv-subtotal').textContent = fmt(inv.subtotal);
+        _el('pinv-subtotal').textContent = fmt(parseFloat(inv.subtotal || 0) + parseFloat(inv.additional_expenses || 0));
         _el('pinv-tax').textContent = fmt(inv.tax_amount);
         if (parseFloat(inv.discount_amount || 0) > 0) {
             _el('pinv-discount-row').classList.remove('hidden');

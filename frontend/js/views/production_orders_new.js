@@ -2537,7 +2537,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
             <div class="totals-box">
                 <div class="total-row">
                     <span>المجموع</span>
-                    <span>${_fmt(inv.subtotal)} ر.س</span>
+                    <span>${_fmt(parseFloat(inv.subtotal || 0) + parseFloat(inv.additional_expenses || 0))} ر.س</span>
                 </div>
                 <div class="total-row">
                     <span>الضريبة (${Math.round(parseFloat(inv.tax_rate || 0.15) * 100)}%)</span>
