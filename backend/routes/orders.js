@@ -1598,12 +1598,14 @@ router.post('/:id/invoice', restrictAdmin, validateBody(orderInvoice), async (re
 
 router.post('/:id/payment', restrictAdmin, validateBody(orderPayment), async (req, res) => {
     const { id } = req.params;
-    const { amount, payment_method = 'cash', notes = '', cash_box, bank_account, bank_ref, pos_terminal, pos_ref } = req.validatedBody;
+    const { amount, payment_method = 'cash', notes = '', discount_amount = 0, cash_box, bank_account, bank_ref, pos_terminal, pos_ref } = req.validatedBody;
 
     const payAmt = parseFloat(amount);
     if (!payAmt || payAmt <= 0) {
         return res.status(400).json({ error: 'المبلغ يجب أن يكون أكبر من صفر.' });
     }
+
+    const discountAmt = Math.max(0, parseFloat(discount_amount || 0));
 
     try {
         const result = await db.withTransaction(async (client) => {
@@ -1618,9 +1620,14 @@ router.post('/:id/payment', restrictAdmin, validateBody(orderPayment), async (re
                 throw new Error('لا يمكن تسجيل دفعة إلا لأوامر الإنتاج.');
             }
 
-            const newPaid = Math.round((parseFloat(order.paid_amount || 0) + payAmt) * 100) / 100;
+            const remaining = Math.round((parseFloat(order.grand_total || 0) - parseFloat(order.paid_amount || 0)) * 100) / 100;
+            if (discountAmt > 0 && discountAmt > remaining) {
+                throw new Error(`الخصم (${discountAmt}) أكبر من المتبقي (${remaining}).`);
+            }
 
-            // Update paid_amount on order
+            const newPaid = Math.round((parseFloat(order.paid_amount || 0) + payAmt + discountAmt) * 100) / 100;
+
+            // Update paid_amount on order (includes discount to zero out balance)
             await client.query(
                 `UPDATE orders SET paid_amount = $1, updated_at = now() WHERE id = $2`,
                 [newPaid, id]
@@ -1638,7 +1645,7 @@ router.post('/:id/payment', restrictAdmin, validateBody(orderPayment), async (re
                 if (pos_ref) description = `[رقم العملية: ${pos_ref}] ${description}`;
             }
 
-            // Insert client_transaction
+            // Insert client_transaction for payment
             const txRes = await client.query(
                 `INSERT INTO client_transactions
                  (client_id, order_id, type, amount, payment_method, description)
@@ -1647,8 +1654,22 @@ router.post('/:id/payment', restrictAdmin, validateBody(orderPayment), async (re
                 [order.client_id, id, payAmt, payment_method, description || null]
             );
 
+            // Insert client_transaction for discount (if any)
+            let discountTxId = null;
+            if (discountAmt > 0) {
+                const discRes = await client.query(
+                    `INSERT INTO client_transactions
+                     (client_id, order_id, type, amount, payment_method, description)
+                     VALUES ($1, $2, 'discount', $3, 'adjustment', $4)
+                     RETURNING id`,
+                    [order.client_id, id, discountAmt, 'خصم / تنازل عن الفرق']
+                );
+                discountTxId = discRes.rows[0].id;
+            }
+
             return {
                 transaction_id: txRes.rows[0].id,
+                discount_transaction_id: discountTxId,
                 paid_amount: newPaid,
                 remaining: Math.round((parseFloat(order.grand_total || 0) - newPaid) * 100) / 100,
             };

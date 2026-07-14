@@ -2038,6 +2038,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         );
         _setText('payment-remaining-display', `${_fmt(remaining)} ر.س`);
         _setVal('payment-amount', '');
+        _setVal('payment-discount', '');
         _setVal('payment-notes',  '');
 
         // Reset to cash
@@ -2100,12 +2101,13 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
 
     async function _savePayment() {
         const amount = parseFloat(_el('payment-amount')?.value);
+        const discount = parseFloat(_el('payment-discount')?.value) || 0;
         const method = _el('payment-method')?.value || 'cash';
         const notes  = _el('payment-notes')?.value  || '';
 
         if (!amount || amount <= 0) { _toast('أدخل مبلغاً صحيحاً', 'error'); return; }
 
-        const body = { amount, payment_method: method, notes };
+        const body = { amount, payment_method: method, notes, discount_amount: discount };
 
         if (method === 'cash') {
             const cashBox = _el('payment-cash-box')?.value || '';

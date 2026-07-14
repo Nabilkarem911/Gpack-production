@@ -554,6 +554,7 @@ const orderPayment = z.object({
     amount: z.coerce.number().positive('Amount must be positive'),
     payment_method: z.string().max(50).optional().default('cash'),
     notes: z.string().max(2000).optional().default(''),
+    discount_amount: z.coerce.number().min(0).optional().default(0),
     cash_box: z.string().max(100).optional().nullable(),
     bank_account: z.string().max(100).optional().nullable(),
     bank_ref: z.string().max(100).optional().nullable(),
