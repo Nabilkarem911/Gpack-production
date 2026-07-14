@@ -263,12 +263,9 @@
             const remaining = Math.max(0, parseFloat(inv.grand_total || 0) - totalPaid);
 
             let totalsHtml = '<div class="total-row"><span>المجموع</span><span>' + fmt(inv.subtotal) + ' ر.س</span></div>';
+            totalsHtml += '<div class="total-row"><span>الضريبة (' + Math.round(parseFloat(inv.tax_rate || 0.15) * 100) + '%)</span><span>' + fmt(inv.tax_amount) + ' ر.س</span></div>';
             if (parseFloat(inv.discount_amount || 0) > 0) {
                 totalsHtml += '<div class="total-row"><span>خصم</span><span>- ' + fmt(inv.discount_amount) + ' ر.س</span></div>';
-            }
-            totalsHtml += '<div class="total-row"><span>الضريبة (' + Math.round(parseFloat(inv.tax_rate || 0.15) * 100) + '%)</span><span>' + fmt(inv.tax_amount) + ' ر.س</span></div>';
-            if (parseFloat(inv.additional_expenses || 0) > 0) {
-                totalsHtml += '<div class="total-row"><span>مصاريف إضافية</span><span>' + fmt(inv.additional_expenses) + ' ر.س</span></div>';
             }
             totalsHtml += '<div class="total-row grand"><span>الإجمالي</span><span>' + fmt(inv.grand_total) + ' ر.س</span></div>';
             if (totalPaid > 0) {
