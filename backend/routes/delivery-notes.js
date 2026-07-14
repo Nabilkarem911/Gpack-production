@@ -72,14 +72,15 @@ router.get('/', async (req, res) => {
 
 // =============================================================================
 // POST /api/delivery-notes
-// Create a standalone delivery note (not tied to an order).
-// Body: { client_id, warehouse_id, items: [{ variant_id, requested_qty }], notes, driver_name, vehicle_number }
+// Create a delivery note (optionally tied to an order).
+// Body: { order_id?, client_id, items: [{ variant_id, quantity/requested_qty }], notes, driver_name, vehicle_number }
 // =============================================================================
 
 router.post('/', restrictWrite, async (req, res) => {
     const {
+        order_id = null,
         client_id,
-        warehouse_id,
+        warehouse_id = null,
         items = [],
         notes = null,
         driver_name = null,
@@ -99,46 +100,59 @@ router.post('/', restrictWrite, async (req, res) => {
             const clientCheck = await client.query('SELECT id, name FROM clients WHERE id = $1', [client_id]);
             if (clientCheck.rowCount === 0) throw new Error('العميل غير موجود.');
 
-            // Validate items against warehouse_stock
-            // Stock can be tied to: the client itself, its parent (main client), or NULL (general)
-            for (const item of items) {
-                if (!item.variant_id || !item.requested_qty || item.requested_qty <= 0) continue;
+            // Validate items against warehouse_stock (only for standalone, non-order delivery notes)
+            if (!order_id) {
+                for (const item of items) {
+                    if (!item.variant_id || !item.requested_qty || item.requested_qty <= 0) continue;
 
-                const stockRes = await client.query(
-                    `SELECT id, quantity, available_qty FROM warehouse_stock
-                     WHERE variant_id = $1
-                     AND (client_id = $2 OR client_id IS NULL OR client_id IN (SELECT parent_id FROM clients WHERE id = $2))
-                     ${warehouse_id ? 'AND warehouse_id = $3' : ''}
-                     ORDER BY quantity DESC LIMIT 1`,
-                    warehouse_id ? [item.variant_id, client_id, warehouse_id] : [item.variant_id, client_id]
-                );
+                    const stockRes = await client.query(
+                        `SELECT id, quantity, available_qty FROM warehouse_stock
+                         WHERE variant_id = $1
+                         AND (client_id = $2 OR client_id IS NULL OR client_id IN (SELECT parent_id FROM clients WHERE id = $2))
+                         ${warehouse_id ? 'AND warehouse_id = $3' : ''}
+                         ORDER BY quantity DESC LIMIT 1`,
+                        warehouse_id ? [item.variant_id, client_id, warehouse_id] : [item.variant_id, client_id]
+                    );
 
-                if (stockRes.rowCount === 0) {
-                    throw new Error('لا يوجد مخزون لهذا الصنف لهذا العميل.');
-                }
-                const available = parseFloat(stockRes.rows[0].available_qty || stockRes.rows[0].quantity || 0);
-                if (item.requested_qty > available) {
-                    throw new Error(`الكمية المطلوبة (${item.requested_qty}) تتجاوز المتاح (${available}).`);
+                    if (stockRes.rowCount === 0) {
+                        throw new Error('لا يوجد مخزون لهذا الصنف لهذا العميل.');
+                    }
+                    const available = parseFloat(stockRes.rows[0].available_qty || stockRes.rows[0].quantity || 0);
+                    if (item.requested_qty > available) {
+                        throw new Error(`الكمية المطلوبة (${item.requested_qty}) تتجاوز المتاح (${available}).`);
+                    }
                 }
             }
 
-            // Create delivery note (no order_id)
+            // Create delivery note (with order_id if provided)
             const dnRes = await client.query(
-                `INSERT INTO delivery_notes (client_id, status, notes, driver_name, vehicle_number, created_by)
-                 VALUES ($1, 'pending', $2, $3, $4, $5)
+                `INSERT INTO delivery_notes (order_id, client_id, status, notes, driver_name, vehicle_number, created_by)
+                 VALUES ($1, $2, 'pending', $3, $4, $5, $6)
                  RETURNING id, note_number`,
-                [client_id, notes, driver_name, vehicle_number, req.user?.id]
+                [order_id, client_id, notes, driver_name, vehicle_number, req.user?.id]
             );
             const dnId = dnRes.rows[0].id;
             const noteNumber = dnRes.rows[0].note_number;
 
             // Insert items
             for (const item of items) {
-                if (!item.variant_id || !item.requested_qty || item.requested_qty <= 0) continue;
+                const qty = item.quantity || item.requested_qty || 0;
+                if (!item.variant_id || qty <= 0) continue;
+
+                // If order_id provided, resolve order_item_id
+                let orderItemId = item.order_item_id || null;
+                if (!orderItemId && order_id && item.variant_id) {
+                    const oiRes = await client.query(
+                        `SELECT id FROM order_items WHERE order_id = $1 AND variant_id = $2 LIMIT 1`,
+                        [order_id, item.variant_id]
+                    );
+                    if (oiRes.rowCount > 0) orderItemId = oiRes.rows[0].id;
+                }
+
                 await client.query(
-                    `INSERT INTO delivery_note_items (delivery_note_id, variant_id, requested_qty)
-                     VALUES ($1, $2, $3)`,
-                    [dnId, item.variant_id, item.requested_qty]
+                    `INSERT INTO delivery_note_items (delivery_note_id, order_item_id, variant_id, requested_qty, delivered_qty, notes, created_at)
+                     VALUES ($1, $2, $3, $4, 0, $5, NOW())`,
+                    [dnId, orderItemId, item.variant_id, qty, item.notes || null]
                 );
             }
 
@@ -214,61 +228,6 @@ router.get('/:id', async (req, res) => {
     } catch (err) {
         console.error('[DeliveryNotes] GET /:id error:', err.message);
         return res.status(500).json({ error: 'Internal server error.' });
-    }
-});
-
-// =============================================================================
-// POST /api/delivery-notes
-// Create new delivery note
-// =============================================================================
-
-router.post('/', restrictWrite, validateBody(deliveryNoteCreate), async (req, res) => {
-    const { order_id, client_id, items, notes } = req.validatedBody;
-    
-    if (!order_id || !client_id || !items || !Array.isArray(items) || items.length === 0) {
-        return res.status(400).json({ error: 'order_id, client_id, and items array are required.' });
-    }
-    
-    try {
-        const result = await db.withTransaction(async (client) => {
-            // Create delivery note (note_number is auto-generated by sequence)
-            const dnResult = await client.query(
-                `INSERT INTO delivery_notes (order_id, client_id, status, notes, created_by, created_at, updated_at)
-                 VALUES ($1, $2, 'pending', $3, $4, NOW(), NOW())
-                 RETURNING *`,
-                [order_id, client_id, notes || null, req.user?.id]
-            );
-            
-            const deliveryNote = dnResult.rows[0];
-            
-            // Create delivery note items - resolve order_item_id from variant_id if needed
-            for (const item of items) {
-                let orderItemId = item.order_item_id || null;
-
-                if (!orderItemId && item.variant_id) {
-                    const oiRes = await client.query(
-                        `SELECT id FROM order_items WHERE order_id = $1 AND variant_id = $2 LIMIT 1`,
-                        [order_id, item.variant_id]
-                    );
-                    if (oiRes.rowCount > 0) orderItemId = oiRes.rows[0].id;
-                }
-
-                if (!orderItemId) continue;
-
-                await client.query(
-                    `INSERT INTO delivery_note_items (delivery_note_id, order_item_id, variant_id, requested_qty, delivered_qty, notes, created_at)
-                     VALUES ($1, $2, $3, $4, 0, $5, NOW())`,
-                    [deliveryNote.id, orderItemId, item.variant_id || null, item.quantity || item.requested_qty || 0, item.notes || null]
-                );
-            }
-            
-            return deliveryNote;
-        });
-        
-        return res.status(201).json({ data: result, message: 'تم إنشاء سند التسليم بنجاح.' });
-    } catch (err) {
-        console.error('[DeliveryNotes] POST / error:', err.message);
-        return res.status(500).json({ error: err.message || 'Internal server error.' });
     }
 });
 
