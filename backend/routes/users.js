@@ -95,6 +95,12 @@ router.put('/roles/:id', restrictToAdmin, validateBody(roleUpdate), async (req, 
             [role_name, description || '', JSON.stringify(permissions || {}), id]
         );
 
+        // Bump token_version for all users with this role — forces re-login with new permissions
+        await db.query(
+            `UPDATE users SET token_version = token_version + 1 WHERE role_id = $1`,
+            [id]
+        );
+
         return success(res, { message: 'تم تحديث الدور بنجاح' });
 
     } catch (error) {

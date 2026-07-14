@@ -354,6 +354,10 @@ const usersView = (() => {
     }
 
     function _collectRolePermissions() {
+        const allAccessCb = document.getElementById('rm-all-access');
+        if (allAccessCb && allAccessCb.checked) {
+            return { all_access: true };
+        }
         const perms = {};
         document.querySelectorAll('.rm-perm-cb').forEach(cb => {
             const mod = cb.getAttribute('data-mod');
@@ -368,6 +372,13 @@ const usersView = (() => {
         document.querySelectorAll('.rm-perm-cb').forEach(cb => { cb.checked = checked; });
     }
 
+    function _toggleAllAccess(checked) {
+        const grid = document.querySelector('#rm-perms-tbody');
+        if (!grid) return;
+        grid.style.opacity = checked ? '0.4' : '1';
+        grid.style.pointerEvents = checked ? 'none' : 'auto';
+    }
+
     // ?? Role Modal ?????????????????????????????????????????????????
     function openRoleModal(roleId = null) {
         _editingRoleId = roleId;
@@ -378,10 +389,18 @@ const usersView = (() => {
             if (!r) return;
             el('rm-name').value = r.role_name   || '';
             el('rm-desc').value = r.description || '';
-            _renderRolePermissions(r.permissions || {});
+            const perms = r.permissions || {};
+            const allAccess = perms.all_access === true;
+            const allAccessCb = el('rm-all-access');
+            if (allAccessCb) allAccessCb.checked = allAccess;
+            _toggleAllAccess(allAccess);
+            _renderRolePermissions(allAccess ? {} : perms);
         } else {
             el('rm-name').value = '';
             el('rm-desc').value = '';
+            const allAccessCb = el('rm-all-access');
+            if (allAccessCb) allAccessCb.checked = false;
+            _toggleAllAccess(false);
             _renderRolePermissions({});
         }
         el('role-modal').classList.remove('hidden');
@@ -455,6 +474,7 @@ const usersView = (() => {
         saveRole,
         deleteRole,
         _toggleAllPermissions,
+        _toggleAllAccess,
     };
 })();
 

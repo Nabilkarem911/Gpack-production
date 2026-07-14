@@ -27,6 +27,7 @@ router.post('/login', validateBody(loginBody), async (req, res) => {
          u.password_hash,
          u.name,
          u.status,
+         u.token_version,
          r.id         AS role_id,
          r.role_name  AS role,
          r.permissions
@@ -60,6 +61,7 @@ router.post('/login', validateBody(loginBody), async (req, res) => {
       role_id: user.role_id,
       role: user.role,
       permissions: user.permissions,
+      token_version: user.token_version || 0,
     };
 
     const token = jwt.sign(payload, process.env.JWT_SECRET, {
