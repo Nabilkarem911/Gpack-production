@@ -295,10 +295,16 @@ function _initSidebarToggles() {
 // navigateTo(viewName)
 // The SPA router. Fetches /views/<viewName>.html and injects into #main-content.
 // Sets the active sidebar item and updates the breadcrumb.
+// Uses a navigation token to cancel stale navigations (race condition fix).
 // =============================================================================
+let _navToken = 0;
+
 window.navigateTo = async function (viewName) {
     const mainContent = document.getElementById('main-content');
     if (!mainContent) return;
+
+    // Increment token — any in-flight navigation with a lower token is now stale
+    const myToken = ++_navToken;
 
     // Find nav label for breadcrumb
     const navItem = NAV_ITEMS.find(n => n.view === viewName);
@@ -330,6 +336,9 @@ window.navigateTo = async function (viewName) {
         if (!res.ok) throw new Error(`View not found: ${viewName}`);
         const html = await res.text();
 
+        // Stale check — if a newer navigation started, abort this one
+        if (myToken !== _navToken) return;
+
         mainContent.innerHTML = html;
 
         // Re-execute <script> tags injected via innerHTML.
@@ -339,6 +348,9 @@ window.navigateTo = async function (viewName) {
         const scripts = Array.from(mainContent.querySelectorAll('script'));
 
         for (const oldScript of scripts) {
+            // Stale check before each script injection
+            if (myToken !== _navToken) return;
+
             await new Promise((resolve) => {
                 const newScript = document.createElement('script');
 
@@ -368,6 +380,7 @@ window.navigateTo = async function (viewName) {
         }
 
     } catch (err) {
+        if (myToken !== _navToken) return;
         mainContent.innerHTML = `
             <div class="flex flex-col items-center justify-center h-64 text-slate-400">
                 <i class="fa-solid fa-circle-exclamation text-5xl mb-4 text-slate-300"></i>
@@ -379,7 +392,9 @@ window.navigateTo = async function (viewName) {
                 </button>
             </div>`;
     } finally {
-        mainContent.classList.remove('loading');
+        if (myToken === _navToken) {
+            mainContent.classList.remove('loading');
+        }
     }
 };
 
