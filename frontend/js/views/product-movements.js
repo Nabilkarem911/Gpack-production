@@ -402,7 +402,12 @@
 
     // ── Debounced filter ──────────────────────────────────────────────────────
     let _debounceTimer;
-    
+
+    function _onFilterChange() {
+        clearTimeout(_debounceTimer);
+        _debounceTimer = setTimeout(() => _load(0), 400);
+    }
+
     // ── Init ──────────────────────────────────────────────────────────────────
     async function _init() {
         await _loadDropdowns();
