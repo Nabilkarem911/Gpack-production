@@ -101,20 +101,10 @@ app.set('trust proxy', 1);
 // Security: Rate Limiting
 // =============================================================================
 
-// Login rate limiter - prevent brute force attacks
-const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 5,
-  message: { error: 'Too many login attempts. Please try again in 15 minutes.' },
-  standardHeaders: true,
-  legacyHeaders: false,
-  validate: { xForwardedForHeader: false },
-});
-
 // General API rate limiter
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 200,
+  max: 500,
   message: { error: 'Too many requests. Please slow down.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -124,7 +114,7 @@ const apiLimiter = rateLimit({
 // Public routes rate limiter
 const publicLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 60,
+  max: 120,
   message: { error: 'Too many requests.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -222,7 +212,6 @@ function _mountRoute(basePath, ...handlers) {
 }
 
 // Apply rate limiters
-_mountRoute('/auth', loginLimiter);  // Strict limit for auth endpoints
 _mountRoute('/', apiLimiter);        // General limit for all API endpoints
 
 _mountRoute('/auth',                require('./routes/auth'));
