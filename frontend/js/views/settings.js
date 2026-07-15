@@ -295,6 +295,7 @@
     // Entry point — called at bottom of IIFE.
     // ==========================================================================
     async function initSettingsView() {
+        var _myToken = window.getCurrentNavToken ? window.getCurrentNavToken() : 0;
         _applyPermissions();
         _wireModalEvents();
 
@@ -304,6 +305,7 @@
 
         // Load terms
         await _loadTerms();
+        if (window.isViewActive && !window.isViewActive(_myToken)) return;
     }
 
     // ── Auto-execute ──────────────────────────────────────────────────────────

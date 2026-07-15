@@ -71,6 +71,7 @@
     // Init
     // ─────────────────────────────────────────────────────────────────────────
     window.rvInit = async function () {
+        var _myToken = window.getCurrentNavToken ? window.getCurrentNavToken() : 0;
         hideEl('rv-mo-grid');
         hideEl('rv-empty');
         showEl('rv-loading');
@@ -80,9 +81,11 @@
                 window.apiFetch('/api/manufacturer-orders?status=ordered,sent,partially_received&limit=500'),
                 window.apiFetch('/api/inventory/warehouses?limit=200')
             ]);
+            if (window.isViewActive && !window.isViewActive(_myToken)) return;
             _pendingMOs = mosRes.data || [];
             _warehouses = whRes.data || [];
         } catch (e) {
+            if (window.isViewActive && !window.isViewActive(_myToken)) return;
             window.showToast('فشل تحميل البيانات', 'error');
             hideEl('rv-loading');
             return;

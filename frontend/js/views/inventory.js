@@ -19,11 +19,14 @@ window.inventoryView = {
     // ── Init ──────────────────────────────────────────────────────────────────
     async _init() {
         console.log('[Inventory] Initializing view...');
+        var _myToken = window.getCurrentNavToken ? window.getCurrentNavToken() : 0;
         await Promise.all([
             this._loadWarehouses(),
             this._loadCategories()
         ]);
+        if (window.isViewActive && !window.isViewActive(_myToken)) return;
         await this._loadInventory();
+        if (window.isViewActive && !window.isViewActive(_myToken)) return;
         this._attachEventListeners();
         this._switchTab('stock');
     },

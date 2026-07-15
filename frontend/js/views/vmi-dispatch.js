@@ -46,14 +46,17 @@
 
     // ── Init: load pending delivery notes ─────────────────────────────────────
     window.dvInit = async function() {
+        var _myToken = window.getCurrentNavToken ? window.getCurrentNavToken() : 0;
         hideEl('dv-notes-grid'); hideEl('dv-empty'); showEl('dv-loading');
         try {
             const res = await window.apiFetch('/api/delivery-notes');
+            if (window.isViewActive && !window.isViewActive(_myToken)) return;
             _pendingNotes = (res.data || []).filter(dn => dn.status === 'pending' || dn.status === 'partial');
             _renderGrid();
         } catch (e) {
+            if (window.isViewActive && !window.isViewActive(_myToken)) return;
             window.showToast('فشل تحميل أوامر الفسح', 'error');
-        } finally { hideEl('dv-loading'); }
+        } finally { if (window.isViewActive && window.isViewActive(_myToken)) hideEl('dv-loading'); }
         const badge = _el('dv-tab-pending-badge');
         if (badge) { badge.textContent = _pendingNotes.length; _pendingNotes.length > 0 ? badge.classList.remove('hidden') : badge.classList.add('hidden'); }
     };

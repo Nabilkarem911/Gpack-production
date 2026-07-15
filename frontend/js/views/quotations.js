@@ -3201,6 +3201,7 @@
     // Entry point — wires listeners then loads data.
     // ==========================================================================
     async function initQuotationsView() {
+        var _myToken = window.getCurrentNavToken ? window.getCurrentNavToken() : 0;
         _wireModalEvents();
         _initSearch();
 
@@ -3224,6 +3225,7 @@
             _loadTerms(),
             loadQuotes(),
         ]);
+        if (window.isViewActive && !window.isViewActive(_myToken)) return;
     }
 
     // ==========================================================================

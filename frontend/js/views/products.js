@@ -1280,6 +1280,7 @@
     // Called at the bottom of this IIFE after all functions are defined.
     // ==========================================================================
     async function initProductsView() {
+        var _myToken = window.getCurrentNavToken ? window.getCurrentNavToken() : 0;
         // Add Product button
         const addBtn = document.getElementById('add-product-btn');
         if (addBtn) addBtn.addEventListener('click', () => window.openProductModal());
@@ -1362,6 +1363,7 @@
             _loadUnits(),
             loadProducts(),
         ]);
+        if (window.isViewActive && !window.isViewActive(_myToken)) return;
     }
 
     // ── Navigate to product movements ─────────────────────────────────────────

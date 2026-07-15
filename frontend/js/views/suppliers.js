@@ -18,6 +18,7 @@
     // Fetches suppliers from the API and renders the table.
     // ==========================================================================
     async function loadSuppliers() {
+        var _myToken = window.getCurrentNavToken ? window.getCurrentNavToken() : 0;
         const tbody = document.getElementById('suppliers-tbody');
         const empty = document.getElementById('suppliers-empty');
         if (!tbody) return;
@@ -31,6 +32,7 @@
 
         try {
             const res = await window.apiFetch('/api/suppliers');
+            if (window.isViewActive && !window.isViewActive(_myToken)) return;
             _allSuppliers = res.data || [];
             _renderTable(_allSuppliers);
         } catch (err) {

@@ -28,6 +28,7 @@ const dashboardView = {
     // ─────────────────────────────────────────────────────────────────────────
     async _init() {
         console.log('[Dashboard] Initializing view...');
+        var _myToken = window.getCurrentNavToken ? window.getCurrentNavToken() : 0;
         const { isAdmin, isSalesRep, isWarehouse } = this._getUserRole();
 
         const loaders = [
@@ -59,6 +60,7 @@ const dashboardView = {
         loaders.push(this._loadPendingPricing());
 
         await Promise.all(loaders);
+        if (window.isViewActive && !window.isViewActive(_myToken)) return;
     },
 
     // ─────────────────────────────────────────────────────────────────────────

@@ -77,11 +77,13 @@ const usersView = (() => {
 
     // ?? Load ???????????????????????????????????????????????????????
     async function loadAll() {
+        var _myToken = window.getCurrentNavToken ? window.getCurrentNavToken() : 0;
         try {
             const [usersRes, rolesRes] = await Promise.all([
                 api('/api/users'),
                 api('/api/users/roles')
             ]);
+            if (window.isViewActive && !window.isViewActive(_myToken)) return;
             _users = usersRes.data  || [];
             _roles = rolesRes.data  || [];
             updateStats();

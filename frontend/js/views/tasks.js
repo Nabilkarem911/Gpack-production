@@ -17,8 +17,11 @@ var tasksView = {
     // ─────────────────────────────────────────────────────────────────────────
     async _init() {
         console.log('[Tasks] Initializing view...');
+        var _myToken = window.getCurrentNavToken ? window.getCurrentNavToken() : 0;
         await this._loadUsers();
+        if (window.isViewActive && !window.isViewActive(_myToken)) return;
         await this._loadTasks();
+        if (window.isViewActive && !window.isViewActive(_myToken)) return;
         this._setupEventListeners();
         this._updateStats();
         

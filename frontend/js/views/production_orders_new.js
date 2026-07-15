@@ -2830,7 +2830,9 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
 
     // ── Init ───────────────────────────────────────────────────────────────────
     async function _init() {
+        var _myToken = window.getCurrentNavToken ? window.getCurrentNavToken() : 0;
         await Promise.all([_loadOrders(), _loadSuppliers(), _loadWarehouses()]);
+        if (window.isViewActive && !window.isViewActive(_myToken)) return;
         const searchEl = _el('po-search');
         if (searchEl) searchEl.addEventListener('input', _renderTable);
     }

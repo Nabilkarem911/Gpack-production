@@ -580,7 +580,9 @@
     // Init
     // ─────────────────────────────────────────────────────────────────────────
     (async function _init() {
+        var _myToken = window.getCurrentNavToken ? window.getCurrentNavToken() : 0;
         await _loadData();
+        if (window.isViewActive && !window.isViewActive(_myToken)) return;
         await _load();
     })();
 

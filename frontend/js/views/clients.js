@@ -482,6 +482,7 @@
     // finishes parsing — this is the fix for the async SPA router race condition.
     // ==========================================================================
     async function initClientsView() {
+        var _myToken = window.getCurrentNavToken ? window.getCurrentNavToken() : 0;
         // Bind Add Client button FIRST — before any permission check hides it,
         // so the click handler is always registered on the DOM element.
         const addBtn = document.getElementById('add-client-btn');
@@ -500,6 +501,7 @@
         if (cancelBtn) cancelBtn.addEventListener('click', window.closeClientModal);
 
         await loadClients();
+        if (window.isViewActive && !window.isViewActive(_myToken)) return;
     }
 
     // ==========================================================================

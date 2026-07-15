@@ -299,6 +299,15 @@ function _initSidebarToggles() {
 // =============================================================================
 let _navToken = 0;
 
+// Global helper: any view's async init can check if it's still the active view
+// Returns true only if no newer navigation has started since the given token.
+window.isViewActive = function (token) {
+    return token === _navToken;
+};
+window.getCurrentNavToken = function () {
+    return _navToken;
+};
+
 window.navigateTo = async function (viewName) {
     const mainContent = document.getElementById('main-content');
     if (!mainContent) return;
@@ -340,6 +349,7 @@ window.navigateTo = async function (viewName) {
         if (myToken !== _navToken) return;
 
         mainContent.innerHTML = html;
+        mainContent.setAttribute('data-nav-token', String(myToken));
 
         // Re-execute <script> tags injected via innerHTML.
         // innerHTML does NOT run scripts — we must recreate each one.
