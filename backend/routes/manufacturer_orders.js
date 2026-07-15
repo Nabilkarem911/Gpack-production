@@ -44,6 +44,34 @@ const restrictWrite  = authorize('production_orders', 'create');
 const restrictEdit   = authorize('production_orders', 'edit');
 const restrictDelete = authorize('production_orders', 'delete');
 
+// Allow either production_orders:edit OR receiving:create for receiving goods
+const restrictReceive = (req, res, next) => {
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+    const { role, permissions } = req.user;
+    if (role === 'super_admin' || role === 'admin') return next();
+    if (permissions && permissions.all_access === true) return next();
+    const has = (res, act) => permissions && permissions[res] &&
+        ((typeof permissions[res] === 'object' && !Array.isArray(permissions[res]) && permissions[res][act] === true) ||
+         (Array.isArray(permissions[res]) && permissions[res].includes(act)) ||
+         (typeof permissions[res] === 'boolean' && permissions[res] === true));
+    if (has('production_orders', 'edit') || has('receiving', 'create')) return next();
+    return res.status(403).json({ error: 'Forbidden: No permission to receive goods.' });
+};
+
+// Allow either production_orders:delete OR receiving:delete for reversing receipts
+const restrictReverse = (req, res, next) => {
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+    const { role, permissions } = req.user;
+    if (role === 'super_admin' || role === 'admin') return next();
+    if (permissions && permissions.all_access === true) return next();
+    const has = (res, act) => permissions && permissions[res] &&
+        ((typeof permissions[res] === 'object' && !Array.isArray(permissions[res]) && permissions[res][act] === true) ||
+         (Array.isArray(permissions[res]) && permissions[res].includes(act)) ||
+         (typeof permissions[res] === 'boolean' && permissions[res] === true));
+    if (has('production_orders', 'delete') || has('receiving', 'delete')) return next();
+    return res.status(403).json({ error: 'Forbidden: No permission to reverse receipts.' });
+};
+
 // =============================================================================
 // GET /api/manufacturer-orders
 // Returns manufacturer orders with supplier info and item counts.
@@ -791,34 +819,6 @@ const ACCOUNT_INVENTORY  = 'c1ad0786-b968-4bc9-abd7-3a508e6f4e52'; // Inventory 
 const ACCOUNT_PAYABLE    = '3e118831-0022-47de-acfe-b06a1cd8b9d2'; // Accounts Payable
 const ACCOUNT_BANK       = 'c715d163-4bd7-41f4-8251-dcd8fed13297'; // Bank Accounts
 const ACCOUNT_VAT_INPUT  = 'a1b2c3d4-5678-9abc-def0-111222333444'; // VAT Input (Receivable)
-
-// Allow either production_orders:edit OR receiving:create for receiving goods
-const restrictReceive = (req, res, next) => {
-    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
-    const { role, permissions } = req.user;
-    if (role === 'super_admin' || role === 'admin') return next();
-    if (permissions && permissions.all_access === true) return next();
-    const has = (res, act) => permissions && permissions[res] &&
-        ((typeof permissions[res] === 'object' && !Array.isArray(permissions[res]) && permissions[res][act] === true) ||
-         (Array.isArray(permissions[res]) && permissions[res].includes(act)) ||
-         (typeof permissions[res] === 'boolean' && permissions[res] === true));
-    if (has('production_orders', 'edit') || has('receiving', 'create')) return next();
-    return res.status(403).json({ error: 'Forbidden: No permission to receive goods.' });
-};
-
-// Allow either production_orders:delete OR receiving:delete for reversing receipts
-const restrictReverse = (req, res, next) => {
-    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
-    const { role, permissions } = req.user;
-    if (role === 'super_admin' || role === 'admin') return next();
-    if (permissions && permissions.all_access === true) return next();
-    const has = (res, act) => permissions && permissions[res] &&
-        ((typeof permissions[res] === 'object' && !Array.isArray(permissions[res]) && permissions[res][act] === true) ||
-         (Array.isArray(permissions[res]) && permissions[res].includes(act)) ||
-         (typeof permissions[res] === 'boolean' && permissions[res] === true));
-    if (has('production_orders', 'delete') || has('receiving', 'delete')) return next();
-    return res.status(403).json({ error: 'Forbidden: No permission to reverse receipts.' });
-};
 
 router.post('/:id/receive', restrictReceive, validateBody(manufacturerOrderReceive), async (req, res) => {
     const { id } = req.params;
