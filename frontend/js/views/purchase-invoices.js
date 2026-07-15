@@ -99,6 +99,7 @@
                 <td class="py-3 px-4 font-bold font-mono text-slate-700">#${inv.invoice_number}</td>
                 <td class="py-3 px-4 text-slate-500 text-xs">${date}</td>
                 <td class="py-3 px-4 font-semibold text-slate-800">${esc(inv.supplier_name || '—')}</td>
+                <td class="py-3 px-4 text-slate-600 text-xs hidden sm:table-cell">${esc(inv.client_name || '—')}</td>
                 <td class="py-3 px-4 text-slate-500 text-xs hidden sm:table-cell">${esc(inv.supplier_invoice_ref || '—')}</td>
                 <td class="py-3 px-4 text-center">${invBadge}</td>
                 <td class="py-3 px-4 text-center">
@@ -231,6 +232,7 @@
                 <td class="py-3 px-4 font-bold font-mono text-slate-700">#${inv.invoice_number}</td>
                 <td class="py-3 px-4 text-slate-500 text-xs">${date}</td>
                 <td class="py-3 px-4 font-semibold text-slate-800">${esc(inv.supplier_name || '—')}</td>
+                <td class="py-3 px-4 text-slate-600 text-xs hidden sm:table-cell">${esc(inv.client_name || '—')}</td>
                 <td class="py-3 px-4 text-slate-500 text-xs hidden sm:table-cell">${esc(inv.supplier_invoice_ref || '—')}</td>
                 <td class="py-3 px-4 font-bold font-mono ${isDraft ? 'text-slate-400' : 'text-purple-600'}">${isDraft ? '—' : fmt(inv.grand_total)}</td>
                 <td class="py-3 px-4 text-center">${invBadge}</td>
@@ -284,6 +286,7 @@
             _el('pi-apr-id').value       = invId;
             _el('pi-apr-num').textContent = `#${inv.invoice_number}`;
             _el('pi-apr-supplier').textContent = inv.supplier_name || '—';
+            _el('pi-apr-client').textContent = inv.client_name || '—';
 
             _el('pi-apr-tax-toggle').checked = false;
             _el('pi-apr-pay-toggle').checked = false;
@@ -435,6 +438,7 @@
             _el('pi-edt-id').value       = invId;
             _el('pi-edt-num').textContent = `#${inv.invoice_number}`;
             _el('pi-edt-supplier').textContent = inv.supplier_name || '—';
+            _el('pi-edt-client').textContent = inv.client_name || '—';
 
             const hasTax = parseFloat(inv.tax_rate || 0) > 0;
             _el('pi-edt-tax-toggle').checked = hasTax;
@@ -614,6 +618,7 @@
       <div style="font-weight:700;font-size:16px">${esc(inv.supplier_name || '---')}</div>
       ${inv.supplier_phone ? `<div style="color:#64748b;font-size:12px;margin-top:3px">${esc(inv.supplier_phone)}</div>` : ''}
       ${inv.supplier_city  ? `<div style="color:#94a3b8;font-size:11px;margin-top:2px">${esc(inv.supplier_city)}</div>` : ''}
+      ${inv.client_name ? `<div style="margin-top:8px;font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">العميل</div><div style="font-weight:700;font-size:14px;color:#475569">${esc(inv.client_name)}</div>` : ''}
     </div>
     <div style="text-align:left">
       <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">تفاصيل الفاتورة</div>

@@ -135,10 +135,13 @@ router.get('/:id', async (req, res) => {
                    s.phone AS supplier_phone, s.city AS supplier_city,
                    s.commercial_register, s.tax_id AS supplier_tax_id,
                    mo.id AS mo_id, mo.mo_number,
+                   c.id AS client_id, c.name AS client_name,
                    u.name AS created_by_name
             FROM purchase_invoices pi
             LEFT JOIN suppliers s ON s.id = pi.supplier_id
             LEFT JOIN manufacturer_orders mo ON mo.id = pi.manufacturer_order_id
+            LEFT JOIN orders o ON o.id = mo.order_id
+            LEFT JOIN clients c ON c.id = o.client_id
             LEFT JOIN users u ON u.id = pi.created_by
             WHERE pi.id = $1
         `, [id]);
