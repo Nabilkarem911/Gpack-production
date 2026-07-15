@@ -7,7 +7,39 @@ const authorize = require('../middleware/authorize');
 const { validateBody, manufacturerOrderCreate, manufacturerOrderStatusUpdate, manufacturerOrderUpdate, manufacturerOrderReceive, manufacturerOrderPricing, moFinalize } = require('../utils/validators');
 
 const router = express.Router();
-router.use(authorize('production_orders', 'view'));
+
+// Allow both production_orders and receiving roles to view manufacturer orders
+// (warehouse staff need to see MOs to receive goods against them)
+router.use((req, res, next) => {
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized: User context missing.' });
+    const { role, permissions } = req.user;
+    if (role === 'super_admin' || role === 'admin') return next();
+    if (permissions && permissions.all_access === true) return next();
+
+    // For GET requests, allow either production_orders:view OR receiving:view
+    if (req.method === 'GET') {
+        const hasPO = permissions && permissions.production_orders &&
+            ((typeof permissions.production_orders === 'object' && permissions.production_orders.view === true) ||
+             (Array.isArray(permissions.production_orders) && permissions.production_orders.includes('view')) ||
+             (typeof permissions.production_orders === 'boolean' && permissions.production_orders === true));
+        const hasReceiving = permissions && permissions.receiving &&
+            ((typeof permissions.receiving === 'object' && permissions.receiving.view === true) ||
+             (Array.isArray(permissions.receiving) && permissions.receiving.includes('view')) ||
+             (typeof permissions.receiving === 'boolean' && permissions.receiving === true));
+        if (hasPO || hasReceiving) return next();
+        return res.status(403).json({ error: 'Forbidden: No view permission on production_orders.' });
+    }
+
+    // For non-GET requests, require production_orders:view
+    const resource = 'production_orders';
+    if (permissions && permissions[resource]) {
+        const perms = permissions[resource];
+        if (typeof perms === 'object' && !Array.isArray(perms) && perms.view === true) return next();
+        if (Array.isArray(perms) && perms.includes('view')) return next();
+        if (typeof perms === 'boolean' && perms === true) return next();
+    }
+    return res.status(403).json({ error: `Forbidden: No view permission on ${resource}.` });
+});
 const restrictWrite  = authorize('production_orders', 'create');
 const restrictEdit   = authorize('production_orders', 'edit');
 const restrictDelete = authorize('production_orders', 'delete');
@@ -601,7 +633,7 @@ router.get('/:id/receipts', async (req, res) => {
 //   - Updates MO status
 // BLOCKED only if the parent ORDER status is completed/archived/cancelled.
 // =============================================================================
-router.delete('/:id/receipts/:sessionId', restrictDelete, async (req, res) => {
+router.delete('/:id/receipts/:sessionId', restrictReverse, async (req, res) => {
     const { id, sessionId } = req.params;
 
     try {
@@ -760,7 +792,35 @@ const ACCOUNT_PAYABLE    = '3e118831-0022-47de-acfe-b06a1cd8b9d2'; // Accounts P
 const ACCOUNT_BANK       = 'c715d163-4bd7-41f4-8251-dcd8fed13297'; // Bank Accounts
 const ACCOUNT_VAT_INPUT  = 'a1b2c3d4-5678-9abc-def0-111222333444'; // VAT Input (Receivable)
 
-router.post('/:id/receive', restrictEdit, validateBody(manufacturerOrderReceive), async (req, res) => {
+// Allow either production_orders:edit OR receiving:create for receiving goods
+const restrictReceive = (req, res, next) => {
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+    const { role, permissions } = req.user;
+    if (role === 'super_admin' || role === 'admin') return next();
+    if (permissions && permissions.all_access === true) return next();
+    const has = (res, act) => permissions && permissions[res] &&
+        ((typeof permissions[res] === 'object' && !Array.isArray(permissions[res]) && permissions[res][act] === true) ||
+         (Array.isArray(permissions[res]) && permissions[res].includes(act)) ||
+         (typeof permissions[res] === 'boolean' && permissions[res] === true));
+    if (has('production_orders', 'edit') || has('receiving', 'create')) return next();
+    return res.status(403).json({ error: 'Forbidden: No permission to receive goods.' });
+};
+
+// Allow either production_orders:delete OR receiving:delete for reversing receipts
+const restrictReverse = (req, res, next) => {
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+    const { role, permissions } = req.user;
+    if (role === 'super_admin' || role === 'admin') return next();
+    if (permissions && permissions.all_access === true) return next();
+    const has = (res, act) => permissions && permissions[res] &&
+        ((typeof permissions[res] === 'object' && !Array.isArray(permissions[res]) && permissions[res][act] === true) ||
+         (Array.isArray(permissions[res]) && permissions[res].includes(act)) ||
+         (typeof permissions[res] === 'boolean' && permissions[res] === true));
+    if (has('production_orders', 'delete') || has('receiving', 'delete')) return next();
+    return res.status(403).json({ error: 'Forbidden: No permission to reverse receipts.' });
+};
+
+router.post('/:id/receive', restrictReceive, validateBody(manufacturerOrderReceive), async (req, res) => {
     const { id } = req.params;
     const {
         warehouse_id, items,

@@ -14,7 +14,21 @@ const { getVatRate } = require('../utils/settings');
 const { validateBody, purchaseInvoiceCreate } = require('../utils/validators');
 
 router.use(authenticate);
-router.use(authorize('purchasing', 'view'));
+
+// Allow purchasing OR receiving roles to view purchase invoices
+router.use((req, res, next) => {
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+    const { role, permissions } = req.user;
+    if (role === 'super_admin' || role === 'admin') return next();
+    if (permissions && permissions.all_access === true) return next();
+    const has = (res, act) => permissions && permissions[res] &&
+        ((typeof permissions[res] === 'object' && !Array.isArray(permissions[res]) && permissions[res][act] === true) ||
+         (Array.isArray(permissions[res]) && permissions[res].includes(act)) ||
+         (typeof permissions[res] === 'boolean' && permissions[res] === true));
+    if (req.method === 'GET' && (has('purchasing', 'view') || has('receiving', 'view'))) return next();
+    if (has('purchasing', 'view')) return next();
+    return res.status(403).json({ error: 'Forbidden: No view permission on purchasing.' });
+});
 const restrictWrite  = authorize('purchasing', 'create');
 const restrictEdit   = authorize('purchasing', 'edit');
 const restrictDelete = authorize('purchasing', 'delete');
