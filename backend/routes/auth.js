@@ -17,13 +17,18 @@ const router = express.Router();
 // =============================================================================
 
 router.post('/login', validateBody(loginBody), async (req, res) => {
-  const { email, password } = req.validatedBody;
+  const { identifier, password } = req.validatedBody;
 
   try {
+    // Check if identifier looks like an email or phone
+    const isEmail = identifier.includes('@');
+    const lookupValue = isEmail ? identifier.toLowerCase().trim() : identifier.trim();
+
     const result = await db.query(
       `SELECT
          u.id,
          u.email,
+         u.phone,
          u.password_hash,
          u.name,
          u.status,
@@ -33,13 +38,13 @@ router.post('/login', validateBody(loginBody), async (req, res) => {
          r.permissions
        FROM users u
        LEFT JOIN roles r ON r.id = u.role_id
-       WHERE u.email = $1
+       WHERE ${isEmail ? 'u.email' : 'u.phone'} = $1
        LIMIT 1`,
-      [email.toLowerCase().trim()]
+      [lookupValue]
     );
 
     if (result.rowCount === 0) {
-      return res.status(401).json({ error: 'Invalid email or password.' });
+      return res.status(401).json({ error: 'Invalid email/phone or password.' });
     }
 
     const user = result.rows[0];
@@ -51,7 +56,7 @@ router.post('/login', validateBody(loginBody), async (req, res) => {
     const passwordMatch = await bcrypt.compare(password, user.password_hash);
 
     if (!passwordMatch) {
-      return res.status(401).json({ error: 'Invalid email or password.' });
+      return res.status(401).json({ error: 'Invalid email/phone or password.' });
     }
 
     const payload = {
@@ -107,6 +112,7 @@ router.get('/me', authenticate, async (req, res) => {
       `SELECT
          u.id,
          u.email,
+         u.phone,
          u.name,
          u.status,
          u.created_at,

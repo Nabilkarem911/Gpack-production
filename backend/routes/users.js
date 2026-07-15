@@ -166,7 +166,7 @@ router.get('/list', async (req, res) => {
 router.get('/', restrictToAdmin, async (req, res) => {
     try {
         const result = await db.query(
-            `SELECT u.id, u.email, u.name, u.status, u.created_at, u.updated_at,
+            `SELECT u.id, u.email, u.phone, u.name, u.status, u.created_at, u.updated_at,
                     r.id as role_id, r.role_name, r.description as role_description, r.permissions
              FROM users u
              LEFT JOIN roles r ON u.role_id = r.id
@@ -185,25 +185,37 @@ router.get('/', restrictToAdmin, async (req, res) => {
 // =============================================================================
 
 router.post('/', restrictToAdmin, validateBody(userCreate), async (req, res) => {
-    const { email, name, password, role_id, status = 'active' } = req.validatedBody;
+    const { email, phone, name, password, role_id, status = 'active' } = req.validatedBody;
 
-    if (!email || !name || !password) {
-        return errorResponse(res, 'البريد والاسم وكلمة المرور مطلوبة', 400);
+    if (!name || !password) {
+        return errorResponse(res, 'الاسم وكلمة المرور مطلوبة', 400);
+    }
+    if (!email && !phone) {
+        return errorResponse(res, 'البريد الإلكتروني أو رقم الجوال مطلوب', 400);
     }
 
     try {
-        const existing = await db.query('SELECT id FROM users WHERE email = $1', [email]);
-        if (existing.rows.length > 0) {
-            return errorResponse(res, 'البريد الإلكتروني مستخدم بالفعل', 409);
+        // Check existing by email or phone
+        if (email) {
+            const existingEmail = await db.query('SELECT id FROM users WHERE email = $1', [email.toLowerCase().trim()]);
+            if (existingEmail.rows.length > 0) {
+                return errorResponse(res, 'البريد الإلكتروني مستخدم بالفعل', 409);
+            }
+        }
+        if (phone) {
+            const existingPhone = await db.query('SELECT id FROM users WHERE phone = $1', [phone.trim()]);
+            if (existingPhone.rows.length > 0) {
+                return errorResponse(res, 'رقم الجوال مستخدم بالفعل', 409);
+            }
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
 
         const result = await db.query(
-            `INSERT INTO users (email, name, password_hash, role_id, status)
-             VALUES ($1, $2, $3, $4, $5)
-             RETURNING id, email, name, status, created_at`,
-            [email, name, hashedPassword, role_id || null, status]
+            `INSERT INTO users (email, phone, name, password_hash, role_id, status)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             RETURNING id, email, phone, name, status, created_at`,
+            [email ? email.toLowerCase().trim() : null, phone ? phone.trim() : null, name, hashedPassword, role_id || null, status]
         );
 
         return created(res, result.rows[0]);
@@ -283,7 +295,7 @@ router.get('/:id', restrictToAdmin, async (req, res) => {
     try {
         const { id } = req.params;
         const result = await db.query(
-            `SELECT u.id, u.email, u.name, u.status, u.created_at,
+            `SELECT u.id, u.email, u.phone, u.name, u.status, u.created_at,
                     r.id as role_id, r.role_name
              FROM users u
              LEFT JOIN roles r ON u.role_id = r.id
@@ -307,7 +319,7 @@ router.get('/:id', restrictToAdmin, async (req, res) => {
 
 router.put('/:id', restrictToAdmin, validateBody(userUpdate), async (req, res) => {
     const { id } = req.params;
-    const { name, email, role_id, status, password } = req.validatedBody;
+    const { name, email, phone, role_id, status, password } = req.validatedBody;
 
     try {
         const updates = [];
@@ -318,9 +330,13 @@ router.put('/:id', restrictToAdmin, validateBody(userUpdate), async (req, res) =
             updates.push(`name = $${paramIndex++}`);
             values.push(name);
         }
-        if (email) {
+        if (email !== undefined) {
             updates.push(`email = $${paramIndex++}`);
-            values.push(email);
+            values.push(email ? email.toLowerCase().trim() : null);
+        }
+        if (phone !== undefined) {
+            updates.push(`phone = $${paramIndex++}`);
+            values.push(phone ? phone.trim() : null);
         }
         if (role_id !== undefined) {
             updates.push(`role_id = $${paramIndex++}`);

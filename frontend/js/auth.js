@@ -62,13 +62,13 @@ async function _renderLoginView() {
 async function _handleLoginSubmit(event) {
     event.preventDefault();
 
-    const emailInput    = document.getElementById('login-email');
-    const passwordInput = document.getElementById('login-password');
-    const submitBtn     = document.getElementById('login-submit-btn');
-    const errorBox      = document.getElementById('login-error');
+    const identifierInput = document.getElementById('login-identifier');
+    const passwordInput   = document.getElementById('login-password');
+    const submitBtn       = document.getElementById('login-submit-btn');
+    const errorBox        = document.getElementById('login-error');
 
-    const email    = (emailInput?.value || '').trim();
-    const password = (passwordInput?.value || '').trim();
+    const identifier = (identifierInput?.value || '').trim();
+    const password   = (passwordInput?.value || '').trim();
 
     // Clear previous error
     if (errorBox) {
@@ -76,8 +76,8 @@ async function _handleLoginSubmit(event) {
         errorBox.classList.add('hidden');
     }
 
-    if (!email || !password) {
-        _showLoginError('يرجى إدخال البريد الإلكتروني وكلمة المرور.');
+    if (!identifier || !password) {
+        _showLoginError('يرجى إدخال البريد الإلكتروني أو رقم الجوال وكلمة المرور.');
         return;
     }
 
@@ -90,7 +90,7 @@ async function _handleLoginSubmit(event) {
     try {
         const data = await window.apiFetch('/api/auth/login', {
             method: 'POST',
-            body: { email, password },
+            body: { identifier, password },
         });
 
         // Persist non-sensitive user info for UI (token is in HttpOnly cookie)

@@ -8,7 +8,7 @@ const { z } = require('zod');
 const idParam = z.string().uuid('Invalid UUID format');
 
 const loginBody = z.object({
-    email: z.string().email('Valid email is required').max(255),
+    identifier: z.string().min(1, 'Email or phone is required').max(255),
     password: z.string().min(1, 'Password is required').max(255),
 });
 
@@ -384,16 +384,20 @@ const taskCommentCreate = z.object({
 // =============================================================================
 
 const userCreate = z.object({
-    email: z.string().email('Valid email is required').max(255),
+    email: z.string().email('Valid email is required').max(255).optional(),
+    phone: z.string().max(50).optional(),
     name: z.string().min(1, 'Name is required').max(255),
     password: z.string().min(6, 'Password must be at least 6 characters').max(255),
     role_id: z.string().uuid('Valid role_id is required'),
     status: z.enum(['active', 'inactive']).optional().default('active'),
+}).refine(data => data.email || data.phone, {
+    message: 'Either email or phone is required',
 });
 
 const userUpdate = z.object({
     name: z.string().min(1).max(255).optional(),
     email: z.string().email().max(255).optional(),
+    phone: z.string().max(50).optional(),
     role_id: z.string().uuid().optional(),
     status: z.enum(['active', 'inactive']).optional(),
     password: z.string().min(6).max(255).optional(),

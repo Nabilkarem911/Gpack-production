@@ -130,7 +130,7 @@ const usersView = (() => {
         const statF  = el('filter-status')?.value || '';
 
         const list = _users.filter(u => {
-            if (search && !u.name?.toLowerCase().includes(search) && !u.email?.toLowerCase().includes(search)) return false;
+            if (search && !u.name?.toLowerCase().includes(search) && !u.email?.toLowerCase().includes(search) && !u.phone?.includes(search)) return false;
             if (roleF  && u.role_id !== roleF)    return false;
             if (statF  && u.status  !== statF)    return false;
             return true;
@@ -164,7 +164,7 @@ const usersView = (() => {
                         </div>
                     </div>
                 </td>
-                <td class="px-4 py-3 text-sm text-slate-600">${u.email || '-'}</td>
+                <td class="px-4 py-3 text-sm text-slate-600">${u.email || u.phone || '-'}</td>
                 <td class="px-4 py-3">${roleBadge}</td>
                 <td class="px-4 py-3">${statusBadge}</td>
                 <td class="px-4 py-3 text-center">
@@ -257,11 +257,13 @@ const usersView = (() => {
             if (!u) return;
             el('um-name').value   = u.name  || '';
             el('um-email').value  = u.email || '';
+            el('um-phone').value  = u.phone || '';
             el('um-role').value   = u.role_id || '';
             el('um-status').value = u.status || 'active';
         } else {
             el('um-name').value   = '';
             el('um-email').value  = '';
+            el('um-phone').value  = '';
             el('um-password').value = '';
             el('um-role').value   = '';
             el('um-status').value = 'active';
@@ -277,12 +279,16 @@ const usersView = (() => {
     async function saveUser() {
         const name   = el('um-name').value.trim();
         const email  = el('um-email').value.trim();
+        const phone  = el('um-phone').value.trim();
         const roleId = el('um-role').value;
         const status = el('um-status').value;
 
-        if (!name || !email) { toast('الاسم والبريد مطلوبان', 'error'); return; }
+        if (!name) { toast('الاسم مطلوب', 'error'); return; }
+        if (!email && !phone) { toast('البريد الإلكتروني أو رقم الجوال مطلوب', 'error'); return; }
 
-        const body = { name, email, role_id: roleId || null, status };
+        const body = { name, role_id: roleId || null, status };
+        if (email) body.email = email;
+        if (phone) body.phone = phone;
 
         const pw = el('um-password').value;
         if (!_editingUserId) {
