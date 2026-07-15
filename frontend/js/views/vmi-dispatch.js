@@ -507,9 +507,18 @@
         const btn   = _el('dv-modal-confirm-btn');
         if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin ml-2"></i> جاري الحفظ...'; }
         try {
-            await window.apiFetch('/api/delivery-notes/' + _currentDN.id + '/dispatch', { method: 'POST', body: { items, notes } });
+            const result = await window.apiFetch('/api/delivery-notes/' + _currentDN.id + '/dispatch', { method: 'POST', body: { items, notes } });
             window.dvCloseModal();
-            window.showToast('تم تسجيل التسليم بنجاح ✅');
+            const dispNum = result?.data?.dispatch_number || '';
+            const dispId  = result?.data?.dispatch_id || '';
+            window.showToast(`تم تسجيل التسليم بنجاح ✅ سند تسليم #${dispNum}`, 'success');
+            if (dispId) {
+                setTimeout(() => {
+                    if (confirm(`طباعة سند التسليم #${dispNum}؟`)) {
+                        window.dvPrintDispatch(_currentDN.id, dispId);
+                    }
+                }, 500);
+            }
             await window.dvInit();
         } catch (e) {
             window.showToast(e.message || 'فشل تسجيل التسليم', 'error');
@@ -589,13 +598,17 @@
                                           class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-amber-700 border border-amber-200 rounded-xl hover:bg-amber-50 transition-colors">
                                        <i class="fa-solid fa-truck"></i>تسليم جديد
                                    </button>` : ''}
+                            <button onclick="window.dvShowDispatches('${esc(dn.id)}')"
+                                    class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-emerald-700 border border-emerald-200 rounded-xl hover:bg-emerald-50 transition-colors">
+                                <i class="fa-solid fa-list"></i>سندات التسليم
+                            </button>
                             <button onclick="window.dvPrintNote('${esc(dn.id)}', 'partial')"
                                     class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-blue-700 border border-blue-200 rounded-xl hover:bg-blue-50 transition-colors">
-                                <i class="fa-solid fa-print"></i>طباعة جزئي
+                                <i class="fa-solid fa-print"></i>مجمع
                             </button>
                             <button onclick="window.dvPrintNote('${esc(dn.id)}', 'full')"
                                     class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors">
-                                <i class="fa-solid fa-print"></i>طباعة كامل
+                                <i class="fa-solid fa-print"></i>كامل
                             </button>
                         </div>
                     </div>
@@ -607,6 +620,109 @@
                 </div>`;
             }).join('');
         } catch (e) { hideEl('dv-archive-loading'); window.showToast('فشل تحميل الأرشيف', 'error'); }
+    };
+
+    // ── Show all dispatch slips for a delivery note ───────────────────────────
+    window.dvShowDispatches = async function(dnId) {
+        try {
+            const res = await window.apiFetch(`/api/delivery-notes/${dnId}/dispatches`);
+            const dispatches = res?.data || [];
+            if (!dispatches.length) {
+                window.showToast('لا توجد سندات تسليم لهذا أمر الفسح', 'error');
+                return;
+            }
+
+            const listHTML = dispatches.map(d => {
+                const date = new Date(d.created_at).toLocaleDateString('ar-SA-u-nu-latn');
+                return `
+                <div class="flex items-center justify-between bg-slate-50 rounded-xl p-3 border border-slate-200">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center">
+                            <i class="fa-solid fa-file-lines text-emerald-600"></i>
+                        </div>
+                        <div>
+                            <p class="text-sm font-bold text-slate-800">سند تسليم #${d.dispatch_number}</p>
+                            <p class="text-xs text-slate-500">${date} — ${d.item_count} أصناف — إجمالي ${d.total_qty}</p>
+                        </div>
+                    </div>
+                    <button onclick="window.dvPrintDispatch('${esc(dnId)}', '${esc(d.id)}')"
+                            class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-50 transition-colors">
+                        <i class="fa-solid fa-print"></i>طباعة
+                    </button>
+                </div>`;
+            }).join('');
+
+            const modal = document.createElement('div');
+            modal.id = 'dv-dispatches-popup';
+            modal.className = 'fixed inset-0 z-50 flex items-start justify-center p-4 pt-6 bg-black/50';
+            modal.style.opacity = '0';
+            modal.style.transition = 'opacity 0.2s';
+            modal.innerHTML = `
+                <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg mb-8" onclick="event.stopPropagation()">
+                    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+                        <h3 class="text-base font-bold text-slate-800">سندات التسليم (${dispatches.length})</h3>
+                        <button onclick="document.getElementById('dv-dispatches-popup').remove()"
+                                class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </div>
+                    <div class="p-6 space-y-3 max-h-[60vh] overflow-y-auto">${listHTML}</div>
+                </div>`;
+            modal.addEventListener('click', () => modal.remove());
+            document.body.appendChild(modal);
+            requestAnimationFrame(() => { modal.style.opacity = '1'; });
+        } catch (e) { window.showToast('فشل تحميل سندات التسليم', 'error'); }
+    };
+
+    // ── Print individual dispatch slip ────────────────────────────────────────
+    window.dvPrintDispatch = async function(dnId, dispatchId) {
+        try {
+            const res = await window.apiFetch(`/api/delivery-notes/${dnId}/dispatches/${dispatchId}`);
+            const d = res?.data;
+            if (!d) { window.showToast('فشل تحميل السند', 'error'); return; }
+
+            const itemsHTML = (d.items || []).map((item, i) =>
+                `<tr>
+                <td style="padding:8px;border:1px solid #ddd;text-align:right">${i + 1}</td>
+                <td style="padding:8px;border:1px solid #ddd;text-align:right">${esc(item.product_name || '—')}${item.variant_name ? ' — ' + esc(item.variant_name) : ''}</td>
+                <td style="padding:8px;border:1px solid #ddd;text-align:center;font-weight:bold;color:#2563eb;font-size:15px">${parseFloat(item.quantity)}</td>
+                </tr>`).join('');
+
+            const totalQty = (d.items || []).reduce((s, i) => s + parseFloat(i.quantity), 0);
+
+            const html = `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="UTF-8"><title>سند تسليم #${d.dispatch_number}</title>
+<style>body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;margin:0;padding:20px;color:#1e293b;direction:rtl}
+.header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #16a34a;padding-bottom:16px;margin-bottom:20px}
+.company{font-size:22px;font-weight:bold;color:#16a34a}.doc-number{font-size:24px;font-weight:bold}
+.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;background:#f0fdf4;padding:16px;border-radius:8px}
+.info-item label{font-size:11px;color:#64748b;display:block;margin-bottom:2px}.info-item span{font-weight:bold;font-size:14px}
+table{width:100%;border-collapse:collapse;margin-bottom:20px}
+th{background:#15803d;color:white;padding:10px 8px;text-align:right;font-size:13px;border:1px solid #15803d}
+td{font-size:13px}tr:nth-child(even) td{background:#f0fdf4}
+.totals{display:flex;justify-content:flex-end;gap:24px;margin-bottom:20px;padding:12px 16px;background:#f0fdf4;border-radius:8px}
+.totals strong{font-size:18px;color:#16a34a}
+.footer{margin-top:40px;display:flex;justify-content:space-between;padding-top:20px;border-top:1px solid #e2e8f0}
+.sig-box{text-align:center;width:160px}.sig-line{border-top:1px solid #333;margin-top:40px;padding-top:6px;font-size:12px;color:#64748b}
+@media print{body{padding:10px}}</style></head><body>
+<div class="header"><div><div class="company">G.PACK</div><div style="font-size:13px;color:#64748b">سند تسليم بضاعة (جزئي)</div></div>
+<div style="text-align:left"><div style="font-size:12px;color:#64748b">رقم السند</div><div class="doc-number">#${d.dispatch_number}</div><div style="font-size:11px;color:#94a3b8;margin-top:2px">لأمر الفسح #${d.note_number}</div></div></div>
+<div class="info-grid">
+<div class="info-item"><label>العميل</label><span>${esc(d.client_name || '—')}</span></div>
+<div class="info-item"><label>رقم الطلب</label><span>#${d.order_number || '—'}</span></div>
+<div class="info-item"><label>التاريخ</label><span>${new Date(d.created_at).toLocaleDateString('en-GB')}</span></div>
+<div class="info-item"><label>السائق</label><span>${esc(d.driver_name || '—')}</span></div>
+${d.vehicle_number ? `<div class="info-item"><label>رقم السيارة</label><span>${esc(d.vehicle_number)}</span></div>` : ''}
+${d.created_by_name ? `<div class="info-item"><label>المستلم</label><span>${esc(d.created_by_name)}</span></div>` : ''}
+</div>
+<table><thead><tr><th style="width:40px">#</th><th>الصنف / المقاس</th><th style="width:100px;text-align:center">الكمية المُسلَّمة</th></tr></thead>
+<tbody>${itemsHTML || '<tr><td colspan="3" style="text-align:center;padding:16px;color:#94a3b8">لا توجد أصناف</td></tr>'}</tbody></table>
+<div class="totals"><div>إجمالي الكمية المُسلَّمة: <strong>${totalQty}</strong></div></div>
+${d.notes ? `<div style="margin-bottom:20px;padding:12px;background:#f8fafc;border-radius:8px;font-size:13px"><strong>ملاحظات:</strong> ${esc(d.notes)}</div>` : ''}
+<div class="footer"><div class="sig-box"><div class="sig-line">توقيع المستلم</div></div><div class="sig-box"><div class="sig-line">توقيع المسلِّم</div></div><div class="sig-box"><div class="sig-line">الختم</div></div></div>
+</body></html>`;
+            const w = window.open('', '_blank', 'width=800,height=700');
+            w.document.write(html); w.document.close(); setTimeout(() => w.print(), 500);
+        } catch (e) { window.showToast('فشل تحميل السند', 'error'); }
     };
 
     // ── Print delivery note ───────────────────────────────────────────────────

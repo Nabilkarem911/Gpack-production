@@ -277,6 +277,21 @@ router.post('/:id/dispatch', restrictWrite, validateBody(deliveryNoteDispatch), 
             const dn = dnCheck.rows[0];
             if (dn.status === 'completed') throw new Error('أمر الفسح مكتمل بالفعل ولا يمكن التعديل عليه.');
 
+            // Create a dispatch record for this specific handover
+            const nextNumRes = await client.query(
+                `SELECT COALESCE(MAX(dispatch_number), 0) + 1 AS next_num FROM delivery_note_dispatches WHERE delivery_note_id = $1`,
+                [id]
+            );
+            const dispatchNumber = nextNumRes.rows[0].next_num;
+
+            const dispatchRes = await client.query(
+                `INSERT INTO delivery_note_dispatches (delivery_note_id, dispatch_number, notes, created_by)
+                 VALUES ($1, $2, $3, $4)
+                 RETURNING id, dispatch_number`,
+                [id, dispatchNumber, deliveryNotes || null, req.user?.id || null]
+            );
+            const dispatchId = dispatchRes.rows[0].id;
+
             // Process each item
             for (const item of items) {
                 if (!item.item_id || !item.quantity || item.quantity <= 0) continue;
@@ -322,6 +337,13 @@ router.post('/:id/dispatch', restrictWrite, validateBody(deliveryNoteDispatch), 
 
                 const stockId = stockResult.rows[0].id;
 
+                // Record this item in the dispatch
+                await client.query(
+                    `INSERT INTO delivery_dispatch_items (dispatch_id, dn_item_id, quantity)
+                     VALUES ($1, $2, $3)`,
+                    [dispatchId, item.item_id, item.quantity]
+                );
+
                 // Update delivered_qty on delivery_note_items
                 await client.query(
                     `UPDATE delivery_note_items SET delivered_qty = delivered_qty + $1 WHERE id = $2`,
@@ -364,13 +386,97 @@ router.post('/:id/dispatch', restrictWrite, validateBody(deliveryNoteDispatch), 
                 [newStatus, id]
             );
 
-            return { status: newStatus };
+            return { status: newStatus, dispatch_id: dispatchId, dispatch_number: dispatchNumber };
         });
 
         return res.status(200).json({ message: 'تم تسجيل التسليم بنجاح.', data: result });
     } catch (err) {
         console.error('[DeliveryNotes] POST /:id/dispatch error:', err.message);
         return res.status(400).json({ error: err.message || 'Internal server error.' });
+    }
+});
+
+// =============================================================================
+// GET /api/delivery-notes/:id/dispatches
+// List all dispatches for a delivery note (each = one physical handover)
+// =============================================================================
+
+router.get('/:id/dispatches', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const result = await db.query(
+            `SELECT dnd.id, dnd.dispatch_number, dnd.notes, dnd.created_at,
+                    u.name AS created_by_name,
+                    (SELECT COALESCE(SUM(ddi.quantity), 0) FROM delivery_dispatch_items ddi WHERE ddi.dispatch_id = dnd.id) AS total_qty,
+                    (SELECT COUNT(*) FROM delivery_dispatch_items ddi WHERE ddi.dispatch_id = dnd.id) AS item_count
+             FROM delivery_note_dispatches dnd
+             LEFT JOIN users u ON u.id = dnd.created_by
+             WHERE dnd.delivery_note_id = $1
+             ORDER BY dnd.dispatch_number ASC`,
+            [id]
+        );
+        return res.status(200).json({ data: result.rows });
+    } catch (err) {
+        console.error('[DeliveryNotes] GET /:id/dispatches error:', err.message);
+        return res.status(500).json({ error: 'Internal server error.' });
+    }
+});
+
+// =============================================================================
+// GET /api/delivery-notes/:id/dispatches/:dispatchId
+// Get a single dispatch with its items (for printing individual delivery slip)
+// =============================================================================
+
+router.get('/:id/dispatches/:dispatchId', async (req, res) => {
+    try {
+        const { id, dispatchId } = req.params;
+
+        const dnRes = await db.query(
+            `SELECT dn.id, dn.note_number, dn.driver_name, dn.vehicle_number,
+                    dn.client_id, c.name AS client_name,
+                    dn.order_id, o.order_number,
+                    dn.status, dn.created_at
+             FROM delivery_notes dn
+             LEFT JOIN orders o ON o.id = dn.order_id
+             LEFT JOIN clients c ON c.id = dn.client_id
+             WHERE dn.id = $1`,
+            [id]
+        );
+        if (dnRes.rowCount === 0) return res.status(404).json({ error: 'أمر الفسح غير موجود.' });
+
+        const dispatchRes = await db.query(
+            `SELECT dnd.id, dnd.dispatch_number, dnd.notes, dnd.created_at,
+                    u.name AS created_by_name
+             FROM delivery_note_dispatches dnd
+             LEFT JOIN users u ON u.id = dnd.created_by
+             WHERE dnd.delivery_note_id = $1 AND dnd.id = $2`,
+            [id, dispatchId]
+        );
+        if (dispatchRes.rowCount === 0) return res.status(404).json({ error: 'سند التسليم غير موجود.' });
+
+        const itemsRes = await db.query(
+            `SELECT ddi.id, ddi.quantity,
+                    dni.id AS dn_item_id, dni.requested_qty,
+                    p.name AS product_name, pv.size_name AS variant_name
+             FROM delivery_dispatch_items ddi
+             JOIN delivery_note_items dni ON dni.id = ddi.dn_item_id
+             LEFT JOIN product_variants pv ON pv.id = COALESCE(dni.variant_id, (SELECT oi.variant_id FROM order_items oi WHERE oi.id = dni.order_item_id))
+             LEFT JOIN products p ON p.id = pv.product_id
+             WHERE ddi.dispatch_id = $1
+             ORDER BY ddi.id`,
+            [dispatchId]
+        );
+
+        const data = {
+            ...dnRes.rows[0],
+            ...dispatchRes.rows[0],
+            items: itemsRes.rows,
+        };
+
+        return res.status(200).json({ data });
+    } catch (err) {
+        console.error('[DeliveryNotes] GET /:id/dispatches/:dispatchId error:', err.message);
+        return res.status(500).json({ error: 'Internal server error.' });
     }
 });
 
