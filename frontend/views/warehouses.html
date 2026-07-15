@@ -220,10 +220,14 @@
             </button>
           </div>
         </div>
-        <div class="px-4 py-2 border-b border-slate-100">
+        <div class="px-4 py-2 border-b border-slate-100 flex items-center gap-5">
           <label class="flex items-center gap-2 text-xs text-slate-500 cursor-pointer">
             <input type="checkbox" id="hide-zero-stock" onchange="renderStock()" class="w-4 h-4 rounded text-brand-600">
             إخفاء الأصناف برصيد صفر
+          </label>
+          <label class="flex items-center gap-2 text-xs text-slate-500 cursor-pointer">
+            <input type="checkbox" id="show-zero-only" onchange="renderStock()" class="w-4 h-4 rounded text-red-600">
+            <span class="text-red-600 font-semibold">النفاد فقط (رصيد = 0)</span>
           </label>
         </div>
         <div class="overflow-x-auto">
@@ -775,12 +779,14 @@ function renderStock() {
   const whFilter  = document.getElementById('stock-warehouse-filter')?.value || '';
   const clFilter  = document.getElementById('stock-client-filter')?.value || '';
   const hideZero  = document.getElementById('hide-zero-stock')?.checked || false;
+  const zeroOnly  = document.getElementById('show-zero-only')?.checked || false;
 
   let filtered = stock.filter(s => {
     const matchSearch = !search || (s.product_name || '').toLowerCase().includes(search);
     const matchWh     = !whFilter || s.warehouse_id === whFilter;
     const matchCl     = !clFilter || s.client_id === clFilter;
-    const matchZero   = !hideZero || parseFloat(s.available_qty || 0) > 0;
+    const qty         = parseFloat(s.available_qty || 0);
+    const matchZero   = zeroOnly ? qty === 0 : (!hideZero || qty > 0);
     return matchSearch && matchWh && matchCl && matchZero;
   });
 
