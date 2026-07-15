@@ -11,7 +11,11 @@ const { pendingPricingUpdate, validateBody } = require('../utils/validators');
 const router = express.Router();
 
 // View permission: users with 'dashboard' view can access
-router.use(authorize('dashboard', 'view'));
+// Exception: /alerts is accessible to all authenticated users (notifications poll)
+router.use((req, res, next) => {
+    if (req.path === '/alerts') return next();
+    return authorize('dashboard', 'view')(req, res, next);
+});
 
 // =============================================================================
 // Role Helpers

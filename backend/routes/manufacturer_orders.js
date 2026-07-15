@@ -30,15 +30,15 @@ router.use((req, res, next) => {
         return res.status(403).json({ error: 'Forbidden: No view permission on production_orders.' });
     }
 
-    // For non-GET requests, require production_orders:view
-    const resource = 'production_orders';
-    if (permissions && permissions[resource]) {
-        const perms = permissions[resource];
-        if (typeof perms === 'object' && !Array.isArray(perms) && perms.view === true) return next();
-        if (Array.isArray(perms) && perms.includes('view')) return next();
-        if (typeof perms === 'boolean' && perms === true) return next();
-    }
-    return res.status(403).json({ error: `Forbidden: No view permission on ${resource}.` });
+    // For non-GET requests, allow production_orders:view OR receiving:view
+    // (restrictReceive/restrictReverse handle the specific create/delete checks)
+    const _hasView = (key) => permissions && permissions[key] && (
+        (typeof permissions[key] === 'object' && !Array.isArray(permissions[key]) && permissions[key].view === true) ||
+        (Array.isArray(permissions[key]) && permissions[key].includes('view')) ||
+        (typeof permissions[key] === 'boolean' && permissions[key] === true)
+    );
+    if (_hasView('production_orders') || _hasView('receiving')) return next();
+    return res.status(403).json({ error: 'Forbidden: No view permission on production_orders or receiving.' });
 });
 const restrictWrite  = authorize('production_orders', 'create');
 const restrictEdit   = authorize('production_orders', 'edit');
