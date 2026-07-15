@@ -5,7 +5,7 @@
 // Loads real-time statistics and displays them on the dashboard
 // =============================================================================
 
-const dashboardView = {
+var dashboardView = {
     tasks: [],
     users: [],
 
