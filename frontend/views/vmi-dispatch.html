@@ -117,6 +117,19 @@
 
         <!-- Items -->
         <div class="p-6">
+            <div class="flex items-center justify-between mb-3">
+                <label class="text-xs font-bold text-slate-500">الأصناف</label>
+                <div class="flex gap-2">
+                    <button onclick="window.dvFillAllMax()"
+                            class="flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-brand-700 border border-brand-200 rounded-lg hover:bg-brand-50 transition-colors">
+                        <i class="fa-solid fa-fill-drip"></i> ملء الكميات
+                    </button>
+                    <button onclick="window.dvClearAllQty()"
+                            class="flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
+                        <i class="fa-solid fa-eraser"></i> تصفير
+                    </button>
+                </div>
+            </div>
             <div id="dv-modal-items" class="space-y-3 max-h-[50vh] overflow-y-auto mb-4"></div>
 
             <!-- Notes -->

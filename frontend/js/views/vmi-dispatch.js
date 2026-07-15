@@ -127,7 +127,7 @@
                         <div class="flex items-center gap-3">
                             <div class="flex-1">
                                 <label class="text-xs text-slate-500 block mb-1">الكمية المُسلَّمة</label>
-                                <input type="number" min="0" max="${remaining}" value="${remaining}"
+                                <input type="number" min="0" max="${remaining}" value="0"
                                        data-item-id="${esc(item.id)}"
                                        class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm text-center outline-none focus:border-brand-400" />
                             </div>
@@ -148,6 +148,16 @@
     };
 
     window.dvCloseModal = function() { closeModalEl('dv-dispatch-modal'); _currentDN = null; };
+
+    // ── Fill all quantities with max remaining / Clear all ────────────────────
+    window.dvFillAllMax = function() {
+        const inputs = document.querySelectorAll('#dv-modal-items input[data-item-id]');
+        inputs.forEach(inp => { inp.value = inp.max; });
+    };
+    window.dvClearAllQty = function() {
+        const inputs = document.querySelectorAll('#dv-modal-items input[data-item-id]');
+        inputs.forEach(inp => { inp.value = 0; });
+    };
 
     // ── Edit delivery note ────────────────────────────────────────────────────
     let _editDN = null;
@@ -579,9 +589,13 @@
                                           class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-amber-700 border border-amber-200 rounded-xl hover:bg-amber-50 transition-colors">
                                        <i class="fa-solid fa-truck"></i>تسليم جديد
                                    </button>` : ''}
-                            <button onclick="window.dvPrintNote('${esc(dn.id)}')"
+                            <button onclick="window.dvPrintNote('${esc(dn.id)}', 'partial')"
+                                    class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-blue-700 border border-blue-200 rounded-xl hover:bg-blue-50 transition-colors">
+                                <i class="fa-solid fa-print"></i>طباعة جزئي
+                            </button>
+                            <button onclick="window.dvPrintNote('${esc(dn.id)}', 'full')"
                                     class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors">
-                                <i class="fa-solid fa-print"></i>طباعة
+                                <i class="fa-solid fa-print"></i>طباعة كامل
                             </button>
                         </div>
                     </div>
@@ -596,19 +610,35 @@
     };
 
     // ── Print delivery note ───────────────────────────────────────────────────
-    window.dvPrintNote = async function(dnId) {
+    window.dvPrintNote = async function(dnId, mode) {
         try {
             const res = await window.apiFetch('/api/delivery-notes/' + dnId);
             const dn  = res?.data;
             if (!dn) { window.showToast('فشل تحميل السند', 'error'); return; }
-            const itemsHTML = (dn.items || []).map((item, i) =>
+
+            let allItems = dn.items || [];
+            let printItems, titleSuffix;
+
+            if (mode === 'partial') {
+                printItems = allItems.filter(i => parseFloat(i.delivered_qty || 0) > 0);
+                titleSuffix = ' (تسليم جزئي)';
+            } else {
+                printItems = allItems;
+                titleSuffix = '';
+            }
+
+            const itemsHTML = printItems.map((item, i) =>
                 `<tr>
                 <td style="padding:8px;border:1px solid #ddd;text-align:right">${i + 1}</td>
                 <td style="padding:8px;border:1px solid #ddd;text-align:right">${item.product_name || '—'}${item.variant_name ? ' — ' + item.variant_name : ''}</td>
                 <td style="padding:8px;border:1px solid #ddd;text-align:center">${item.requested_qty || item.quantity || 0}</td>
-                <td style="padding:8px;border:1px solid #ddd;text-align:center">${item.delivered_qty || 0}</td>
+                <td style="padding:8px;border:1px solid #ddd;text-align:center;font-weight:bold;color:#2563eb">${item.delivered_qty || 0}</td>
                 <td style="padding:8px;border:1px solid #ddd">${item.notes || ''}</td>
                 </tr>`).join('');
+
+            const totalRequested = printItems.reduce((s, i) => s + parseFloat(i.requested_qty || i.quantity || 0), 0);
+            const totalDelivered = printItems.reduce((s, i) => s + parseFloat(i.delivered_qty || 0), 0);
+
             const html = `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="UTF-8"><title>أمر فسح #${dn.note_number}</title>
 <style>body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;margin:0;padding:20px;color:#1e293b;direction:rtl}
 .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #2563eb;padding-bottom:16px;margin-bottom:20px}
@@ -618,19 +648,27 @@
 table{width:100%;border-collapse:collapse;margin-bottom:20px}
 th{background:#1e40af;color:white;padding:10px 8px;text-align:right;font-size:13px;border:1px solid #1e40af}
 td{font-size:13px}tr:nth-child(even) td{background:#f8fafc}
+.totals{display:flex;justify-content:flex-end;gap:24px;margin-bottom:20px;padding:12px 16px;background:#f8fafc;border-radius:8px}
+.totals div{font-size:13px}.totals strong{font-size:16px;color:#2563eb}
 .footer{margin-top:40px;display:flex;justify-content:space-between;padding-top:20px;border-top:1px solid #e2e8f0}
 .sig-box{text-align:center;width:160px}.sig-line{border-top:1px solid #333;margin-top:40px;padding-top:6px;font-size:12px;color:#64748b}
 @media print{body{padding:10px}}</style></head><body>
-<div class="header"><div><div class="company">G.PACK</div><div style="font-size:13px;color:#64748b">أمر فسح بضاعة</div></div>
+<div class="header"><div><div class="company">G.PACK</div><div style="font-size:13px;color:#64748b">أمر فسح بضاعة${titleSuffix}</div></div>
 <div style="text-align:left"><div style="font-size:12px;color:#64748b">رقم السند</div><div class="doc-number">#${dn.note_number}</div></div></div>
 <div class="info-grid">
 <div class="info-item"><label>العميل</label><span>${dn.client_name || '—'}</span></div>
 <div class="info-item"><label>رقم الطلب</label><span>#${dn.order_number || '—'}</span></div>
 <div class="info-item"><label>التاريخ</label><span>${new Date(dn.created_at).toLocaleDateString('en-GB')}</span></div>
 <div class="info-item"><label>الحالة</label><span>${dn.status === 'completed' ? 'مكتمل' : dn.status === 'partial' ? 'جزئي' : 'معلق'}</span></div>
+${dn.driver_name ? `<div class="info-item"><label>السائق</label><span>${dn.driver_name}</span></div>` : ''}
+${dn.vehicle_number ? `<div class="info-item"><label>رقم السيارة</label><span>${dn.vehicle_number}</span></div>` : ''}
 </div>
 <table><thead><tr><th style="width:40px">#</th><th>الصنف / المقاس</th><th style="width:80px;text-align:center">المطلوب</th><th style="width:80px;text-align:center">المُسلَّم</th><th>ملاحظات</th></tr></thead>
 <tbody>${itemsHTML || '<tr><td colspan="5" style="text-align:center;padding:16px;color:#94a3b8">لا توجد أصناف</td></tr>'}</tbody></table>
+<div class="totals">
+<div>إجمالي المطلوب: <strong>${totalRequested}</strong></div>
+<div>إجمالي المُسلَّم: <strong>${totalDelivered}</strong></div>
+</div>
 <div class="footer"><div class="sig-box"><div class="sig-line">توقيع المستلم</div></div><div class="sig-box"><div class="sig-line">توقيع المسلِّم</div></div><div class="sig-box"><div class="sig-line">الختم</div></div></div>
 </body></html>`;
             const w = window.open('', '_blank', 'width=800,height=700');

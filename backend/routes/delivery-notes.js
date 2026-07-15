@@ -202,6 +202,8 @@ router.get('/:id', async (req, res) => {
                 c.name AS client_name,
                 dn.status,
                 dn.notes,
+                dn.driver_name,
+                dn.vehicle_number,
                 dn.created_at,
                 dn.updated_at
              FROM delivery_notes dn
