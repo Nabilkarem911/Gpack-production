@@ -145,6 +145,7 @@
                   <th class="px-4 py-3 text-right font-semibold">الصنف / المقاس</th>
                   <th class="px-4 py-3 text-right font-semibold hidden md:table-cell">العميل</th>
                   <th class="px-4 py-3 text-center font-semibold">الرصيد</th>
+                  <th class="px-4 py-3 text-center font-semibold">حركات</th>
                 </tr>
               </thead>
               <tbody id="det-stock-table" class="divide-y divide-slate-100"></tbody>
@@ -209,6 +210,10 @@
                     class="px-3 py-2 border border-slate-200 rounded-xl text-sm focus:border-brand-500 outline-none">
               <option value="">كل المستودعات</option>
             </select>
+            <select id="stock-client-filter" onchange="renderStock()"
+                    class="px-3 py-2 border border-slate-200 rounded-xl text-sm focus:border-brand-500 outline-none">
+              <option value="">كل العملاء</option>
+            </select>
             <button onclick="openStockModal()"
                     class="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl transition-colors">
               <i class="fa-solid fa-plus-minus"></i>تسوية
@@ -229,6 +234,7 @@
                 <th class="px-4 py-3 text-right font-semibold hidden md:table-cell">العميل</th>
                 <th class="px-4 py-3 text-right font-semibold hidden sm:table-cell">المستودع</th>
                 <th class="px-4 py-3 text-center font-semibold">الرصيد</th>
+                <th class="px-4 py-3 text-center font-semibold">حركات</th>
               </tr>
             </thead>
             <tbody id="stock-table" class="divide-y divide-slate-100"></tbody>
@@ -700,6 +706,7 @@ function renderDetailStock() {
         '<td class="px-4 py-2.5 font-medium text-slate-800">' + (s.product_name || '—') + vDisplay + '</td>' +
         '<td class="px-4 py-2.5 hidden md:table-cell">' + clientD + '</td>' +
         '<td class="px-4 py-2.5 text-center text-lg ' + qtyClass + '">' + qty + '</td>' +
+        '<td class="px-4 py-2.5 text-center"><button onclick="openItemMovements(\'' + (s.variant_id || '') + '\',\'' + escAttr(s.product_name || '') + '\',\'' + escAttr(vSize || '') + '\')" class="px-2.5 py-1 text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg font-bold transition-colors"><i class="fa-solid fa-clock-rotate-left"></i></button></td>' +
       '</tr>';
     }).join('');
   }
@@ -766,13 +773,15 @@ function renderDetailHistory() {
 function renderStock() {
   const search    = (document.getElementById('stock-search')?.value || '').toLowerCase();
   const whFilter  = document.getElementById('stock-warehouse-filter')?.value || '';
+  const clFilter  = document.getElementById('stock-client-filter')?.value || '';
   const hideZero  = document.getElementById('hide-zero-stock')?.checked || false;
 
   let filtered = stock.filter(s => {
     const matchSearch = !search || (s.product_name || '').toLowerCase().includes(search);
     const matchWh     = !whFilter || s.warehouse_id === whFilter;
+    const matchCl     = !clFilter || s.client_id === clFilter;
     const matchZero   = !hideZero || parseFloat(s.available_qty || 0) > 0;
-    return matchSearch && matchWh && matchZero;
+    return matchSearch && matchWh && matchCl && matchZero;
   });
 
   const tbody = document.getElementById('stock-table');
@@ -798,6 +807,7 @@ function renderStock() {
         '<td class="px-4 py-3 hidden md:table-cell">' + clientD + '</td>' +
         '<td class="px-4 py-3 text-slate-400 hidden sm:table-cell text-sm">' + (s.warehouse_name || '—') + '</td>' +
         '<td class="px-4 py-3 text-center text-lg ' + qtyClass + '">' + qty + '</td>' +
+        '<td class="px-4 py-3 text-center"><button onclick="openItemMovements(\'' + (s.variant_id || '') + '\',\'' + escAttr(s.product_name || '') + '\',\'' + escAttr(vSize || '') + '\')" class="px-2.5 py-1 text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg font-bold transition-colors"><i class="fa-solid fa-clock-rotate-left"></i></button></td>' +
       '</tr>';
     }).join('');
   }
@@ -864,6 +874,9 @@ function updateSelects() {
 
   const swf = document.getElementById('stock-warehouse-filter');
   if (swf) swf.innerHTML = '<option value="">كل المستودعات</option>' + whOpts;
+
+  const scf = document.getElementById('stock-client-filter');
+  if (scf) scf.innerHTML = '<option value="">كل العملاء</option>' + clOpts;
 
   const whc = document.getElementById('wh-client');
   if (whc) whc.innerHTML = '<option value="">اختر العميل</option>' + clOpts;
@@ -1187,6 +1200,157 @@ function showToast(msg, type) {
     setTimeout(() => toast.remove(), 3500);
   } else {
     alert(msg);
+  }
+}
+
+// ── Escape attribute helper ───────────────────────────────────────────────
+function escAttr(s) {
+  return String(s || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+}
+
+// ── Item Movements Modal ──────────────────────────────────────────────────
+var _mvState = { variantId: null, debounceTimer: null };
+
+function openItemMovements(variantId, productName, sizeName) {
+  _mvState.variantId = variantId;
+
+  let modal = document.getElementById('wh-mv-modal');
+  if (modal) modal.remove();
+
+  modal = document.createElement('div');
+  modal.id = 'wh-mv-modal';
+  modal.className = 'fixed inset-0 z-50 flex items-start justify-center p-4 pt-6 bg-black/50';
+  modal.style.opacity = '0';
+  modal.style.transition = 'opacity 0.2s';
+  modal.innerHTML = `
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl mb-8" onclick="event.stopPropagation()">
+      <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+        <div>
+          <h3 class="text-base font-bold text-slate-800">حركات الصنف</h3>
+          <p class="text-xs text-slate-400 mt-0.5">${escAttr(productName)} — ${escAttr(sizeName || '—')}</p>
+        </div>
+        <button onclick="document.getElementById('wh-mv-modal').remove()"
+                class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+      <div class="p-6">
+        <div class="flex flex-wrap gap-3 mb-4">
+          <select id="wh-mv-type" onchange="loadItemMovements()"
+                  class="px-3 py-2 border border-slate-200 rounded-xl text-sm text-slate-700 focus:border-brand-500 outline-none bg-white">
+            <option value="">كل الحركات</option>
+            <option value="receipt">استلام</option>
+            <option value="dispense">تسليم</option>
+            <option value="adjustment">تسوية</option>
+            <option value="transfer">تحويل</option>
+          </select>
+          <select id="wh-mv-client" onchange="loadItemMovements()"
+                  class="px-3 py-2 border border-slate-200 rounded-xl text-sm text-slate-700 focus:border-brand-500 outline-none bg-white">
+            <option value="">كل العملاء</option>
+          </select>
+          <input id="wh-mv-from" type="date" onchange="loadItemMovements()"
+                 class="px-3 py-2 border border-slate-200 rounded-xl text-sm text-slate-700 focus:border-brand-500 outline-none" />
+          <input id="wh-mv-to" type="date" onchange="loadItemMovements()"
+                 class="px-3 py-2 border border-slate-200 rounded-xl text-sm text-slate-700 focus:border-brand-500 outline-none" />
+        </div>
+        <div id="wh-mv-loading" class="hidden text-center py-8">
+          <i class="fa-solid fa-circle-notch fa-spin text-2xl text-brand-400"></i>
+          <p class="text-slate-400 text-sm mt-2">جاري التحميل...</p>
+        </div>
+        <div id="wh-mv-body" class="max-h-[50vh] overflow-y-auto"></div>
+      </div>
+    </div>`;
+  modal.addEventListener('click', () => modal.remove());
+  document.body.appendChild(modal);
+  requestAnimationFrame(() => { modal.style.opacity = '1'; });
+
+  // Populate client filter
+  var clOpts = clients.map(function(c) { return '<option value="' + c.id + '">' + c.name + '</option>'; }).join('');
+  var clSel = document.getElementById('wh-mv-client');
+  if (clSel) clSel.innerHTML = '<option value="">كل العملاء</option>' + clOpts;
+
+  loadItemMovements();
+}
+
+function _mvDebounce() {
+  clearTimeout(_mvState.debounceTimer);
+  _mvState.debounceTimer = setTimeout(loadItemMovements, 400);
+}
+
+async function loadItemMovements() {
+  var variantId = _mvState.variantId;
+  if (!variantId) return;
+
+  var type   = document.getElementById('wh-mv-type')?.value || '';
+  var clId   = document.getElementById('wh-mv-client')?.value || '';
+  var from   = document.getElementById('wh-mv-from')?.value || '';
+  var to     = document.getElementById('wh-mv-to')?.value || '';
+
+  var loading = document.getElementById('wh-mv-loading');
+  var body    = document.getElementById('wh-mv-body');
+  if (loading) loading.classList.remove('hidden');
+  if (body) body.innerHTML = '';
+
+  try {
+    var params = new URLSearchParams({ variant_id: variantId, limit: '200' });
+    if (type) params.set('type', type);
+    if (clId) params.set('client_id', clId);
+    if (from) params.set('from', from);
+    if (to)   params.set('to', to);
+
+    var res = await window.apiFetch('/api/products/movements?' + params.toString());
+    var rows = res.data || [];
+
+    if (loading) loading.classList.add('hidden');
+    if (!rows.length) {
+      if (body) body.innerHTML = '<p class="text-center text-slate-400 py-8">لا توجد حركات لهذا الصنف</p>';
+      return;
+    }
+
+    var typeLabels = {
+      receipt:    { label: 'استلام',  bg: 'bg-emerald-100', text: 'text-emerald-700', sign: '+' },
+      dispense:   { label: 'تسليم',   bg: 'bg-blue-100',    text: 'text-blue-700',    sign: '-' },
+      adjustment: { label: 'تسوية',   bg: 'bg-amber-100',   text: 'text-amber-700',   sign: '±' },
+      transfer:   { label: 'تحويل',   bg: 'bg-purple-100',  text: 'text-purple-700',  sign: '→' }
+    };
+
+    var fmtN = function(n) { return parseFloat(n || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 }); };
+    var esc = function(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); };
+
+    if (body) body.innerHTML = `
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="bg-slate-50 text-xs text-slate-500 border-b border-slate-100 sticky top-0">
+            <th class="py-2 px-3 text-right font-semibold">التاريخ</th>
+            <th class="py-2 px-3 text-center font-semibold">النوع</th>
+            <th class="py-2 px-3 text-center font-semibold">الكمية</th>
+            <th class="py-2 px-3 text-right font-semibold">الطرف</th>
+            <th class="py-2 px-3 text-right font-semibold">المرجع</th>
+            <th class="py-2 px-3 text-right font-semibold">ملاحظات</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(function(r) {
+            var t = typeLabels[r.transaction_type] || { label: r.transaction_type, bg: 'bg-slate-100', text: 'text-slate-600', sign: '' };
+            var date = new Date(r.created_at).toLocaleDateString('ar-SA-u-nu-latn');
+            var time = new Date(r.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+            var party = r.client_name || r.dn_client_name || r.supplier_name || '—';
+            var ref = r.delivery_note_number ? 'سند فسح #' + r.delivery_note_number : r.mo_number ? 'أمر تصنيع #' + r.mo_number : '—';
+            var qtyClass = r.transaction_type === 'receipt' ? 'text-emerald-600' : r.transaction_type === 'dispense' ? 'text-blue-600' : 'text-slate-600';
+            return '<tr class="border-b border-slate-50 hover:bg-slate-50/50">' +
+              '<td class="py-2 px-3 text-xs text-slate-500">' + date + '<br><span class="text-slate-300">' + time + '</span></td>' +
+              '<td class="py-2 px-3 text-center"><span class="px-2 py-0.5 rounded-full text-xs font-bold ' + t.bg + ' ' + t.text + '">' + t.label + '</span></td>' +
+              '<td class="py-2 px-3 text-center font-bold ' + qtyClass + '">' + t.sign + fmtN(r.quantity) + '</td>' +
+              '<td class="py-2 px-3 text-xs text-slate-600">' + esc(party) + '</td>' +
+              '<td class="py-2 px-3 text-xs text-slate-500">' + esc(ref) + '</td>' +
+              '<td class="py-2 px-3 text-xs text-slate-400">' + esc(r.notes || '') + '</td>' +
+            '</tr>';
+          }).join('')}
+        </tbody>
+      </table>`;
+  } catch (e) {
+    if (loading) loading.classList.add('hidden');
+    if (body) body.innerHTML = '<p class="text-center text-red-400 py-8">فشل تحميل الحركات</p>';
   }
 }
 
