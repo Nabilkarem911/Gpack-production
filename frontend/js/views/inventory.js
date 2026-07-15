@@ -529,10 +529,16 @@ window.inventoryView = {
                 </td>
                 <td class="px-4 py-3 text-center">${badge}</td>
                 <td class="px-4 py-3 text-center">
-                    <button onclick="window.inventoryView._openAdjustmentModal('${item.stock_id}')"
-                            class="px-3 py-1.5 text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg transition-colors font-bold">
-                        <i class="fa-solid fa-sliders ml-1"></i>تسوية
-                    </button>
+                    <div class="flex items-center justify-center gap-1.5">
+                        <button onclick="window.inventoryView._openAdjustmentModal('${item.stock_id}')"
+                                class="px-3 py-1.5 text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg transition-colors font-bold">
+                            <i class="fa-solid fa-sliders ml-1"></i>تسوية
+                        </button>
+                        <button onclick="window.inventoryView._openMovementsModal('${item.variant_id}', '${this._esc(item.product_name || '')}', '${this._esc(item.size_name || '')}')"
+                                class="px-3 py-1.5 text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg transition-colors font-bold">
+                            <i class="fa-solid fa-clock-rotate-left ml-1"></i>حركات
+                        </button>
+                    </div>
                 </td>
             </tr>`;
         }).join('');
@@ -1176,6 +1182,9 @@ window.inventoryView = {
     _fmtN(n) {
         return parseFloat(n || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
     },
+    _esc(s) {
+        return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    },
     _set(id, val) {
         const el = document.getElementById(id);
         if (el) el.textContent = val;
@@ -1189,5 +1198,142 @@ window.inventoryView = {
             c.appendChild(t);
             setTimeout(() => t.remove(), 3500);
         } else { alert(msg); }
+    },
+
+    // ── Product Movements Modal ───────────────────────────────────────────────
+    _movementsState: { variantId: null, debounceTimer: null },
+
+    _openMovementsModal(variantId, productName, sizeName) {
+        this._movementsState.variantId = variantId;
+
+        let modal = document.getElementById('inv-movements-modal');
+        if (modal) modal.remove();
+
+        modal = document.createElement('div');
+        modal.id = 'inv-movements-modal';
+        modal.className = 'fixed inset-0 z-50 flex items-start justify-center p-4 pt-6 bg-black/50';
+        modal.style.opacity = '0';
+        modal.style.transition = 'opacity 0.2s';
+        modal.innerHTML = `
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl mb-8" onclick="event.stopPropagation()">
+                <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+                    <div>
+                        <h3 class="text-base font-bold text-slate-800">حركات الصنف</h3>
+                        <p class="text-xs text-slate-400 mt-0.5">${this._esc(productName)} — ${this._esc(sizeName || '—')}</p>
+                    </div>
+                    <button onclick="document.getElementById('inv-movements-modal').remove()"
+                            class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+                <div class="p-6">
+                    <div class="flex flex-wrap gap-3 mb-4">
+                        <select id="inv-mv-type" onchange="window.inventoryView._loadMovements()"
+                                class="px-3 py-2 border border-slate-200 rounded-xl text-sm text-slate-700 focus:border-brand-500 outline-none bg-white">
+                            <option value="">كل الحركات</option>
+                            <option value="receipt">استلام</option>
+                            <option value="dispense">تسليم</option>
+                            <option value="adjustment">تسوية</option>
+                            <option value="transfer">تحويل</option>
+                        </select>
+                        <input id="inv-mv-from" type="date" onchange="window.inventoryView._loadMovements()"
+                               class="px-3 py-2 border border-slate-200 rounded-xl text-sm text-slate-700 focus:border-brand-500 outline-none" />
+                        <input id="inv-mv-to" type="date" onchange="window.inventoryView._loadMovements()"
+                               class="px-3 py-2 border border-slate-200 rounded-xl text-sm text-slate-700 focus:border-brand-500 outline-none" />
+                        <input id="inv-mv-search" type="text" placeholder="بحث بالعميل أو المورد..."
+                               oninput="window.inventoryView._movementsDebounce()"
+                               class="flex-1 min-w-[150px] px-3 py-2 border border-slate-200 rounded-xl text-sm focus:border-brand-500 outline-none" />
+                    </div>
+                    <div id="inv-mv-loading" class="hidden text-center py-8">
+                        <i class="fa-solid fa-circle-notch fa-spin text-2xl text-brand-400"></i>
+                        <p class="text-slate-400 text-sm mt-2">جاري التحميل...</p>
+                    </div>
+                    <div id="inv-mv-body" class="max-h-[50vh] overflow-y-auto"></div>
+                </div>
+            </div>`;
+        modal.addEventListener('click', () => modal.remove());
+        document.body.appendChild(modal);
+        requestAnimationFrame(() => { modal.style.opacity = '1'; });
+        this._loadMovements();
+    },
+
+    _movementsDebounce() {
+        clearTimeout(this._movementsState.debounceTimer);
+        this._movementsState.debounceTimer = setTimeout(() => this._loadMovements(), 400);
+    },
+
+    async _loadMovements() {
+        const variantId = this._movementsState.variantId;
+        if (!variantId) return;
+
+        const type   = document.getElementById('inv-mv-type')?.value || '';
+        const from   = document.getElementById('inv-mv-from')?.value || '';
+        const to     = document.getElementById('inv-mv-to')?.value || '';
+        const search = document.getElementById('inv-mv-search')?.value || '';
+
+        const loading = document.getElementById('inv-mv-loading');
+        const body    = document.getElementById('inv-mv-body');
+        if (loading) loading.classList.remove('hidden');
+        if (body) body.innerHTML = '';
+
+        try {
+            const params = new URLSearchParams({ variant_id: variantId, limit: '200' });
+            if (type)   params.set('type', type);
+            if (from)   params.set('from', from);
+            if (to)     params.set('to', to);
+            if (search) params.set('search', search);
+
+            const res = await apiFetch(`/api/products/movements?${params.toString()}`);
+            const rows = res.data || [];
+
+            if (loading) loading.classList.add('hidden');
+            if (!rows.length) {
+                if (body) body.innerHTML = '<p class="text-center text-slate-400 py-8">لا توجد حركات لهذا الصنف</p>';
+                return;
+            }
+
+            const typeLabels = {
+                receipt:    { label: 'استلام',  bg: 'bg-emerald-100', text: 'text-emerald-700', sign: '+' },
+                dispense:   { label: 'تسليم',   bg: 'bg-blue-100',    text: 'text-blue-700',    sign: '-' },
+                adjustment: { label: 'تسوية',   bg: 'bg-amber-100',   text: 'text-amber-700',   sign: '±' },
+                transfer:   { label: 'تحويل',   bg: 'bg-purple-100',  text: 'text-purple-700',  sign: '→' },
+            };
+
+            if (body) body.innerHTML = `
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="bg-slate-50 text-xs text-slate-500 border-b border-slate-100 sticky top-0">
+                            <th class="py-2 px-3 text-right font-semibold">التاريخ</th>
+                            <th class="py-2 px-3 text-center font-semibold">النوع</th>
+                            <th class="py-2 px-3 text-center font-semibold">الكمية</th>
+                            <th class="py-2 px-3 text-right font-semibold">الطرف</th>
+                            <th class="py-2 px-3 text-right font-semibold">المرجع</th>
+                            <th class="py-2 px-3 text-right font-semibold">ملاحظات</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rows.map(r => {
+                            const t = typeLabels[r.transaction_type] || { label: r.transaction_type, bg: 'bg-slate-100', text: 'text-slate-600', sign: '' };
+                            const date = new Date(r.created_at).toLocaleDateString('ar-SA-u-nu-latn');
+                            const time = new Date(r.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                            const party = r.client_name || r.dn_client_name || r.supplier_name || '—';
+                            const ref = r.delivery_note_number ? `سند فسح #${r.delivery_note_number}` : r.mo_number ? `أمر تصنيع #${r.mo_number}` : '—';
+                            const qtyClass = r.transaction_type === 'receipt' ? 'text-emerald-600' : r.transaction_type === 'dispense' ? 'text-blue-600' : 'text-slate-600';
+                            return `
+                            <tr class="border-b border-slate-50 hover:bg-slate-50/50">
+                                <td class="py-2 px-3 text-xs text-slate-500">${date}<br><span class="text-slate-300">${time}</span></td>
+                                <td class="py-2 px-3 text-center"><span class="px-2 py-0.5 rounded-full text-xs font-bold ${t.bg} ${t.text}">${t.label}</span></td>
+                                <td class="py-2 px-3 text-center font-bold ${qtyClass}">${t.sign}${this._fmtN(r.quantity)}</td>
+                                <td class="py-2 px-3 text-xs text-slate-600">${this._esc(party)}</td>
+                                <td class="py-2 px-3 text-xs text-slate-500">${this._esc(ref)}</td>
+                                <td class="py-2 px-3 text-xs text-slate-400">${this._esc(r.notes || '')}</td>
+                            </tr>`;
+                        }).join('')}
+                    </tbody>
+                </table>`;
+        } catch (e) {
+            if (loading) loading.classList.add('hidden');
+            if (body) body.innerHTML = '<p class="text-center text-red-400 py-8">فشل تحميل الحركات</p>';
+        }
     }
 };
