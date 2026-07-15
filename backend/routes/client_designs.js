@@ -81,7 +81,7 @@ async function getNextDesignNumber(client, clientId, variantId) {
 // GET /api/client-designs?client_id=xxx&variant_id=yyy
 // List designs by client_id (optional variant_id filter)
 // ============================================================================
-router.get('/', authenticate, authorize(['admin', 'manager', 'super_admin', 'sales_rep']), async (req, res) => {
+router.get('/', authenticate, authorize(['admin', 'manager', 'super_admin', 'sales_rep', 'warehouse', 'warehouse_keeper']), async (req, res) => {
     try {
         const { client_id, variant_id } = req.query;
         
@@ -151,7 +151,7 @@ router.get('/', authenticate, authorize(['admin', 'manager', 'super_admin', 'sal
 // List all designs for a specific client + variant
 // Returns designs with thumbnail URLs
 // ============================================================================
-router.get('/:client_id/:variant_id', authenticate, authorize(['admin', 'manager', 'super_admin', 'sales_rep']), async (req, res) => {
+router.get('/:client_id/:variant_id', authenticate, authorize(['admin', 'manager', 'super_admin', 'sales_rep', 'warehouse', 'warehouse_keeper']), async (req, res) => {
     try {
         const { client_id, variant_id } = req.params;
 
@@ -298,7 +298,7 @@ router.post('/', authenticate, authorize(['admin', 'manager', 'super_admin', 'sa
 // GET /api/client-designs/by-id/:design_id
 // Get single design details with all files
 // ============================================================================
-router.get('/by-id/:design_id', authenticate, authorize(['admin', 'manager', 'super_admin', 'sales_rep']), async (req, res) => {
+router.get('/by-id/:design_id', authenticate, authorize(['admin', 'manager', 'super_admin', 'sales_rep', 'warehouse', 'warehouse_keeper']), async (req, res) => {
     try {
         const { design_id } = req.params;
         
@@ -346,7 +346,7 @@ router.get('/by-id/:design_id', authenticate, authorize(['admin', 'manager', 'su
 // GET /api/client-designs/download/:file_id
 // Download a design file
 // ============================================================================
-router.get('/download/:file_id', authenticate, authorize(['admin', 'manager', 'super_admin', 'sales_rep']), async (req, res) => {
+router.get('/download/:file_id', authenticate, authorize(['admin', 'manager', 'super_admin', 'sales_rep', 'warehouse', 'warehouse_keeper']), async (req, res) => {
     try {
         const { file_id } = req.params;
         

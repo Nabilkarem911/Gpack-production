@@ -7,8 +7,23 @@ const { validateBody, supplierCreate, supplierUpdate } = require('../utils/valid
 
 const router = express.Router();
 
-// View permission: all authenticated users with 'suppliers' view can list/get
-router.use(authorize('suppliers', 'view'));
+// View permission: 'suppliers' view OR 'production_orders'/'receiving' view for dropdowns
+router.use((req, res, next) => {
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+    const { role, permissions } = req.user;
+    if (role === 'super_admin' || role === 'admin') return next();
+    if (permissions && permissions.all_access === true) return next();
+    const _hasView = (key) => permissions && permissions[key] && (
+        (typeof permissions[key] === 'object' && !Array.isArray(permissions[key]) && permissions[key].view === true) ||
+        (Array.isArray(permissions[key]) && permissions[key].includes('view')) ||
+        (typeof permissions[key] === 'boolean' && permissions[key] === true)
+    );
+    // GET: allow production_orders and receiving (they need supplier dropdowns)
+    if (req.method === 'GET' && (_hasView('suppliers') || _hasView('production_orders') || _hasView('receiving') || _hasView('purchasing') || _hasView('purchase_returns'))) return next();
+    // Non-GET: require suppliers permission
+    if (_hasView('suppliers')) return next();
+    return res.status(403).json({ error: 'Forbidden: No view permission on suppliers.' });
+});
 
 // Write/Delete permissions (already defined per-route below)
 

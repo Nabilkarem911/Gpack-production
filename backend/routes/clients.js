@@ -11,8 +11,29 @@ const router = express.Router();
 // All routes in this file are already protected by the authenticate middleware
 // mounted in server.js. `req.user` is guaranteed to be populated.
 
-// View permission: all authenticated users with 'clients' view can list/get
-router.use(authorize('clients', 'view'));
+// View permission: 'clients' view OR any module that needs client dropdowns
+// (warehouses, inventory, vmi_dispatch, production_orders, receiving all fetch clients for dropdowns)
+router.use((req, res, next) => {
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+    const { role, permissions } = req.user;
+    if (role === 'super_admin' || role === 'admin') return next();
+    if (permissions && permissions.all_access === true) return next();
+    const _hasView = (key) => permissions && permissions[key] && (
+        (typeof permissions[key] === 'object' && !Array.isArray(permissions[key]) && permissions[key].view === true) ||
+        (Array.isArray(permissions[key]) && permissions[key].includes('view')) ||
+        (typeof permissions[key] === 'boolean' && permissions[key] === true)
+    );
+    // GET requests: allow any module that needs client data for dropdowns
+    if (req.method === 'GET' && (
+        _hasView('clients') || _hasView('warehouses') || _hasView('inventory') ||
+        _hasView('vmi_dispatch') || _hasView('production_orders') || _hasView('receiving') ||
+        _hasView('sales') || _hasView('quotations') || _hasView('account_statement') ||
+        _hasView('receipt_voucher')
+    )) return next();
+    // Non-GET: require clients permission
+    if (_hasView('clients')) return next();
+    return res.status(403).json({ error: 'Forbidden: No view permission on clients.' });
+});
 
 // Write/Delete permissions
 const restrictWrite  = authorize('clients', 'create');

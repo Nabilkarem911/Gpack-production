@@ -9,7 +9,23 @@ const db = require('../db');
 const authorize = require('../middleware/authorize');
 const { validateBody, deliveryNoteCreate, deliveryNoteDispatch } = require('../utils/validators');
 
-router.use(authorize('vmi_dispatch', 'view'));
+// View permission: 'vmi_dispatch' OR 'production_orders' view can access
+router.use((req, res, next) => {
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+    const { role, permissions } = req.user;
+    if (role === 'super_admin' || role === 'admin') return next();
+    if (permissions && permissions.all_access === true) return next();
+    const _hasView = (key) => permissions && permissions[key] && (
+        (typeof permissions[key] === 'object' && !Array.isArray(permissions[key]) && permissions[key].view === true) ||
+        (Array.isArray(permissions[key]) && permissions[key].includes('view')) ||
+        (typeof permissions[key] === 'boolean' && permissions[key] === true)
+    );
+    // GET: allow production_orders (hub tab shows delivery notes)
+    if (req.method === 'GET' && (_hasView('vmi_dispatch') || _hasView('production_orders'))) return next();
+    // Non-GET: require vmi_dispatch
+    if (_hasView('vmi_dispatch')) return next();
+    return res.status(403).json({ error: 'Forbidden: No view permission on vmi_dispatch.' });
+});
 const restrictWrite = authorize('vmi_dispatch', 'create');
 
 // =============================================================================

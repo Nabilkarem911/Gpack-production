@@ -26,8 +26,20 @@ router.use((req, res, next) => {
     return res.status(403).json({ error: 'Forbidden: No view permission on quotations or production_orders.' });
 });
 
-// Write permission: users with 'quotations' create/edit can POST/PUT
-const restrictWrite  = authorize('quotations', 'create');
+// Write permission: users with 'quotations' OR 'production_orders' OR 'warehouses' create can POST/PUT
+const restrictWrite = (req, res, next) => {
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+    const { role, permissions } = req.user;
+    if (role === 'super_admin' || role === 'admin') return next();
+    if (permissions && permissions.all_access === true) return next();
+    const _has = (res, act) => permissions && permissions[res] && (
+        (typeof permissions[res] === 'object' && !Array.isArray(permissions[res]) && permissions[res][act] === true) ||
+        (Array.isArray(permissions[res]) && permissions[res].includes(act)) ||
+        (typeof permissions[res] === 'boolean' && permissions[res] === true)
+    );
+    if (_has('quotations', 'create') || _has('production_orders', 'create') || _has('warehouses', 'create')) return next();
+    return res.status(403).json({ error: 'Forbidden: No create permission.' });
+};
 const restrictEdit   = authorize('quotations', 'edit');
 const restrictDelete = authorize('quotations', 'delete');
 // Admin-only operations (status change, convert to production, invoicing)
