@@ -1182,7 +1182,7 @@ var dashboardView = {
         container.innerHTML = orders.map(order => {
             const status = statusMap[order.status] || { label: order.status, class: 'bg-slate-100 text-slate-600' };
             return `
-                <tr class="hover:bg-slate-50 transition-colors cursor-pointer" onclick="window.navigateTo('orders')">
+                <tr class="hover:bg-slate-50 transition-colors cursor-pointer" onclick="window.navigateTo('quotations')">
                     <td class="py-3 font-mono font-bold text-brand-600">#${order.order_number || order.id?.slice(-4) || '---'}</td>
                     <td class="py-3 text-slate-700 font-medium">${order.client_name || 'غير محدد'}</td>
                     <td class="py-3">
