@@ -338,8 +338,9 @@
 
         try {
             const res = await window.apiFetch('/api/inventory/stock?client_id=' + effId + '&warehouse_id=' + whId);
-            _createStock = (res.data || []).filter(s => parseFloat(s.quantity || s.available_qty || 0) > 0);
+            _createStock = (res.data || []).filter(s => parseFloat(s.available_qty || s.qty_on_hand || s.quantity || 0) > 0);
             if (searchInp) searchInp.disabled = false;
+            if (!_createStock.length) window.showToast('لا يوجد مخزون متاح في هذا المستودع', 'info');
         } catch (e) {
             _createStock = [];
             window.showToast('فشل تحميل المخزون', 'error');
@@ -354,8 +355,9 @@
 
         const matches = _createStock.filter(s => {
             const name = (s.product_name || '').toLowerCase();
-            const variant = (s.variant_name || s.size_name || '').toLowerCase();
-            return name.includes(query) || variant.includes(query);
+            const variant = (s.variant_size || s.variant_name || s.size_name || '').toLowerCase();
+            const sku = (s.variant_sku || '').toLowerCase();
+            return name.includes(query) || variant.includes(query) || sku.includes(query);
         }).slice(0, 10);
 
         if (!matches.length) {
@@ -365,13 +367,13 @@
         }
 
         resultsDiv.innerHTML = matches.map(s => {
-            const avail = parseFloat(s.available_qty || s.quantity || 0);
+            const avail = parseFloat(s.available_qty || s.qty_on_hand || s.quantity || 0);
             const alreadySelected = _createSelected[s.variant_id] ? 'opacity-50 pointer-events-none' : '';
             return `
             <div onclick="window.dvAddItem('${esc(s.variant_id)}')"
                  class="px-3 py-2 cursor-pointer hover:bg-brand-50 border-b border-slate-100 ${alreadySelected}">
                 <span class="text-sm font-bold text-slate-800">${esc(s.product_name || '—')}</span>
-                <span class="text-xs text-slate-500"> ${esc(s.variant_name || s.size_name || '')}</span>
+                <span class="text-xs text-slate-500"> ${esc(s.variant_size || s.variant_name || s.size_name || '')}</span>
                 <span class="text-xs text-emerald-600 font-bold"> (متاح: ${avail})</span>
             </div>`;
         }).join('');
@@ -381,8 +383,8 @@
     window.dvAddItem = function(variantId) {
         const s = _createStock.find(x => x.variant_id === variantId);
         if (!s || _createSelected[variantId]) return;
-        const avail = parseFloat(s.available_qty || s.quantity || 0);
-        _createSelected[variantId] = { variant_id: variantId, qty: 1, max: avail, name: s.product_name, variant: s.variant_name || s.size_name || '' };
+        const avail = parseFloat(s.available_qty || s.qty_on_hand || s.quantity || 0);
+        _createSelected[variantId] = { variant_id: variantId, qty: 1, max: avail, name: s.product_name, variant: s.variant_size || s.variant_name || s.size_name || '' };
         _el('dv-create-item-search').value = '';
         _el('dv-create-search-results').classList.add('hidden');
         _renderSelectedItems();
