@@ -218,22 +218,23 @@ router.get('/alerts', authenticate, async (req, res) => {
                 });
             });
 
-            // 1. Low Stock Alerts
+            // 1. Low Stock Alerts (based on available_qty = quantity - reserved_qty)
             const lowStockResult = await db.query(
                 `SELECT
                     ws.id as stock_id,
                     p.name as product_name,
                     pv.size_name as variant_size,
-                    ws.quantity as current_qty,
-                    COALESCE(pv.min_stock_level, 10) as min_level,
+                    (ws.quantity - ws.reserved_qty) as current_qty,
+                    pv.min_stock_level as min_level,
                     w.name as warehouse_name
                  FROM warehouse_stock ws
                  JOIN product_variants pv ON ws.variant_id = pv.id
                  JOIN products p ON pv.product_id = p.id
                  JOIN warehouses w ON ws.warehouse_id = w.id
-                 WHERE ws.quantity <= COALESCE(pv.min_stock_level, 10)
-                 AND ws.quantity > 0
-                 ORDER BY ws.quantity ASC
+                 WHERE pv.min_stock_level > 0
+                   AND (ws.quantity - ws.reserved_qty) <= pv.min_stock_level
+                   AND (ws.quantity - ws.reserved_qty) > 0
+                 ORDER BY (ws.quantity - ws.reserved_qty) ASC
                  LIMIT 10`
             );
 
@@ -248,7 +249,7 @@ router.get('/alerts', authenticate, async (req, res) => {
                 });
             });
 
-            // 2. Out of Stock Items
+            // 2. Out of Stock Items (available_qty <= 0)
             const outOfStockResult = await db.query(
                 `SELECT
                     ws.id as stock_id,
@@ -259,7 +260,7 @@ router.get('/alerts', authenticate, async (req, res) => {
                  JOIN product_variants pv ON ws.variant_id = pv.id
                  JOIN products p ON pv.product_id = p.id
                  JOIN warehouses w ON ws.warehouse_id = w.id
-                 WHERE ws.quantity = 0
+                 WHERE (ws.quantity - ws.reserved_qty) <= 0
                  ORDER BY p.name
                  LIMIT 5`
             );

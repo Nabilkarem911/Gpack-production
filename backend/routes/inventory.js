@@ -193,12 +193,17 @@ router.put('/warehouses/:id', restrictEdit, validateBody(warehouseUpdate), async
 //     A super_admin / inventory_manager can pass any client_id or omit for all.
 //   - ?warehouse_id=<uuid> — further filter by specific warehouse.
 //   - ?product_id=<uuid>   — filter by product.
-//   - ?low_stock=true      — return only rows where qty_on_hand <= min_stock_level.
+//   - ?low_stock=true      — return only rows where available_qty <= min_stock_level.
+//   - ?out_of_stock=true   — return only rows where available_qty <= 0.
+//   - ?category_id=<uuid>  — filter by category.
+//   - ?search=<text>       — filter by product name.
+//   - ?limit=<int>         — limit results (default 500, max 1000).
 // =============================================================================
 
 router.get('/stock', async (req, res) => {
     try {
-        const { client_id, warehouse_id, product_id, low_stock } = req.query;
+        const { client_id, warehouse_id, product_id, low_stock, out_of_stock, category_id, search } = req.query;
+        const limit = Math.min(parseInt(req.query.limit || '500', 10), 1000);
 
         const perms       = req.user.permissions || {};
         const isAllAccess = perms.all_access === true;
@@ -234,7 +239,21 @@ router.get('/stock', async (req, res) => {
         }
 
         if (low_stock === 'true') {
-            conditions.push(`ws.quantity <= pv.min_stock_level`);
+            conditions.push(`(ws.quantity - ws.reserved_qty) <= pv.min_stock_level AND (ws.quantity - ws.reserved_qty) > 0`);
+        }
+
+        if (out_of_stock === 'true') {
+            conditions.push(`(ws.quantity - ws.reserved_qty) <= 0`);
+        }
+
+        if (category_id) {
+            params.push(category_id);
+            conditions.push(`p.category_id = $${params.length}`);
+        }
+
+        if (search) {
+            params.push(`%${search}%`);
+            conditions.push(`p.name ILIKE $${params.length}`);
         }
 
         const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -255,6 +274,7 @@ router.get('/stock', async (req, res) => {
                 pv.selling_price,
                 pv.cost_price,
                 pv.min_stock_level,
+                pv.min_stock_level             AS reorder_point,
                 pv.max_stock_level,
                 pv.unit_id,
                 u.name                      AS unit_name,
@@ -277,6 +297,7 @@ router.get('/stock', async (req, res) => {
              INNER JOIN warehouses w         ON w.id   = ws.warehouse_id
              ${whereClause}
              ORDER BY p.name ASC, pv.size_name ASC
+             LIMIT ${limit}
             `,
             params
         );
