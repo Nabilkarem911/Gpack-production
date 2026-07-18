@@ -338,7 +338,9 @@
 
         try {
             const res = await window.apiFetch('/api/inventory/stock?client_id=' + effId + '&warehouse_id=' + whId);
+            console.log('[dvOnWarehouseChange] effId:', effId, 'whId:', whId, 'raw stock:', res.data?.length, 'items', res.data?.slice(0,3));
             _createStock = (res.data || []).filter(s => parseFloat(s.available_qty || s.qty_on_hand || s.quantity || 0) > 0);
+            console.log('[dvOnWarehouseChange] filtered stock:', _createStock.length, 'items');
             if (searchInp) searchInp.disabled = false;
             if (!_createStock.length) window.showToast('لا يوجد مخزون متاح في هذا المستودع', 'info');
         } catch (e) {
