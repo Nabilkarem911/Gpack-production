@@ -92,9 +92,20 @@
               <i class="fa-solid fa-plus-minus"></i>تسوية مخزون
             </button>
             <button id="wh-detail-request-btn"
-                    onclick="openRequestStockModal()"
+                    onclick="toggleRequestMode()"
                     class="flex items-center gap-2 px-3 py-2 bg-brand-50 hover:bg-brand-100 text-brand-700 text-sm font-bold rounded-xl transition-colors">
               <i class="fa-solid fa-cart-plus"></i>طلب مخزون
+            </button>
+            <button id="wh-detail-submit-request-btn"
+                    onclick="submitRequestStock()"
+                    class="hidden items-center gap-2 px-3 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled>
+              <i class="fa-solid fa-paper-plane"></i>إرسال الطلب
+            </button>
+            <button id="wh-detail-cancel-request-btn"
+                    onclick="toggleRequestMode()"
+                    class="hidden items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 text-sm font-bold rounded-xl transition-colors">
+              <i class="fa-solid fa-xmark"></i>إلغاء
             </button>
           </div>
         </div>
@@ -137,11 +148,14 @@
               <input type="checkbox" id="det-hide-zero" onchange="renderDetailStock()" class="w-4 h-4 rounded text-brand-600">
               إخفاء الصفر
             </label>
+            <span id="det-request-info" class="hidden text-xs text-brand-600 font-semibold flex items-center gap-1">
+              <i class="fa-solid fa-circle-info"></i>علم على الأصناف المطلوبة وادخل الكمية
+            </span>
           </div>
           <div class="overflow-x-auto rounded-xl border border-slate-200">
             <table class="w-full text-sm">
               <thead class="bg-slate-50 text-xs text-slate-500">
-                <tr>
+                <tr id="det-stock-thead">
                   <th class="px-4 py-3 text-right font-semibold">الصنف / المقاس</th>
                   <th class="px-4 py-3 text-right font-semibold hidden md:table-cell">العميل</th>
                   <th class="px-4 py-3 text-center font-semibold">الرصيد</th>
@@ -399,77 +413,6 @@
   </div>
 </div>
 
-<!-- ══════════════════════════════════════════════════════════
-     Modal: طلب مخزون (يُرسل لأوامر التشغيل)
-══════════════════════════════════════════════════════════ -->
-<div id="request-stock-modal" class="fixed inset-0 z-50 hidden bg-black/50 overflow-y-auto">
-  <div class="min-h-screen flex items-center justify-center p-4">
-    <div class="w-full max-w-lg bg-white rounded-2xl shadow-2xl p-5">
-      <div class="flex items-center justify-between mb-4">
-        <div>
-          <h3 class="text-base font-bold text-slate-800">طلب مخزون</h3>
-          <p id="rsm-subtitle" class="text-xs text-slate-400 mt-0.5">يُنشئ أمر تشغيل جديد</p>
-        </div>
-        <button onclick="closeRequestStockModal()" class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100">
-          <i class="fa-solid fa-xmark"></i>
-        </button>
-      </div>
-      <div class="space-y-3">
-        <div>
-          <label class="text-xs text-slate-500 font-semibold block mb-1">العميل</label>
-          <select id="rsm-client" class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-brand-500 outline-none">
-            <option value="">اختر العميل *</option>
-          </select>
-        </div>
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="text-xs text-slate-500 font-semibold block mb-1">الصنف</label>
-            <select id="rsm-product" class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-brand-500 outline-none" onchange="rsmLoadVariants()">
-              <option value="">اختر الصنف *</option>
-            </select>
-          </div>
-          <div>
-            <label class="text-xs text-slate-500 font-semibold block mb-1">المقاس</label>
-            <select id="rsm-variant" class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-brand-500 outline-none">
-              <option value="">اختر المقاس *</option>
-            </select>
-          </div>
-        </div>
-        <div class="flex items-end gap-2">
-          <div class="flex-1">
-            <label class="text-xs text-slate-500 font-semibold block mb-1">الكمية</label>
-            <input type="number" id="rsm-qty" min="1" placeholder="الكمية *"
-                   class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm font-mono text-center focus:border-brand-500 outline-none">
-          </div>
-          <button onclick="rsmAddToCart()" class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-bold transition-colors border border-slate-200 whitespace-nowrap">
-            <i class="fa-solid fa-plus ml-1"></i>إضافة
-          </button>
-        </div>
-        <input type="text" id="rsm-notes" placeholder="ملاحظات (اختياري)"
-               class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-brand-500 outline-none">
-      </div>
-
-      <!-- Cart -->
-      <div id="rsm-cart-section" class="mt-4 hidden">
-        <div class="flex items-center justify-between mb-2">
-          <h4 class="text-sm font-bold text-slate-700">قائمة الطلب (<span id="rsm-cart-count">0</span>)</h4>
-          <button onclick="rsmClearCart()" class="text-xs text-red-500 hover:text-red-700 font-semibold">مسح الكل</button>
-        </div>
-        <div id="rsm-cart-list" class="max-h-48 overflow-y-auto space-y-2 mb-3"></div>
-      </div>
-
-      <div class="bg-blue-50 border border-blue-200 rounded-xl p-3 mt-3">
-        <p class="text-xs text-blue-700"><i class="fa-solid fa-circle-info ml-1"></i>سيتم إنشاء أمر تشغيل جديد بحالة "معلق" يمكن إسناده للمورد من صفحة أوامر التشغيل.</p>
-      </div>
-      <div class="flex gap-2 mt-4">
-        <button onclick="closeRequestStockModal()" class="flex-1 py-2.5 text-slate-600 border border-slate-200 rounded-xl text-sm font-bold hover:bg-slate-50">إلغاء</button>
-        <button id="rsm-submit-btn" onclick="saveRequestStock()" class="flex-1 py-2.5 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-sm font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled>
-          <i class="fa-solid fa-paper-plane ml-1"></i>إرسال الطلب
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
 
 <script>
 // ═══════════════════════════════════════════════════════════════════════════
@@ -682,10 +625,7 @@ function openWarehouseDetail(whId) {
   const reqBtn = document.getElementById('wh-detail-request-btn');
   if (reqBtn) reqBtn.classList.toggle('hidden', !isDedicated);
   if (isDedicated) {
-    const rsmClient = document.getElementById('rsm-client');
-    if (rsmClient) rsmClient.value = w.client_id || '';
-    const subtitle = document.getElementById('rsm-subtitle');
-    if (subtitle) subtitle.textContent = 'عميل: ' + (w.client_name || '—') + ' — يُنشئ أمر تشغيل جديد';
+    // Request mode uses warehouse's client_id directly — no select needed
   }
 
   // Show panel & switch to stock sub-tab
@@ -696,6 +636,7 @@ function openWarehouseDetail(whId) {
 }
 
 function closeWarehouseDetail() {
+  if (_requestMode) { _requestMode = false; _requestSelections = {}; }
   document.getElementById('wh-detail-panel').classList.add('hidden');
   _activeWhId   = null;
   _detStockData = [];
@@ -715,6 +656,88 @@ function whDetailSwitchTab(tab) {
 }
 
 // ── Render Detail Stock ───────────────────────────────────────────────────
+var _requestMode = false;
+var _requestSelections = {};
+
+function toggleRequestMode() {
+  _requestMode = !_requestMode;
+  _requestSelections = {};
+
+  var reqBtn = document.getElementById('wh-detail-request-btn');
+  var submitBtn = document.getElementById('wh-detail-submit-request-btn');
+  var cancelBtn = document.getElementById('wh-detail-cancel-request-btn');
+  var info = document.getElementById('det-request-info');
+  var thead = document.getElementById('det-stock-thead');
+
+  if (_requestMode) {
+    if (reqBtn) reqBtn.classList.add('hidden');
+    if (submitBtn) { submitBtn.classList.remove('hidden'); submitBtn.classList.add('flex'); submitBtn.disabled = true; }
+    if (cancelBtn) { cancelBtn.classList.remove('hidden'); cancelBtn.classList.add('flex'); }
+    if (info) info.classList.remove('hidden');
+    if (thead) thead.innerHTML =
+      '<th class="px-4 py-3 text-center font-semibold w-10"><input type="checkbox" onchange="toggleAllRequestCheckboxes(this)" class="w-4 h-4 rounded text-brand-600"></th>' +
+      '<th class="px-4 py-3 text-right font-semibold">الصنف / المقاس</th>' +
+      '<th class="px-4 py-3 text-right font-semibold hidden md:table-cell">العميل</th>' +
+      '<th class="px-4 py-3 text-center font-semibold">الرصيد</th>' +
+      '<th class="px-4 py-3 text-center font-semibold">الكمية المطلوبة</th>';
+  } else {
+    if (reqBtn) reqBtn.classList.remove('hidden');
+    if (submitBtn) { submitBtn.classList.add('hidden'); submitBtn.classList.remove('flex'); }
+    if (cancelBtn) { cancelBtn.classList.add('hidden'); cancelBtn.classList.remove('flex'); }
+    if (info) info.classList.add('hidden');
+    if (thead) thead.innerHTML =
+      '<th class="px-4 py-3 text-right font-semibold">الصنف / المقاس</th>' +
+      '<th class="px-4 py-3 text-right font-semibold hidden md:table-cell">العميل</th>' +
+      '<th class="px-4 py-3 text-center font-semibold">الرصيد</th>' +
+      '<th class="px-4 py-3 text-center font-semibold">حركات</th>';
+  }
+  renderDetailStock();
+}
+
+function toggleAllRequestCheckboxes(master) {
+  var checked = master.checked;
+  _detStockData.forEach(function(s) {
+    var key = s.variant_id + '_' + (s.client_id || '');
+    if (checked) {
+      _requestSelections[key] = _requestSelections[key] || { variant_id: s.variant_id, product_name: s.product_name, variant_size: s.variant_size || s.size_name, qty: '' };
+    } else {
+      delete _requestSelections[key];
+    }
+  });
+  renderDetailStock();
+  _updateRequestSubmitBtn();
+}
+
+function onReqCheckboxChange(checkbox, variantId, clientId, productName, variantSize) {
+  var key = variantId + '_' + (clientId || '');
+  if (checkbox.checked) {
+    _requestSelections[key] = { variant_id: variantId, product_name: productName, variant_size: variantSize, qty: '' };
+  } else {
+    delete _requestSelections[key];
+  }
+  renderDetailStock();
+  _updateRequestSubmitBtn();
+}
+
+function onReqQtyChange(input, variantId, clientId) {
+  var key = variantId + '_' + (clientId || '');
+  if (_requestSelections[key]) {
+    _requestSelections[key].qty = input.value;
+    _updateRequestSubmitBtn();
+  }
+}
+
+function _updateRequestSubmitBtn() {
+  var submitBtn = document.getElementById('wh-detail-submit-request-btn');
+  if (!submitBtn) return;
+  var validCount = 0;
+  Object.keys(_requestSelections).forEach(function(k) {
+    var q = parseInt(_requestSelections[k].qty);
+    if (!isNaN(q) && q > 0) validCount++;
+  });
+  submitBtn.disabled = validCount === 0;
+}
+
 function renderDetailStock() {
   const search   = (document.getElementById('det-stock-search')?.value || '').toLowerCase();
   const hideZero = document.getElementById('det-hide-zero')?.checked || false;
@@ -744,6 +767,21 @@ function renderDetailStock() {
       const clientD  = s.client_name
         ? '<span class="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 text-xs rounded-full"><i class="fa-solid fa-user text-[9px]"></i>' + s.client_name + '</span>'
         : '<span class="text-slate-300 text-xs">—</span>';
+
+      if (_requestMode) {
+        var key = (s.variant_id || '') + '_' + (s.client_id || '');
+        var sel = _requestSelections[key];
+        var checked = !!sel;
+        var qtyVal = sel ? (sel.qty || '') : '';
+        return '<tr class="hover:bg-slate-50/80">' +
+          '<td class="px-4 py-2.5 text-center"><input type="checkbox" ' + (checked ? 'checked' : '') + ' onchange="onReqCheckboxChange(this,\'' + (s.variant_id || '') + '\',\'' + (s.client_id || '') + '\',\'' + escAttr(s.product_name || '') + '\',\'' + escAttr(vSize || '') + '\')" class="w-4 h-4 rounded text-brand-600"></td>' +
+          '<td class="px-4 py-2.5 font-medium text-slate-800">' + (s.product_name || '—') + vDisplay + '</td>' +
+          '<td class="px-4 py-2.5 hidden md:table-cell">' + clientD + '</td>' +
+          '<td class="px-4 py-2.5 text-center text-lg ' + qtyClass + '">' + qty + '</td>' +
+          '<td class="px-4 py-2.5 text-center"><input type="number" min="1" value="' + qtyVal + '" ' + (checked ? '' : 'disabled') + ' oninput="onReqQtyChange(this,\'' + (s.variant_id || '') + '\',\'' + (s.client_id || '') + '\')" placeholder="—" class="w-20 px-2 py-1.5 border border-slate-200 rounded-lg text-sm font-mono text-center focus:border-brand-500 outline-none disabled:bg-slate-50 disabled:text-slate-300"></td>' +
+        '</tr>';
+      }
+
       return '<tr class="hover:bg-slate-50/80">' +
         '<td class="px-4 py-2.5 font-medium text-slate-800">' + (s.product_name || '—') + vDisplay + '</td>' +
         '<td class="px-4 py-2.5 hidden md:table-cell">' + clientD + '</td>' +
@@ -928,12 +966,6 @@ function updateSelects() {
 
   const mp = document.getElementById('modal-product');
   if (mp) mp.innerHTML = '<option value="">اختر الصنف *</option>' + prOpts;
-
-  const rsmP = document.getElementById('rsm-product');
-  if (rsmP) rsmP.innerHTML = '<option value="">اختر الصنف *</option>' + prOpts;
-
-  const rsmC = document.getElementById('rsm-client');
-  if (rsmC) rsmC.innerHTML = '<option value="">اختر العميل *</option>' + clOpts;
 }
 
 // ── Variant Loading ───────────────────────────────────────────────────────
@@ -950,15 +982,7 @@ function loadVariantsForAdjustment() {
 }
 
 function rsmLoadVariants() {
-  const pid = document.getElementById('rsm-product')?.value;
-  if (!pid) return;
-  const p = products.find(x => x.id === pid);
-  const variants = p?.variants || [];
-  const sel = document.getElementById('rsm-variant');
-  if (!sel) return;
-  sel.innerHTML = variants.length
-    ? '<option value="">اختر المقاس *</option>' + variants.map(v => '<option value="' + v.id + '">' + (v.size_name || v.size || v.id.substring(0,6)) + '</option>').join('')
-    : '<option value="">لا توجد مقاسات</option>';
+  // Deprecated — kept for backward compatibility
 }
 
 function adjustQty(delta) {
@@ -1188,142 +1212,45 @@ async function deleteWarehouse(id) {
   }
 }
 
-// ── Modal: طلب مخزون ──────────────────────────────────────────────────────
-var _rsmCart = [];
+// ── Submit Request Stock (inline mode) ─────────────────────────────────────
+async function submitRequestStock() {
+  var w = warehouses.find(function(x) { return x.id === _activeWhId; });
+  if (!w || !w.client_id) { showToast('المستودع غير مرتبط بعميل', 'error'); return; }
 
-function openRequestStockModal() {
-  _rsmCart = [];
-  rsmRenderCart();
-  document.getElementById('request-stock-modal').classList.remove('hidden');
-
-  // Auto-select client if warehouse is dedicated
-  if (_activeWhId) {
-    var w = warehouses.find(function(x) { return x.id === _activeWhId; });
-    if (w && w.client_id) {
-      var clSel = document.getElementById('rsm-client');
-      if (clSel) { clSel.value = w.client_id; clSel.disabled = true; }
-      var subtitle = document.getElementById('rsm-subtitle');
-      if (subtitle) subtitle.textContent = 'عميل: ' + (w.client_name || '—') + ' — يُنشئ أمر تشغيل جديد';
+  var items = [];
+  var itemNames = [];
+  Object.keys(_requestSelections).forEach(function(k) {
+    var sel = _requestSelections[k];
+    var q = parseInt(sel.qty);
+    if (!isNaN(q) && q > 0) {
+      items.push({ product_variant_id: sel.variant_id, quantity: q, unit_price: 0 });
+      itemNames.push(sel.product_name + (sel.variant_size ? ' — ' + sel.variant_size : ''));
     }
-  }
-}
-
-function closeRequestStockModal() {
-  document.getElementById('request-stock-modal').classList.add('hidden');
-  // Reset client select
-  var clSel = document.getElementById('rsm-client');
-  if (clSel) clSel.disabled = false;
-  // Reset form
-  document.getElementById('rsm-qty').value = '';
-  document.getElementById('rsm-notes').value = '';
-  var pSel = document.getElementById('rsm-product');
-  if (pSel) pSel.value = '';
-  rsmLoadVariants();
-  _rsmCart = [];
-  rsmRenderCart();
-}
-
-function rsmAddToCart() {
-  var productId = document.getElementById('rsm-product')?.value;
-  var variantId = document.getElementById('rsm-variant')?.value;
-  var qty       = parseInt(document.getElementById('rsm-qty')?.value || 0);
-
-  if (!variantId || qty <= 0) {
-    showToast('اختر الصنف والمقاس والكمية', 'error'); return;
-  }
-
-  // Check duplicate
-  var existing = _rsmCart.find(function(x) { return x.variantId === variantId; });
-  if (existing) {
-    existing.qty += qty;
-  } else {
-    var product = products.find(function(p) { return p.id === productId; });
-    var variant = product?.variants?.find(function(v) { return v.id === variantId; });
-    _rsmCart.push({
-      variantId: variantId,
-      productId: productId,
-      productName: product?.name || '—',
-      variantName: variant ? (variant.size_name || variant.size || '') : '',
-      qty: qty
-    });
-  }
-
-  // Reset selection
-  document.getElementById('rsm-qty').value = '';
-  rsmRenderCart();
-}
-
-function rsmRemoveCartItem(idx) {
-  _rsmCart.splice(idx, 1);
-  rsmRenderCart();
-}
-
-function rsmClearCart() {
-  _rsmCart = [];
-  rsmRenderCart();
-}
-
-function rsmRenderCart() {
-  var section = document.getElementById('rsm-cart-section');
-  var list    = document.getElementById('rsm-cart-list');
-  var countEl = document.getElementById('rsm-cart-count');
-  var submit  = document.getElementById('rsm-submit-btn');
-
-  if (countEl) countEl.textContent = _rsmCart.length;
-  if (submit) submit.disabled = _rsmCart.length === 0;
-
-  if (!_rsmCart.length) {
-    if (section) section.classList.add('hidden');
-    return;
-  }
-  if (section) section.classList.remove('hidden');
-
-  if (list) {
-    list.innerHTML = _rsmCart.map(function(item, i) {
-      return '<div class="flex items-center justify-between bg-slate-50 rounded-xl p-2.5 border border-slate-200">' +
-        '<div class="text-sm"><span class="font-bold text-slate-800">' + escAttr(item.productName) + '</span>' +
-        (item.variantName ? ' <span class="text-slate-400 text-xs">— ' + escAttr(item.variantName) + '</span>' : '') +
-        ' <span class="text-brand-600 font-bold mr-2">×' + item.qty + '</span></div>' +
-        '<button onclick="rsmRemoveCartItem(' + i + ')" class="w-7 h-7 flex items-center justify-center rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors"><i class="fa-solid fa-trash text-xs"></i></button>' +
-      '</div>';
-    }).join('');
-  }
-}
-
-async function saveRequestStock() {
-  var clientId = document.getElementById('rsm-client')?.value;
-  var notes    = document.getElementById('rsm-notes')?.value || '';
-
-  if (!clientId) { showToast('اختر العميل', 'error'); return; }
-  if (!_rsmCart.length) { showToast('أضف صنفاً واحداً على الأقل', 'error'); return; }
-
-  var items = _rsmCart.map(function(x) {
-    return { product_variant_id: x.variantId, quantity: x.qty, unit_price: 0 };
   });
 
-  var itemNames = _rsmCart.map(function(x) { return x.productName + (x.variantName ? ' — ' + x.variantName : ''); }).join(', ');
-  var internalNotes = notes ? notes + ' | ' : '';
-  internalNotes += 'طلب مخزون: ' + itemNames;
+  if (!items.length) { showToast('أدخل كمية صحيحة لصنف واحد على الأقل', 'error'); return; }
 
-  var submitBtn = document.getElementById('rsm-submit-btn');
-  if (submitBtn) { submitBtn.disabled = true; submitBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin ml-1"></i> جاري الإرسال...'; }
+  var internalNotes = 'طلب مخزون من مستودع: ' + (w.name || '') + ' | ' + itemNames.join(', ');
+
+  var submitBtn = document.getElementById('wh-detail-submit-request-btn');
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> جاري الإرسال...'; }
 
   try {
     await window.apiFetch('/api/orders', {
       method: 'POST',
       body: {
-        client_id:      clientId,
+        client_id:      w.client_id,
         status:         'production',
         internal_notes: internalNotes,
         items:          items
       }
     });
-    closeRequestStockModal();
+    toggleRequestMode();
     showToast('تم إنشاء أمر التشغيل بنجاح ✅');
   } catch(e) {
     showToast(e.message || 'خطأ في إنشاء الطلب', 'error');
   } finally {
-    if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = '<i class="fa-solid fa-paper-plane ml-1"></i>إرسال الطلب'; }
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = '<i class="fa-solid fa-paper-plane"></i>إرسال الطلب'; }
   }
 }
 
