@@ -27,6 +27,61 @@ const restrictWrite = authorize('inventory', 'create');
 const restrictEdit  = authorize('inventory', 'edit');
 
 // =============================================================================
+// DEBUG: GET /api/inventory/debug-stock — temporary endpoint to trace stock issues
+// =============================================================================
+router.get('/debug-stock', async (req, res) => {
+    try {
+        const { client_id, warehouse_id } = req.query;
+
+        const rawStock = await db.query(
+            `SELECT ws.id, ws.warehouse_id, ws.variant_id, ws.client_id, ws.quantity, ws.reserved_qty, ws.available_qty
+             FROM warehouse_stock ws
+             WHERE ($1::uuid IS NULL OR ws.warehouse_id = $1::uuid)
+             ORDER BY ws.last_updated DESC LIMIT 20`,
+            [warehouse_id || null]
+        );
+
+        let stockQuery = `SELECT ws.id, ws.warehouse_id, ws.variant_id, ws.client_id, ws.quantity, ws.reserved_qty,
+                (ws.quantity - ws.reserved_qty) AS available_qty,
+                p.name AS product_name, pv.size_name AS variant_size
+             FROM warehouse_stock ws
+             INNER JOIN product_variants pv ON pv.id = ws.variant_id
+             INNER JOIN products p ON p.id = pv.product_id
+             LEFT JOIN clients c ON c.id = ws.client_id
+             INNER JOIN warehouses w ON w.id = ws.warehouse_id
+             WHERE 1=1`;
+        const params = [];
+        if (client_id) {
+            params.push(client_id);
+            params.push(client_id);
+            stockQuery += ` AND (ws.client_id = $${params.length - 1} OR ws.client_id IS NULL OR ws.client_id IN (SELECT parent_id FROM clients WHERE id = $${params.length}))`;
+        }
+        if (warehouse_id) {
+            params.push(warehouse_id);
+            stockQuery += ` AND ws.warehouse_id = $${params.length}`;
+        }
+        stockQuery += ` LIMIT 20`;
+        const joinedStock = await db.query(stockQuery, params);
+
+        const whInfo = warehouse_id ? await db.query('SELECT id, name, client_id FROM warehouses WHERE id = $1', [warehouse_id]) : { rows: [] };
+        const clientInfo = client_id ? await db.query('SELECT id, name, parent_id FROM clients WHERE id = $1', [client_id]) : { rows: [] };
+
+        return res.json({
+            debug: true,
+            filters: { client_id, warehouse_id },
+            warehouse: whInfo.rows[0] || null,
+            client: clientInfo.rows[0] || null,
+            raw_stock_count: rawStock.rowCount,
+            raw_stock: rawStock.rows,
+            joined_stock_count: joinedStock.rowCount,
+            joined_stock: joinedStock.rows,
+        });
+    } catch (err) {
+        return res.status(500).json({ error: err.message });
+    }
+});
+
+// =============================================================================
 // GET /api/inventory/warehouses
 // Returns all warehouses.
 // Query params:
