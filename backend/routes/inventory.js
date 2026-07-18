@@ -294,7 +294,7 @@ router.get('/stock', async (req, res) => {
              INNER JOIN products p           ON p.id  = pv.product_id
              LEFT  JOIN categories cat       ON cat.id = p.category_id
              LEFT  JOIN units u              ON u.id   = pv.unit_id
-             INNER JOIN clients c            ON c.id   = ws.client_id
+             LEFT  JOIN clients c            ON c.id   = ws.client_id
              LEFT  JOIN clients cp           ON cp.id  = c.parent_id
              INNER JOIN warehouses w         ON w.id   = ws.warehouse_id
              ${whereClause}
@@ -374,7 +374,7 @@ router.post('/stock/adjust', restrictEdit, validateBody(stockAdjust), async (req
                         `SELECT client_id FROM warehouses WHERE id = $1`,
                         [warehouse_id]
                     );
-                    effectiveClientId = whResult.rows[0]?.client_id || '00000000-0000-0000-0000-000000000000'; // Default system client
+                    effectiveClientId = whResult.rows[0]?.client_id || null;
                 }
                 
                 // Check if stock record exists
