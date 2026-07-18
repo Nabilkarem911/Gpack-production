@@ -92,7 +92,7 @@ router.get('/', async (req, res) => {
 // Body: { order_id?, client_id, items: [{ variant_id, quantity/requested_qty }], notes, driver_name, vehicle_number }
 // =============================================================================
 
-router.post('/', restrictWrite, async (req, res) => {
+router.post('/', restrictWrite, validateBody(deliveryNoteCreate), async (req, res) => {
     const {
         order_id = null,
         client_id,
@@ -101,7 +101,7 @@ router.post('/', restrictWrite, async (req, res) => {
         notes = null,
         driver_name = null,
         vehicle_number = null
-    } = req.body;
+    } = req.validatedBody;
 
     if (!client_id) {
         return res.status(400).json({ error: 'يجب اختيار العميل.' });

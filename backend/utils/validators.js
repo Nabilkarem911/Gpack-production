@@ -225,14 +225,18 @@ const unitUpdate = z.object({
 // =============================================================================
 
 const deliveryNoteCreate = z.object({
-    order_id: z.string().uuid('Valid order_id is required'),
+    order_id: z.string().uuid('Valid order_id is required').optional().nullable(),
     client_id: z.string().uuid('Valid client_id is required'),
+    warehouse_id: z.string().uuid().optional().nullable(),
     items: z.array(z.object({
         variant_id: z.string().uuid().optional().nullable(),
         order_item_id: z.string().uuid().optional().nullable(),
-        quantity: z.coerce.number().positive(),
+        quantity: z.coerce.number().positive().optional(),
+        requested_qty: z.coerce.number().positive().optional(),
     }).passthrough()).min(1, 'At least one item is required'),
     notes: z.string().max(2000).optional().nullable(),
+    driver_name: z.string().max(255).optional().nullable(),
+    vehicle_number: z.string().max(100).optional().nullable(),
 }).passthrough();
 
 const deliveryNoteDispatch = z.object({

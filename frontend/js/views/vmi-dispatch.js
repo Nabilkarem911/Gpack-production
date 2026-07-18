@@ -298,6 +298,7 @@
         const selDiv    = _el('dv-create-selected');
         if (searchInp) { searchInp.disabled = true; searchInp.value = ''; }
         if (selDiv)    selDiv.innerHTML = '<p class="text-sm text-slate-400 text-center py-3">لم يتم اختيار أصناف بعد</p>';
+        _createStock = [];
         _createSelected = {};
         window.dvLoadWarehouses();
     };
