@@ -1,8 +1,8 @@
 'use strict';
 
 // =============================================================================
-// G.PACK 2.0 — أوامر الفسح (Delivery Vouchers)
-// تسليم البضاعة للعملاء ضد أوامر الفسح المفتوحة
+// G.PACK 2.0 — سندات التسليم (Delivery Vouchers)
+// تسليم البضاعة للعملاء ضد سندات التسليم المفتوحة
 // =============================================================================
 
 (function () {
@@ -55,7 +55,7 @@
             _renderGrid();
         } catch (e) {
             if (window.isViewActive && !window.isViewActive(_myToken)) return;
-            window.showToast('فشل تحميل أوامر الفسح', 'error');
+            window.showToast('فشل تحميل سندات التسليم', 'error');
         } finally { if (window.isViewActive && window.isViewActive(_myToken)) hideEl('dv-loading'); }
         const badge = _el('dv-tab-pending-badge');
         if (badge) { badge.textContent = _pendingNotes.length; _pendingNotes.length > 0 ? badge.classList.remove('hidden') : badge.classList.add('hidden'); }
@@ -166,14 +166,14 @@
         try {
             const res = await window.apiFetch('/api/delivery-notes/' + dnId);
             _editDN = res.data;
-            if (!_editDN) { window.showToast('فشل تحميل أمر الفسح', 'error'); return; }
+            if (!_editDN) { window.showToast('فشل تحميل سند التسليم', 'error'); return; }
             if (_editDN.status !== 'pending') {
-                window.showToast('يمكن تعديل أوامر الفسح في حالة "معلق" فقط', 'error');
+                window.showToast('يمكن تعديل سندات التسليم في حالة "معلق" فقط', 'error');
                 return;
             }
             const dn = _editDN;
             const sub = _el('dv-edit-modal-subtitle');
-            if (sub) sub.textContent = `أمر فسح #${dn.note_number || '—'} — ${dn.client_name || '—'} — طلب #${dn.order_number || '—'}`;
+            if (sub) sub.textContent = `سند تسليم #${dn.note_number || '—'} — ${dn.client_name || '—'} — طلب #${dn.order_number || '—'}`;
             const container = _el('dv-edit-modal-items');
             if (container) {
                 container.innerHTML = (dn.items || []).map(item => {
@@ -206,7 +206,7 @@
 
     // ── Reverse dispatch ─────────────────────────────────────────────────────
     window.dvReverseDispatch = async function(dnId) {
-        if (!confirm('هل أنت متأكد من التراجع عن التسليم؟ سيتم إرجاع جميع الكميات المسلّمة إلى المخزون وإعادة أمر الفسح إلى حالة "معلق".')) return;
+        if (!confirm('هل أنت متأكد من التراجع عن التسليم؟ سيتم إرجاع جميع الكميات المسلّمة إلى المخزون وإعادة سند التسليم إلى حالة "معلق".')) return;
         try {
             await window.apiFetch('/api/delivery-notes/' + dnId + '/reverse', { method: 'POST' });
             window.showToast('تم التراجع عن التسليم بنجاح ✅');
@@ -454,12 +454,12 @@
             const body = { client_id: effId, warehouse_id: whId, items, notes, driver_name: driver, vehicle_number: vehicle };
             await window.apiFetch('/api/delivery-notes', { method: 'POST', body });
             window.dvCloseCreateModal();
-            window.showToast('تم إصدار أمر الفسح بنجاح ✅');
+            window.showToast('تم إصدار سند التسليم بنجاح ✅');
             await window.dvInit();
         } catch (e) {
-            window.showToast(e.message || 'فشل إصدار أمر الفسح', 'error');
+            window.showToast(e.message || 'فشل إصدار سند التسليم', 'error');
         } finally {
-            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-check ml-1.5"></i> إصدار أمر الفسح'; }
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-check ml-1.5"></i> إصدار سند التسليم'; }
         }
     };
 
@@ -481,10 +481,10 @@
         try {
             await window.apiFetch('/api/delivery-notes/' + _editDN.id, { method: 'PUT', body: { items, notes } });
             window.dvCloseEditModal();
-            window.showToast('تم تعديل أمر الفسح بنجاح ✅');
+            window.showToast('تم تعديل سند التسليم بنجاح ✅');
             await window.dvInit();
         } catch (e) {
-            window.showToast(e.message || 'فشل تعديل أمر الفسح', 'error');
+            window.showToast(e.message || 'فشل تعديل سند التسليم', 'error');
         } finally {
             if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-check ml-1.5"></i> حفظ التعديلات'; }
         }
@@ -577,7 +577,7 @@
                     <div class="flex flex-wrap justify-between items-start gap-2 mb-3">
                         <div>
                             <div class="flex items-center gap-2 flex-wrap">${stBadge}
-                                <span class="text-sm font-black text-slate-800">أمر فسح #${esc(String(dn.note_number || '—'))}</span>
+                                <span class="text-sm font-black text-slate-800">سند تسليم #${esc(String(dn.note_number || '—'))}</span>
                             </div>
                             <p class="text-xs text-slate-500 mt-1 font-bold">${esc(dn.client_name || '—')}</p>
                             <p class="text-xs text-slate-400">${dn.item_count || 0} أصناف — طلب #${esc(String(dn.order_number || '—'))} — ${fmtD(dn.created_at)}</p>
@@ -628,7 +628,7 @@
             const res = await window.apiFetch(`/api/delivery-notes/${dnId}/dispatches`);
             const dispatches = res?.data || [];
             if (!dispatches.length) {
-                window.showToast('لا توجد سندات تسليم لهذا أمر الفسح', 'error');
+                window.showToast('لا توجد سندات تسليم لهذا السند', 'error');
                 return;
             }
 
@@ -705,7 +705,7 @@ td{font-size:13px}tr:nth-child(even) td{background:#f0fdf4}
 .sig-box{text-align:center;width:160px}.sig-line{border-top:1px solid #333;margin-top:40px;padding-top:6px;font-size:12px;color:#64748b}
 @media print{body{padding:10px}}</style></head><body>
 <div class="header"><div><div class="company">G.PACK</div><div style="font-size:13px;color:#64748b">سند تسليم بضاعة (جزئي)</div></div>
-<div style="text-align:left"><div style="font-size:12px;color:#64748b">رقم السند</div><div class="doc-number">#${d.dispatch_number}</div><div style="font-size:11px;color:#94a3b8;margin-top:2px">لأمر الفسح #${d.note_number}</div></div></div>
+<div style="text-align:left"><div style="font-size:12px;color:#64748b">رقم السند</div><div class="doc-number">#${d.dispatch_number}</div><div style="font-size:11px;color:#94a3b8;margin-top:2px">لسند التسليم #${d.note_number}</div></div></div>
 <div class="info-grid">
 <div class="info-item"><label>العميل</label><span>${esc(d.client_name || '—')}</span></div>
 <div class="info-item"><label>رقم الطلب</label><span>#${d.order_number || '—'}</span></div>
@@ -755,7 +755,7 @@ ${d.notes ? `<div style="margin-bottom:20px;padding:12px;background:#f8fafc;bord
             const totalRequested = printItems.reduce((s, i) => s + parseFloat(i.requested_qty || i.quantity || 0), 0);
             const totalDelivered = printItems.reduce((s, i) => s + parseFloat(i.delivered_qty || 0), 0);
 
-            const html = `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="UTF-8"><title>أمر فسح #${dn.note_number}</title>
+            const html = `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="UTF-8"><title>سند تسليم #${dn.note_number}</title>
 <style>body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;margin:0;padding:20px;color:#1e293b;direction:rtl}
 .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #2563eb;padding-bottom:16px;margin-bottom:20px}
 .company{font-size:22px;font-weight:bold;color:#2563eb}.doc-number{font-size:24px;font-weight:bold}
@@ -769,7 +769,7 @@ td{font-size:13px}tr:nth-child(even) td{background:#f8fafc}
 .footer{margin-top:40px;display:flex;justify-content:space-between;padding-top:20px;border-top:1px solid #e2e8f0}
 .sig-box{text-align:center;width:160px}.sig-line{border-top:1px solid #333;margin-top:40px;padding-top:6px;font-size:12px;color:#64748b}
 @media print{body{padding:10px}}</style></head><body>
-<div class="header"><div><div class="company">G.PACK</div><div style="font-size:13px;color:#64748b">أمر فسح بضاعة${titleSuffix}</div></div>
+<div class="header"><div><div class="company">G.PACK</div><div style="font-size:13px;color:#64748b">سند تسليم بضاعة${titleSuffix}</div></div>
 <div style="text-align:left"><div style="font-size:12px;color:#64748b">رقم السند</div><div class="doc-number">#${dn.note_number}</div></div></div>
 <div class="info-grid">
 <div class="info-item"><label>العميل</label><span>${dn.client_name || '—'}</span></div>

@@ -231,7 +231,7 @@ CREATE TABLE IF NOT EXISTS orders (
 -- =============================================================================
 -- TABLE: order_items
 -- wh_received_qty: Updated on initial warehouse receiving (NO financial impact).
--- released_qty:    Updated when Release Order (أمر الفسح) is created.
+-- released_qty:    Updated when Delivery Voucher (سند التسليم) is created.
 -- delivered_qty:   Updated on manual delivery confirmation.
 -- manufacturer_po_qty: Quantity sent to manufacturer.
 -- =============================================================================

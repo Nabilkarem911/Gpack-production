@@ -1,18 +1,18 @@
 <!-- =============================================================================
-     G.PACK 2.0 — أوامر الفسح
-     تسليم البضاعة للعملاء ضد أوامر الفسح المفتوحة
+     G.PACK 2.0 — سندات التسليم
+     تسليم البضاعة للعملاء ضد سندات التسليم المفتوحة
 ============================================================================= -->
 
 <!-- Header -->
 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
     <div>
-        <h1 class="text-2xl font-black text-slate-800">أوامر الفسح</h1>
+        <h1 class="text-2xl font-black text-slate-800">سندات التسليم</h1>
         <p class="text-slate-400 text-sm mt-0.5">تسليم البضاعة للعملاء ضد الطلبات</p>
     </div>
     <div class="flex gap-2">
         <button onclick="window.dvOpenCreateModal()"
                 class="flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold rounded-xl transition-colors shadow-sm">
-            <i class="fa-solid fa-plus"></i> إصدار أمر فسح
+            <i class="fa-solid fa-plus"></i> إصدار سند تسليم
         </button>
         <button onclick="window.dvInit()"
                 class="w-9 h-9 flex items-center justify-center rounded-xl bg-white border border-slate-200
@@ -43,7 +43,7 @@
     <!-- Loading -->
     <div id="dv-loading" class="bg-white rounded-2xl shadow-sm border border-slate-100 py-16 text-center mb-5">
         <i class="fa-solid fa-circle-notch fa-spin text-2xl text-brand-400 mb-3"></i>
-        <p class="text-slate-400 text-sm">جاري تحميل أوامر الفسح...</p>
+        <p class="text-slate-400 text-sm">جاري تحميل سندات التسليم...</p>
     </div>
 
     <!-- Delivery Notes Grid -->
@@ -52,8 +52,8 @@
     <!-- Empty -->
     <div id="dv-empty" class="hidden bg-white rounded-2xl shadow-sm border border-slate-100 py-16 text-center mb-5">
         <i class="fa-solid fa-truck text-4xl text-slate-200 mb-3 block"></i>
-        <p class="text-slate-400 text-sm font-medium">لا توجد أوامر فسح معلقة</p>
-        <p class="text-slate-300 text-xs mt-1">جميع الطلبات تم تسليمها أو لم يُصدر لها أمر فسح بعد</p>
+        <p class="text-slate-400 text-sm font-medium">لا توجد سندات تسليم معلقة</p>
+        <p class="text-slate-300 text-xs mt-1">جميع الطلبات تم تسليمها أو لم يُصدر لها سند تسليم بعد</p>
     </div>
 
 </div>
@@ -155,7 +155,7 @@
 </div>
 
 <!-- ══════════════════════════════════════════════════════════════════════════
-     Modal: تعديل أمر الفسح
+     Modal: تعديل سند التسليم
 ══════════════════════════════════════════════════════════════════════════ -->
 <div id="dv-edit-modal"
      style="display:none"
@@ -166,7 +166,7 @@
         <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100">
             <div>
                 <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
-                    <i class="fa-solid fa-pen text-blue-500"></i> تعديل أمر الفسح
+                    <i class="fa-solid fa-pen text-blue-500"></i> تعديل سند التسليم
                 </h3>
                 <p id="dv-edit-modal-subtitle" class="text-xs text-slate-400 mt-0.5"></p>
             </div>
@@ -203,7 +203,7 @@
 </div>
 
 <!-- ══════════════════════════════════════════════════════════════════════════
-     Modal: إصدار أمر فسح جديد
+     Modal: إصدار سند تسليم جديد
 ══════════════════════════════════════════════════════════════════════════ -->
 <div id="dv-create-modal"
      style="display:none"
@@ -214,7 +214,7 @@
         <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100">
             <div>
                 <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
-                    <i class="fa-solid fa-file-circle-plus text-brand-500"></i> إصدار أمر فسح جديد
+                    <i class="fa-solid fa-file-circle-plus text-brand-500"></i> إصدار سند تسليم جديد
                 </h3>
                 <p class="text-xs text-slate-400 mt-0.5">اختر العميل والمستودع والأصناف</p>
             </div>
@@ -306,7 +306,7 @@
         <div class="px-6 pb-6 flex gap-3">
             <button id="dv-create-confirm-btn" onclick="window.dvConfirmCreate()"
                     class="flex-1 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold rounded-xl transition-colors">
-                <i class="fa-solid fa-check ml-1.5"></i> إصدار أمر الفسح
+                <i class="fa-solid fa-check ml-1.5"></i> إصدار سند التسليم
             </button>
             <button onclick="window.dvCloseCreateModal()"
                     class="flex-1 py-2.5 border border-slate-200 text-slate-600 text-sm font-bold rounded-xl hover:bg-slate-50">

@@ -175,7 +175,7 @@ router.post('/', restrictWrite, async (req, res) => {
             return { id: dnId, note_number: noteNumber };
         });
 
-        return res.status(201).json({ data: result, message: 'تم إصدار أمر الفسح بنجاح.' });
+        return res.status(201).json({ data: result, message: 'تم إصدار سند التسليم بنجاح.' });
     } catch (err) {
         console.error('[DeliveryNotes] POST / error:', err.message);
         return res.status(400).json({ error: err.message || 'Internal server error.' });
@@ -272,10 +272,7 @@ router.post('/:id/dispatch', restrictWrite, validateBody(deliveryNoteDispatch), 
                  WHERE dn.id = $1`,
                 [id]
             );
-            if (dnCheck.rowCount === 0) throw new Error('أمر الفسح غير موجود.');
-
-            const dn = dnCheck.rows[0];
-            if (dn.status === 'completed') throw new Error('أمر الفسح مكتمل بالفعل ولا يمكن التعديل عليه.');
+            if (dnCheck.rowCount === 0) throw new Error('سند التسليم غير موجود.');
 
             // Create a dispatch record for this specific handover
             const nextNumRes = await client.query(
@@ -368,7 +365,7 @@ router.post('/:id/dispatch', restrictWrite, validateBody(deliveryNoteDispatch), 
                 await client.query(
                     `INSERT INTO inventory_transactions (stock_id, variant_id, transaction_type, quantity, notes, reference_id, reference_type, created_by, created_at)
                      VALUES ($1, $2, 'dispense', $3, $4, $5, 'delivery_note', $6, NOW())`,
-                    [stockId, variantId, item.quantity, deliveryNotes || `تسليم - أمر فسح #${dn.note_number}`, id, req.user?.id]
+                    [stockId, variantId, item.quantity, deliveryNotes || `تسليم - سند تسليم #${dn.note_number}`, id, req.user?.id]
                 );
             }
 
@@ -442,7 +439,7 @@ router.get('/:id/dispatches/:dispatchId', async (req, res) => {
              WHERE dn.id = $1`,
             [id]
         );
-        if (dnRes.rowCount === 0) return res.status(404).json({ error: 'أمر الفسح غير موجود.' });
+        if (dnRes.rowCount === 0) return res.status(404).json({ error: 'سند التسليم غير موجود.' });
 
         const dispatchRes = await db.query(
             `SELECT dnd.id, dnd.dispatch_number, dnd.notes, dnd.created_at,
@@ -641,9 +638,9 @@ router.post('/:id/reverse', restrictWrite, async (req, res) => {
                  FROM delivery_notes dn WHERE dn.id = $1 FOR UPDATE`,
                 [id]
             );
-            if (dnCheck.rowCount === 0) throw new Error('أمر الفسح غير موجود.');
+            if (dnCheck.rowCount === 0) throw new Error('سند التسليم غير موجود.');
             const dn = dnCheck.rows[0];
-            if (dn.status === 'pending') throw new Error('أمر الفسح لم يتم تسليمه بعد، لا يوجد ما يمكن التراجع عنه.');
+            if (dn.status === 'pending') throw new Error('سند التسليم لم يتم تسليمه بعد، لا يوجد ما يمكن التراجع عنه.');
 
             // Get all items with their delivered_qty and variant info
             const itemsRes = await client.query(
@@ -702,7 +699,7 @@ router.post('/:id/reverse', restrictWrite, async (req, res) => {
                 await client.query(
                     `INSERT INTO inventory_transactions (stock_id, variant_id, transaction_type, quantity, notes, reference_id, reference_type, created_by, created_at)
                      VALUES ($1, $2, 'return', $3, $4, $5, 'delivery_note', $6, NOW())`,
-                    [stockId, item.variant_id, delQty, `تراجع عن تسليم - أمر فسح #${dn.note_number}`, id, req.user?.id]
+                    [stockId, item.variant_id, delQty, `تراجع عن تسليم - سند تسليم #${dn.note_number}`, id, req.user?.id]
                 );
             }
 
@@ -778,9 +775,9 @@ router.put('/:id', restrictWrite, async (req, res) => {
                 `SELECT id, status, note_number FROM delivery_notes WHERE id = $1 FOR UPDATE`,
                 [id]
             );
-            if (dnCheck.rowCount === 0) throw new Error('أمر الفسح غير موجود.');
+            if (dnCheck.rowCount === 0) throw new Error('سند التسليم غير موجود.');
             if (dnCheck.rows[0].status !== 'pending') {
-                throw new Error('يمكن تعديل أوامر الفسح في حالة "معلق" فقط.');
+                throw new Error('يمكن تعديل سندات التسليم في حالة "معلق" فقط.');
             }
 
             for (const item of items) {
@@ -801,7 +798,7 @@ router.put('/:id', restrictWrite, async (req, res) => {
             return { note_number: dnCheck.rows[0].note_number };
         });
 
-        return res.status(200).json({ data: result, message: 'تم تعديل أمر الفسح بنجاح.' });
+        return res.status(200).json({ data: result, message: 'تم تعديل سند التسليم بنجاح.' });
     } catch (err) {
         console.error('[DeliveryNotes] PUT /:id error:', err.message);
         return res.status(400).json({ error: err.message || 'Internal server error.' });

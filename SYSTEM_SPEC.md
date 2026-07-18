@@ -592,7 +592,7 @@ const permissions = {
    └── Update warehouse stock (client-specific)
 ```
 
-### Phase 4: Release Order (أمر الفسح) - Manual Process
+### Phase 4: Delivery Voucher (سند التسليم) - Manual Process
 
 ```
 1. Release Process
