@@ -282,7 +282,12 @@ router.get('/stock', async (req, res) => {
         if (client_id) {
             params.push(client_id);
             params.push(client_id);
-            conditions.push(`(ws.client_id = $${params.length - 1} OR ws.client_id IS NULL OR ws.client_id IN (SELECT parent_id FROM clients WHERE id = $${params.length}))`);
+            conditions.push(`(
+                ws.client_id = $${params.length - 1}
+                OR ws.client_id IS NULL
+                OR ws.client_id IN (SELECT parent_id FROM clients WHERE id = $${params.length})
+                OR ws.warehouse_id IN (SELECT id FROM warehouses WHERE client_id = $${params.length - 1})
+            )`);
         }
 
         if (warehouse_id) {
