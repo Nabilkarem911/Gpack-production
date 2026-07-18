@@ -126,7 +126,7 @@ router.get('/warehouses/:id', async (req, res) => {
 // =============================================================================
 
 router.post('/warehouses', restrictWrite, validateBody(warehouseCreate), async (req, res) => {
-    const { name, location, address, client_id, status } = req.validatedBody;
+    const { name, code, warehouse_type, location, address, client_id, status } = req.validatedBody;
 
     if (!name || !name.trim()) {
         return res.status(400).json({ error: 'اسم المستودع مطلوب.' });
@@ -134,10 +134,10 @@ router.post('/warehouses', restrictWrite, validateBody(warehouseCreate), async (
 
     try {
         const result = await db.query(
-            `INSERT INTO warehouses (name, address, client_id, status)
-             VALUES ($1, $2, $3, $4)
+            `INSERT INTO warehouses (name, code, warehouse_type, address, client_id, status)
+             VALUES ($1, $2, $3, $4, $5, $6)
              RETURNING *`,
-            [name.trim(), address || location || null, client_id || null, status || 'active']
+            [name.trim(), code || null, warehouse_type || 'main', address || location || null, client_id || null, status || 'active']
         );
 
         return res.status(201).json({ data: result.rows[0] });
@@ -153,7 +153,7 @@ router.post('/warehouses', restrictWrite, validateBody(warehouseCreate), async (
 // =============================================================================
 
 router.put('/warehouses/:id', restrictEdit, validateBody(warehouseUpdate), async (req, res) => {
-    const { name, location, address, client_id, status } = req.validatedBody;
+    const { name, code, warehouse_type, location, address, client_id, status } = req.validatedBody;
 
     if (!name || !name.trim()) {
         return res.status(400).json({ error: 'اسم المستودع مطلوب.' });
@@ -162,13 +162,15 @@ router.put('/warehouses/:id', restrictEdit, validateBody(warehouseUpdate), async
     try {
         const result = await db.query(
             `UPDATE warehouses SET
-                name      = $1,
-                address   = $2,
-                client_id = $3,
-                status    = $4
-             WHERE id = $5
+                name            = $1,
+                code            = $2,
+                warehouse_type  = $3,
+                address         = $4,
+                client_id       = $5,
+                status          = $6
+             WHERE id = $7
              RETURNING *`,
-            [name.trim(), address || location || null, client_id || null, status || 'active', req.params.id]
+            [name.trim(), code || null, warehouse_type || 'main', address || location || null, client_id || null, status || 'active', req.params.id]
         );
 
         if (result.rowCount === 0) {

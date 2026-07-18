@@ -578,7 +578,11 @@ function renderWarehouses() {
     const whStock     = stock.filter(s => s.warehouse_id === w.id);
     const totalQty    = whStock.reduce((s, x) => s + parseFloat(x.available_qty || 0), 0);
     const itemCount   = [...new Set(whStock.map(s => s.variant_id))].length;
-    const lowCount    = whStock.filter(s => parseFloat(s.available_qty || 0) > 0 && parseFloat(s.available_qty || 0) <= 10).length;
+    const lowCount    = whStock.filter(s => {
+      const a = parseFloat(s.available_qty || 0);
+      const r = parseFloat(s.reorder_point || s.min_stock_level || 0);
+      return r > 0 && a > 0 && a <= r;
+    }).length;
 
     const iconBg  = isDedicated ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-blue-600';
     const cardBdr = isDedicated ? 'border-purple-200 hover:border-purple-400' : 'border-slate-200 hover:border-brand-400';
@@ -661,7 +665,11 @@ function openWarehouseDetail(whId) {
   // Stats
   const totalQty = _detStockData.reduce((s, x) => s + parseFloat(x.available_qty || 0), 0);
   const itemCount = [...new Set(_detStockData.map(s => s.variant_id))].length;
-  const lowCount  = _detStockData.filter(s => parseFloat(s.available_qty || 0) > 0 && parseFloat(s.available_qty || 0) <= 10).length;
+  const lowCount  = _detStockData.filter(s => {
+    const a = parseFloat(s.available_qty || 0);
+    const r = parseFloat(s.reorder_point || s.min_stock_level || 0);
+    return r > 0 && a > 0 && a <= r;
+  }).length;
   document.getElementById('wh-detail-stat-items').textContent = itemCount;
   document.getElementById('wh-detail-stat-qty').textContent   = Math.round(totalQty);
   document.getElementById('wh-detail-stat-low').textContent   = lowCount;
@@ -729,7 +737,8 @@ function renderDetailStock() {
   if (tbody) {
     tbody.innerHTML = rows.map(s => {
       const qty     = parseFloat(s.available_qty || 0);
-      const qtyClass = qty <= 0 ? 'text-slate-300' : qty <= 10 ? 'text-red-600 font-black' : 'text-emerald-600 font-bold';
+      const reorder = parseFloat(s.reorder_point || s.min_stock_level || 0);
+      const qtyClass = qty <= 0 ? 'text-slate-300' : (reorder > 0 && qty <= reorder) ? 'text-red-600 font-black' : 'text-emerald-600 font-bold';
       const vSize   = s.variant_size || s.size_name;
       const vDisplay = vSize && vSize !== '-' ? ' <span class="text-slate-400 font-normal text-xs">— ' + vSize + '</span>' : '';
       const clientD  = s.client_name
@@ -831,7 +840,8 @@ function renderStock() {
   if (tbody) {
     tbody.innerHTML = filtered.map(s => {
       const qty      = parseFloat(s.available_qty || 0);
-      const qtyClass = qty <= 0 ? 'text-slate-300' : qty <= 10 ? 'text-red-600 font-black' : 'text-emerald-600 font-bold';
+      const reorder   = parseFloat(s.reorder_point || s.min_stock_level || 0);
+      const qtyClass = qty <= 0 ? 'text-slate-300' : (reorder > 0 && qty <= reorder) ? 'text-red-600 font-black' : 'text-emerald-600 font-bold';
       const vSize    = s.variant_size || s.size_name;
       const vDisplay = vSize && vSize !== '-' ? '<span class="text-slate-400 font-normal"> — ' + vSize + '</span>' : '';
       const clientD  = s.client_name

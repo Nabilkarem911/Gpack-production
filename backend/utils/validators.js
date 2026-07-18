@@ -590,6 +590,8 @@ const clientUpdate = z.object({
 
 const warehouseCreate = z.object({
     name: z.string().min(1, 'Warehouse name is required').max(255),
+    code: z.string().max(50).optional().nullable(),
+    warehouse_type: z.string().max(50).optional().nullable(),
     location: z.string().max(500).optional().nullable(),
     address: z.string().max(500).optional().nullable(),
     client_id: z.string().uuid().optional().nullable(),
@@ -598,6 +600,8 @@ const warehouseCreate = z.object({
 
 const warehouseUpdate = z.object({
     name: z.string().min(1).max(255).optional(),
+    code: z.string().max(50).optional().nullable(),
+    warehouse_type: z.string().max(50).optional().nullable(),
     location: z.string().max(500).optional().nullable(),
     address: z.string().max(500).optional().nullable(),
     client_id: z.string().uuid().optional().nullable(),
