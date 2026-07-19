@@ -1556,28 +1556,19 @@ router.post('/revert-order/:orderId', restrictDelete, async (req, res) => {
             }
         }
 
-        // 3. Revert accounting vouchers (down payment receipts) linked to this order
-        const vouchersRes = await client.query(
-            `SELECT id FROM accounting_vouchers
-             WHERE reference_type = 'order' AND reference_id = $1 AND status = 'posted'`,
-            [orderId]
-        );
-        for (const vRow of vouchersRes.rows) {
-            // Delete voucher lines first
-            await client.query(
-                `DELETE FROM accounting_voucher_lines WHERE voucher_id = $1`,
-                [vRow.id]
-            );
-            // Delete the voucher
-            await client.query(
-                `DELETE FROM accounting_vouchers WHERE id = $1`,
-                [vRow.id]
-            );
-        }
-
-        // 4. Delete client_transactions (payments/discounts) linked to this order
+        // 3. Delete client_transactions (payments/discounts) linked to this order
+        //    MUST be done before deleting vouchers because client_transactions
+        //    has linked_voucher_id FK to accounting_vouchers WITHOUT ON DELETE CASCADE.
         await client.query(
             `DELETE FROM client_transactions WHERE order_id = $1`,
+            [orderId]
+        );
+
+        // 4. Delete accounting vouchers (down payment receipts) linked to this order
+        //    voucher_lines have ON DELETE CASCADE so they'll be removed automatically.
+        await client.query(
+            `DELETE FROM accounting_vouchers
+             WHERE reference_type = 'order' AND reference_id = $1 AND status = 'posted'`,
             [orderId]
         );
 
