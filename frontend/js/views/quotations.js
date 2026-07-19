@@ -475,6 +475,10 @@
         if (unitSelect) {
             unitSelect.innerHTML = _buildUnitOptions();
         }
+        const qpUnitSelect = document.getElementById('qp-unit');
+        if (qpUnitSelect) {
+            qpUnitSelect.innerHTML = _buildUnitOptions();
+        }
     }
 
     // ==========================================================================
@@ -562,6 +566,54 @@
                 const unitSelect = document.getElementById('qs-unit');
                 if (unitSelect) unitSelect.value = res.data.id;
                 window._cancelQuickUnitInline();
+                window.showToast(`تم إضافة الوحدة "${res.data.name}" بنجاح.`, 'success');
+            }
+        } catch (err) {
+            window.showToast(err.message || 'فشل إضافة الوحدة.', 'error');
+        }
+    };
+
+    // ==========================================================================
+    // ── INLINE QUICK ADD: Unit (in Product Modal) ────────────────────────────
+    // ==========================================================================
+    window._quickAddProductUnitInline = function () {
+        const inline = document.getElementById('qp-unit-inline');
+        if (inline) {
+            inline.classList.remove('hidden');
+            const nameInput = document.getElementById('qp-unit-name');
+            if (nameInput) nameInput.focus();
+        }
+    };
+
+    window._cancelQuickProductUnitInline = function () {
+        const inline = document.getElementById('qp-unit-inline');
+        if (inline) inline.classList.add('hidden');
+        const nameInput = document.getElementById('qp-unit-name');
+        const abbrInput = document.getElementById('qp-unit-abbr');
+        if (nameInput) nameInput.value = '';
+        if (abbrInput) abbrInput.value = '';
+    };
+
+    window._saveQuickProductUnitInline = async function () {
+        const nameInput = document.getElementById('qp-unit-name');
+        const abbrInput = document.getElementById('qp-unit-abbr');
+        const nameVal = (nameInput?.value || '').trim();
+        const abbrVal = (abbrInput?.value || '').trim();
+        if (!nameVal) {
+            window.showToast('اسم الوحدة مطلوب.', 'warning');
+            return;
+        }
+        try {
+            const res = await window.apiFetch('/api/units', {
+                method: 'POST',
+                body: { name: nameVal, abbreviation: abbrVal || null },
+            });
+            if (res && res.data) {
+                await _loadUnits();
+                _populateQuickModalDropdowns();
+                const unitSelect = document.getElementById('qp-unit');
+                if (unitSelect) unitSelect.value = res.data.id;
+                window._cancelQuickProductUnitInline();
                 window.showToast(`تم إضافة الوحدة "${res.data.name}" بنجاح.`, 'success');
             }
         } catch (err) {
@@ -2462,12 +2514,19 @@
         const titleEl   = document.querySelector('#quick-product-modal h2');
         const submitBtn = document.getElementById('quick-product-submit-btn');
 
+        const unitEl   = document.getElementById('qp-unit');
+
         if (nameEl)    nameEl.value   = prod.name || '';
         if (skuEl)     skuEl.value    = prod.sku || '';
         if (catEl)     catEl.value    = prod.category_id || '';
         if (editIdEl)  editIdEl.value = productId;
         if (titleEl)   titleEl.textContent = '\u062a\u0639\u062f\u064a\u0644 \u0627\u0644\u0645\u0646\u062a\u062c';
         if (submitBtn) submitBtn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i><span>\u062d\u0641\u0638 \u0627\u0644\u062a\u0639\u062f\u064a\u0644\u0627\u062a</span>';
+
+        // Inherit unit_id from the product's first variant
+        if (unitEl && Array.isArray(prod.variants) && prod.variants.length > 0) {
+            unitEl.value = prod.variants[0].unit_id || '';
+        }
 
         _openQuickProductModal(true);
     };
@@ -2503,6 +2562,7 @@
                     body: { name: nameVal, sku: skuVal || null, category_id: categoryVal || null },
                 });
             } else {
+                const unitVal = (document.getElementById('qp-unit')?.value || '').trim();
                 res = await window.apiFetch('/api/products', {
                     method: 'POST',
                     body: {
@@ -2513,6 +2573,7 @@
                         variants: [{
                             size_name:     '\u0627\u0641\u062a\u0631\u0627\u0636\u064a',
                             selling_price: 0,
+                            unit_id:       unitVal || null,
                         }],
                     },
                 });

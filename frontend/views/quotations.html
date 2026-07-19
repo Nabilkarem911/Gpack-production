@@ -1001,6 +1001,49 @@
             </div>
 
             <div>
+                <label for="qp-unit" class="block text-xs font-semibold text-slate-600 mb-1.5">
+                    وحدة القياس <span class="text-slate-400 font-normal">(تورث لكل المقاسات)</span>
+                </label>
+                <div class="flex gap-2">
+                    <select id="qp-unit"
+                            class="flex-1 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                   text-slate-800 outline-none focus:border-brand-500
+                                   focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all appearance-none">
+                        <option value="">— بدون وحدة —</option>
+                    </select>
+                    <button type="button" onclick="window._quickAddProductUnitInline()"
+                            title="إضافة وحدة سريع"
+                            class="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-xl
+                                   bg-emerald-50 hover:bg-emerald-100 text-emerald-600 border border-emerald-200
+                                   transition-colors active:scale-95">
+                        <i class="fa-solid fa-plus text-sm"></i>
+                    </button>
+                </div>
+                <div id="qp-unit-inline" class="hidden mt-2 space-y-2">
+                    <input type="text" id="qp-unit-name" placeholder="اسم الوحدة (مثال: قطعة)"
+                           class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                  text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                                  focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all" />
+                    <input type="text" id="qp-unit-abbr" placeholder="الرمز (مثال: ق)"
+                           class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                                  text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
+                                  focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all" />
+                    <div class="flex gap-2">
+                        <button type="button" onclick="window._saveQuickProductUnitInline()"
+                                class="flex-shrink-0 px-3 py-2 text-xs font-bold text-white bg-emerald-600
+                                       hover:bg-emerald-700 rounded-xl transition-colors active:scale-95">
+                            حفظ
+                        </button>
+                        <button type="button" onclick="window._cancelQuickProductUnitInline()"
+                                class="flex-shrink-0 px-3 py-2 text-xs font-bold text-slate-600 bg-slate-100
+                                       hover:bg-slate-200 rounded-xl transition-colors active:scale-95">
+                            إلغاء
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div>
                 <label for="qp-sku" class="block text-xs font-semibold text-slate-600 mb-1.5">
                     SKU / رقم الصنف <span class="text-slate-400 font-normal">(تلقائي إذا تركته فارغ)</span>
                 </label>
@@ -1461,4 +1504,4 @@
 </div>
 
 <!-- Load the view controller -->
-<script src="/js/views/quotations.js?v=20260719c"></script>
+<script src="/js/views/quotations.js?v=20260719d"></script>
