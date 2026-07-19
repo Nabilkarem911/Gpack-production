@@ -175,14 +175,25 @@
             const params = [];
             if (fromDate) params.push(`from=${fromDate}`);
             if (toDate) params.push(`to=${toDate}`);
-            if (_selectedChild.subAccountId) {
-                params.push(`subAccountId=${_selectedChild.subAccountId}`);
-                params.push(`subAccountType=${_selectedChild.subAccountType}`);
+
+            let url;
+            const subType = _selectedChild.subAccountType;
+            const subId = _selectedChild.subAccountId;
+
+            if (subType === 'client' && subId) {
+                url = `/api/account-statement/client/${subId}` + (params.length > 0 ? '?' + params.join('&') : '');
+            } else if (subType === 'supplier' && subId) {
+                url = `/api/account-statement/supplier/${subId}` + (params.length > 0 ? '?' + params.join('&') : '');
+            } else {
+                if (subId) {
+                    params.push(`subAccountId=${subId}`);
+                    params.push(`subAccountType=${subType || ''}`);
+                }
+                url = `/api/account-statement/account/${_selectedChild.id}` + (params.length > 0 ? '?' + params.join('&') : '');
             }
-            const url = `/api/account-statement/account/${_selectedChild.id}` + (params.length > 0 ? '?' + params.join('&') : '');
 
             const res = await window.apiFetch(url);
-            _renderAccountInfo(res.account);
+            _renderAccountInfo(res.account || res.client || res.supplier);
             _renderStatement(res);
         } catch (err) {
             alert('خطأ في تحميل كشف الحساب: ' + err.message);
@@ -190,9 +201,10 @@
     };
 
     function _renderAccountInfo(account) {
-        _el('as-party-type').textContent = _typeLabels[account.account_type] || account.account_type;
-        _el('as-party-name').textContent = account.name;
-        _el('as-party-details').textContent = `كود: ${account.code}`;
+        const accType = account.account_type || (account.phone !== undefined ? 'asset' : 'asset');
+        _el('as-party-type').textContent = _typeLabels[accType] || accType || 'حساب';
+        _el('as-party-name').textContent = account.name || account.company_name || '—';
+        _el('as-party-details').textContent = account.code ? `كود: ${account.code}` : (account.phone ? `هاتف: ${account.phone}` : '');
         _el('as-initial').classList.add('hidden');
         _el('as-party-info').classList.remove('hidden');
         _el('as-statement-section').classList.add('hidden');
@@ -203,8 +215,10 @@
         const summary = data.summary || {};
         const transactions = data.transactions || [];
 
-        _el('as-total-debit').textContent = fmt(summary.total_debit);
-        _el('as-total-credit').textContent = fmt(summary.total_credit);
+        const totalDebit = summary.total_debit !== undefined ? summary.total_debit : (summary.total_invoices !== undefined ? summary.total_invoices : 0);
+        const totalCredit = summary.total_credit !== undefined ? summary.total_credit : (summary.total_payments !== undefined ? summary.total_payments : 0);
+        _el('as-total-debit').textContent = fmt(totalDebit);
+        _el('as-total-credit').textContent = fmt(totalCredit);
         _el('as-final-balance').textContent = fmt(summary.balance);
         _el('as-party-balance').textContent = fmt(summary.balance);
 
