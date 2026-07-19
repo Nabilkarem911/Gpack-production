@@ -128,7 +128,6 @@ router.post('/', restrictWrite, validateBody(deliveryNoteCreate), async (req, re
                              client_id = $2
                              OR client_id IS NULL
                              OR client_id IN (SELECT parent_id FROM clients WHERE id = $2)
-                             OR warehouse_id IN (SELECT id FROM warehouses WHERE client_id = $2)
                          )
                          ${warehouse_id ? 'AND warehouse_id = $3' : ''}
                          ORDER BY quantity DESC LIMIT 1`,
@@ -332,7 +331,6 @@ router.post('/:id/dispatch', restrictWrite, validateBody(deliveryNoteDispatch), 
                          client_id = $2
                          OR client_id IS NULL
                          OR client_id IN (SELECT parent_id FROM clients WHERE id = $2)
-                         OR warehouse_id IN (SELECT id FROM warehouses WHERE client_id = $2)
                      )
                      ORDER BY quantity DESC LIMIT 1`,
                     [variantId, dn.client_id]
@@ -551,7 +549,7 @@ router.post('/:id/confirm', restrictWrite, validateBody(deliveryNoteDispatch), a
                 const variantId = itemResult.rows[0].variant_id;
                 if (!variantId) continue;
 
-                // ── Validate: sufficient stock (include parent client's stock + warehouses belonging to client) ──
+                // ── Validate: sufficient stock (include parent client's stock) ──
                 const stockResult = await client.query(
                     `SELECT id, quantity FROM warehouse_stock
                      WHERE variant_id = $1
@@ -559,7 +557,6 @@ router.post('/:id/confirm', restrictWrite, validateBody(deliveryNoteDispatch), a
                          client_id = $2
                          OR client_id IS NULL
                          OR client_id IN (SELECT parent_id FROM clients WHERE id = $2)
-                         OR warehouse_id IN (SELECT id FROM warehouses WHERE client_id = $2)
                      )
                      ORDER BY quantity DESC LIMIT 1`,
                     [variantId, dn.client_id]
@@ -671,7 +668,7 @@ router.post('/:id/reverse', restrictWrite, async (req, res) => {
                 const delQty = parseFloat(item.delivered_qty);
                 if (delQty <= 0) continue;
 
-                // Return stock (include parent client's stock + warehouses belonging to client)
+                // Return stock (include parent client's stock)
                 const stockRes = await client.query(
                     `SELECT id, quantity FROM warehouse_stock
                      WHERE variant_id = $1
@@ -679,7 +676,6 @@ router.post('/:id/reverse', restrictWrite, async (req, res) => {
                          client_id = $2
                          OR client_id IS NULL
                          OR client_id IN (SELECT parent_id FROM clients WHERE id = $2)
-                         OR warehouse_id IN (SELECT id FROM warehouses WHERE client_id = $2)
                      )
                      ORDER BY quantity DESC LIMIT 1`,
                     [item.variant_id, dn.client_id]
