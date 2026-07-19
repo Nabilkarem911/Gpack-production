@@ -1556,7 +1556,38 @@ router.post('/revert-order/:orderId', restrictDelete, async (req, res) => {
             }
         }
 
-        // 3. Archive the order
+        // 3. Revert accounting vouchers (down payment receipts) linked to this order
+        const vouchersRes = await client.query(
+            `SELECT id FROM accounting_vouchers
+             WHERE reference_type = 'order' AND reference_id = $1 AND status = 'posted'`,
+            [orderId]
+        );
+        for (const vRow of vouchersRes.rows) {
+            // Delete voucher lines first
+            await client.query(
+                `DELETE FROM accounting_voucher_lines WHERE voucher_id = $1`,
+                [vRow.id]
+            );
+            // Delete the voucher
+            await client.query(
+                `DELETE FROM accounting_vouchers WHERE id = $1`,
+                [vRow.id]
+            );
+        }
+
+        // 4. Delete client_transactions (payments/discounts) linked to this order
+        await client.query(
+            `DELETE FROM client_transactions WHERE order_id = $1`,
+            [orderId]
+        );
+
+        // 5. Reset paid_amount on the order
+        await client.query(
+            `UPDATE orders SET paid_amount = 0, payment_method = NULL WHERE id = $1`,
+            [orderId]
+        );
+
+        // 6. Archive the order
         const orderRes = await client.query(
             `UPDATE orders SET status = 'archived', updated_at = NOW() WHERE id = $1 RETURNING id, order_number`,
             [orderId]
