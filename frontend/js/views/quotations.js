@@ -471,10 +471,6 @@
             catSelect.innerHTML = '<option value="">— بدون تصنيف —</option>' +
                 _categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
         }
-        const unitSelect = document.getElementById('qs-unit');
-        if (unitSelect) {
-            unitSelect.innerHTML = _buildUnitOptions();
-        }
         const qpUnitSelect = document.getElementById('qp-unit');
         if (qpUnitSelect) {
             qpUnitSelect.innerHTML = _buildUnitOptions();
@@ -522,54 +518,6 @@
             }
         } catch (err) {
             window.showToast(err.message || 'فشل إضافة التصنيف.', 'error');
-        }
-    };
-
-    // ==========================================================================
-    // ── INLINE QUICK ADD: Unit ───────────────────────────────────────────────
-    // ==========================================================================
-    window._quickAddUnitInline = function () {
-        const inline = document.getElementById('qs-unit-inline');
-        if (inline) {
-            inline.classList.remove('hidden');
-            const nameInput = document.getElementById('qs-unit-name');
-            if (nameInput) nameInput.focus();
-        }
-    };
-
-    window._cancelQuickUnitInline = function () {
-        const inline = document.getElementById('qs-unit-inline');
-        if (inline) inline.classList.add('hidden');
-        const nameInput = document.getElementById('qs-unit-name');
-        const abbrInput = document.getElementById('qs-unit-abbr');
-        if (nameInput) nameInput.value = '';
-        if (abbrInput) abbrInput.value = '';
-    };
-
-    window._saveQuickUnitInline = async function () {
-        const nameInput = document.getElementById('qs-unit-name');
-        const abbrInput = document.getElementById('qs-unit-abbr');
-        const nameVal = (nameInput?.value || '').trim();
-        const abbrVal = (abbrInput?.value || '').trim();
-        if (!nameVal) {
-            window.showToast('اسم الوحدة مطلوب.', 'warning');
-            return;
-        }
-        try {
-            const res = await window.apiFetch('/api/units', {
-                method: 'POST',
-                body: { name: nameVal, abbreviation: abbrVal || null },
-            });
-            if (res && res.data) {
-                await _loadUnits();
-                _populateQuickModalDropdowns();
-                const unitSelect = document.getElementById('qs-unit');
-                if (unitSelect) unitSelect.value = res.data.id;
-                window._cancelQuickUnitInline();
-                window.showToast(`تم إضافة الوحدة "${res.data.name}" بنجاح.`, 'success');
-            }
-        } catch (err) {
-            window.showToast(err.message || 'فشل إضافة الوحدة.', 'error');
         }
     };
 
@@ -2715,7 +2663,6 @@
 
         const sizeNameEl = document.getElementById('qs-size-name');
         const sellingEl  = document.getElementById('qs-selling-price');
-        const unitEl     = document.getElementById('qs-unit');
         const prodNameEl = document.getElementById('qs-product-name');
         const prodIdEl   = document.getElementById('qs-product-id');
         const editIdEl   = document.getElementById('quick-size-id');
@@ -2724,7 +2671,6 @@
 
         if (sizeNameEl) sizeNameEl.value   = variant.size_name || '';
         if (sellingEl)  sellingEl.value    = variant.selling_price || '';
-        if (unitEl)     unitEl.value       = variant.unit_id || '';
         if (prodNameEl) prodNameEl.textContent = prod.name || '\u2014';
         if (prodIdEl)   prodIdEl.value     = productId;
         if (editIdEl)   editIdEl.value     = variantId;
@@ -2741,8 +2687,14 @@
         const productId   = document.getElementById('qs-product-id')?.value || '';
         const sizeNameVal = (document.getElementById('qs-size-name')?.value || '').trim();
         const sellingVal  = parseFloat(document.getElementById('qs-selling-price')?.value) || 0;
-        const unitVal     = (document.getElementById('qs-unit')?.value || '').trim();
         const editId      = (document.getElementById('quick-size-id')?.value || '').trim();
+
+        // Inherit unit_id from the product's first variant (unit is product-level, not size-level)
+        const prod = _products.find(p => p.id === productId);
+        let inheritedUnitId = null;
+        if (prod && Array.isArray(prod.variants) && prod.variants.length > 0) {
+            inheritedUnitId = prod.variants[0].unit_id || null;
+        }
         const isEdit      = !!editId;
 
         if (errBox) errBox.classList.add('hidden');
@@ -2772,7 +2724,7 @@
                     body: {
                         size_name:     sizeNameVal,
                         selling_price: sellingVal,
-                        unit_id:       unitVal || null,
+                        unit_id:       inheritedUnitId,
                     },
                 });
             } else {
@@ -2781,7 +2733,7 @@
                     body: {
                         size_name:     sizeNameVal,
                         selling_price: sellingVal,
-                        unit_id:       unitVal || null,
+                        unit_id:       inheritedUnitId,
                     },
                 });
             }
