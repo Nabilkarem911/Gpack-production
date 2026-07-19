@@ -9,11 +9,16 @@
 CREATE SEQUENCE IF NOT EXISTS product_sku_seq START WITH 1 INCREMENT BY 1;
 
 -- 2. Backfill SKUs for products that have NULL sku
---    Order by created_at so oldest products get lowest numbers
-UPDATE products
+--    Use CTE with ROW_NUMBER to ensure deterministic ordering by created_at
+WITH ranked AS (
+    SELECT id, ROW_NUMBER() OVER (ORDER BY created_at ASC) AS rn
+    FROM products
+    WHERE sku IS NULL
+)
+UPDATE products p
 SET sku = 'PRD-' || LPAD(nextval('product_sku_seq')::TEXT, 5, '0')
-WHERE sku IS NULL
-ORDER BY created_at ASC;
+FROM ranked r
+WHERE p.id = r.id;
 
 -- 3. Advance the sequence past any manually-entered PRD-XXXXX SKUs
 --    so future auto-generated SKUs don't collide with existing ones.
