@@ -20,6 +20,7 @@ CREATE SEQUENCE IF NOT EXISTS invoice_number_seq START WITH 4001 INCREMENT BY 1;
 CREATE SEQUENCE IF NOT EXISTS voucher_number_seq START WITH 5001 INCREMENT BY 1;
 CREATE SEQUENCE IF NOT EXISTS purchase_invoice_seq START WITH 6001 INCREMENT BY 1;
 CREATE SEQUENCE IF NOT EXISTS purchase_return_number_seq START WITH 7001 INCREMENT BY 1;
+CREATE SEQUENCE IF NOT EXISTS product_sku_seq START WITH 1 INCREMENT BY 1;
 
 -- =============================================================================
 -- TABLE: roles

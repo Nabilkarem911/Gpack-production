@@ -372,6 +372,15 @@ router.post('/', restrictWrite, validateBody(productCreate), async (req, res) =>
 
     try {
         const result = await db.withTransaction(async (client) => {
+            // Auto-generate SKU if not provided
+            let finalSku = sku || null;
+            if (!finalSku) {
+                const skuRes = await client.query(
+                    `SELECT 'PRD-' || LPAD(nextval('product_sku_seq')::TEXT, 5, '0') AS generated_sku`
+                );
+                finalSku = skuRes.rows[0].generated_sku;
+            }
+
             // Insert the parent product
             const productInsert = await client.query(
                 `INSERT INTO products (name, description, category_id, sku, barcode, status, created_by)
@@ -381,7 +390,7 @@ router.post('/', restrictWrite, validateBody(productCreate), async (req, res) =>
                     name.trim(),
                     description || null,
                     category_id || null,
-                    sku || null,
+                    finalSku,
                     barcode || null,
                     status || 'active',
                     req.user?.id || null,

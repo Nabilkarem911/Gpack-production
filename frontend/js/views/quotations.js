@@ -478,6 +478,98 @@
     }
 
     // ==========================================================================
+    // ── INLINE QUICK ADD: Category ───────────────────────────────────────────
+    // ==========================================================================
+    window._quickAddCategoryInline = function () {
+        const inline = document.getElementById('qp-category-inline');
+        if (inline) {
+            inline.classList.remove('hidden');
+            const nameInput = document.getElementById('qp-category-name');
+            if (nameInput) nameInput.focus();
+        }
+    };
+
+    window._cancelQuickCategoryInline = function () {
+        const inline = document.getElementById('qp-category-inline');
+        if (inline) inline.classList.add('hidden');
+        const nameInput = document.getElementById('qp-category-name');
+        if (nameInput) nameInput.value = '';
+    };
+
+    window._saveQuickCategoryInline = async function () {
+        const nameInput = document.getElementById('qp-category-name');
+        const nameVal = (nameInput?.value || '').trim();
+        if (!nameVal) {
+            window.showToast('اسم التصنيف مطلوب.', 'warning');
+            return;
+        }
+        try {
+            const res = await window.apiFetch('/api/categories', {
+                method: 'POST',
+                body: { name: nameVal },
+            });
+            if (res && res.data) {
+                await _loadCategories();
+                _populateQuickModalDropdowns();
+                const catSelect = document.getElementById('qp-category');
+                if (catSelect) catSelect.value = res.data.id;
+                window._cancelQuickCategoryInline();
+                window.showToast(`تم إضافة التصنيف "${res.data.name}" بنجاح.`, 'success');
+            }
+        } catch (err) {
+            window.showToast(err.message || 'فشل إضافة التصنيف.', 'error');
+        }
+    };
+
+    // ==========================================================================
+    // ── INLINE QUICK ADD: Unit ───────────────────────────────────────────────
+    // ==========================================================================
+    window._quickAddUnitInline = function () {
+        const inline = document.getElementById('qs-unit-inline');
+        if (inline) {
+            inline.classList.remove('hidden');
+            const nameInput = document.getElementById('qs-unit-name');
+            if (nameInput) nameInput.focus();
+        }
+    };
+
+    window._cancelQuickUnitInline = function () {
+        const inline = document.getElementById('qs-unit-inline');
+        if (inline) inline.classList.add('hidden');
+        const nameInput = document.getElementById('qs-unit-name');
+        const abbrInput = document.getElementById('qs-unit-abbr');
+        if (nameInput) nameInput.value = '';
+        if (abbrInput) abbrInput.value = '';
+    };
+
+    window._saveQuickUnitInline = async function () {
+        const nameInput = document.getElementById('qs-unit-name');
+        const abbrInput = document.getElementById('qs-unit-abbr');
+        const nameVal = (nameInput?.value || '').trim();
+        const abbrVal = (abbrInput?.value || '').trim();
+        if (!nameVal) {
+            window.showToast('اسم الوحدة مطلوب.', 'warning');
+            return;
+        }
+        try {
+            const res = await window.apiFetch('/api/units', {
+                method: 'POST',
+                body: { name: nameVal, abbreviation: abbrVal || null },
+            });
+            if (res && res.data) {
+                await _loadUnits();
+                _populateQuickModalDropdowns();
+                const unitSelect = document.getElementById('qs-unit');
+                if (unitSelect) unitSelect.value = res.data.id;
+                window._cancelQuickUnitInline();
+                window.showToast(`تم إضافة الوحدة "${res.data.name}" بنجاح.`, 'success');
+            }
+        } catch (err) {
+            window.showToast(err.message || 'فشل إضافة الوحدة.', 'error');
+        }
+    };
+
+    // ==========================================================================
     // _buildCategoryOptions() — Returns <option> HTML for category dropdown
     // ==========================================================================
     function _buildCategoryOptions() {
