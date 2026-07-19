@@ -964,10 +964,22 @@
             </div>
 
             <div>
-                <label for="qp-sku" class="block text-xs font-semibold text-slate-600 mb-1.5">
-                    SKU (اختياري)
+                <label for="qp-category" class="block text-xs font-semibold text-slate-600 mb-1.5">
+                    التصنيف
                 </label>
-                <input type="text" id="qp-sku" placeholder="رمز المنتج"
+                <select id="qp-category"
+                        class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                               text-slate-800 outline-none focus:border-brand-500
+                               focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all appearance-none">
+                    <option value="">— بدون تصنيف —</option>
+                </select>
+            </div>
+
+            <div>
+                <label for="qp-sku" class="block text-xs font-semibold text-slate-600 mb-1.5">
+                    SKU / رقم الصنف (اختياري)
+                </label>
+                <input type="text" id="qp-sku" placeholder="رمز أو رقم المنتج"
                        class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
                               text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
                               focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all" />
@@ -1046,6 +1058,18 @@
                        class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
                               text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
                               focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all" />
+            </div>
+
+            <div>
+                <label for="qs-unit" class="block text-xs font-semibold text-slate-600 mb-1.5">
+                    وحدة القياس
+                </label>
+                <select id="qs-unit"
+                        class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm
+                               text-slate-800 outline-none focus:border-brand-500
+                               focus:ring-2 focus:ring-brand-500/20 focus:bg-white transition-all appearance-none">
+                    <option value="">— بدون وحدة —</option>
+                </select>
             </div>
 
             <div>
@@ -1381,4 +1405,4 @@
 </div>
 
 <!-- Load the view controller -->
-<script src="/js/views/quotations.js?v=20260512b"></script>
+<script src="/js/views/quotations.js?v=20260719b"></script>

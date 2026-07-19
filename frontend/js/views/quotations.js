@@ -16,6 +16,7 @@
     let _clients       = [];    // loaded once from /api/clients
     let _products      = [];    // loaded once from /api/products?include_variants=true
     let _categories    = [];    // loaded once from /api/categories
+    let _units         = [];    // loaded once from /api/units
     let _editingId     = null;  // null = add mode, UUID = edit mode
     let _convertingId  = null;  // order id currently in convert modal
     let _rowCounter    = 0;     // unique key for each dynamic item row
@@ -436,6 +437,43 @@
             _categories = (res && res.data) ? res.data : [];
         } catch (_) {
             _categories = [];
+        }
+    }
+
+    // ==========================================================================
+    // _loadUnits() — loads measurement units for quick size modal
+    // ==========================================================================
+    async function _loadUnits() {
+        try {
+            const res = await window.apiFetch('/api/units');
+            _units = (res && res.data) ? res.data : [];
+        } catch (_) {
+            _units = [];
+        }
+    }
+
+    // ==========================================================================
+    // _buildUnitOptions() — Returns <option> HTML for unit dropdown
+    // ==========================================================================
+    function _buildUnitOptions() {
+        return '<option value="">— بدون وحدة —</option>' +
+            _units.map(u =>
+                `<option value="${u.id}">${u.name}${u.abbreviation ? ' (' + u.abbreviation + ')' : ''}</option>`
+            ).join('');
+    }
+
+    // ==========================================================================
+    // _populateQuickModalDropdowns() — fills category & unit selects in modals
+    // ==========================================================================
+    function _populateQuickModalDropdowns() {
+        const catSelect = document.getElementById('qp-category');
+        if (catSelect) {
+            catSelect.innerHTML = '<option value="">— بدون تصنيف —</option>' +
+                _categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+        }
+        const unitSelect = document.getElementById('qs-unit');
+        if (unitSelect) {
+            unitSelect.innerHTML = _buildUnitOptions();
         }
     }
 
@@ -2327,12 +2365,14 @@
 
         const nameEl    = document.getElementById('qp-name');
         const skuEl     = document.getElementById('qp-sku');
+        const catEl     = document.getElementById('qp-category');
         const editIdEl  = document.getElementById('quick-product-id');
         const titleEl   = document.querySelector('#quick-product-modal h2');
         const submitBtn = document.getElementById('quick-product-submit-btn');
 
         if (nameEl)    nameEl.value   = prod.name || '';
         if (skuEl)     skuEl.value    = prod.sku || '';
+        if (catEl)     catEl.value    = prod.category_id || '';
         if (editIdEl)  editIdEl.value = productId;
         if (titleEl)   titleEl.textContent = '\u062a\u0639\u062f\u064a\u0644 \u0627\u0644\u0645\u0646\u062a\u062c';
         if (submitBtn) submitBtn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i><span>\u062d\u0641\u0638 \u0627\u0644\u062a\u0639\u062f\u064a\u0644\u0627\u062a</span>';
@@ -2364,18 +2404,20 @@
 
         try {
             let res;
+            const categoryVal = (document.getElementById('qp-category')?.value || '').trim();
             if (isEdit) {
                 res = await window.apiFetch(`/api/products/${editId}`, {
                     method: 'PUT',
-                    body: { name: nameVal, sku: skuVal || null },
+                    body: { name: nameVal, sku: skuVal || null, category_id: categoryVal || null },
                 });
             } else {
                 res = await window.apiFetch('/api/products', {
                     method: 'POST',
                     body: {
-                        name:   nameVal,
-                        sku:    skuVal || null,
-                        status: 'active',
+                        name:        nameVal,
+                        sku:         skuVal || null,
+                        category_id: categoryVal || null,
+                        status:      'active',
                         variants: [{
                             size_name:     '\u0627\u0641\u062a\u0631\u0627\u0636\u064a',
                             selling_price: 0,
@@ -2520,6 +2562,7 @@
 
         const sizeNameEl = document.getElementById('qs-size-name');
         const sellingEl  = document.getElementById('qs-selling-price');
+        const unitEl     = document.getElementById('qs-unit');
         const prodNameEl = document.getElementById('qs-product-name');
         const prodIdEl   = document.getElementById('qs-product-id');
         const editIdEl   = document.getElementById('quick-size-id');
@@ -2528,6 +2571,7 @@
 
         if (sizeNameEl) sizeNameEl.value   = variant.size_name || '';
         if (sellingEl)  sellingEl.value    = variant.selling_price || '';
+        if (unitEl)     unitEl.value       = variant.unit_id || '';
         if (prodNameEl) prodNameEl.textContent = prod.name || '\u2014';
         if (prodIdEl)   prodIdEl.value     = productId;
         if (editIdEl)   editIdEl.value     = variantId;
@@ -2544,6 +2588,7 @@
         const productId   = document.getElementById('qs-product-id')?.value || '';
         const sizeNameVal = (document.getElementById('qs-size-name')?.value || '').trim();
         const sellingVal  = parseFloat(document.getElementById('qs-selling-price')?.value) || 0;
+        const unitVal     = (document.getElementById('qs-unit')?.value || '').trim();
         const editId      = (document.getElementById('quick-size-id')?.value || '').trim();
         const isEdit      = !!editId;
 
@@ -2574,6 +2619,7 @@
                     body: {
                         size_name:     sizeNameVal,
                         selling_price: sellingVal,
+                        unit_id:       unitVal || null,
                     },
                 });
             } else {
@@ -2582,6 +2628,7 @@
                     body: {
                         size_name:     sizeNameVal,
                         selling_price: sellingVal,
+                        unit_id:       unitVal || null,
                     },
                 });
             }
@@ -3222,9 +3269,11 @@
             _loadClients(),
             _loadProducts(),
             _loadCategories(),
+            _loadUnits(),
             _loadTerms(),
             loadQuotes(),
         ]);
+        _populateQuickModalDropdowns();
         if (window.isViewActive && !window.isViewActive(_myToken)) return;
     }
 
