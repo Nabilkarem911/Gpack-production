@@ -1767,6 +1767,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
     }
 
     function _closeDesignUpload() {
+        _bulkDesignTargetId = null;
         _hideModal('po-design-upload-modal');
     }
 
@@ -1841,6 +1842,12 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
 
             // Log for debugging
             console.log('[Upload] Design response:', design);
+
+            // If called from bulk assign modal, route to bulk handler
+            if (_bulkDesignTargetId) {
+                _bulkOnDesignUploaded(design?.id || '', name, design?.thumbnail_url || '');
+                return;
+            }
 
             // Update assignment with new design
             _setVal('assign-selected-design-id', design?.id || '');
@@ -2816,8 +2823,13 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
                         </div>
                         <button onclick="window.poView.bulkSelectDesign('${i.id}')"
                                 class="shrink-0 px-2.5 py-1.5 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-lg text-xs font-bold text-purple-700 transition-all"
-                                title="اختيار تصميم">
+                                title="اختيار تصميم من المكتبة">
                             <i class="fa-solid fa-images"></i>
+                        </button>
+                        <button onclick="window.poView.bulkUploadDesign('${i.id}')"
+                                class="shrink-0 px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg text-xs font-bold text-emerald-700 transition-all"
+                                title="رفع تصميم جديد">
+                            <i class="fa-solid fa-upload"></i>
                         </button>
                     </div>
                 </div>`;
@@ -2834,8 +2846,6 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         const notesEl    = _el('bulk-notes');
         if (deliveryEl) deliveryEl.value = '';
         if (notesEl)    notesEl.value    = '';
-        const defaultRadio = document.querySelector('input[name="bulk-design-status"][value="new"]');
-        if (defaultRadio) defaultRadio.checked = true;
 
         _showModal('po-bulk-assign-modal');
     }
@@ -2884,18 +2894,49 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         }
     }
 
+    function _bulkUploadDesign(itemId) {
+        const item = _bulkSelected[itemId];
+        if (!item) return;
+        const clientId = _hubOrder?.client_id || _hubOrder?.client?.id;
+        if (!clientId) { _toast('لا يوجد عميل مرتبط', 'error'); return; }
+
+        _currentAssignItem = {
+            id: item.id,
+            variant_id: item.variantId,
+            client_id: clientId,
+        };
+
+        _bulkDesignTargetId = itemId;
+        _setVal('upload-design-client-id', clientId);
+        _setVal('upload-design-name', '');
+        _clearDesignFile();
+        _showModal('po-design-upload-modal');
+    }
+
+    function _bulkOnDesignUploaded(designId, designName, thumbnailUrl) {
+        if (_bulkDesignTargetId && _bulkSelected[_bulkDesignTargetId]) {
+            _bulkSelected[_bulkDesignTargetId].designId = designId;
+            _bulkSelected[_bulkDesignTargetId].designName = designName;
+            _bulkSelected[_bulkDesignTargetId].designThumb = thumbnailUrl || '';
+            _bulkSelected[_bulkDesignTargetId].designStatus = 'new';
+            _bulkDesignTargetId = null;
+            _hideModal('po-design-upload-modal');
+            _openBulkAssignModal();
+            _toast('تم رفع التصميم');
+        }
+    }
+
     async function _saveBulkAssignment() {
         const supplierId  = (_el('bulk-supplier-select')   || {}).value;
         const expDelivery = (_el('bulk-expected-delivery') || {}).value;
         const notes       = (_el('bulk-notes')             || {}).value;
-        const defaultDesignStatus = (document.querySelector('input[name="bulk-design-status"]:checked') || {}).value || 'new';
 
         if (!supplierId) { _toast('اختر المورد', 'error'); return; }
 
         const items = Object.values(_bulkSelected).map(i => ({
             order_item_id: i.id,
             quantity:      i.qty - i.assigned,
-            design_status: i.designId ? (i.designStatus || 'reprint') : defaultDesignStatus,
+            design_status: i.designStatus || 'new',
             design_id:     i.designId || null,
         }));
 
@@ -3020,6 +3061,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         closeBulkAssignModal: () => _hideModal('po-bulk-assign-modal'),
         saveBulkAssignment:   _saveBulkAssignment,
         bulkSelectDesign:     _bulkSelectDesign,
+        bulkUploadDesign:     _bulkUploadDesign,
         openInvoiceModal:   _openInvoiceModal,
         closeInvoiceModal:  () => { _resetInvoiceModal(); _hideModal('po-invoice-modal'); },
         onInvoiceTypeChange: _renderInvoiceItems,
