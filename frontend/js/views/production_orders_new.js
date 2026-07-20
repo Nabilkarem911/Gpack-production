@@ -17,7 +17,8 @@
     let _hubMOs       = [];
     let _activeHubTab = 'items';
     let _invoicePrevPaid = 0;
-    let _bulkSelected = {}; // { [itemId]: { id, name, qty, assigned } }
+    let _bulkSelected = {}; // { [itemId]: { id, name, qty, assigned, designId, designName, designThumb, designStatus, variantId } }
+    let _bulkDesignTargetId = null;
 
     const DESIGN_IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'svg', 'gif', 'webp', 'bmp', 'tif', 'tiff']);
     const DESIGN_PDF_EXTENSIONS   = new Set(['pdf']);
@@ -501,11 +502,15 @@
                     const qty       = parseFloat(item.quantity             || 0);
                     const canAssign = qty > assigned;
                     const safeName  = ((item.product_name || '') + ' ' + (item.size_name || '')).trim().replace(/'/g, "\\'");
-                    const designId  = item.design_id || '';
+                    const designId    = item.design_id || '';
+                    const designName  = item.design_name || '';
+                    const designThumb = item.design_thumbnail || '';
+                    const designStat  = item.design_status || 'new';
+                    const variantId   = item.variant_id || item.product_variant_id || '';
                     return `<tr class="border-b border-slate-50 hover:bg-slate-50/40">
                         <td class="py-2.5 px-3">
                             ${canAssign
-                                ? `<input type="checkbox" data-item-id="${item.id}" data-item-name="${safeName}" data-item-qty="${qty}" data-item-assigned="${assigned}" data-design-id="${designId}"
+                                ? `<input type="checkbox" data-item-id="${item.id}" data-item-name="${safeName}" data-item-qty="${qty}" data-item-assigned="${assigned}" data-design-id="${designId}" data-design-name="${designName}" data-design-thumb="${designThumb}" data-design-status="${designStat}" data-variant-id="${variantId}"
                                           onchange="window.poView.toggleItemCheck(this)"
                                           class="w-4 h-4 rounded accent-purple-600 cursor-pointer">`
                                 : `<span class="block w-4 h-4"></span>`
@@ -1669,6 +1674,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
     }
 
     function _closeDesignSelector() {
+        _bulkDesignTargetId = null;
         _hideModal('po-design-selector-modal');
     }
 
@@ -1710,6 +1716,12 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
     }
 
     function _selectDesign(designId, designName, thumbnail, extension) {
+        // If called from bulk assign modal, route to bulk handler
+        if (_bulkDesignTargetId) {
+            _bulkOnDesignSelected(designId, designName, thumbnail);
+            return;
+        }
+
         // Update hidden input
         _setVal('assign-selected-design-id', designId);
 
@@ -2701,6 +2713,12 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
     function _showModal(id) { const e = _el(id); if (e) e.classList.remove('hidden'); }
     function _hideModal(id) { const e = _el(id); if (e) e.classList.add('hidden'); }
 
+    function _isDesignImage(url) {
+        if (!url) return false;
+        const ext = _getFileExt(url).toLowerCase();
+        return DESIGN_IMAGE_EXTENSIONS.has(ext);
+    }
+
     // ── Bulk Assign ────────────────────────────────────────────────────────────
     function _updateBulkBtn() {
         const count = Object.keys(_bulkSelected).length;
@@ -2718,13 +2736,17 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
     }
 
     function _toggleItemCheck(cb) {
-        const id       = cb.dataset.itemId;
-        const name     = cb.dataset.itemName;
-        const qty      = parseFloat(cb.dataset.itemQty);
-        const assigned = parseFloat(cb.dataset.itemAssigned);
-        const designId = cb.dataset.designId || null;
+        const id           = cb.dataset.itemId;
+        const name         = cb.dataset.itemName;
+        const qty          = parseFloat(cb.dataset.itemQty);
+        const assigned     = parseFloat(cb.dataset.itemAssigned);
+        const designId     = cb.dataset.designId || null;
+        const designName   = cb.dataset.designName || '';
+        const designThumb  = cb.dataset.designThumb || '';
+        const designStatus = cb.dataset.designStatus || 'new';
+        const variantId    = cb.dataset.variantId || '';
         if (cb.checked) {
-            _bulkSelected[id] = { id, name, qty, assigned, designId };
+            _bulkSelected[id] = { id, name, qty, assigned, designId, designName, designThumb, designStatus, variantId };
         } else {
             delete _bulkSelected[id];
         }
@@ -2743,11 +2765,15 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
             cb.checked = checked;
             if (checked) {
                 _bulkSelected[cb.dataset.itemId] = {
-                    id:       cb.dataset.itemId,
-                    name:     cb.dataset.itemName,
-                    qty:      parseFloat(cb.dataset.itemQty),
-                    assigned: parseFloat(cb.dataset.itemAssigned),
-                    designId: cb.dataset.designId || null,
+                    id:           cb.dataset.itemId,
+                    name:         cb.dataset.itemName,
+                    qty:          parseFloat(cb.dataset.itemQty),
+                    assigned:     parseFloat(cb.dataset.itemAssigned),
+                    designId:     cb.dataset.designId || null,
+                    designName:   cb.dataset.designName || '',
+                    designThumb:  cb.dataset.designThumb || '',
+                    designStatus: cb.dataset.designStatus || 'new',
+                    variantId:    cb.dataset.variantId || '',
                 };
             }
         });
@@ -2762,9 +2788,38 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         if (summaryEl) {
             summaryEl.innerHTML = items.map(i => {
                 const available = i.qty - i.assigned;
-                return `<div class="flex items-center justify-between px-3 py-2.5 text-sm">
-                    <span class="font-semibold text-slate-800">${i.name}</span>
-                    <span class="text-xs text-purple-600 font-bold bg-purple-50 px-2 py-0.5 rounded-full">${available} وحدة</span>
+                const hasDesign = !!i.designId;
+                const thumbUrl = i.designThumb || '';
+                const isImage = thumbUrl && _isDesignImage(thumbUrl);
+                const designBadge = hasDesign
+                    ? `<span class="text-xs font-bold px-2 py-0.5 rounded-full ${i.designStatus === 'new' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}">${i.designStatus === 'new' ? 'تصميم جديد' : 'إعادة طباعة'}</span>`
+                    : '<span class="text-xs font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">لا يوجد تصميم</span>';
+
+                const thumbMarkup = hasDesign && isImage
+                    ? `<img src="${thumbUrl}" alt="design" class="w-10 h-10 rounded-lg object-cover border border-slate-200">`
+                    : hasDesign
+                        ? '<div class="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center border border-slate-200"><i class="fa-solid fa-file-image text-slate-400 text-sm"></i></div>'
+                        : '<div class="w-10 h-10 rounded-lg bg-slate-50 flex items-center justify-center border border-dashed border-slate-300"><i class="fa-solid fa-image text-slate-300 text-sm"></i></div>';
+
+                return `<div class="px-3 py-2.5">
+                    <div class="flex items-center gap-3">
+                        ${thumbMarkup}
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2">
+                                <span class="font-semibold text-slate-800 text-sm truncate">${i.name}</span>
+                                <span class="text-xs text-purple-600 font-bold bg-purple-50 px-2 py-0.5 rounded-full shrink-0">${available} وحدة</span>
+                            </div>
+                            <div class="flex items-center gap-2 mt-1">
+                                ${designBadge}
+                                ${hasDesign && i.designName ? `<span class="text-xs text-slate-500 truncate">${i.designName}</span>` : ''}
+                            </div>
+                        </div>
+                        <button onclick="window.poView.bulkSelectDesign('${i.id}')"
+                                class="shrink-0 px-2.5 py-1.5 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-lg text-xs font-bold text-purple-700 transition-all"
+                                title="اختيار تصميم">
+                            <i class="fa-solid fa-images"></i>
+                        </button>
+                    </div>
                 </div>`;
             }).join('');
         }
@@ -2785,18 +2840,62 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         _showModal('po-bulk-assign-modal');
     }
 
+    async function _bulkSelectDesign(itemId) {
+        const item = _bulkSelected[itemId];
+        if (!item) return;
+        const clientId = _hubOrder?.client_id || _hubOrder?.client?.id;
+        if (!clientId) { _toast('لا يوجد عميل مرتبط', 'error'); return; }
+
+        _currentAssignItem = {
+            id: item.id,
+            variant_id: item.variantId,
+            client_id: clientId,
+            design_id: item.designId,
+            design_name: item.designName,
+            design_thumbnail: item.designThumb,
+            design_status: item.designStatus,
+        };
+
+        _bulkDesignTargetId = itemId;
+        _showModal('po-design-selector-modal');
+        _setVal('design-search', '');
+        document.getElementById('design-selector-list').innerHTML = '<p class="text-center text-slate-400 py-4">جاري تحميل التصاميم...</p>';
+
+        try {
+            const variantId = item.variantId;
+            const res = await window.apiFetch(`/api/client-designs?client_id=${clientId}&variant_id=${variantId}`);
+            _clientDesigns = res?.data || [];
+            _renderDesignList(_clientDesigns);
+        } catch (err) {
+            document.getElementById('design-selector-list').innerHTML = '<p class="text-center text-red-400 py-4">فشل تحميل التصاميم</p>';
+        }
+    }
+
+    function _bulkOnDesignSelected(designId, designName, thumbnailUrl) {
+        if (_bulkDesignTargetId && _bulkSelected[_bulkDesignTargetId]) {
+            _bulkSelected[_bulkDesignTargetId].designId = designId;
+            _bulkSelected[_bulkDesignTargetId].designName = designName;
+            _bulkSelected[_bulkDesignTargetId].designThumb = thumbnailUrl || '';
+            _bulkSelected[_bulkDesignTargetId].designStatus = 'reprint';
+            _bulkDesignTargetId = null;
+            _closeDesignSelector();
+            _openBulkAssignModal();
+            _toast('تم اختيار التصميم');
+        }
+    }
+
     async function _saveBulkAssignment() {
         const supplierId  = (_el('bulk-supplier-select')   || {}).value;
         const expDelivery = (_el('bulk-expected-delivery') || {}).value;
         const notes       = (_el('bulk-notes')             || {}).value;
-        const designStatus = (document.querySelector('input[name="bulk-design-status"]:checked') || {}).value || 'new';
+        const defaultDesignStatus = (document.querySelector('input[name="bulk-design-status"]:checked') || {}).value || 'new';
 
         if (!supplierId) { _toast('اختر المورد', 'error'); return; }
 
         const items = Object.values(_bulkSelected).map(i => ({
             order_item_id: i.id,
             quantity:      i.qty - i.assigned,
-            design_status: designStatus,
+            design_status: i.designId ? (i.designStatus || 'reprint') : defaultDesignStatus,
             design_id:     i.designId || null,
         }));
 
@@ -2920,6 +3019,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         openBulkAssignModal:  _openBulkAssignModal,
         closeBulkAssignModal: () => _hideModal('po-bulk-assign-modal'),
         saveBulkAssignment:   _saveBulkAssignment,
+        bulkSelectDesign:     _bulkSelectDesign,
         openInvoiceModal:   _openInvoiceModal,
         closeInvoiceModal:  () => { _resetInvoiceModal(); _hideModal('po-invoice-modal'); },
         onInvoiceTypeChange: _renderInvoiceItems,
