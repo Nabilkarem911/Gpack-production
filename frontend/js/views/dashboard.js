@@ -59,6 +59,11 @@ var dashboardView = {
         // Pending Pricing: checked internally by permission helper
         loaders.push(this._loadPendingPricing());
 
+        // Unassigned Production Orders: admin/warehouse only
+        if (isAdmin || isWarehouse) {
+            loaders.push(this._loadUnassignedProduction());
+        }
+
         await Promise.all(loaders);
         if (window.isViewActive && !window.isViewActive(_myToken)) return;
     },
@@ -664,6 +669,56 @@ var dashboardView = {
                     <button onclick="dashboardView._openPricingListModal()" 
                             class="px-4 py-2 bg-white text-slate-800 rounded-lg font-medium hover:bg-slate-100 transition-colors">
                         تسعير الآن
+                    </button>
+                </div>
+            </div>
+        `;
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Load Unassigned Production Orders (production orders with no manufacturer orders)
+    // ─────────────────────────────────────────────────────────────────────────
+    async _loadUnassignedProduction() {
+        try {
+            const response = await apiFetch('/api/dashboard/unassigned-production');
+            this.unassignedProduction = response.data || [];
+            this._renderUnassignedProductionBanner();
+        } catch (error) {
+            console.error('[Dashboard] Failed to load unassigned production:', error);
+            this.unassignedProduction = [];
+        }
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Render Unassigned Production Alert Banner
+    // ─────────────────────────────────────────────────────────────────────────
+    _renderUnassignedProductionBanner() {
+        const container = document.getElementById('unassigned-production-banner');
+        if (!container) return;
+
+        const count = this.unassignedProduction.length;
+        if (count === 0) {
+            container.innerHTML = '';
+            return;
+        }
+
+        const oldestDays = Math.max(...this.unassignedProduction.map(o => o.days_pending || 0));
+
+        container.innerHTML = `
+            <div class="bg-orange-500 rounded-2xl p-4 mb-6 text-white shadow-lg shadow-orange-200">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
+                            <i class="fa-solid fa-industry text-xl"></i>
+                        </div>
+                        <div>
+                            <h4 class="font-bold text-lg">${count} أمر تشغيل بحاجة إسناد لمورد</h4>
+                            <p class="text-white/80 text-sm">أوامر إنتاج لم يتم إنشاء أوامر تشغيل (PO) لها بعد${oldestDays > 0 ? ` — أقدمها منذ ${oldestDays} يوم` : ''}</p>
+                        </div>
+                    </div>
+                    <button onclick="window.navigateTo('production-orders-new')"
+                            class="px-4 py-2 bg-white text-slate-800 rounded-lg font-medium hover:bg-slate-100 transition-colors">
+                        إسناد الآن
                     </button>
                 </div>
             </div>

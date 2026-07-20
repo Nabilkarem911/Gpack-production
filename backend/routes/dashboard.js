@@ -701,4 +701,63 @@ router.get('/pending-pricing/:id', authenticate, authorize(['admin', 'manager', 
     }
 });
 
+// =============================================================================
+// GET /api/dashboard/unassigned-production
+// Returns production orders (status='production') that have items with no
+// manufacturer order assigned yet (manufacturer_po_qty IS NULL or 0).
+// Visible to admin/manager/warehouse only.
+// =============================================================================
+
+router.get('/unassigned-production', authenticate, async (req, res) => {
+    try {
+        const { isAdmin, isWarehouse, isSalesRep } = _getRoleInfo(req);
+        if (isSalesRep) {
+            return success(res, []);
+        }
+
+        const result = await db.query(
+            `SELECT
+                o.id,
+                o.order_number,
+                o.order_date,
+                o.created_at,
+                c.name AS client_name,
+                u.name AS created_by_name,
+                COUNT(oi.id) AS total_items,
+                COUNT(CASE WHEN COALESCE(oi.manufacturer_po_qty, 0) = 0 THEN 1 END) AS unassigned_items,
+                EXTRACT(DAY FROM NOW() - o.created_at) AS days_pending
+             FROM orders o
+             JOIN clients c ON o.client_id = c.id
+             LEFT JOIN users u ON o.created_by = u.id
+             JOIN order_items oi ON oi.order_id = o.id
+             WHERE o.status = 'production'
+               AND NOT EXISTS (
+                   SELECT 1 FROM manufacturer_orders mo
+                   WHERE mo.order_id = o.id
+                     AND mo.status != 'cancelled'
+               )
+             GROUP BY o.id, o.order_number, o.order_date, o.created_at,
+                      c.name, u.name
+             ORDER BY o.created_at ASC`
+        );
+
+        const pending = result.rows.map(row => ({
+            id: row.id,
+            order_number: row.order_number,
+            order_date: row.order_date,
+            created_at: row.created_at,
+            client_name: row.client_name,
+            created_by_name: row.created_by_name,
+            total_items: parseInt(row.total_items),
+            unassigned_items: parseInt(row.unassigned_items),
+            days_pending: Math.floor(parseFloat(row.days_pending || 0))
+        }));
+
+        return success(res, pending);
+    } catch (err) {
+        console.error('Unassigned production error:', err);
+        return res.status(500).json({ error: 'فشل في تحميل أوامر التشغيل غير المسندة' });
+    }
+});
+
 module.exports = router;
