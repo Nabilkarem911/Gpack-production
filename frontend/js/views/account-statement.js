@@ -13,6 +13,7 @@
     let _accountsTree = { parents: [], children: [] };
     let _selectedParent = null;
     let _selectedChild = null;
+    let _lastStatementData = null;
 
     const _typeLabels = {
         'asset': 'أصول',
@@ -196,8 +197,17 @@
             }
 
             const res = await window.apiFetch(url);
+            _lastStatementData = res;
             _renderAccountInfo(res.account || res.client || res.supplier);
             _renderStatement(res);
+
+            // Enable print button always, share button only for clients
+            const printBtn = _el('as-print-btn');
+            const shareBtn = _el('as-share-btn');
+            if (printBtn) printBtn.disabled = false;
+            if (shareBtn) {
+                shareBtn.disabled = !(subType === 'client' && subId);
+            }
         } catch (err) {
             alert('خطأ في تحميل كشف الحساب: ' + err.message);
         }
@@ -291,6 +301,137 @@
         if (balance < 0) return 'text-emerald-600';
         return 'text-slate-600';
     }
+
+    // ── Print Statement ─────────────────────────────────────────────────────────
+    window.asPrintStatement = async function() {
+        if (!_lastStatementData) return;
+        const data = _lastStatementData;
+        const account = data.account || data.client || data.supplier;
+        const summary = data.summary || {};
+        const transactions = data.transactions || [];
+        const fromDate = _el('as-from-date').value;
+        const toDate = _el('as-to-date').value;
+
+        let logoBase64 = null;
+        try {
+            const res = await fetch('/images/logo.png');
+            if (res.ok) {
+                const blob = await res.blob();
+                logoBase64 = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result);
+                    reader.onerror = () => reject(new Error('logo decode failed'));
+                    reader.readAsDataURL(blob);
+                });
+            }
+        } catch (e) { /* logo optional */ }
+
+        const totalDebit = summary.total_debit !== undefined ? summary.total_debit : (summary.total_invoices !== undefined ? summary.total_invoices : 0);
+        const totalCredit = summary.total_credit !== undefined ? summary.total_credit : (summary.total_payments !== undefined ? summary.total_payments : 0);
+
+        const rowsHTML = transactions.map((t, i) => {
+            const debit = parseFloat(t.debit || 0);
+            const credit = parseFloat(t.credit || 0);
+            const balance = parseFloat(t.running_balance || 0);
+            return `<tr>
+                <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:right;color:#64748b;font-size:12px">${new Date(t.trans_date).toLocaleDateString('en-GB')}</td>
+                <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600;color:#1e293b;font-size:12px">${esc(t.document_type)}</td>
+                <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:right;font-family:monospace;font-weight:700;color:#334155;font-size:12px">#${esc(t.document_number)}</td>
+                <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:center;font-weight:700;color:${debit > 0 ? '#dc2626' : '#cbd5e1'};font-size:12px">${debit > 0 ? fmt(debit) : '-'}</td>
+                <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:center;font-weight:700;color:${credit > 0 ? '#059669' : '#cbd5e1'};font-size:12px">${credit > 0 ? fmt(credit) : '-'}</td>
+                <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:center;font-weight:800;color:${balance > 0 ? '#dc2626' : balance < 0 ? '#059669' : '#64748b'};font-size:12px">${fmt(balance)}</td>
+                <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-size:11px;color:#94a3b8">${esc(t.notes || '')}</td>
+            </tr>`;
+        }).join('');
+
+        const html = `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="UTF-8"><title>كشف حساب — ${esc(account.name || '')}</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;background:#fff;color:#1e293b;padding:30px;direction:rtl}
+@media print{body{padding:15px}.no-print{display:none!important}@page{margin:15mm}}
+.doc-container{max-width:800px;margin:0 auto}
+.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:28px;padding-bottom:18px;border-bottom:3px solid #4b0082}
+.logo-section{display:flex;align-items:center;gap:12px}
+.logo-section img{width:58px;height:58px;object-fit:contain}
+.logo-text h1{font-size:24px;font-weight:900;color:#4b0082;margin-bottom:4px}
+.logo-text p{font-size:12px;color:#64748b}
+.doc-meta{text-align:left}
+.doc-meta .doc-title{font-size:20px;font-weight:900;color:#1e293b}
+.doc-meta .doc-date{font-size:12px;color:#64748b;margin-top:4px}
+.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;background:#faf5ff;border-radius:12px;padding:20px;border:1px solid #e9d5ff}
+.info-item label{font-size:11px;color:#64748b;display:block;margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px}
+.info-item span{font-weight:700;font-size:14px;color:#1e293b}
+.summary-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:24px}
+.summary-card{background:#faf5ff;border:1px solid #e9d5ff;border-radius:12px;padding:16px;text-align:center}
+.summary-card label{font-size:11px;color:#64748b;display:block;margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px}
+.summary-card .val{font-size:22px;font-weight:900}
+.summary-card.debit .val{color:#dc2626}
+.summary-card.credit .val{color:#059669}
+.summary-card.balance .val{color:#4b0082}
+table.items{width:100%;border-collapse:collapse;margin-bottom:20px;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0}
+table.items thead{background:linear-gradient(135deg,#4b0082,#6e329b)}
+table.items thead th{padding:12px;color:#fbbf24;font-size:11px;font-weight:700;text-align:center}
+table.items thead th:nth-child(1),table.items thead th:nth-child(2),table.items thead th:nth-child(3),table.items thead th:nth-child(7){text-align:right}
+table.items tbody tr:last-child td{border-bottom:none}
+table.items tbody tr:nth-child(even){background:#faf5ff}
+.doc-footer{margin-top:24px;padding-top:14px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;font-size:11px;color:#94a3b8}
+.doc-footer .brand{font-weight:800;color:#5d198e;font-size:13px}
+.print-btn{position:fixed;bottom:20px;left:20px;padding:12px 24px;background:#4b0082;color:#fbbf24;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 4px 12px rgba(75,0,130,0.3)}
+.print-btn:hover{background:#5d198e}
+</style></head><body>
+<div class="doc-container">
+<div class="header">
+    <div class="logo-section">
+        ${logoBase64 ? `<img src="${logoBase64}" alt="G.PACK Logo">` : ''}
+        <div class="logo-text">
+            <h1>G.PACK</h1>
+            <p>حلول التعبئة والتغليف</p>
+            <p>ينبع، المملكة العربية السعودية</p>
+        </div>
+    </div>
+    <div class="doc-meta">
+        <div class="doc-title">كشف حساب</div>
+        <div class="doc-date">${new Date().toLocaleDateString('en-GB')}</div>
+        ${fromDate || toDate ? `<div style="font-size:11px;color:#94a3b8;margin-top:4px">${fromDate ? 'من: ' + fromDate : ''} ${toDate ? 'إلى: ' + toDate : ''}</div>` : ''}
+    </div>
+</div>
+<div class="info-grid">
+    <div class="info-item"><label>الاسم</label><span>${esc(account.name || account.company_name || '—')}</span></div>
+    <div class="info-item"><label>الهاتف</label><span>${esc(account.phone || '—')}</span></div>
+    ${account.code ? `<div class="info-item"><label>الكود</label><span>${esc(account.code)}</span></div>` : ''}
+    ${account.city ? `<div class="info-item"><label>المدينة</label><span>${esc(account.city)}</span></div>` : ''}
+</div>
+<div class="summary-grid">
+    <div class="summary-card debit"><label>إجمالي مدين</label><div class="val">${fmt(totalDebit)}</div></div>
+    <div class="summary-card credit"><label>إجمالي دائن</label><div class="val">${fmt(totalCredit)}</div></div>
+    <div class="summary-card balance"><label>الرصيد</label><div class="val">${fmt(summary.balance || 0)}</div></div>
+</div>
+<table class="items"><thead><tr>
+    <th>التاريخ</th><th>الوثيقة</th><th>الرقم</th><th>مدين</th><th>دائن</th><th>الرصيد</th><th>ملاحظات</th>
+</tr></thead>
+<tbody>${rowsHTML || '<tr><td colspan="7" style="text-align:center;padding:24px;color:#94a3b8">لا توجد حركات</td></tr>'}</tbody></table>
+<div class="doc-footer"><span class="brand">G.PACK ERP 2.0</span><span>تاريخ الطباعة: ${new Date().toLocaleDateString('en-GB')}</span></div>
+</div>
+<button class="print-btn no-print" onclick="window.print()">🖨️ طباعة</button>
+</body></html>`;
+        const w = window.open('', '_blank', 'width=800,height=700');
+        w.document.write(html); w.document.close(); setTimeout(() => w.print(), 500);
+    };
+
+    // ── Copy Share Link ─────────────────────────────────────────────────────────
+    window.asCopyShareLink = async function() {
+        if (!_selectedChild || _selectedChild.subAccountType !== 'client' || !_selectedChild.subAccountId) return;
+        const clientId = _selectedChild.subAccountId;
+        const token = btoa(clientId).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        const baseUrl = window.location.origin;
+        const shareUrl = `${baseUrl}/public-statement.html?client=${clientId}&t=${token}`;
+        try {
+            await navigator.clipboard.writeText(shareUrl);
+            window.showToast('تم نسخ رابط كشف الحساب ✅', 'success');
+        } catch (e) {
+            prompt('انسخ الرابط يدوياً:', shareUrl);
+        }
+    };
 
     // ── Click outside to close dropdowns ───────────────────────────────────────
     document.addEventListener('click', (e) => {
