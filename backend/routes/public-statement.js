@@ -67,7 +67,8 @@ router.get('/client-statement/:clientId', async (req, res) => {
                     0 as debit,
                     av.total_amount as credit,
                     av.status as status,
-                    COALESCE(av.description, '') as notes
+                    COALESCE(av.description, '') as notes,
+                    NULL as invoice_share_token
                 FROM accounting_vouchers av
                 WHERE av.voucher_type = 'receipt'
                     AND av.status = 'posted'
