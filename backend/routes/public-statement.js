@@ -65,15 +65,17 @@ router.get('/client-statement/:clientId', async (req, res) => {
                     'سند قبض' as document_type,
                     av.voucher_number::text as document_number,
                     0 as debit,
-                    av.total_amount as credit,
+                    avl.credit as credit,
                     av.status as status,
                     COALESCE(av.description, '') as notes,
                     NULL as invoice_share_token
                 FROM accounting_vouchers av
+                JOIN accounting_voucher_lines avl ON avl.voucher_id = av.id
                 WHERE av.voucher_type = 'receipt'
                     AND av.status = 'posted'
-                    AND av.reference_type = 'client'
-                    AND av.reference_id = $1
+                    AND avl.sub_account_type = 'client'
+                    AND avl.sub_account_id = $1
+                    AND avl.credit > 0
             ) transactions
             ORDER BY trans_date ASC, document_number ASC
             LIMIT 500
@@ -103,12 +105,14 @@ router.get('/client-statement/:clientId', async (req, res) => {
                 FROM invoices
                 WHERE client_id = $1 AND status != 'cancelled'
                 UNION ALL
-                SELECT 'payment' as doc_type, av.total_amount as amount
+                SELECT 'payment' as doc_type, avl.credit as amount
                 FROM accounting_vouchers av
+                JOIN accounting_voucher_lines avl ON avl.voucher_id = av.id
                 WHERE av.voucher_type = 'receipt'
                     AND av.status = 'posted'
-                    AND av.reference_type = 'client'
-                    AND av.reference_id = $1
+                    AND avl.sub_account_type = 'client'
+                    AND avl.sub_account_id = $1
+                    AND avl.credit > 0
             ) totals
         `, [clientId]);
 
