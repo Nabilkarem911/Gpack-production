@@ -132,7 +132,7 @@ router.get('/', async (req, res) => {
 // GET /api/purchase-invoices/:id
 // Get single purchase invoice with items
 // =============================================================================
-router.get('/:id', async (req, res) => {
+router.get('/:id([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})', async (req, res) => {
     try {
         const { id } = req.params;
 
