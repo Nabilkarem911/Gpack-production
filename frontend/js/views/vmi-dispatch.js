@@ -711,7 +711,7 @@
                 `<tr>
                 <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:right;color:#64748b;font-size:13px">${i + 1}</td>
                 <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600;color:#1e293b;font-size:13px">${esc(item.product_name || '—')}${item.variant_name ? ' — ' + esc(item.variant_name) : ''}</td>
-                <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:center;font-weight:800;color:#16a34a;font-size:15px">${parseFloat(item.quantity)}</td>
+                <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:center;font-weight:800;color:#4b0082;font-size:15px">${parseFloat(item.quantity)}</td>
                 </tr>`).join('');
 
             const totalQty = (d.items || []).reduce((s, i) => s + parseFloat(i.quantity), 0);
@@ -722,33 +722,34 @@
 body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;background:#fff;color:#1e293b;padding:30px;direction:rtl}
 @media print{body{padding:15px}.no-print{display:none!important}@page{margin:15mm}}
 .doc-container{max-width:800px;margin:0 auto}
-.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:28px;padding-bottom:18px;border-bottom:3px solid #16a34a}
+.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:28px;padding-bottom:18px;border-bottom:3px solid #4b0082}
 .logo-section{display:flex;align-items:center;gap:12px}
 .logo-section img{width:58px;height:58px;object-fit:contain}
-.logo-text h1{font-size:24px;font-weight:900;color:#16a34a;margin-bottom:4px}
+.logo-text h1{font-size:24px;font-weight:900;color:#4b0082;margin-bottom:4px}
 .logo-text p{font-size:12px;color:#64748b}
 .doc-meta{text-align:left}
 .doc-meta .doc-number{font-size:22px;font-weight:900;color:#1e293b}
 .doc-meta .doc-date{font-size:13px;color:#64748b;margin-top:4px}
-.doc-meta .badge{display:inline-block;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:700;margin-top:8px;background:#dcfce7;color:#15803d}
-.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;background:#f0fdf4;border-radius:12px;padding:20px;border:1px solid #bbf7d0}
+.doc-meta .badge{display:inline-block;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:700;margin-top:8px;background:#f3e8ff;color:#5d198e}
+.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;background:#faf5ff;border-radius:12px;padding:20px;border:1px solid #e9d5ff}
 .info-item label{font-size:11px;color:#64748b;display:block;margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px}
 .info-item span{font-weight:700;font-size:14px;color:#1e293b}
 table.items{width:100%;border-collapse:collapse;margin-bottom:20px;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0}
-table.items thead{background:linear-gradient(135deg,#15803d,#22c55e)}
-table.items thead th{padding:12px;color:#fff;font-size:12px;font-weight:700;text-align:center}
+table.items thead{background:linear-gradient(135deg,#4b0082,#6e329b)}
+table.items thead th{padding:12px;color:#fbbf24;font-size:12px;font-weight:700;text-align:center}
 table.items thead th:nth-child(2){text-align:right}
 table.items tbody tr:last-child td{border-bottom:none}
-table.items tbody tr:hover{background:#f0fdf4}
-.totals{display:flex;justify-content:flex-end;gap:24px;margin-bottom:20px;padding:14px 18px;background:#f0fdf4;border-radius:10px;border:1px solid #bbf7d0}
-.totals strong{font-size:18px;color:#16a34a}
+table.items tbody tr:nth-child(even){background:#faf5ff}
+table.items tbody tr:hover{background:#f3e8ff}
+.totals{display:flex;justify-content:flex-end;gap:24px;margin-bottom:20px;padding:14px 18px;background:#faf5ff;border-radius:10px;border:1px solid #e9d5ff}
+.totals strong{font-size:18px;color:#4b0082}
 .notes-box{background:#fffbeb;border:1px solid #fde68a;border-right:4px solid #f59e0b;border-radius:10px;padding:12px 16px;margin-bottom:20px;font-size:13px;color:#92400e}
-.footer{margin-top:40px;display:flex;justify-content:space-between;padding-top:20px;border-top:2px solid #16a34a}
+.footer{margin-top:40px;display:flex;justify-content:space-between;padding-top:20px;border-top:2px solid #4b0082}
 .sig-box{text-align:center;width:160px}.sig-line{border-top:1px solid #333;margin-top:40px;padding-top:6px;font-size:12px;color:#64748b}
 .doc-footer{margin-top:24px;padding-top:14px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;font-size:11px;color:#94a3b8}
-.doc-footer .brand{font-weight:800;color:#16a34a;font-size:13px}
-.print-btn{position:fixed;bottom:20px;left:20px;padding:12px 24px;background:#16a34a;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 4px 12px rgba(22,163,74,0.3)}
-.print-btn:hover{background:#15803d}
+.doc-footer .brand{font-weight:800;color:#5d198e;font-size:13px}
+.print-btn{position:fixed;bottom:20px;left:20px;padding:12px 24px;background:#4b0082;color:#fbbf24;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 4px 12px rgba(75,0,130,0.3)}
+.print-btn:hover{background:#5d198e}
 </style></head><body>
 <div class="doc-container">
 <div class="header">
@@ -816,7 +817,7 @@ ${d.notes ? `<div class="notes-box"><b>ملاحظات:</b> ${esc(d.notes)}</div>
                 <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:right;color:#64748b;font-size:13px">${i + 1}</td>
                 <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600;color:#1e293b;font-size:13px">${esc(item.product_name || '—')}${item.variant_name ? ' — ' + esc(item.variant_name) : ''}</td>
                 <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:center;font-weight:600;color:#334155;font-size:13px">${item.requested_qty || item.quantity || 0}</td>
-                <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:center;font-weight:800;color:#2563eb;font-size:14px">${item.delivered_qty || 0}</td>
+                <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:center;font-weight:800;color:#4b0082;font-size:14px">${item.delivered_qty || 0}</td>
                 <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-size:12px;color:#64748b">${esc(item.notes || '')}</td>
                 </tr>`).join('');
 
@@ -829,34 +830,35 @@ ${d.notes ? `<div class="notes-box"><b>ملاحظات:</b> ${esc(d.notes)}</div>
 body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;background:#fff;color:#1e293b;padding:30px;direction:rtl}
 @media print{body{padding:15px}.no-print{display:none!important}@page{margin:15mm}}
 .doc-container{max-width:800px;margin:0 auto}
-.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:28px;padding-bottom:18px;border-bottom:3px solid #2563eb}
+.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:28px;padding-bottom:18px;border-bottom:3px solid #4b0082}
 .logo-section{display:flex;align-items:center;gap:12px}
 .logo-section img{width:58px;height:58px;object-fit:contain}
-.logo-text h1{font-size:24px;font-weight:900;color:#2563eb;margin-bottom:4px}
+.logo-text h1{font-size:24px;font-weight:900;color:#4b0082;margin-bottom:4px}
 .logo-text p{font-size:12px;color:#64748b}
 .doc-meta{text-align:left}
 .doc-meta .doc-number{font-size:22px;font-weight:900;color:#1e293b}
 .doc-meta .doc-date{font-size:13px;color:#64748b;margin-top:4px}
 .doc-meta .badge{display:inline-block;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:700;margin-top:8px}
-.badge-full{background:#dbeafe;color:#1e40af}
+.badge-full{background:#f3e8ff;color:#5d198e}
 .badge-partial{background:#fef3c7;color:#92400e}
-.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;background:#f8fafc;border-radius:12px;padding:20px;border:1px solid #e2e8f0}
+.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;background:#faf5ff;border-radius:12px;padding:20px;border:1px solid #e9d5ff}
 .info-item label{font-size:11px;color:#64748b;display:block;margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px}
 .info-item span{font-weight:700;font-size:14px;color:#1e293b}
 table.items{width:100%;border-collapse:collapse;margin-bottom:20px;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0}
-table.items thead{background:linear-gradient(135deg,#1e40af,#3b82f6)}
-table.items thead th{padding:12px;color:#fff;font-size:12px;font-weight:700;text-align:center}
+table.items thead{background:linear-gradient(135deg,#4b0082,#6e329b)}
+table.items thead th{padding:12px;color:#fbbf24;font-size:12px;font-weight:700;text-align:center}
 table.items thead th:nth-child(2){text-align:right}
 table.items tbody tr:last-child td{border-bottom:none}
-table.items tbody tr:hover{background:#f8fafc}
-.totals{display:flex;justify-content:flex-end;gap:24px;margin-bottom:20px;padding:14px 18px;background:#f8fafc;border-radius:10px;border:1px solid #e2e8f0}
-.totals div{font-size:13px}.totals strong{font-size:16px;color:#2563eb}
-.footer{margin-top:40px;display:flex;justify-content:space-between;padding-top:20px;border-top:2px solid #2563eb}
+table.items tbody tr:nth-child(even){background:#faf5ff}
+table.items tbody tr:hover{background:#f3e8ff}
+.totals{display:flex;justify-content:flex-end;gap:24px;margin-bottom:20px;padding:14px 18px;background:#faf5ff;border-radius:10px;border:1px solid #e9d5ff}
+.totals div{font-size:13px}.totals strong{font-size:16px;color:#4b0082}
+.footer{margin-top:40px;display:flex;justify-content:space-between;padding-top:20px;border-top:2px solid #4b0082}
 .sig-box{text-align:center;width:160px}.sig-line{border-top:1px solid #333;margin-top:40px;padding-top:6px;font-size:12px;color:#64748b}
 .doc-footer{margin-top:24px;padding-top:14px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;font-size:11px;color:#94a3b8}
-.doc-footer .brand{font-weight:800;color:#2563eb;font-size:13px}
-.print-btn{position:fixed;bottom:20px;left:20px;padding:12px 24px;background:#2563eb;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 4px 12px rgba(37,99,235,0.3)}
-.print-btn:hover{background:#1e40af}
+.doc-footer .brand{font-weight:800;color:#5d198e;font-size:13px}
+.print-btn{position:fixed;bottom:20px;left:20px;padding:12px 24px;background:#4b0082;color:#fbbf24;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 4px 12px rgba(75,0,130,0.3)}
+.print-btn:hover{background:#5d198e}
 </style></head><body>
 <div class="doc-container">
 <div class="header">
