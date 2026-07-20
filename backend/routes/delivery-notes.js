@@ -277,6 +277,7 @@ router.post('/:id/dispatch', restrictWrite, validateBody(deliveryNoteDispatch), 
                 [id]
             );
             if (dnCheck.rowCount === 0) throw new Error('سند التسليم غير موجود.');
+            const dn = dnCheck.rows[0];
 
             // Create a dispatch record for this specific handover
             const nextNumRes = await client.query(
