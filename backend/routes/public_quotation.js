@@ -166,10 +166,13 @@ router.get('/quotation/:token', async (req, res) => {
                 oi.discount_amount, oi.line_total, oi.notes,
                 pv.size_name, pv.sku,
                 p.name AS product_name,
-                p.description AS product_description
+                p.description AS product_description,
+                u.name AS unit_name,
+                u.abbreviation AS unit_abbreviation
              FROM order_items oi
              JOIN product_variants pv ON pv.id = oi.variant_id
              JOIN products p          ON p.id  = pv.product_id
+             LEFT JOIN units u        ON u.id  = pv.unit_id
              WHERE oi.order_id = $1
              ORDER BY oi.created_at ASC`,
             [order.id]

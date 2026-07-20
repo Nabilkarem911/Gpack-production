@@ -108,6 +108,7 @@
                         <tr class="bg-slate-50 text-slate-500 text-xs">
                             <th class="py-2 px-3 text-right font-semibold rounded-r-lg">#</th>
                             <th class="py-2 px-3 text-right font-semibold">الصنف</th>
+                            <th class="py-2 px-3 text-center font-semibold">الوحدة</th>
                             <th class="py-2 px-3 text-center font-semibold">الكمية</th>
                             <th class="py-2 px-3 text-center font-semibold">سعر الوحدة</th>
                             <th class="py-2 px-3 text-center font-semibold rounded-l-lg">المجموع</th>
@@ -283,6 +284,7 @@ function renderQuote({ order, items }) {
                 <p class="font-semibold text-slate-800">${item.product_name}</p>
                 <p class="text-xs text-slate-400">${item.size_name || ''}</p>
             </td>
+            <td class="py-3 px-3 text-center text-slate-500 text-xs">${item.unit_abbreviation || item.unit_name || '—'}</td>
             <td class="py-3 px-3 text-center text-slate-700">${parseFloat(item.quantity).toLocaleString('en-US')}</td>
             <td class="py-3 px-3 text-center text-slate-700">${sar(item.unit_price)}</td>
             <td class="py-3 px-3 text-center font-bold text-slate-800">${sar(item.line_total)}</td>
