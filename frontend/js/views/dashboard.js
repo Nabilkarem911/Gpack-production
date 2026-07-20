@@ -716,7 +716,7 @@ var dashboardView = {
                             <p class="text-white/80 text-sm">أوامر إنتاج لم يتم إنشاء أوامر تشغيل (PO) لها بعد${oldestDays > 0 ? ` — أقدمها منذ ${oldestDays} يوم` : ''}</p>
                         </div>
                     </div>
-                    <button onclick="window.navigateTo('production-orders-new')"
+                    <button onclick="window.navigateTo('production_orders')"
                             class="px-4 py-2 bg-white text-slate-800 rounded-lg font-medium hover:bg-slate-100 transition-colors">
                         إسناد الآن
                     </button>
