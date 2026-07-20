@@ -137,7 +137,10 @@
                 return `
                 <div onclick="window.asSelectChild('${esc(a.id)}', '${esc(a.code)}', '${esc(a.name)}', ${isVirtual ? `'${esc(a.sub_account_id)}'` : 'null'}, ${isVirtual ? `'${esc(a.sub_account_type)}'` : 'null'})"
                      class="px-4 py-2.5 hover:bg-brand-50 cursor-pointer border-b border-slate-50 last:border-0 flex items-center gap-3">
-                    ${icon ? `<i class="fa-solid ${icon} text-slate-400 text-xs w-12 text-center"></i>` : `<span class="font-mono text-xs text-slate-400 w-12">${esc(a.code)}</span>`}
+                    <div class="flex items-center gap-2 w-28 shrink-0">
+                        ${icon ? `<i class="fa-solid ${icon} text-slate-400 text-xs"></i>` : ''}
+                        <span class="font-mono text-xs text-slate-400">${esc(a.code)}</span>
+                    </div>
                     <div class="flex-1">
                         <span class="text-sm text-slate-700">${esc(a.name)}</span>
                         ${subDetail}

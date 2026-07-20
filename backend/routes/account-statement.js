@@ -339,7 +339,8 @@ router.get('/accounts-tree', async (req, res) => {
         // Add clients as virtual children of Accounts Receivable (1300)
         if (receivableAcc) {
             const clientsRes = await db.query(`
-                SELECT id, name, phone, city
+                SELECT id, name, phone, city,
+                       ROW_NUMBER() OVER (ORDER BY name) AS seq
                 FROM clients
                 WHERE status = 'active' OR status IS NULL
                 ORDER BY name
@@ -347,7 +348,7 @@ router.get('/accounts-tree', async (req, res) => {
             clientsRes.rows.forEach(c => {
                 virtualChildren.push({
                     id: c.id,
-                    code: c.id.substring(0, 8),
+                    code: `1300-${String(c.seq).padStart(4, '0')}`,
                     name: c.name,
                     account_type: 'asset',
                     parent_id: receivableAcc.id,
@@ -362,14 +363,15 @@ router.get('/accounts-tree', async (req, res) => {
         // Add suppliers as virtual children of Accounts Payable (2100)
         if (payableAcc) {
             const suppliersRes = await db.query(`
-                SELECT id, company_name as name, phone, city
+                SELECT id, company_name as name, phone, city,
+                       ROW_NUMBER() OVER (ORDER BY company_name) AS seq
                 FROM suppliers
                 ORDER BY company_name
             `);
             suppliersRes.rows.forEach(s => {
                 virtualChildren.push({
                     id: s.id,
-                    code: s.id.substring(0, 8),
+                    code: `2100-${String(s.seq).padStart(4, '0')}`,
                     name: s.name,
                     account_type: 'liability',
                     parent_id: payableAcc.id,
