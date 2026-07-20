@@ -59,8 +59,16 @@ router.get('/', async (req, res) => {
             params.push(status);
         }
         if (exclude_status) {
-            where.push(`pi.status != $${paramIdx++}`);
-            params.push(exclude_status);
+            const excludeStatuses = exclude_status.split(',').filter(s => s.trim());
+            if (excludeStatuses.length === 1) {
+                where.push(`pi.status != $${paramIdx++}`);
+                params.push(excludeStatuses[0]);
+            } else if (excludeStatuses.length > 1) {
+                const placeholders = excludeStatuses.map((_, i) => `$${paramIdx + i}`).join(', ');
+                paramIdx += excludeStatuses.length;
+                where.push(`pi.status NOT IN (${placeholders})`);
+                params.push(...excludeStatuses);
+            }
         }
         if (from) {
             where.push(`pi.invoice_date >= $${paramIdx++}`);
@@ -92,6 +100,8 @@ router.get('/', async (req, res) => {
             SELECT pi.id, pi.invoice_number, pi.invoice_date, pi.supplier_invoice_ref,
                    pi.subtotal, pi.tax_rate, pi.tax_amount, pi.grand_total, pi.paid_amount,
                    pi.status, pi.has_supplier_invoice, pi.notes, pi.created_at,
+                   pi.merged_into_invoice_id,
+                   (EXISTS(SELECT 1 FROM purchase_invoice_mo_links WHERE purchase_invoice_id = pi.id)) AS is_consolidated,
                    s.id AS supplier_id, s.company_name AS supplier_name,
                    mo.id AS mo_id, mo.mo_number,
                    c.id AS client_id, c.name AS client_name
@@ -310,6 +320,239 @@ router.get('/suppliers/:supplierId/orders-ready', async (req, res) => {
     } catch (err) {
         console.error('[PurchaseInvoices] GET /orders-ready error:', err.message);
         res.status(500).json({ error: 'Internal server error.' });
+    }
+});
+
+// =============================================================================
+// POST /api/purchase-invoices/merge
+// Merge multiple draft purchase invoices from the SAME supplier into one
+// consolidated invoice. The consolidated invoice has manufacturer_order_id=NULL
+// and is linked to each original MO via purchase_invoice_mo_links.
+//
+// Body: { invoice_ids: [uuid, ...], supplier_invoice_ref?: string, notes?: string }
+//
+// Validations:
+//   - At least 2 invoices required
+//   - All invoices must have status='draft'
+//   - All invoices must belong to the SAME supplier
+//   - None of the invoices should already be merged or a consolidated invoice
+// =============================================================================
+router.post('/merge', restrictEdit, async (req, res) => {
+    const { invoice_ids, supplier_invoice_ref, notes } = req.body;
+
+    if (!Array.isArray(invoice_ids) || invoice_ids.length < 2) {
+        return res.status(400).json({ error: 'يجب اختيار فاتورتين على الأقل للدمج' });
+    }
+
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+
+        // 1. Load all selected invoices with FOR UPDATE
+        const invRes = await client.query(
+            `SELECT pi.id, pi.invoice_number, pi.supplier_id, pi.manufacturer_order_id,
+                    pi.status, pi.merged_into_invoice_id, pi.has_supplier_invoice,
+                    s.company_name AS supplier_name
+             FROM purchase_invoices pi
+             JOIN suppliers s ON s.id = pi.supplier_id
+             WHERE pi.id = ANY($1::uuid[])
+             FOR UPDATE OF pi`,
+            [invoice_ids]
+        );
+
+        if (invRes.rows.length !== invoice_ids.length) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'بعض الفواتير المختارة غير موجودة' });
+        }
+
+        // 2. Validate: all draft, same supplier, not already merged
+        const supplierIds = [...new Set(invRes.rows.map(r => r.supplier_id))];
+        if (supplierIds.length > 1) {
+            await client.query('ROLLBACK');
+            const supplierNames = [...new Set(invRes.rows.map(r => r.supplier_name))];
+            return res.status(400).json({
+                error: `لا يمكن دمج فواتير من موردين مختلفين (${supplierNames.join(' / ')})`
+            });
+        }
+
+        for (const inv of invRes.rows) {
+            if (inv.status !== 'draft') {
+                await client.query('ROLLBACK');
+                return res.status(400).json({
+                    error: `الفاتورة #${inv.invoice_number} ليست مسودة (حالتها: ${inv.status}) — يمكن دمج المسودات فقط`
+                });
+            }
+            if (inv.merged_into_invoice_id) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({
+                    error: `الفاتورة #${inv.invoice_number} تم دمجها مسبقاً`
+                });
+            }
+        }
+
+        const supplierId = supplierIds[0];
+
+        // 3. Generate new consolidated invoice number
+        const seqRes = await client.query(`SELECT nextval('purchase_invoice_seq') AS next`);
+        const newInvoiceNumber = seqRes.rows[0].next;
+
+        // 4. Create consolidated invoice (manufacturer_order_id = NULL)
+        const consRes = await client.query(
+            `INSERT INTO purchase_invoices
+               (supplier_id, manufacturer_order_id, invoice_number, invoice_date,
+                supplier_invoice_ref, subtotal, tax_rate, tax_amount, grand_total,
+                status, notes, created_by, has_supplier_invoice)
+             VALUES ($1, NULL, $2, CURRENT_DATE, $3, 0, 0, 0, 0, 'draft', $4, $5, false)
+             RETURNING id, invoice_number`,
+            [supplierId, newInvoiceNumber, supplier_invoice_ref || null, notes || null, req.user?.id]
+        );
+        const consolidatedId = consRes.rows[0].id;
+
+        // 5. Copy all items from original invoices into consolidated invoice
+        const moIds = new Set();
+        for (const inv of invRes.rows) {
+            const itemsRes = await client.query(
+                `SELECT id, variant_id, quantity, unit_cost, total_cost, manufacturer_order_item_id
+                 FROM purchase_invoice_items
+                 WHERE purchase_invoice_id = $1`,
+                [inv.id]
+            );
+
+            for (const item of itemsRes.rows) {
+                await client.query(
+                    `INSERT INTO purchase_invoice_items
+                       (purchase_invoice_id, variant_id, quantity, unit_cost, total_cost,
+                        manufacturer_order_item_id)
+                     VALUES ($1, $2, $3, $4, $5, $6)`,
+                    [consolidatedId, item.variant_id, item.quantity, item.unit_cost,
+                     item.total_cost, item.manufacturer_order_item_id]
+                );
+            }
+
+            // Track MO for junction table
+            if (inv.manufacturer_order_id) {
+                moIds.add(inv.manufacturer_order_id);
+            }
+
+            // 6. Mark original invoice as merged
+            await client.query(
+                `UPDATE purchase_invoices
+                 SET status = 'merged', merged_into_invoice_id = $1, updated_at = NOW()
+                 WHERE id = $2`,
+                [consolidatedId, inv.id]
+            );
+
+            // 7. Re-link receipt sessions to consolidated invoice
+            await client.query(
+                `UPDATE mo_receipt_sessions
+                 SET purchase_invoice_id = $1
+                 WHERE purchase_invoice_id = $2`,
+                [consolidatedId, inv.id]
+            );
+        }
+
+        // 8. Create purchase_invoice_mo_links for each MO
+        for (const moId of moIds) {
+            // Find the original invoice for this MO
+            const origInv = invRes.rows.find(r => r.manufacturer_order_id === moId);
+            await client.query(
+                `INSERT INTO purchase_invoice_mo_links
+                   (purchase_invoice_id, manufacturer_order_id, original_invoice_id)
+                 VALUES ($1, $2, $3)
+                 ON CONFLICT (purchase_invoice_id, manufacturer_order_id) DO NOTHING`,
+                [consolidatedId, moId, origInv?.id || null]
+            );
+        }
+
+        await client.query('COMMIT');
+
+        return res.status(201).json({
+            message: `تم دمج ${invoice_ids.length} فواتير في فاتورة مجمعة #${newInvoiceNumber}`,
+            data: {
+                consolidated_invoice_id: consolidatedId,
+                consolidated_invoice_number: newInvoiceNumber,
+                merged_count: invoice_ids.length,
+                supplier_id: supplierId,
+            }
+        });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('[PurchaseInvoices] POST /merge error:', err.message);
+        return res.status(400).json({ error: err.message || 'Internal server error.' });
+    } finally {
+        client.release();
+    }
+});
+
+// =============================================================================
+// GET /api/purchase-invoices/mergeable
+// Returns draft invoices grouped by supplier, ready for merging
+// =============================================================================
+router.get('/mergeable', async (req, res) => {
+    try {
+        const result = await db.query(
+            `SELECT
+                pi.id,
+                pi.invoice_number,
+                pi.invoice_date,
+                pi.supplier_invoice_ref,
+                pi.has_supplier_invoice,
+                pi.created_at,
+                pi.supplier_id,
+                s.company_name AS supplier_name,
+                mo.id AS mo_id,
+                mo.mo_number,
+                o.order_number,
+                c.name AS client_name,
+                COUNT(pii.id)::int AS item_count,
+                COALESCE(SUM(pii.quantity), 0)::numeric AS total_qty
+             FROM purchase_invoices pi
+             JOIN suppliers s ON s.id = pi.supplier_id
+             LEFT JOIN manufacturer_orders mo ON mo.id = pi.manufacturer_order_id
+             LEFT JOIN orders o ON o.id = mo.order_id
+             LEFT JOIN clients c ON c.id = o.client_id
+             LEFT JOIN purchase_invoice_items pii ON pii.purchase_invoice_id = pi.id
+             WHERE pi.status = 'draft'
+               AND pi.merged_into_invoice_id IS NULL
+             GROUP BY pi.id, pi.invoice_number, pi.invoice_date, pi.supplier_invoice_ref,
+                      pi.has_supplier_invoice, pi.created_at, pi.supplier_id,
+                      s.company_name, mo.id, mo.mo_number, o.order_number, c.name
+             ORDER BY s.company_name ASC, pi.invoice_number ASC`
+        );
+
+        // Group by supplier
+        const bySupplier = {};
+        for (const row of result.rows) {
+            if (!bySupplier[row.supplier_id]) {
+                bySupplier[row.supplier_id] = {
+                    supplier_id: row.supplier_id,
+                    supplier_name: row.supplier_name,
+                    invoices: []
+                };
+            }
+            bySupplier[row.supplier_id].invoices.push({
+                id: row.id,
+                invoice_number: row.invoice_number,
+                invoice_date: row.invoice_date,
+                supplier_invoice_ref: row.supplier_invoice_ref,
+                has_supplier_invoice: row.has_supplier_invoice,
+                created_at: row.created_at,
+                mo_id: row.mo_id,
+                mo_number: row.mo_number,
+                order_number: row.order_number,
+                client_name: row.client_name,
+                item_count: row.item_count,
+                total_qty: parseFloat(row.total_qty)
+            });
+        }
+
+        // Only include suppliers with 2+ draft invoices
+        const mergeable = Object.values(bySupplier).filter(s => s.invoices.length >= 2);
+
+        return res.json({ data: mergeable });
+    } catch (err) {
+        console.error('[PurchaseInvoices] GET /mergeable error:', err.message);
+        return res.status(500).json({ error: 'Internal server error.' });
     }
 });
 

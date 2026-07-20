@@ -95,11 +95,15 @@
             const invBadge = hasInv
                 ? '<span class="px-2 py-1 rounded-lg text-xs font-bold bg-emerald-100 text-emerald-700"><i class="fa-solid fa-file-invoice ml-1"></i>بفاتورة</span>'
                 : '<span class="px-2 py-1 rounded-lg text-xs font-bold bg-amber-100 text-amber-700"><i class="fa-solid fa-triangle-exclamation ml-1"></i>بدون فاتورة</span>';
-            return `<tr class="border-b border-slate-100 hover:bg-blue-50/30 transition-colors bg-blue-50/20">
-                <td class="py-3 px-4 font-bold font-mono text-slate-700">#${inv.invoice_number}</td>
+            const consolidatedBadge = inv.is_consolidated
+                ? ' <span class="px-2 py-1 rounded-lg text-xs font-bold bg-purple-100 text-purple-700"><i class="fa-solid fa-object-group ml-1"></i>مجمعة</span>'
+                : '';
+            const clientDisplay = inv.is_consolidated ? 'متعدد' : esc(inv.client_name || '—');
+            return `<tr class="border-b border-slate-100 hover:bg-blue-50/30 transition-colors ${inv.is_consolidated ? 'bg-purple-50/30' : 'bg-blue-50/20'}">
+                <td class="py-3 px-4 font-bold font-mono text-slate-700">#${inv.invoice_number}${consolidatedBadge}</td>
                 <td class="py-3 px-4 text-slate-500 text-xs">${date}</td>
                 <td class="py-3 px-4 font-semibold text-slate-800">${esc(inv.supplier_name || '—')}</td>
-                <td class="py-3 px-4 text-slate-600 text-xs hidden sm:table-cell">${esc(inv.client_name || '—')}</td>
+                <td class="py-3 px-4 text-slate-600 text-xs hidden sm:table-cell">${clientDisplay}</td>
                 <td class="py-3 px-4 text-slate-500 text-xs hidden sm:table-cell">${esc(inv.supplier_invoice_ref || '—')}</td>
                 <td class="py-3 px-4 text-center">${invBadge}</td>
                 <td class="py-3 px-4 text-center">
@@ -168,6 +172,11 @@
         if (hasInvoice)  params.set('has_invoice', hasInvoice);
         // Exclude drafts from archive — they show in the Invoices tab
         params.set('exclude_status', 'draft');
+        // Also exclude merged invoices from archive (they are sub-invoices)
+        if (!status) {
+            params.delete('exclude_status');
+            params.set('exclude_status', 'draft,merged');
+        }
 
         try {
             const res = await window.apiFetch(`/api/purchase-invoices?${params}`);
@@ -198,6 +207,8 @@
             partially_paid: { bg: 'bg-amber-100',   text: 'text-amber-700',   label: 'جزئي' },
             paid:           { bg: 'bg-emerald-100', text: 'text-emerald-700', label: 'مدفوعة' },
             cancelled:      { bg: 'bg-slate-100',   text: 'text-slate-500',   label: 'ملغية' },
+            merged:         { bg: 'bg-purple-100',  text: 'text-purple-700',  label: 'مدمجة' },
+            posted:         { bg: 'bg-emerald-100', text: 'text-emerald-700', label: 'معتمدة' },
         };
 
         const _s = (id, v) => { const el = _el(id); if (el) el.textContent = v; };
@@ -566,9 +577,9 @@
             const inv   = res.data?.invoice || res.invoice;
             const items = res.data?.items || res.items || [];
 
-            const statusLabels = { draft: 'مسودة', unpaid: 'غير مدفوعة', partially_paid: 'مدفوعة جزئياً', paid: 'مدفوعة', cancelled: 'ملغية' };
-            const statusColors = { draft: '#2563eb', unpaid: '#dc2626', partially_paid: '#d97706', paid: '#15803d', cancelled: '#64748b' };
-            const statusBgs    = { draft: '#dbeafe', unpaid: '#fee2e2', partially_paid: '#fef3c7', paid: '#dcfce7', cancelled: '#f1f5f9' };
+            const statusLabels = { draft: 'مسودة', unpaid: 'غير مدفوعة', partially_paid: 'مدفوعة جزئياً', paid: 'مدفوعة', cancelled: 'ملغية', merged: 'مدمجة', posted: 'معتمدة' };
+            const statusColors = { draft: '#2563eb', unpaid: '#dc2626', partially_paid: '#d97706', paid: '#15803d', cancelled: '#64748b', merged: '#7c3aed', posted: '#15803d' };
+            const statusBgs    = { draft: '#dbeafe', unpaid: '#fee2e2', partially_paid: '#fef3c7', paid: '#dcfce7', cancelled: '#f1f5f9', merged: '#ede9fe', posted: '#dcfce7' };
             const statusText  = statusLabels[inv.status] || inv.status;
             const statusColor = statusColors[inv.status] || '#64748b';
             const statusBg    = statusBgs[inv.status]    || '#f1f5f9';
@@ -684,6 +695,182 @@
 
         } catch (err) {
             alert('فشل تحميل الفاتورة: ' + err.message);
+        }
+    };
+
+    // ── Merge Invoices ────────────────────────────────────────────────────────
+    let _mergeData = [];
+    let _mergeSelected = new Set();
+
+    window.piOpenMergeModal = async function() {
+        _el('pi-merge-overlay')?.classList.remove('hidden');
+        _el('pi-merge-modal')?.classList.remove('hidden');
+        _el('pi-merge-loading')?.classList.remove('hidden');
+        _el('pi-merge-empty')?.classList.add('hidden');
+        _el('pi-merge-content')?.classList.add('hidden');
+        _mergeSelected.clear();
+        _updateMergeSelectedCount();
+
+        try {
+            const res = await window.apiFetch('/api/purchase-invoices/mergeable');
+            _mergeData = res.data || [];
+
+            _el('pi-merge-loading')?.classList.add('hidden');
+
+            if (_mergeData.length === 0) {
+                _el('pi-merge-empty')?.classList.remove('hidden');
+            } else {
+                _el('pi-merge-content')?.classList.remove('hidden');
+                _renderMergeableList();
+            }
+        } catch (err) {
+            _el('pi-merge-loading')?.classList.add('hidden');
+            _el('pi-merge-empty')?.classList.remove('hidden');
+            console.error('[PI] Failed to load mergeable:', err);
+        }
+    };
+
+    window.piCloseMergeModal = function() {
+        _el('pi-merge-overlay')?.classList.add('hidden');
+        _el('pi-merge-modal')?.classList.add('hidden');
+    };
+
+    function _renderMergeableList() {
+        const container = _el('pi-merge-suppliers');
+        if (!container) return;
+        container.innerHTML = '';
+
+        for (const supplier of _mergeData) {
+            const card = document.createElement('div');
+            card.className = 'border border-slate-200 rounded-xl overflow-hidden';
+
+            const header = document.createElement('div');
+            header.className = 'flex items-center justify-between px-4 py-3 bg-slate-50 border-b border-slate-200';
+            header.innerHTML = `
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-industry text-slate-400"></i>
+                    <span class="font-bold text-slate-800 text-sm">${esc(supplier.supplier_name)}</span>
+                    <span class="text-xs text-slate-400">(${supplier.invoices.length} فواتير مسودة)</span>
+                </div>
+                <label class="flex items-center gap-2 cursor-pointer text-xs text-slate-500">
+                    <input type="checkbox" class="w-4 h-4 accent-purple-600"
+                           onchange="window._piToggleSupplier('${supplier.supplier_id}', this.checked)" />
+                    تحديد الكل
+                </label>
+            `;
+            card.appendChild(header);
+
+            const list = document.createElement('div');
+            list.className = 'divide-y divide-slate-100';
+
+            for (const inv of supplier.invoices) {
+                const row = document.createElement('label');
+                row.className = 'flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 cursor-pointer transition-colors';
+                row.dataset.invoiceId = inv.id;
+                row.dataset.supplierId = supplier.supplier_id;
+                row.innerHTML = `
+                    <input type="checkbox" class="w-4 h-4 accent-purple-600 pi-merge-check"
+                           value="${inv.id}"
+                           data-supplier-id="${supplier.supplier_id}"
+                           onchange="window._piToggleInvoice('${inv.id}', '${supplier.supplier_id}', this.checked)" />
+                    <div class="flex-1 flex items-center gap-3 text-sm">
+                        <span class="font-bold text-slate-700">#${inv.invoice_number}</span>
+                        <span class="text-slate-400">|</span>
+                        <span class="text-slate-500 text-xs">${inv.order_number || '—'}</span>
+                        <span class="text-slate-400">|</span>
+                        <span class="text-slate-500 text-xs">${esc(inv.client_name || '—')}</span>
+                    </div>
+                    <div class="text-xs text-slate-400">
+                        ${inv.item_count} صنف · ${fmt(inv.total_qty)} وحدة
+                    </div>
+                `;
+                list.appendChild(row);
+            }
+
+            card.appendChild(list);
+            container.appendChild(card);
+        }
+    }
+
+    window._piToggleInvoice = function(invoiceId, supplierId, checked) {
+        if (checked) {
+            // Check if user has invoices from a different supplier selected
+            const otherSupplier = [..._mergeSelected].find(id => {
+                const el = document.querySelector(`.pi-merge-check[value="${id}"]`);
+                return el && el.dataset.supplierId !== supplierId;
+            });
+            if (otherSupplier) {
+                // Uncheck this checkbox
+                const cb = document.querySelector(`.pi-merge-check[value="${invoiceId}"]`);
+                if (cb) cb.checked = false;
+                alert('لا يمكن دمج فواتير من موردين مختلفين. ألغِ تحديد الفواتير من المورد الآخر أولاً.');
+                return;
+            }
+            _mergeSelected.add(invoiceId);
+        } else {
+            _mergeSelected.delete(invoiceId);
+        }
+        _updateMergeSelectedCount();
+    };
+
+    window._piToggleSupplier = function(supplierId, checked) {
+        const checks = document.querySelectorAll(`.pi-merge-check[data-supplier-id="${supplierId}"]`);
+        for (const cb of checks) {
+            if (cb.checked !== checked) {
+                cb.checked = checked;
+                window._piToggleInvoice(cb.value, supplierId, checked);
+            }
+        }
+    };
+
+    function _updateMergeSelectedCount() {
+        const countEl = _el('pi-merge-selected-count');
+        const btn = _el('pi-merge-submit-btn');
+        if (countEl) countEl.textContent = _mergeSelected.size;
+        if (btn) btn.disabled = _mergeSelected.size < 2;
+    }
+
+    window.piSubmitMerge = async function() {
+        if (_mergeSelected.size < 2) {
+            alert('يجب اختيار فاتورتين على الأقل للدمج');
+            return;
+        }
+
+        const invoiceIds = [..._mergeSelected];
+        const btn = _el('pi-merge-submit-btn');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin ml-1"></i> جارٍ الدمج...';
+        }
+
+        try {
+            const res = await window.apiFetch('/api/purchase-invoices/merge', {
+                method: 'POST',
+                body: {
+                    invoice_ids: invoiceIds,
+                },
+            });
+
+            if (window.showToast) {
+                window.showToast(res.message || 'تم دمج الفواتير بنجاح', 'success');
+            } else {
+                alert(res.message || 'تم دمج الفواتير بنجاح');
+            }
+
+            window.piCloseMergeModal();
+            await _loadInvoices(0);
+        } catch (err) {
+            const msg = err.message || err.error || 'فشل الدمج';
+            if (window.showToast) {
+                window.showToast(msg, 'error');
+            } else {
+                alert(msg);
+            }
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fa-solid fa-object-group ml-1"></i> دمج الفواتير';
+            }
         }
     };
 

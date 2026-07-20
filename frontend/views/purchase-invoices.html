@@ -16,6 +16,11 @@
             <p class="text-slate-400 text-sm mt-0.5">فواتير الموردين الناتجة من استلام البضاعة</p>
         </div>
     </div>
+    <button onclick="window.piOpenMergeModal()"
+            id="pi-merge-btn"
+            class="px-4 py-2.5 rounded-xl text-sm font-bold bg-purple-600 text-white hover:bg-purple-700 transition-all shadow-sm">
+        <i class="fa-solid fa-object-group ml-1"></i> فاتورة مجمعة
+    </button>
 </div>
 
 <!-- ── Tabs ───────────────────────────────────────────────────────────────── -->
@@ -141,6 +146,7 @@
                     <option value="partially_paid">مدفوعة جزئياً</option>
                     <option value="paid">مدفوعة</option>
                     <option value="cancelled">ملغية</option>
+                    <option value="merged">مدمجة</option>
                 </select>
             </div>
             <div class="sm:w-44">
@@ -436,4 +442,68 @@
     </div>
 </div>
 
-<script src="/js/views/purchase-invoices.js?v=20260713d"></script>
+<!-- ── Merge Invoices Modal ────────────────────────────────────────────────── -->
+<div id="pi-merge-overlay" class="fixed inset-0 bg-black/50 z-50 hidden" onclick="window.piCloseMergeModal()"></div>
+<div id="pi-merge-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col"
+         onclick="event.stopPropagation()">
+
+        <!-- Modal Header -->
+        <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-purple-50/50">
+            <div>
+                <h3 class="text-lg font-bold text-slate-800">دمج فواتير المشتريات</h3>
+                <p class="text-xs text-slate-400 mt-0.5">اختر فواتير مسودة من نفس المورد لدمجها في فاتورة واحدة</p>
+            </div>
+            <button onclick="window.piCloseMergeModal()"
+                    class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <!-- Modal Body -->
+        <div class="flex-1 overflow-y-auto p-6">
+            <!-- Loading -->
+            <div id="pi-merge-loading" class="flex flex-col items-center justify-center py-12 text-slate-400">
+                <i class="fa-solid fa-circle-notch fa-spin text-2xl mb-2"></i>
+                <p class="text-sm">جارٍ تحميل الفواتير القابلة للدمج...</p>
+            </div>
+
+            <!-- No mergeable -->
+            <div id="pi-merge-empty" class="hidden flex flex-col items-center justify-center py-12 text-slate-400">
+                <div class="w-16 h-16 rounded-2xl bg-purple-50 flex items-center justify-center mb-3">
+                    <i class="fa-solid fa-object-group text-2xl text-purple-200"></i>
+                </div>
+                <p class="text-sm font-semibold text-slate-500">لا توجد فواتير قابلة للدمج</p>
+                <p class="text-xs text-slate-400 mt-1">يجب وجود فاتورتين مسودتين على الأقل من نفس المورد</p>
+            </div>
+
+            <!-- Mergeable list -->
+            <div id="pi-merge-content" class="hidden space-y-4">
+                <div class="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2">
+                    <i class="fa-solid fa-circle-info text-amber-500 mt-0.5"></i>
+                    <p class="text-xs text-amber-700">يمكن دمج الفواتير المسودة من نفس المورد فقط. لا يمكن دمج فواتير من موردين مختلفين.</p>
+                </div>
+                <div id="pi-merge-suppliers" class="space-y-4"></div>
+            </div>
+        </div>
+
+        <!-- Modal Footer -->
+        <div class="flex items-center justify-between px-6 py-4 border-t border-slate-100 bg-slate-50/50">
+            <div class="text-sm text-slate-500">
+                <span id="pi-merge-selected-count">0</span> فاتورة مختارة
+            </div>
+            <div class="flex items-center gap-3">
+                <button onclick="window.piCloseMergeModal()"
+                        class="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-200 transition-all">
+                    إلغاء
+                </button>
+                <button id="pi-merge-submit-btn" onclick="window.piSubmitMerge()" disabled
+                        class="px-5 py-2.5 rounded-xl text-sm font-bold bg-purple-600 text-white hover:bg-purple-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+                    <i class="fa-solid fa-object-group ml-1"></i> دمج الفواتير
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="/js/views/purchase-invoices.js?v=20260720a"></script>
