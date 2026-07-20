@@ -16,6 +16,27 @@
     const fmtD = (d) => d ? new Date(d).toLocaleDateString('ar-SA-u-nu-latn') : '—';
     const _el  = (id) => document.getElementById(id);
 
+    // ── Logo loader for print templates ───────────────────────────────────────
+    let _logoBase64Cache;
+    async function _loadLogoBase64() {
+        if (_logoBase64Cache !== undefined) return _logoBase64Cache;
+        try {
+            const res = await fetch('/images/logo.png');
+            if (!res.ok) throw new Error('logo not found');
+            const blob = await res.blob();
+            _logoBase64Cache = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = () => reject(new Error('logo decode failed'));
+                reader.readAsDataURL(blob);
+            });
+        } catch (err) {
+            console.warn('Logo unavailable for print views', err);
+            _logoBase64Cache = null;
+        }
+        return _logoBase64Cache;
+    }
+
     function showEl(id) { const e = _el(id); if (e) { e.classList.remove('hidden'); e.style.display = ''; } }
     function hideEl(id) { const e = _el(id); if (e) e.classList.add('hidden'); }
 
@@ -684,44 +705,84 @@
             const d = res?.data;
             if (!d) { window.showToast('فشل تحميل السند', 'error'); return; }
 
+            const logoBase64 = await _loadLogoBase64();
+
             const itemsHTML = (d.items || []).map((item, i) =>
                 `<tr>
-                <td style="padding:8px;border:1px solid #ddd;text-align:right">${i + 1}</td>
-                <td style="padding:8px;border:1px solid #ddd;text-align:right">${esc(item.product_name || '—')}${item.variant_name ? ' — ' + esc(item.variant_name) : ''}</td>
-                <td style="padding:8px;border:1px solid #ddd;text-align:center;font-weight:bold;color:#2563eb;font-size:15px">${parseFloat(item.quantity)}</td>
+                <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:right;color:#64748b;font-size:13px">${i + 1}</td>
+                <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600;color:#1e293b;font-size:13px">${esc(item.product_name || '—')}${item.variant_name ? ' — ' + esc(item.variant_name) : ''}</td>
+                <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:center;font-weight:800;color:#16a34a;font-size:15px">${parseFloat(item.quantity)}</td>
                 </tr>`).join('');
 
             const totalQty = (d.items || []).reduce((s, i) => s + parseFloat(i.quantity), 0);
 
             const html = `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="UTF-8"><title>سند تسليم #${d.dispatch_number}</title>
-<style>body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;margin:0;padding:20px;color:#1e293b;direction:rtl}
-.header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #16a34a;padding-bottom:16px;margin-bottom:20px}
-.company{font-size:22px;font-weight:bold;color:#16a34a}.doc-number{font-size:24px;font-weight:bold}
-.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;background:#f0fdf4;padding:16px;border-radius:8px}
-.info-item label{font-size:11px;color:#64748b;display:block;margin-bottom:2px}.info-item span{font-weight:bold;font-size:14px}
-table{width:100%;border-collapse:collapse;margin-bottom:20px}
-th{background:#15803d;color:white;padding:10px 8px;text-align:right;font-size:13px;border:1px solid #15803d}
-td{font-size:13px}tr:nth-child(even) td{background:#f0fdf4}
-.totals{display:flex;justify-content:flex-end;gap:24px;margin-bottom:20px;padding:12px 16px;background:#f0fdf4;border-radius:8px}
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;background:#fff;color:#1e293b;padding:30px;direction:rtl}
+@media print{body{padding:15px}.no-print{display:none!important}@page{margin:15mm}}
+.doc-container{max-width:800px;margin:0 auto}
+.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:28px;padding-bottom:18px;border-bottom:3px solid #16a34a}
+.logo-section{display:flex;align-items:center;gap:12px}
+.logo-section img{width:58px;height:58px;object-fit:contain}
+.logo-text h1{font-size:24px;font-weight:900;color:#16a34a;margin-bottom:4px}
+.logo-text p{font-size:12px;color:#64748b}
+.doc-meta{text-align:left}
+.doc-meta .doc-number{font-size:22px;font-weight:900;color:#1e293b}
+.doc-meta .doc-date{font-size:13px;color:#64748b;margin-top:4px}
+.doc-meta .badge{display:inline-block;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:700;margin-top:8px;background:#dcfce7;color:#15803d}
+.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;background:#f0fdf4;border-radius:12px;padding:20px;border:1px solid #bbf7d0}
+.info-item label{font-size:11px;color:#64748b;display:block;margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px}
+.info-item span{font-weight:700;font-size:14px;color:#1e293b}
+table.items{width:100%;border-collapse:collapse;margin-bottom:20px;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0}
+table.items thead{background:linear-gradient(135deg,#15803d,#22c55e)}
+table.items thead th{padding:12px;color:#fff;font-size:12px;font-weight:700;text-align:center}
+table.items thead th:nth-child(2){text-align:right}
+table.items tbody tr:last-child td{border-bottom:none}
+table.items tbody tr:hover{background:#f0fdf4}
+.totals{display:flex;justify-content:flex-end;gap:24px;margin-bottom:20px;padding:14px 18px;background:#f0fdf4;border-radius:10px;border:1px solid #bbf7d0}
 .totals strong{font-size:18px;color:#16a34a}
-.footer{margin-top:40px;display:flex;justify-content:space-between;padding-top:20px;border-top:1px solid #e2e8f0}
+.notes-box{background:#fffbeb;border:1px solid #fde68a;border-right:4px solid #f59e0b;border-radius:10px;padding:12px 16px;margin-bottom:20px;font-size:13px;color:#92400e}
+.footer{margin-top:40px;display:flex;justify-content:space-between;padding-top:20px;border-top:2px solid #16a34a}
 .sig-box{text-align:center;width:160px}.sig-line{border-top:1px solid #333;margin-top:40px;padding-top:6px;font-size:12px;color:#64748b}
-@media print{body{padding:10px}}</style></head><body>
-<div class="header"><div><div class="company">G.PACK</div><div style="font-size:13px;color:#64748b">سند تسليم بضاعة (جزئي)</div></div>
-<div style="text-align:left"><div style="font-size:12px;color:#64748b">رقم السند</div><div class="doc-number">#${d.dispatch_number}</div><div style="font-size:11px;color:#94a3b8;margin-top:2px">لسند التسليم #${d.note_number}</div></div></div>
-<div class="info-grid">
-<div class="info-item"><label>العميل</label><span>${esc(d.client_name || '—')}</span></div>
-<div class="info-item"><label>رقم الطلب</label><span>#${d.order_number || '—'}</span></div>
-<div class="info-item"><label>التاريخ</label><span>${new Date(d.created_at).toLocaleDateString('en-GB')}</span></div>
-<div class="info-item"><label>السائق</label><span>${esc(d.driver_name || '—')}</span></div>
-${d.vehicle_number ? `<div class="info-item"><label>رقم السيارة</label><span>${esc(d.vehicle_number)}</span></div>` : ''}
-${d.created_by_name ? `<div class="info-item"><label>المستلم</label><span>${esc(d.created_by_name)}</span></div>` : ''}
+.doc-footer{margin-top:24px;padding-top:14px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;font-size:11px;color:#94a3b8}
+.doc-footer .brand{font-weight:800;color:#16a34a;font-size:13px}
+.print-btn{position:fixed;bottom:20px;left:20px;padding:12px 24px;background:#16a34a;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 4px 12px rgba(22,163,74,0.3)}
+.print-btn:hover{background:#15803d}
+</style></head><body>
+<div class="doc-container">
+<div class="header">
+    <div class="logo-section">
+        ${logoBase64 ? `<img src="${logoBase64}" alt="G.PACK Logo">` : ''}
+        <div class="logo-text">
+            <h1>G.PACK</h1>
+            <p>حلول التعبئة والتغليف</p>
+            <p>ينبع، المملكة العربية السعودية</p>
+        </div>
+    </div>
+    <div class="doc-meta">
+        <div class="doc-number">#${d.dispatch_number}</div>
+        <div class="doc-date">${new Date(d.created_at).toLocaleDateString('en-GB')}</div>
+        <span class="badge">سند تسليم (جزئي)</span>
+        <div style="font-size:11px;color:#94a3b8;margin-top:6px">لسند التسليم #${d.note_number}</div>
+    </div>
 </div>
-<table><thead><tr><th style="width:40px">#</th><th>الصنف / المقاس</th><th style="width:100px;text-align:center">الكمية المُسلَّمة</th></tr></thead>
-<tbody>${itemsHTML || '<tr><td colspan="3" style="text-align:center;padding:16px;color:#94a3b8">لا توجد أصناف</td></tr>'}</tbody></table>
+<div class="info-grid">
+    <div class="info-item"><label>العميل</label><span>${esc(d.client_name || '—')}</span></div>
+    <div class="info-item"><label>رقم الطلب</label><span>#${d.order_number || '—'}</span></div>
+    <div class="info-item"><label>التاريخ</label><span>${new Date(d.created_at).toLocaleDateString('en-GB')}</span></div>
+    <div class="info-item"><label>السائق</label><span>${esc(d.driver_name || '—')}</span></div>
+    ${d.vehicle_number ? `<div class="info-item"><label>رقم السيارة</label><span>${esc(d.vehicle_number)}</span></div>` : ''}
+    ${d.created_by_name ? `<div class="info-item"><label>المستلم</label><span>${esc(d.created_by_name)}</span></div>` : ''}
+</div>
+<table class="items"><thead><tr><th style="width:40px">#</th><th>الصنف / المقاس</th><th style="width:120px;text-align:center">الكمية المُسلَّمة</th></tr></thead>
+<tbody>${itemsHTML || '<tr><td colspan="3" style="text-align:center;padding:24px;color:#94a3b8">لا توجد أصناف</td></tr>'}</tbody></table>
 <div class="totals"><div>إجمالي الكمية المُسلَّمة: <strong>${totalQty}</strong></div></div>
-${d.notes ? `<div style="margin-bottom:20px;padding:12px;background:#f8fafc;border-radius:8px;font-size:13px"><strong>ملاحظات:</strong> ${esc(d.notes)}</div>` : ''}
+${d.notes ? `<div class="notes-box"><b>ملاحظات:</b> ${esc(d.notes)}</div>` : ''}
 <div class="footer"><div class="sig-box"><div class="sig-line">توقيع المستلم</div></div><div class="sig-box"><div class="sig-line">توقيع المسلِّم</div></div><div class="sig-box"><div class="sig-line">الختم</div></div></div>
+<div class="doc-footer"><span class="brand">G.PACK ERP 2.0</span><span>تاريخ الطباعة: ${new Date().toLocaleDateString('en-GB')}</span></div>
+</div>
+<button class="print-btn no-print" onclick="window.print()">🖨️ طباعة</button>
 </body></html>`;
             const w = window.open('', '_blank', 'width=800,height=700');
             w.document.write(html); w.document.close(); setTimeout(() => w.print(), 500);
@@ -735,60 +796,102 @@ ${d.notes ? `<div style="margin-bottom:20px;padding:12px;background:#f8fafc;bord
             const dn  = res?.data;
             if (!dn) { window.showToast('فشل تحميل السند', 'error'); return; }
 
+            const logoBase64 = await _loadLogoBase64();
+
             let allItems = dn.items || [];
-            let printItems, titleSuffix;
+            let printItems, titleSuffix, badgeClass;
 
             if (mode === 'partial') {
                 printItems = allItems.filter(i => parseFloat(i.delivered_qty || 0) > 0);
                 titleSuffix = ' (تسليم جزئي)';
+                badgeClass = 'badge-partial';
             } else {
                 printItems = allItems;
                 titleSuffix = '';
+                badgeClass = 'badge-full';
             }
 
             const itemsHTML = printItems.map((item, i) =>
                 `<tr>
-                <td style="padding:8px;border:1px solid #ddd;text-align:right">${i + 1}</td>
-                <td style="padding:8px;border:1px solid #ddd;text-align:right">${item.product_name || '—'}${item.variant_name ? ' — ' + item.variant_name : ''}</td>
-                <td style="padding:8px;border:1px solid #ddd;text-align:center">${item.requested_qty || item.quantity || 0}</td>
-                <td style="padding:8px;border:1px solid #ddd;text-align:center;font-weight:bold;color:#2563eb">${item.delivered_qty || 0}</td>
-                <td style="padding:8px;border:1px solid #ddd">${item.notes || ''}</td>
+                <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:right;color:#64748b;font-size:13px">${i + 1}</td>
+                <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600;color:#1e293b;font-size:13px">${esc(item.product_name || '—')}${item.variant_name ? ' — ' + esc(item.variant_name) : ''}</td>
+                <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:center;font-weight:600;color:#334155;font-size:13px">${item.requested_qty || item.quantity || 0}</td>
+                <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:center;font-weight:800;color:#2563eb;font-size:14px">${item.delivered_qty || 0}</td>
+                <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-size:12px;color:#64748b">${esc(item.notes || '')}</td>
                 </tr>`).join('');
 
             const totalRequested = printItems.reduce((s, i) => s + parseFloat(i.requested_qty || i.quantity || 0), 0);
             const totalDelivered = printItems.reduce((s, i) => s + parseFloat(i.delivered_qty || 0), 0);
 
             const html = `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="UTF-8"><title>سند تسليم #${dn.note_number}</title>
-<style>body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;margin:0;padding:20px;color:#1e293b;direction:rtl}
-.header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #2563eb;padding-bottom:16px;margin-bottom:20px}
-.company{font-size:22px;font-weight:bold;color:#2563eb}.doc-number{font-size:24px;font-weight:bold}
-.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;background:#f8fafc;padding:16px;border-radius:8px}
-.info-item label{font-size:11px;color:#64748b;display:block;margin-bottom:2px}.info-item span{font-weight:bold;font-size:14px}
-table{width:100%;border-collapse:collapse;margin-bottom:20px}
-th{background:#1e40af;color:white;padding:10px 8px;text-align:right;font-size:13px;border:1px solid #1e40af}
-td{font-size:13px}tr:nth-child(even) td{background:#f8fafc}
-.totals{display:flex;justify-content:flex-end;gap:24px;margin-bottom:20px;padding:12px 16px;background:#f8fafc;border-radius:8px}
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;background:#fff;color:#1e293b;padding:30px;direction:rtl}
+@media print{body{padding:15px}.no-print{display:none!important}@page{margin:15mm}}
+.doc-container{max-width:800px;margin:0 auto}
+.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:28px;padding-bottom:18px;border-bottom:3px solid #2563eb}
+.logo-section{display:flex;align-items:center;gap:12px}
+.logo-section img{width:58px;height:58px;object-fit:contain}
+.logo-text h1{font-size:24px;font-weight:900;color:#2563eb;margin-bottom:4px}
+.logo-text p{font-size:12px;color:#64748b}
+.doc-meta{text-align:left}
+.doc-meta .doc-number{font-size:22px;font-weight:900;color:#1e293b}
+.doc-meta .doc-date{font-size:13px;color:#64748b;margin-top:4px}
+.doc-meta .badge{display:inline-block;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:700;margin-top:8px}
+.badge-full{background:#dbeafe;color:#1e40af}
+.badge-partial{background:#fef3c7;color:#92400e}
+.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;background:#f8fafc;border-radius:12px;padding:20px;border:1px solid #e2e8f0}
+.info-item label{font-size:11px;color:#64748b;display:block;margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px}
+.info-item span{font-weight:700;font-size:14px;color:#1e293b}
+table.items{width:100%;border-collapse:collapse;margin-bottom:20px;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0}
+table.items thead{background:linear-gradient(135deg,#1e40af,#3b82f6)}
+table.items thead th{padding:12px;color:#fff;font-size:12px;font-weight:700;text-align:center}
+table.items thead th:nth-child(2){text-align:right}
+table.items tbody tr:last-child td{border-bottom:none}
+table.items tbody tr:hover{background:#f8fafc}
+.totals{display:flex;justify-content:flex-end;gap:24px;margin-bottom:20px;padding:14px 18px;background:#f8fafc;border-radius:10px;border:1px solid #e2e8f0}
 .totals div{font-size:13px}.totals strong{font-size:16px;color:#2563eb}
-.footer{margin-top:40px;display:flex;justify-content:space-between;padding-top:20px;border-top:1px solid #e2e8f0}
+.footer{margin-top:40px;display:flex;justify-content:space-between;padding-top:20px;border-top:2px solid #2563eb}
 .sig-box{text-align:center;width:160px}.sig-line{border-top:1px solid #333;margin-top:40px;padding-top:6px;font-size:12px;color:#64748b}
-@media print{body{padding:10px}}</style></head><body>
-<div class="header"><div><div class="company">G.PACK</div><div style="font-size:13px;color:#64748b">سند تسليم بضاعة${titleSuffix}</div></div>
-<div style="text-align:left"><div style="font-size:12px;color:#64748b">رقم السند</div><div class="doc-number">#${dn.note_number}</div></div></div>
-<div class="info-grid">
-<div class="info-item"><label>العميل</label><span>${dn.client_name || '—'}</span></div>
-<div class="info-item"><label>رقم الطلب</label><span>#${dn.order_number || '—'}</span></div>
-<div class="info-item"><label>التاريخ</label><span>${new Date(dn.created_at).toLocaleDateString('en-GB')}</span></div>
-<div class="info-item"><label>الحالة</label><span>${dn.status === 'completed' ? 'مكتمل' : dn.status === 'partial' ? 'جزئي' : 'معلق'}</span></div>
-${dn.driver_name ? `<div class="info-item"><label>السائق</label><span>${dn.driver_name}</span></div>` : ''}
-${dn.vehicle_number ? `<div class="info-item"><label>رقم السيارة</label><span>${dn.vehicle_number}</span></div>` : ''}
+.doc-footer{margin-top:24px;padding-top:14px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;font-size:11px;color:#94a3b8}
+.doc-footer .brand{font-weight:800;color:#2563eb;font-size:13px}
+.print-btn{position:fixed;bottom:20px;left:20px;padding:12px 24px;background:#2563eb;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 4px 12px rgba(37,99,235,0.3)}
+.print-btn:hover{background:#1e40af}
+</style></head><body>
+<div class="doc-container">
+<div class="header">
+    <div class="logo-section">
+        ${logoBase64 ? `<img src="${logoBase64}" alt="G.PACK Logo">` : ''}
+        <div class="logo-text">
+            <h1>G.PACK</h1>
+            <p>حلول التعبئة والتغليف</p>
+            <p>ينبع، المملكة العربية السعودية</p>
+        </div>
+    </div>
+    <div class="doc-meta">
+        <div class="doc-number">#${dn.note_number}</div>
+        <div class="doc-date">${new Date(dn.created_at).toLocaleDateString('en-GB')}</div>
+        <span class="badge ${badgeClass}">سند تسليم بضاعة${titleSuffix}</span>
+    </div>
 </div>
-<table><thead><tr><th style="width:40px">#</th><th>الصنف / المقاس</th><th style="width:80px;text-align:center">المطلوب</th><th style="width:80px;text-align:center">المُسلَّم</th><th>ملاحظات</th></tr></thead>
-<tbody>${itemsHTML || '<tr><td colspan="5" style="text-align:center;padding:16px;color:#94a3b8">لا توجد أصناف</td></tr>'}</tbody></table>
+<div class="info-grid">
+    <div class="info-item"><label>العميل</label><span>${esc(dn.client_name || '—')}</span></div>
+    <div class="info-item"><label>رقم الطلب</label><span>#${dn.order_number || '—'}</span></div>
+    <div class="info-item"><label>التاريخ</label><span>${new Date(dn.created_at).toLocaleDateString('en-GB')}</span></div>
+    <div class="info-item"><label>الحالة</label><span>${dn.status === 'completed' ? 'مكتمل' : dn.status === 'partial' ? 'جزئي' : 'معلق'}</span></div>
+    ${dn.driver_name ? `<div class="info-item"><label>السائق</label><span>${esc(dn.driver_name)}</span></div>` : ''}
+    ${dn.vehicle_number ? `<div class="info-item"><label>رقم السيارة</label><span>${esc(dn.vehicle_number)}</span></div>` : ''}
+</div>
+<table class="items"><thead><tr><th style="width:40px">#</th><th>الصنف / المقاس</th><th style="width:80px;text-align:center">المطلوب</th><th style="width:80px;text-align:center">المُسلَّم</th><th>ملاحظات</th></tr></thead>
+<tbody>${itemsHTML || '<tr><td colspan="5" style="text-align:center;padding:24px;color:#94a3b8">لا توجد أصناف</td></tr>'}</tbody></table>
 <div class="totals">
-<div>إجمالي المطلوب: <strong>${totalRequested}</strong></div>
-<div>إجمالي المُسلَّم: <strong>${totalDelivered}</strong></div>
+    <div>إجمالي المطلوب: <strong>${totalRequested}</strong></div>
+    <div>إجمالي المُسلَّم: <strong>${totalDelivered}</strong></div>
 </div>
 <div class="footer"><div class="sig-box"><div class="sig-line">توقيع المستلم</div></div><div class="sig-box"><div class="sig-line">توقيع المسلِّم</div></div><div class="sig-box"><div class="sig-line">الختم</div></div></div>
+<div class="doc-footer"><span class="brand">G.PACK ERP 2.0</span><span>تاريخ الطباعة: ${new Date().toLocaleDateString('en-GB')}</span></div>
+</div>
+<button class="print-btn no-print" onclick="window.print()">🖨️ طباعة</button>
 </body></html>`;
             const w = window.open('', '_blank', 'width=800,height=700');
             w.document.write(html); w.document.close(); setTimeout(() => w.print(), 500);
