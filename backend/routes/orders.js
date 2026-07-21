@@ -510,6 +510,10 @@ router.get('/:id/details', async (req, res) => {
                 o.pricing_notes,
                 o.internal_notes,
                 o.client_notes,
+                o.client_response,
+                o.rejection_reason,
+                o.deposit_receipt,
+                o.responded_at,
                 c.name as client_name
              FROM orders o
              LEFT JOIN clients c ON c.id = o.client_id

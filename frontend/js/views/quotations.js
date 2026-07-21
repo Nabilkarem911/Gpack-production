@@ -3835,6 +3835,32 @@
                     </div>
                 </div>
                 ` : ''}
+
+                ${order.client_response === 'approved' ? `
+                <div class="mt-4 p-3 bg-emerald-50 rounded-xl border border-emerald-200 space-y-2">
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-circle-check text-emerald-500"></i>
+                        <p class="text-xs font-bold text-emerald-700">وافق العميل على العرض${order.responded_at ? ' — ' + new Date(order.responded_at).toLocaleDateString('en-GB') : ''}</p>
+                    </div>
+                    ${order.deposit_receipt
+                        ? `<a href="${order.deposit_receipt}" target="_blank"
+                              class="inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-lg hover:bg-emerald-700">
+                               <i class="fa-solid fa-file-arrow-down"></i> عرض الإيصال المرفوع
+                           </a>`
+                        : `<p class="text-xs text-slate-400"><i class="fa-solid fa-circle-info ml-1"></i>وافق بدون رفع إيصال</p>`
+                    }
+                </div>
+                ` : ''}
+
+                ${order.client_response === 'rejected' ? `
+                <div class="mt-4 p-3 bg-red-50 rounded-xl border border-red-200 space-y-1">
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-circle-xmark text-red-500"></i>
+                        <p class="text-xs font-bold text-red-700">رفض العميل العرض${order.responded_at ? ' — ' + new Date(order.responded_at).toLocaleDateString('en-GB') : ''}</p>
+                    </div>
+                    ${order.rejection_reason ? `<p class="text-xs text-slate-600">${order.rejection_reason}</p>` : ''}
+                </div>
+                ` : ''}
             `;
         } catch (err) {
             body.innerHTML = `
