@@ -1,0 +1,235 @@
+<!-- =============================================================================
+     G.PACK 2.0 - Direct Receipts View (استلام مؤقت)
+     Logic: /js/views/direct-receipts.js
+     Purpose: استلام مؤقت للبضاعة بدون أمر تشغيل + مراجعة المدير وتحويل لفاتورة مشتريات
+============================================================================= -->
+
+<!-- Page Header -->
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+    <div>
+        <h1 class="text-2xl font-extrabold text-slate-800">استلام مؤقت</h1>
+        <p class="text-slate-400 text-sm mt-0.5">استلام البضاعة بدون أمر تشغيل + مراجعة وتحويل لفاتورة مشتريات</p>
+    </div>
+    <div class="flex items-center gap-2">
+        <button onclick="window.drRefresh()"
+                class="w-9 h-9 flex items-center justify-center rounded-xl bg-white border border-slate-200 text-slate-500 hover:text-brand-600 hover:border-brand-300 transition-colors shadow-sm">
+            <i class="fa-solid fa-rotate-right text-sm"></i>
+        </button>
+        <button onclick="window.drOpenCreateModal()"
+                class="inline-flex items-center gap-2 px-4 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold rounded-xl shadow-sm transition-all">
+            <i class="fa-solid fa-plus"></i>
+            <span>استلام جديد</span>
+        </button>
+    </div>
+</div>
+
+<!-- Tabs -->
+<div class="flex items-center gap-2 mb-5 border-b border-slate-200">
+    <button id="dr-tab-pending" onclick="window.drSwitchTab('pending')"
+            class="px-5 py-2.5 text-sm font-bold border-b-2 border-brand-600 text-brand-600 transition-all whitespace-nowrap">
+        <i class="fa-solid fa-clock ml-1"></i>
+        <span>بانتظار المراجعة</span>
+        <span id="dr-tab-pending-badge" class="hidden px-2 py-0.5 bg-amber-500 text-white rounded-full text-xs font-black mr-1">0</span>
+    </button>
+    <button id="dr-tab-archive" onclick="window.drSwitchTab('archive')"
+            class="px-5 py-2.5 text-sm font-bold border-b-2 border-transparent text-slate-400 hover:text-slate-600 transition-all whitespace-nowrap">
+        <i class="fa-solid fa-box-archive ml-1"></i>
+        <span>الأرشيف</span>
+    </button>
+</div>
+
+<!-- Search -->
+<div class="mb-4">
+    <div class="relative max-w-md">
+        <i class="fa-solid fa-search absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+        <input type="text" id="dr-search" placeholder="بحث برقم الاستلام أو اسم الصنف..."
+               class="w-full pr-10 pl-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all"
+               oninput="window.drOnSearch()">
+    </div>
+</div>
+
+<!-- List -->
+<div id="dr-list-container" class="space-y-3"></div>
+
+<!-- Empty state -->
+<div id="dr-empty" class="hidden flex-col items-center justify-center py-16 text-slate-400">
+    <i class="fa-solid fa-inbox text-5xl mb-4 text-slate-300"></i>
+    <p class="text-lg font-semibold text-slate-500">لا توجد استلامات</p>
+    <p class="text-sm mt-1">لم يتم العثور على سجلات مطابقة</p>
+</div>
+
+<!-- ═══════════════════════ CREATE MODAL ═══════════════════════ -->
+<div id="dr-create-modal" class="fixed inset-0 z-[60] hidden">
+    <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onclick="window.drCloseCreateModal()"></div>
+    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl max-h-[90vh] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+        <!-- Header -->
+        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 shrink-0 bg-gradient-to-l from-brand-50 to-white">
+            <h3 class="font-bold text-slate-800 flex items-center gap-2">
+                <i class="fa-solid fa-truck-ramp-box text-brand-500"></i> استلام مؤقت جديد
+            </h3>
+            <button onclick="window.drCloseCreateModal()" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 transition-colors">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <div class="p-5 space-y-4 overflow-y-auto flex-1">
+            <!-- Has Invoice Checkbox -->
+            <div>
+                <label class="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" id="dr-has-invoice" class="w-5 h-5 rounded accent-brand-600 cursor-pointer"
+                           onchange="window.drToggleInvoice()">
+                    <span class="text-sm font-bold text-slate-700">يوجد فاتورة من المورد</span>
+                </label>
+            </div>
+
+            <!-- Items Table -->
+            <div>
+                <div class="flex items-center justify-between mb-2">
+                    <p class="text-xs font-bold text-slate-500 uppercase">الأصناف</p>
+                    <button onclick="window.drAddItemRow()"
+                            class="inline-flex items-center gap-1 px-2.5 py-1.5 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-lg text-xs font-bold text-brand-700 transition-all">
+                        <i class="fa-solid fa-plus"></i> إضافة صنف
+                    </button>
+                </div>
+                <div class="overflow-x-auto border border-slate-200 rounded-xl">
+                    <table class="w-full">
+                        <thead class="bg-slate-50 border-b border-slate-200">
+                            <tr>
+                                <th class="py-2 px-3 text-right text-xs font-bold text-slate-500">اسم الصنف</th>
+                                <th class="py-2 px-3 text-right text-xs font-bold text-slate-500 w-24">الوحدة</th>
+                                <th class="py-2 px-3 text-right text-xs font-bold text-slate-500 w-24">الكمية</th>
+                                <th class="py-2 px-3 text-center text-xs font-bold text-slate-500 w-20">صورة</th>
+                                <th class="py-2 px-3 text-center text-xs font-bold text-slate-500 w-20">فاتورة</th>
+                                <th class="py-2 px-3 w-10"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="dr-items-tbody" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Notes -->
+            <div>
+                <label class="block text-sm font-bold text-slate-700 mb-1.5">ملاحظات</label>
+                <textarea id="dr-notes" rows="2"
+                          class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 resize-none transition-all"
+                          placeholder="أي ملاحظات..."></textarea>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="flex justify-end gap-2 px-5 py-4 border-t border-slate-100 shrink-0 bg-white">
+            <button onclick="window.drCloseCreateModal()"
+                    class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold rounded-xl transition-colors">
+                إلغاء
+            </button>
+            <button id="dr-save-btn" onclick="window.drSave()"
+                    class="px-4 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold rounded-xl transition-colors">
+                <i class="fa-solid fa-floppy-disk ml-1"></i> حفظ الاستلام
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════ REVIEW MODAL ═══════════════════════ -->
+<div id="dr-review-modal" class="fixed inset-0 z-[60] hidden">
+    <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onclick="window.drCloseReviewModal()"></div>
+    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-3xl max-h-[90vh] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+        <!-- Header -->
+        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 shrink-0 bg-gradient-to-l from-amber-50 to-white">
+            <h3 class="font-bold text-slate-800 flex items-center gap-2">
+                <i class="fa-solid fa-clipboard-check text-amber-500"></i>
+                <span>مراجعة استلام مؤقت #<span id="dr-review-number"></span></span>
+            </h3>
+            <button onclick="window.drCloseReviewModal()" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 transition-colors">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <div class="p-5 space-y-4 overflow-y-auto flex-1">
+            <!-- Receipt Info -->
+            <div id="dr-review-info" class="bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm text-slate-600"></div>
+
+            <!-- Supplier + Warehouse + Invoice -->
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 mb-1">المورد <span class="text-red-500">*</span></label>
+                    <select id="dr-review-supplier" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:border-brand-500 transition-all">
+                        <option value="">— اختر —</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 mb-1">المستودع <span class="text-red-500">*</span></label>
+                    <select id="dr-review-warehouse" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:border-brand-500 transition-all">
+                        <option value="">— اختر —</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 mb-1">رقم فاتورة المورد</label>
+                    <input type="text" id="dr-review-invoice-ref" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:border-brand-500 transition-all">
+                </div>
+            </div>
+
+            <!-- Items Review Table -->
+            <div>
+                <p class="text-xs font-bold text-slate-500 uppercase mb-2">مراجعة الأصناف</p>
+                <div class="overflow-x-auto border border-slate-200 rounded-xl">
+                    <table class="w-full">
+                        <thead class="bg-slate-50 border-b border-slate-200">
+                            <tr>
+                                <th class="py-2 px-3 text-right text-xs font-bold text-slate-500">الصنف (من الأمين)</th>
+                                <th class="py-2 px-3 text-right text-xs font-bold text-slate-500">ربط بمنتج</th>
+                                <th class="py-2 px-3 text-right text-xs font-bold text-slate-500 w-24">الوحدة</th>
+                                <th class="py-2 px-3 text-right text-xs font-bold text-slate-500 w-24">الكمية</th>
+                                <th class="py-2 px-3 text-right text-xs font-bold text-slate-500 w-28">تكلفة الوحدة</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dr-review-items-tbody" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="flex justify-between items-center gap-2 px-5 py-4 border-t border-slate-100 shrink-0 bg-white">
+            <button onclick="window.drCancelReceipt()"
+                    class="px-4 py-2.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 text-sm font-bold rounded-xl transition-colors">
+                <i class="fa-solid fa-ban ml-1"></i> إلغاء الاستلام
+            </button>
+            <div class="flex gap-2">
+                <button onclick="window.drCloseReviewModal()"
+                        class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold rounded-xl transition-colors">
+                    إغلاق
+                </button>
+                <button id="dr-save-review-btn" onclick="window.drSaveReview()"
+                        class="px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold rounded-xl transition-colors">
+                    <i class="fa-solid fa-floppy-disk ml-1"></i> حفظ المراجعة
+                </button>
+                <button id="dr-convert-btn" onclick="window.drConvert()"
+                        class="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl transition-colors">
+                    <i class="fa-solid fa-file-invoice ml-1"></i> تحويل لفاتورة مشتريات
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════ DETAIL MODAL (archive view) ═══════════════════════ -->
+<div id="dr-detail-modal" class="fixed inset-0 z-[60] hidden">
+    <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onclick="window.drCloseDetailModal()"></div>
+    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl max-h-[90vh] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 shrink-0 bg-gradient-to-l from-slate-50 to-white">
+            <h3 class="font-bold text-slate-800 flex items-center gap-2">
+                <i class="fa-solid fa-file text-slate-500"></i>
+                <span>تفاصيل استلام مؤقت #<span id="dr-detail-number"></span></span>
+            </h3>
+            <button onclick="window.drCloseDetailModal()" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 transition-colors">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        <div id="dr-detail-content" class="p-5 overflow-y-auto flex-1 space-y-4"></div>
+    </div>
+</div>
+
+<!-- Script -->
+<script src="/js/views/direct-receipts.js?v=20260721"></script>

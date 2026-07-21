@@ -70,6 +70,7 @@ var NAV_ITEMS = [ // var allows re-declaration if script loads more than once in
     { view: 'product-movements',   label: 'حركات الأصناف',    icon: 'fa-arrow-right-arrow-left', permission: 'products', hidden: true }, // ✅ product-movements.html
     { view: 'vmi-dispatch',       label: 'سندات التسليم',     icon: 'fa-truck-fast',             permission: 'vmi_dispatch' }, // ✅ vmi-dispatch.html
     { view: 'receiving-vouchers', label: 'سندات الاستلام',     icon: 'fa-clipboard-check', permission: 'receiving' }, // ✅ receiving-vouchers.html
+    { view: 'direct-receipts',    label: 'استلام مؤقت',         icon: 'fa-truck-ramp-box',  permission: 'receiving' }, // ✅ direct-receipts.html
 
     // ─────────────────────────────────────────────────────────────────────────────
     // 6. الإدارة

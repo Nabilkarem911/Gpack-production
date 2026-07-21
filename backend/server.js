@@ -237,6 +237,7 @@ _mountRoute('/invoices',            authenticate, require('./routes/invoices'));
 _mountRoute('/purchase-invoices',   authenticate, require('./routes/purchase-invoices'));
 _mountRoute('/purchase-returns',    authenticate, require('./routes/purchase-returns'));
 _mountRoute('/receiving-vouchers', authenticate, require('./routes/receiving-vouchers'));
+_mountRoute('/direct-receipts',    authenticate, require('./routes/direct-receipts'));
 _mountRoute('/account-statement',   authenticate, require('./routes/account-statement'));
 _mountRoute('/receipt-vouchers',    authenticate, require('./routes/receipt-vouchers'));
 _mountRoute('/payment-vouchers',    authenticate, require('./routes/payment-vouchers'));
