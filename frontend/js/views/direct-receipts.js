@@ -364,10 +364,11 @@
                     const invPhotoHtml = item.invoice_photo_url
                         ? `<a href="${item.invoice_photo_url}" target="_blank" class="text-emerald-600 text-xs hover:underline"><i class="fa-solid fa-file-invoice"></i> فاتورة</a>`
                         : '';
+                    const hasVariant = !!item.variant_id;
                     return `<tr data-item-id="${item.id}">
                         <td class="py-2 px-3">
                             <div class="text-sm font-semibold text-slate-800">${_esc(item.product_name)}</div>
-                            <div class="text-xs text-slate-400">${_esc(item.unit_name)} • ${_fmtQty(item.quantity)} ${_esc(item.unit_name)}</div>
+                            <div class="text-xs text-slate-400">${_fmtQty(item.quantity)} ${_esc(item.unit_name)}</div>
                             <div class="flex gap-2 mt-1">${photoHtml} ${invPhotoHtml}</div>
                         </td>
                         <td class="py-2 px-3">
@@ -375,11 +376,13 @@
                                    placeholder="ابحث عن منتج..."
                                    value="${item.matched_product_name ? _esc(item.matched_product_name + ' ' + (item.size_name || '')) : ''}"
                                    oninput="window.drOnVariantSearch(this, '${item.id}')"
-                                   data-variant-id="${item.variant_id || ''}">
+                                   data-variant-id="${item.variant_id || ''}"
+                                   data-unit-id="${item.unit_id || ''}">
                             <div class="dr-variant-suggestions hidden mt-1 bg-white border border-slate-200 rounded-lg max-h-32 overflow-y-auto text-xs"></div>
                         </td>
                         <td class="py-2 px-3">
-                            <select class="dr-review-unit w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none">
+                            <select class="dr-review-unit w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none ${hasVariant ? 'bg-slate-100 text-slate-500' : ''}"
+                                    ${hasVariant ? 'disabled' : ''}>
                                 <option value="">—</option>
                                 ${_units.map(u => `<option value="${u.id}" ${item.unit_id === u.id ? 'selected' : ''}>${_esc(u.name)}</option>`).join('')}
                             </select>
@@ -427,8 +430,8 @@
                 }
                 sugBox.innerHTML = products.map(p => {
                     const variants = (p.variants || []).map(v => 
-                        `<div onclick="window.drSelectVariant(this, '${itemId}', '${v.id}', '${_esc((p.name || '') + ' ' + (v.size_name || '')).replace(/'/g, "\\'")}')"
-                              class="px-2 py-1.5 hover:bg-brand-50 cursor-pointer text-xs">${_esc(p.name)} ${v.size_name ? '<span class=\"text-slate-400\">' + _esc(v.size_name) + '</span>' : ''}</div>`
+                        `<div onclick="window.drSelectVariant(this, '${itemId}', '${v.id}', '${_esc((p.name || '') + ' ' + (v.size_name || '')).replace(/'/g, "\\'")}', '${v.unit_id || ''}')"
+                              class="px-2 py-1.5 hover:bg-brand-50 cursor-pointer text-xs">${_esc(p.name)} ${v.size_name ? '<span class=\"text-slate-400\">' + _esc(v.size_name) + '</span>' : ''}${v.unit_name ? '<span class=\"text-emerald-500 mr-1\">• ' + _esc(v.unit_name) + '</span>' : ''}</div>`
                     ).join('');
                     return variants;
                 }).join('');
@@ -439,15 +442,24 @@
         }, 300);
     }
 
-    function _selectVariant(el, itemId, variantId, displayName) {
+    function _selectVariant(el, itemId, variantId, displayName, unitId) {
         const tr = el.closest('tr');
         const input = tr.querySelector('.dr-review-variant-search');
         if (input) {
             input.value = displayName;
             input.dataset.variantId = variantId;
+            input.dataset.unitId = unitId || '';
         }
         const sugBox = tr.querySelector('.dr-variant-suggestions');
         if (sugBox) sugBox.classList.add('hidden');
+
+        // Auto-select unit from variant and lock the dropdown
+        const unitSel = tr.querySelector('.dr-review-unit');
+        if (unitSel && unitId) {
+            unitSel.value = unitId;
+            unitSel.disabled = true;
+            unitSel.classList.add('bg-slate-100', 'text-slate-500');
+        }
     }
 
     async function _saveReview() {
@@ -465,7 +477,8 @@
             const itemId = row.dataset.itemId;
             const variantInput = row.querySelector('.dr-review-variant-search');
             const variantId = variantInput?.dataset.variantId || '';
-            const unitId = row.querySelector('.dr-review-unit')?.value || null;
+            const unitSel = row.querySelector('.dr-review-unit');
+            const unitId = unitSel?.disabled ? (variantInput?.dataset.unitId || null) : (unitSel?.value || null);
             const qty = parseFloat(row.querySelector('.dr-review-qty')?.value) || 0;
             const cost = parseFloat(row.querySelector('.dr-review-cost')?.value) || 0;
 
@@ -481,13 +494,13 @@
         try {
             await window.apiFetch(`/api/direct-receipts/${_currentReceipt.id}/review`, {
                 method: 'PUT',
-                body: JSON.stringify({
+                body: {
                     supplier_id: supplierId,
                     supplier_invoice_ref: invoiceRef || null,
                     supplier_invoice_date: invoiceDate,
                     warehouse_id: warehouseId,
                     items,
-                }),
+                },
             });
             window.showToast('تم حفظ المراجعة', 'success');
             _currentReceipt.supplier_id = supplierId;
@@ -666,6 +679,16 @@
                 if (activeInput) {
                     activeInput.value = displayName;
                     activeInput.dataset.variantId = variant ? variant.id : '';
+                    activeInput.dataset.unitId = variant?.unit_id || '';
+
+                    // Auto-select unit and lock dropdown
+                    const tr = activeInput.closest('tr');
+                    const unitSel = tr?.querySelector('.dr-review-unit');
+                    if (unitSel && variant?.unit_id) {
+                        unitSel.value = variant.unit_id;
+                        unitSel.disabled = true;
+                        unitSel.classList.add('bg-slate-100', 'text-slate-500');
+                    }
                 }
 
                 window.showToast(`تم إضافة المنتج "${prod.name}" بنجاح.`, 'success');
