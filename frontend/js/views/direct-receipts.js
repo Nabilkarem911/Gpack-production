@@ -11,16 +11,19 @@
     let _suppliers = [];
     let _warehouses = [];
     let _units = [];
+    let _categories = [];
     let _currentReceipt = null;
     let _itemRowCounter = 0;
+    let _activeReviewRow = null;
 
     const _el = (id) => document.getElementById(id);
     const _esc = (s) => (s || '').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    const _fmtQty = (v) => { const n = parseFloat(v); return isNaN(n) ? '0' : n.toString(); };
 
     // ── Init ──────────────────────────────────────────────────────────────────
     async function _init() {
         var token = window.getCurrentNavToken ? window.getCurrentNavToken() : 0;
-        await Promise.all([_loadList(), _loadSuppliers(), _loadWarehouses(), _loadUnits()]);
+        await Promise.all([_loadList(), _loadSuppliers(), _loadWarehouses(), _loadUnits(), _loadCategories()]);
         if (window.isViewActive && !window.isViewActive(token)) return;
     }
 
@@ -60,6 +63,30 @@
             const res = await window.apiFetch('/api/units?limit=100');
             _units = res.data || res || [];
         } catch (_e) {}
+    }
+
+    async function _loadCategories() {
+        try {
+            const res = await window.apiFetch('/api/categories?limit=100');
+            _categories = res.data || res || [];
+        } catch (_e) {}
+    }
+
+    function _buildUnitOptions() {
+        return '<option value="">—</option>' +
+            _units.map(u => `<option value="${u.id}">${_esc(u.name)}${u.abbreviation ? ' (' + _esc(u.abbreviation) + ')' : ''}</option>`).join('');
+    }
+
+    function _buildCategoryOptions() {
+        return '<option value="">— بدون تصنيف —</option>' +
+            _categories.map(c => `<option value="${c.id}">${_esc(c.name)}</option>`).join('');
+    }
+
+    function _populateQuickProductDropdowns() {
+        const catSel = _el('dr-qp-category');
+        if (catSel) catSel.innerHTML = _buildCategoryOptions();
+        const unitSel = _el('dr-qp-unit');
+        if (unitSel) unitSel.innerHTML = '<option value="">— بدون وحدة —</option>' + _units.map(u => `<option value="${u.id}">${_esc(u.name)}${u.abbreviation ? ' (' + _esc(u.abbreviation) + ')' : ''}</option>`).join('');
     }
 
     // ── Render List ───────────────────────────────────────────────────────────
@@ -340,7 +367,7 @@
                     return `<tr data-item-id="${item.id}">
                         <td class="py-2 px-3">
                             <div class="text-sm font-semibold text-slate-800">${_esc(item.product_name)}</div>
-                            <div class="text-xs text-slate-400">${_esc(item.unit_name)} • ${item.quantity} ${_esc(item.unit_name)}</div>
+                            <div class="text-xs text-slate-400">${_esc(item.unit_name)} • ${_fmtQty(item.quantity)} ${_esc(item.unit_name)}</div>
                             <div class="flex gap-2 mt-1">${photoHtml} ${invPhotoHtml}</div>
                         </td>
                         <td class="py-2 px-3">
@@ -359,7 +386,7 @@
                         </td>
                         <td class="py-2 px-3">
                             <input type="number" class="dr-review-qty w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none text-center"
-                                   value="${item.confirmed_quantity || item.quantity}" min="0" step="any">
+                                   value="${_fmtQty(item.confirmed_quantity || item.quantity)}" min="0" step="any">
                         </td>
                         <td class="py-2 px-3">
                             <input type="number" class="dr-review-cost w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none text-center"
@@ -557,7 +584,7 @@
                                         ${it.product_photo_url ? `<a href="${it.product_photo_url}" target="_blank" class="text-brand-600 text-xs hover:underline"><i class="fa-solid fa-image"></i></a>` : ''}
                                     </td>
                                     <td class="py-2 px-3 text-slate-600">${_esc(it.unit_name)}${it.matched_unit_name ? ' / ' + _esc(it.matched_unit_name) : ''}</td>
-                                    <td class="py-2 px-3 text-center font-bold">${it.confirmed_quantity || it.quantity}</td>
+                                    <td class="py-2 px-3 text-center font-bold">${_fmtQty(it.confirmed_quantity || it.quantity)}</td>
                                     <td class="py-2 px-3 text-center">${it.unit_cost ? parseFloat(it.unit_cost).toFixed(2) : '—'}</td>
                                 </tr>`).join('')}
                             </tbody>
@@ -574,6 +601,212 @@
 
     function _closeDetailModal() {
         _hideModal('dr-detail-modal');
+    }
+
+    // ── Quick Add: Product ────────────────────────────────────────────────────
+    function _openQuickProduct() {
+        _populateQuickProductDropdowns();
+        const nameEl = _el('dr-qp-name');
+        if (nameEl) nameEl.value = '';
+        const sizeEl = _el('dr-qp-size');
+        if (sizeEl) sizeEl.value = '';
+        const errBox = _el('dr-qp-error');
+        if (errBox) errBox.classList.add('hidden');
+        _drCancelQuickCategory();
+        _drCancelQuickUnitInline();
+        _showModal('dr-quick-product-modal');
+        setTimeout(() => { if (nameEl) nameEl.focus(); }, 100);
+    }
+
+    function _closeQuickProduct() {
+        _hideModal('dr-quick-product-modal');
+    }
+
+    async function _submitQuickProduct() {
+        const errBox = _el('dr-qp-error');
+        const errSpan = errBox ? errBox.querySelector('span') : null;
+        const submitBtn = _el('dr-qp-submit-btn');
+        const nameVal = (_el('dr-qp-name')?.value || '').trim();
+        const sizeVal = (_el('dr-qp-size')?.value || '').trim() || 'افتراضي';
+        const categoryVal = (_el('dr-qp-category')?.value || '').trim();
+        const unitVal = (_el('dr-qp-unit')?.value || '').trim();
+
+        if (errBox) errBox.classList.add('hidden');
+        if (!nameVal) {
+            if (errSpan) errSpan.textContent = 'اسم المنتج مطلوب.';
+            if (errBox) errBox.classList.remove('hidden');
+            return;
+        }
+
+        if (submitBtn) { submitBtn.disabled = true; submitBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin ml-1"></i> جارٍ الحفظ...'; }
+
+        try {
+            const res = await window.apiFetch('/api/products', {
+                method: 'POST',
+                body: {
+                    name: nameVal,
+                    sku: null,
+                    category_id: categoryVal || null,
+                    status: 'active',
+                    variants: [{
+                        size_name: sizeVal,
+                        selling_price: 0,
+                        unit_id: unitVal || null,
+                    }],
+                },
+            });
+
+            if (res && res.data) {
+                const prod = res.data;
+                const variant = prod.variants && prod.variants[0] ? prod.variants[0] : null;
+                const displayName = prod.name + (variant && variant.size_name ? ' ' + variant.size_name : '');
+
+                // Auto-select in the active review row if any
+                const activeInput = document.querySelector('.dr-review-variant-search:focus');
+                if (activeInput) {
+                    activeInput.value = displayName;
+                    activeInput.dataset.variantId = variant ? variant.id : '';
+                }
+
+                window.showToast(`تم إضافة المنتج "${prod.name}" بنجاح.`, 'success');
+                _closeQuickProduct();
+            }
+        } catch (err) {
+            if (errSpan) errSpan.textContent = err.message || 'حدث خطأ غير متوقع.';
+            if (errBox) errBox.classList.remove('hidden');
+        } finally {
+            if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = '<i class="fa-solid fa-plus ml-1"></i> إضافة المنتج'; }
+        }
+    }
+
+    // ── Quick Add: Category (inline in product modal) ─────────────────────────
+    function _drToggleQuickCategory() {
+        const inline = _el('dr-qp-category-inline');
+        if (inline) {
+            inline.classList.remove('hidden');
+            const nameInput = _el('dr-qp-category-name');
+            if (nameInput) nameInput.focus();
+        }
+    }
+
+    function _drCancelQuickCategory() {
+        const inline = _el('dr-qp-category-inline');
+        if (inline) inline.classList.add('hidden');
+        const nameInput = _el('dr-qp-category-name');
+        if (nameInput) nameInput.value = '';
+    }
+
+    async function _drSaveQuickCategory() {
+        const nameVal = (_el('dr-qp-category-name')?.value || '').trim();
+        if (!nameVal) { window.showToast('اسم التصنيف مطلوب.', 'warning'); return; }
+        try {
+            const res = await window.apiFetch('/api/categories', {
+                method: 'POST',
+                body: { name: nameVal },
+            });
+            if (res && res.data) {
+                await _loadCategories();
+                const catSel = _el('dr-qp-category');
+                if (catSel) catSel.innerHTML = _buildCategoryOptions();
+                if (catSel) catSel.value = res.data.id;
+                _drCancelQuickCategory();
+                window.showToast(`تم إضافة التصنيف "${res.data.name}" بنجاح.`, 'success');
+            }
+        } catch (err) {
+            window.showToast(err.message || 'فشل إضافة التصنيف.', 'error');
+        }
+    }
+
+    // ── Quick Add: Unit (inline in product modal) ─────────────────────────────
+    function _drToggleQuickUnitInline() {
+        const inline = _el('dr-qp-unit-inline');
+        if (inline) {
+            inline.classList.remove('hidden');
+            const nameInput = _el('dr-qp-unit-name');
+            if (nameInput) nameInput.focus();
+        }
+    }
+
+    function _drCancelQuickUnitInline() {
+        const inline = _el('dr-qp-unit-inline');
+        if (inline) inline.classList.add('hidden');
+        const nameInput = _el('dr-qp-unit-name');
+        const abbrInput = _el('dr-qp-unit-abbr');
+        if (nameInput) nameInput.value = '';
+        if (abbrInput) abbrInput.value = '';
+    }
+
+    async function _drSaveQuickUnitInline() {
+        const nameVal = (_el('dr-qp-unit-name')?.value || '').trim();
+        const abbrVal = (_el('dr-qp-unit-abbr')?.value || '').trim();
+        if (!nameVal) { window.showToast('اسم الوحدة مطلوب.', 'warning'); return; }
+        try {
+            const res = await window.apiFetch('/api/units', {
+                method: 'POST',
+                body: { name: nameVal, abbreviation: abbrVal || null },
+            });
+            if (res && res.data) {
+                await _loadUnits();
+                _populateQuickProductDropdowns();
+                const unitSel = _el('dr-qp-unit');
+                if (unitSel) unitSel.value = res.data.id;
+                _drCancelQuickUnitInline();
+                _refreshReviewUnitDropdowns();
+                window.showToast(`تم إضافة الوحدة "${res.data.name}" بنجاح.`, 'success');
+            }
+        } catch (err) {
+            window.showToast(err.message || 'فشل إضافة الوحدة.', 'error');
+        }
+    }
+
+    // ── Quick Add: Unit (standalone modal) ────────────────────────────────────
+    function _openQuickUnit() {
+        const nameEl = _el('dr-qu-name');
+        const abbrEl = _el('dr-qu-abbr');
+        if (nameEl) nameEl.value = '';
+        if (abbrEl) abbrEl.value = '';
+        _showModal('dr-quick-unit-modal');
+        setTimeout(() => { if (nameEl) nameEl.focus(); }, 100);
+    }
+
+    function _closeQuickUnit() {
+        _hideModal('dr-quick-unit-modal');
+    }
+
+    async function _submitQuickUnit() {
+        const submitBtn = _el('dr-qu-submit-btn');
+        const nameVal = (_el('dr-qu-name')?.value || '').trim();
+        const abbrVal = (_el('dr-qu-abbr')?.value || '').trim();
+        if (!nameVal) { window.showToast('اسم الوحدة مطلوب.', 'warning'); return; }
+
+        if (submitBtn) { submitBtn.disabled = true; submitBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin ml-1"></i>...'; }
+
+        try {
+            const res = await window.apiFetch('/api/units', {
+                method: 'POST',
+                body: { name: nameVal, abbreviation: abbrVal || null },
+            });
+            if (res && res.data) {
+                await _loadUnits();
+                _refreshReviewUnitDropdowns();
+                _populateQuickProductDropdowns();
+                window.showToast(`تم إضافة الوحدة "${res.data.name}" بنجاح.`, 'success');
+                _closeQuickUnit();
+            }
+        } catch (err) {
+            window.showToast(err.message || 'فشل إضافة الوحدة.', 'error');
+        } finally {
+            if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = '<i class="fa-solid fa-plus ml-1"></i> إضافة الوحدة'; }
+        }
+    }
+
+    function _refreshReviewUnitDropdowns() {
+        const opts = _buildUnitOptions();
+        document.querySelectorAll('.dr-review-unit').forEach(sel => {
+            const cur = sel.value;
+            sel.innerHTML = opts;
+            if (cur) sel.value = cur;
+        });
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -600,6 +833,18 @@
     window.drCancelReceipt = _cancelReceipt;
     window.drOpenDetail = _openDetail;
     window.drCloseDetailModal = _closeDetailModal;
+    window.drOpenQuickProduct = _openQuickProduct;
+    window.drCloseQuickProduct = _closeQuickProduct;
+    window.drSubmitQuickProduct = _submitQuickProduct;
+    window.drToggleQuickCategory = _drToggleQuickCategory;
+    window.drCancelQuickCategory = _drCancelQuickCategory;
+    window.drSaveQuickCategory = _drSaveQuickCategory;
+    window.drToggleQuickUnitInline = _drToggleQuickUnitInline;
+    window.drCancelQuickUnitInline = _drCancelQuickUnitInline;
+    window.drSaveQuickUnitInline = _drSaveQuickUnitInline;
+    window.drOpenQuickUnit = _openQuickUnit;
+    window.drCloseQuickUnit = _closeQuickUnit;
+    window.drSubmitQuickUnit = _submitQuickUnit;
 
     // Auto-init
     _init();

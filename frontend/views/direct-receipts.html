@@ -178,8 +178,8 @@
                         <thead class="bg-slate-50 border-b border-slate-200">
                             <tr>
                                 <th class="py-2 px-3 text-right text-xs font-bold text-slate-500">الصنف (من الأمين)</th>
-                                <th class="py-2 px-3 text-right text-xs font-bold text-slate-500">ربط بمنتج</th>
-                                <th class="py-2 px-3 text-right text-xs font-bold text-slate-500 w-24">الوحدة</th>
+                                <th class="py-2 px-3 text-right text-xs font-bold text-slate-500">ربط بمنتج <button onclick="window.drOpenQuickProduct()" class="mr-1 inline-flex items-center gap-1 px-1.5 py-0.5 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded text-[10px] font-bold text-brand-700 transition-all"><i class="fa-solid fa-plus"></i> جديد</button></th>
+                                <th class="py-2 px-3 text-right text-xs font-bold text-slate-500 w-28">الوحدة <button onclick="window.drOpenQuickUnit()" class="mr-1 inline-flex items-center gap-1 px-1.5 py-0.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded text-[10px] font-bold text-emerald-700 transition-all"><i class="fa-solid fa-plus"></i> جديد</button></th>
                                 <th class="py-2 px-3 text-right text-xs font-bold text-slate-500 w-24">الكمية</th>
                                 <th class="py-2 px-3 text-right text-xs font-bold text-slate-500 w-28">تكلفة الوحدة</th>
                             </tr>
@@ -231,5 +231,123 @@
     </div>
 </div>
 
+<!-- ═══════════════════════ QUICK ADD PRODUCT MODAL ═══════════════════════ -->
+<div id="dr-quick-product-modal" class="fixed inset-0 z-[70] hidden">
+    <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onclick="window.drCloseQuickProduct()"></div>
+    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 shrink-0 bg-gradient-to-l from-brand-50 to-white">
+            <h3 class="font-bold text-slate-800 flex items-center gap-2">
+                <i class="fa-solid fa-box text-brand-500"></i> إضافة منتج سريع
+            </h3>
+            <button onclick="window.drCloseQuickProduct()" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 transition-colors">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        <div class="p-5 space-y-4 overflow-y-auto flex-1">
+            <div id="dr-qp-error" class="hidden flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-medium">
+                <i class="fa-solid fa-circle-exclamation flex-shrink-0"></i>
+                <span></span>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-600 mb-1.5">اسم المنتج <span class="text-red-500">*</span></label>
+                <input type="text" id="dr-qp-name" placeholder="مثال: كرتون موج"
+                       class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all">
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-600 mb-1.5">التصنيف</label>
+                <div class="flex gap-2">
+                    <select id="dr-qp-category" class="flex-1 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-brand-500 transition-all">
+                        <option value="">— بدون تصنيف —</option>
+                    </select>
+                    <button type="button" onclick="window.drToggleQuickCategory()" title="إضافة تصنيف سريع"
+                            class="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-xl bg-brand-50 hover:bg-brand-100 text-brand-600 border border-brand-200 transition-colors active:scale-95">
+                        <i class="fa-solid fa-plus text-sm"></i>
+                    </button>
+                </div>
+                <div id="dr-qp-category-inline" class="hidden mt-2 flex gap-2">
+                    <input type="text" id="dr-qp-category-name" placeholder="اسم التصنيف الجديد"
+                           class="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-brand-500 transition-all">
+                    <button type="button" onclick="window.drSaveQuickCategory()"
+                            class="flex-shrink-0 px-3 py-2 text-xs font-bold text-white bg-brand-600 hover:bg-brand-700 rounded-xl transition-colors">حفظ</button>
+                    <button type="button" onclick="window.drCancelQuickCategory()"
+                            class="flex-shrink-0 px-3 py-2 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors">إلغاء</button>
+                </div>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-600 mb-1.5">وحدة القياس</label>
+                <div class="flex gap-2">
+                    <select id="dr-qp-unit" class="flex-1 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-brand-500 transition-all">
+                        <option value="">— بدون وحدة —</option>
+                    </select>
+                    <button type="button" onclick="window.drToggleQuickUnitInline()" title="إضافة وحدة سريع"
+                            class="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-600 border border-emerald-200 transition-colors active:scale-95">
+                        <i class="fa-solid fa-plus text-sm"></i>
+                    </button>
+                </div>
+                <div id="dr-qp-unit-inline" class="hidden mt-2 space-y-2">
+                    <input type="text" id="dr-qp-unit-name" placeholder="اسم الوحدة (مثال: قطعة)"
+                           class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-brand-500 transition-all">
+                    <input type="text" id="dr-qp-unit-abbr" placeholder="الرمز (مثال: ق)"
+                           class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-brand-500 transition-all">
+                    <div class="flex gap-2">
+                        <button type="button" onclick="window.drSaveQuickUnitInline()"
+                                class="flex-shrink-0 px-3 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-colors">حفظ</button>
+                        <button type="button" onclick="window.drCancelQuickUnitInline()"
+                                class="flex-shrink-0 px-3 py-2 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors">إلغاء</button>
+                    </div>
+                </div>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-600 mb-1.5">المقاس / الحجم</label>
+                <input type="text" id="dr-qp-size" placeholder="مثال: افتراضي، كبير، صغير..."
+                       class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all">
+            </div>
+        </div>
+        <div class="flex justify-end gap-2 px-5 py-4 border-t border-slate-100 shrink-0 bg-white">
+            <button onclick="window.drCloseQuickProduct()"
+                    class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold rounded-xl transition-colors">إلغاء</button>
+            <button id="dr-qp-submit-btn" onclick="window.drSubmitQuickProduct()"
+                    class="px-4 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold rounded-xl transition-colors">
+                <i class="fa-solid fa-plus ml-1"></i> إضافة المنتج
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════ QUICK ADD UNIT MODAL ═══════════════════════ -->
+<div id="dr-quick-unit-modal" class="fixed inset-0 z-[70] hidden">
+    <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onclick="window.drCloseQuickUnit()"></div>
+    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 shrink-0 bg-gradient-to-l from-emerald-50 to-white">
+            <h3 class="font-bold text-slate-800 flex items-center gap-2">
+                <i class="fa-solid fa-ruler text-emerald-500"></i> إضافة وحدة سريع
+            </h3>
+            <button onclick="window.drCloseQuickUnit()" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 transition-colors">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        <div class="p-5 space-y-4">
+            <div>
+                <label class="block text-xs font-bold text-slate-600 mb-1.5">اسم الوحدة <span class="text-red-500">*</span></label>
+                <input type="text" id="dr-qu-name" placeholder="مثال: قطعة"
+                       class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-emerald-500 transition-all">
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-600 mb-1.5">الرمز</label>
+                <input type="text" id="dr-qu-abbr" placeholder="مثال: ق"
+                       class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-emerald-500 transition-all">
+            </div>
+        </div>
+        <div class="flex justify-end gap-2 px-5 py-4 border-t border-slate-100 shrink-0 bg-white">
+            <button onclick="window.drCloseQuickUnit()"
+                    class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold rounded-xl transition-colors">إلغاء</button>
+            <button id="dr-qu-submit-btn" onclick="window.drSubmitQuickUnit()"
+                    class="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl transition-colors">
+                <i class="fa-solid fa-plus ml-1"></i> إضافة الوحدة
+            </button>
+        </div>
+    </div>
+</div>
+
 <!-- Script -->
-<script src="/js/views/direct-receipts.js?v=20260721"></script>
+<script src="/js/views/direct-receipts.js?v=20260722"></script>
