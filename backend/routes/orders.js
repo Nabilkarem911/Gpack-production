@@ -506,6 +506,10 @@ router.get('/:id/details', async (req, res) => {
                 o.grand_total,
                 o.client_id,
                 o.created_by,
+                o.pricing_status,
+                o.pricing_notes,
+                o.internal_notes,
+                o.client_notes,
                 c.name as client_name
              FROM orders o
              LEFT JOIN clients c ON c.id = o.client_id
@@ -618,7 +622,9 @@ router.get('/:id', async (req, res) => {
                 o.deposit_receipt,
                 o.responded_at,
                 o.custom_terms,
-                o.down_payment_required
+                o.down_payment_required,
+                o.pricing_status,
+                o.pricing_notes
              FROM orders o
              LEFT JOIN clients c ON c.id = o.client_id
              WHERE o.id = $1

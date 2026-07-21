@@ -957,6 +957,9 @@
         const internalNotes = document.getElementById('quote-internal-notes');
         if (internalNotes) internalNotes.value = '';
 
+        const pricingNotes = document.getElementById('quote-pricing-notes');
+        if (pricingNotes) pricingNotes.value = '';
+
         const downPaymentEl = document.getElementById('quote-down-payment');
         if (downPaymentEl) downPaymentEl.value = '';
 
@@ -1513,6 +1516,9 @@
 
             const intNotesEl = document.getElementById('quote-internal-notes');
             if (intNotesEl) intNotesEl.value = order.internal_notes || '';
+
+            const pricingNotesEl = document.getElementById('quote-pricing-notes');
+            if (pricingNotesEl) pricingNotesEl.value = order.pricing_notes || '';
 
             const downPaymentEl = document.getElementById('quote-down-payment');
             if (downPaymentEl) downPaymentEl.value = order.down_payment_required || '';
@@ -3817,6 +3823,18 @@
                         </div>
                     </div>
                 </div>
+
+                ${order.pricing_notes ? `
+                <div class="mt-4 p-3 bg-amber-50 rounded-xl border border-amber-200">
+                    <div class="flex items-start gap-2">
+                        <i class="fa-solid fa-sticky-note text-amber-500 mt-0.5"></i>
+                        <div class="flex-1">
+                            <p class="text-[10px] font-bold text-amber-700 uppercase tracking-wide mb-1">ملاحظات التسعير (من المدير)</p>
+                            <p class="text-sm text-slate-700 whitespace-pre-wrap">${order.pricing_notes}</p>
+                        </div>
+                    </div>
+                </div>
+                ` : ''}
             `;
         } catch (err) {
             body.innerHTML = `
