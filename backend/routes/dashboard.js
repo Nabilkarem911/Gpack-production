@@ -277,7 +277,45 @@ router.get('/alerts', authenticate, async (req, res) => {
             });
         }
 
-        // 3. Pending & Overdue Tasks (for all authenticated users)
+        // 3. Quote Responses (client approved/rejected a shared quote)
+        if (isSalesRep || isAdmin) {
+            const quoteResponseResult = await db.query(
+                `SELECT
+                    o.id as order_id,
+                    o.order_number,
+                    c.name as client_name,
+                    o.client_response,
+                    o.responded_at,
+                    o.deposit_receipt
+                 FROM orders o
+                 JOIN clients c ON o.client_id = c.id
+                 WHERE o.status = 'quote'
+                   AND o.client_response IN ('approved', 'rejected')
+                   AND o.responded_at IS NOT NULL
+                   ${isSalesRep ? `AND o.created_by = $1` : ''}
+                 ORDER BY o.responded_at DESC
+                 LIMIT 10`,
+                isSalesRep ? [userId] : []
+            );
+
+            quoteResponseResult.rows.forEach(row => {
+                const isApproved = row.client_response === 'approved';
+                alerts.push({
+                    type: isApproved ? 'quote_approved' : 'quote_rejected',
+                    severity: isApproved ? 'info' : 'warning',
+                    title: isApproved
+                        ? `العميل وافق على عرض السعر #${row.order_number}`
+                        : `العميل رفض عرض السعر #${row.order_number}`,
+                    message: isApproved
+                        ? `العميل: ${row.client_name}${row.deposit_receipt ? ' — تم رفع إيصال الدفعة' : ' — بدون إيصال'}`
+                        : `العميل: ${row.client_name} — يرجى مراجعة السبب`,
+                    order_id: row.order_id,
+                    created_at: row.responded_at
+                });
+            });
+        }
+
+        // 4. Pending & Overdue Tasks (for all authenticated users)
         const userRole = (req.user.role || '').toLowerCase();
         const isTaskAdmin = ['super_admin', 'admin', 'manager'].includes(userRole);
         const tasksQuery = isTaskAdmin

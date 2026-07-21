@@ -22,6 +22,7 @@
     let _rowCounter    = 0;     // unique key for each dynamic item row
     let _standardTerms = [];    // loaded once from /api/terms
     let _viewingOrderId = null;  // tracks order ID when in view-only mode (for clone/back)
+    let _quotePollTimer = null;  // polling timer for live quote status updates
 
     const DESIGN_IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'svg', 'gif', 'webp', 'bmp', 'tif', 'tiff']);
     const DESIGN_PDF_EXTENSIONS   = new Set(['pdf']);
@@ -3386,6 +3387,57 @@
         ]);
         _populateQuickModalDropdowns();
         if (window.isViewActive && !window.isViewActive(_myToken)) return;
+
+        // Start live polling for quote status updates (e.g. client response)
+        _startQuotePolling(_myToken);
+    }
+
+    // ==========================================================================
+    // _startQuotePolling() — polls for quote status changes every 30s
+    // Only refreshes if there are quotes with share_token and no client_response yet
+    // ==========================================================================
+    function _startQuotePolling(token) {
+        _stopQuotePolling();
+        _quotePollTimer = setInterval(async () => {
+            if (window.getCurrentNavToken && window.getCurrentNavToken() !== token) {
+                _stopQuotePolling();
+                return;
+            }
+            // Only poll if there are sent quotes awaiting response
+            const hasPending = _allQuotes.some(q => q.status === 'quote' && q.share_token && !q.client_response);
+            if (!hasPending) return;
+
+            try {
+                const res = await window.apiFetch('/api/orders?status=quote');
+                const freshList = (res && res.data) ? res.data : [];
+                // Check if any quote status changed (client_response or pricing_status)
+                const changed = freshList.some(fq => {
+                    const existing = _allQuotes.find(q => q.id === fq.id);
+                    return existing && (existing.client_response !== fq.client_response || existing.pricing_status !== fq.pricing_status);
+                });
+                if (changed) {
+                    const archivedRes = await window.apiFetch('/api/orders?status=archived');
+                    const archivedList = (archivedRes && archivedRes.data) ? archivedRes.data : [];
+                    _allQuotes = [...freshList, ...archivedList];
+                    _updateTabCounts();
+                    _renderFilteredTable();
+                } else {
+                    // Silently update the master list even if no visible change
+                    const archivedRes = await window.apiFetch('/api/orders?status=archived');
+                    const archivedList = (archivedRes && archivedRes.data) ? archivedRes.data : [];
+                    _allQuotes = [...freshList, ...archivedList];
+                }
+            } catch (_e) {
+                // Silently ignore polling errors
+            }
+        }, 30000);
+    }
+
+    function _stopQuotePolling() {
+        if (_quotePollTimer) {
+            clearInterval(_quotePollTimer);
+            _quotePollTimer = null;
+        }
     }
 
     // ==========================================================================

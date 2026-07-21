@@ -14,7 +14,9 @@
         low_stock:        { icon: 'fa-triangle-exclamation', color: 'text-orange-500' },
         out_of_stock:     { icon: 'fa-box-open',        color: 'text-red-500' },
         churn:            { icon: 'fa-user-slash',      color: 'text-rose-500' },
-        task:             { icon: 'fa-list-check',      color: 'text-purple-500' }
+        task:             { icon: 'fa-list-check',      color: 'text-purple-500' },
+        quote_approved:   { icon: 'fa-circle-check',    color: 'text-emerald-500' },
+        quote_rejected:   { icon: 'fa-circle-xmark',    color: 'text-red-500' }
     };
 
     const TYPE_ROUTES = {
@@ -23,7 +25,9 @@
         low_stock:         'inventory',
         out_of_stock:      'inventory',
         churn:             'forecast',
-        task:              'tasks'
+        task:              'tasks',
+        quote_approved:    'quotations',
+        quote_rejected:    'quotations'
     };
 
     const TYPE_LABELS = {
@@ -32,7 +36,9 @@
         low_stock:         'مخزون منخفض',
         out_of_stock:      'نفاد المخزون',
         churn:             'عميل متقاعس',
-        task:              'مهمة'
+        task:              'مهمة',
+        quote_approved:    'موافقة على عرض',
+        quote_rejected:    'رفض عرض سعر'
     };
 
     function _el(id) { return document.getElementById(id); }
