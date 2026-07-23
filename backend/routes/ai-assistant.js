@@ -117,7 +117,7 @@ router.post('/chat', async (req, res) => {
         // ── 5. Handle function calls (may loop multiple times) ───────────────
         let assistantMessage = openaiResponse;
         let loopCount = 0;
-        const MAX_LOOPS = 5;
+        const MAX_LOOPS = 3;
 
         while (assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0 && loopCount < MAX_LOOPS) {
             loopCount++;
@@ -171,6 +171,11 @@ router.post('/chat', async (req, res) => {
 
     } catch (err) {
         console.error('[AI Assistant] Chat error:', err.message);
+        if (err.name === 'AbortError') {
+            return res.status(504).json({
+                error: 'انتهت مهلة الاتصال بالمساعد الذكي. حاول مرة أخرى أو أعد صياغة سؤالك بشكل أبسط.',
+            });
+        }
         res.status(500).json({
             error: 'تعذّر الاتصال بالمساعد الذكي. حاول مرة أخرى.',
             detail: err.message,
@@ -207,11 +212,20 @@ async function _callOpenAI(messages, tools) {
         delete headers['Authorization'];
     }
 
-    const response = await fetch(endpoint, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body),
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 90000);
+
+    let response;
+    try {
+        response = await fetch(endpoint, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(body),
+            signal: controller.signal,
+        });
+    } finally {
+        clearTimeout(timeout);
+    }
 
     if (!response.ok) {
         const errBody = await response.text();

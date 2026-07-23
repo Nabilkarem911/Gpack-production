@@ -231,7 +231,11 @@
 
             _messages.push({ role: 'assistant', content: res.reply || 'عذراً، لم أتمكن من الرد.' });
         } catch (err) {
-            _messages.push({ role: 'assistant', content: 'حدث خطأ: ' + (err.message || 'تعذّر الاتصال بالمساعد') });
+            let msg = 'حدث خطأ: ' + (err.message || 'تعذّر الاتصال بالمساعد');
+            if (err.message && (err.message.includes('504') || err.message.includes('مهلة') || err.message.includes('timeout'))) {
+                msg = 'انتهت مهلة الاتصال بالمساعد الذكي. قد يكون السؤال معقداً جداً. حاول تبسيط السؤال وإعادة المحاولة.';
+            }
+            _messages.push({ role: 'assistant', content: msg });
         } finally {
             _isLoading = false;
             _renderPanel();
