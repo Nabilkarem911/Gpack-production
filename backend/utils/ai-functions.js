@@ -743,6 +743,205 @@ const AI_FUNCTIONS = [
         }
     },
 
+    // ── 21. getPurchaseSummary ───────────────────────────────────────────────
+    {
+        type: 'function',
+        function: {
+            name: 'getPurchaseSummary',
+            description: 'يرجع ملخص المشتريات من الموردين (إجمالي، عدد فواتير، متوسط) لفترة معينة.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    period: { type: 'string', enum: ['today', 'week', 'month', 'quarter', 'year'], description: 'الفترة الزمنية' }
+                },
+                required: ['period']
+            }
+        },
+        async execute(args, user) {
+            const { period } = args;
+            let dateFilter;
+            if (period === 'today') dateFilter = `DATE(pi.invoice_date) = CURRENT_DATE`;
+            else if (period === 'week') dateFilter = `pi.invoice_date >= date_trunc('week', NOW())`;
+            else if (period === 'quarter') dateFilter = `pi.invoice_date >= date_trunc('quarter', NOW())`;
+            else if (period === 'year') dateFilter = `pi.invoice_date >= date_trunc('year', NOW())`;
+            else dateFilter = `pi.invoice_date >= date_trunc('month', NOW())`;
+
+            const result = await db.query(
+                `SELECT COALESCE(SUM(pi.grand_total), 0)::numeric as total_purchased,
+                        COUNT(*) as invoice_count,
+                        COALESCE(AVG(pi.grand_total), 0)::numeric as avg_invoice_value,
+                        COALESCE(SUM(pi.paid_amount), 0)::numeric as total_paid,
+                        COALESCE(SUM(pi.grand_total - pi.paid_amount), 0)::numeric as total_outstanding
+                 FROM purchase_invoices pi
+                 WHERE pi.status != 'cancelled' AND ${dateFilter}`
+            );
+            return _sanitize(result.rows);
+        }
+    },
+
+    // ── 22. getDeliveryStatus ────────────────────────────────────────────────
+    {
+        type: 'function',
+        function: {
+            name: 'getDeliveryStatus',
+            description: 'يرجع حالة سندات التسليم: المعلقة، قيد التوصيل، المكتملة. اختياري فلترة بالحالة.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    status: { type: 'string', enum: ['pending', 'in_transit', 'delivered', 'cancelled'], description: 'فلتر بالحالة. اختياري.' },
+                    limit: { type: 'integer', description: 'عدد النتائج (افتراضي 20)' }
+                }
+            }
+        },
+        async execute(args, user) {
+            const { status, limit = 20 } = args;
+            let query, params;
+            if (status) {
+                query = `SELECT dn.id, dn.note_number, dn.status, dn.delivery_date, dn.delivered_at,
+                                dn.driver_name, dn.vehicle_number,
+                                c.name as client_name, o.order_number
+                         FROM delivery_notes dn
+                         JOIN clients c ON c.id = dn.client_id
+                         LEFT JOIN orders o ON o.id = dn.order_id
+                         WHERE dn.status = $1
+                         ORDER BY dn.created_at DESC LIMIT $2`;
+                params = [status, parseInt(limit) || 20];
+            } else {
+                query = `SELECT dn.id, dn.note_number, dn.status, dn.delivery_date, dn.delivered_at,
+                                dn.driver_name, dn.vehicle_number,
+                                c.name as client_name, o.order_number
+                         FROM delivery_notes dn
+                         JOIN clients c ON c.id = dn.client_id
+                         LEFT JOIN orders o ON o.id = dn.order_id
+                         ORDER BY dn.created_at DESC LIMIT $1`;
+                params = [parseInt(limit) || 20];
+            }
+            const result = await db.query(query, params);
+            return _sanitize(result.rows);
+        }
+    },
+
+    // ── 23. getVatReport ──────────────────────────────────────────────────────
+    {
+        type: 'function',
+        function: {
+            name: 'getVatReport',
+            description: 'يرجع تقرير ضريبة القيمة المضافة (VAT) لفترة معينة: ضريبة المبيعات، ضريبة المشتريات، الصافي.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    period: { type: 'string', enum: ['month', 'quarter', 'year'], description: 'الفترة الزمنية (افتراضي: month)' }
+                }
+            }
+        },
+        async execute(args, user) {
+            const { period = 'month' } = args;
+            let dateFilter;
+            if (period === 'quarter') dateFilter = `date_trunc('quarter', NOW())`;
+            else if (period === 'year') dateFilter = `date_trunc('year', NOW())`;
+            else dateFilter = `date_trunc('month', NOW())`;
+
+            const salesVat = await db.query(
+                `SELECT COALESCE(SUM(tax_amount), 0)::numeric as output_vat,
+                        COALESCE(SUM(grand_total), 0)::numeric as total_sales
+                 FROM invoices
+                 WHERE status != 'cancelled' AND invoice_date >= ${dateFilter}`
+            );
+            const purchaseVat = await db.query(
+                `SELECT COALESCE(SUM(tax_amount), 0)::numeric as input_vat,
+                        COALESCE(SUM(grand_total), 0)::numeric as total_purchases
+                 FROM purchase_invoices
+                 WHERE status != 'cancelled' AND invoice_date >= ${dateFilter}`
+            );
+            const outputVat = parseFloat(salesVat.rows[0].output_vat || 0);
+            const inputVat = parseFloat(purchaseVat.rows[0].input_vat || 0);
+            return _sanitize([{
+                period,
+                output_vat: outputVat,
+                input_vat: inputVat,
+                net_vat: outputVat - inputVat,
+                total_sales: salesVat.rows[0].total_sales,
+                total_purchases: purchaseVat.rows[0].total_purchases,
+            }]);
+        }
+    },
+
+    // ── 24. getOverdueTasks ───────────────────────────────────────────────────
+    {
+        type: 'function',
+        function: {
+            name: 'getOverdueTasks',
+            description: 'يرجع المهام المتأخرة (due_date < اليوم ولم تكتمل) أو المهام المعلقة.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    overdue_only: { type: 'boolean', description: 'true = المتأخرة فقط، false = كل المعلقة. افتراضي: true' }
+                }
+            }
+        },
+        async execute(args, user) {
+            const { overdue_only = true } = args;
+            let dateFilter = overdue_only
+                ? `AND t.due_date < CURRENT_DATE`
+                : '';
+            const result = await db.query(
+                `SELECT t.id, t.title, t.description, t.status, t.priority, t.due_date,
+                        u.name as assigned_to_name
+                 FROM tasks t
+                 LEFT JOIN users u ON u.id = t.assigned_to
+                 WHERE t.status NOT IN ('completed', 'cancelled') ${dateFilter}
+                 ORDER BY t.due_date ASC NULLS LAST
+                 LIMIT 30`
+            );
+            return _sanitize(result.rows);
+        }
+    },
+
+    // ── 25. getProfitMargin ───────────────────────────────────────────────────
+    {
+        type: 'function',
+        function: {
+            name: 'getProfitMargin',
+            description: 'يرجع هامش الربح للمنتجات: الفرق بين سعر البيع والتكلفة، ونسبة الربح.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    product_name: { type: 'string', description: 'اسم المنتج أو جزء منه. اختياري — بدون اسم يرجع أعلى الهوامش.' },
+                    limit: { type: 'integer', description: 'عدد النتائج (افتراضي 20)' }
+                }
+            }
+        },
+        async execute(args, user) {
+            const { product_name, limit = 20 } = args;
+            let query, params;
+            if (product_name) {
+                query = `SELECT p.name as product_name, pv.size_name, pv.selling_price, pv.cost_price,
+                                (pv.selling_price - pv.cost_price)::numeric as profit_per_unit,
+                                CASE WHEN pv.cost_price > 0
+                                     THEN ROUND(((pv.selling_price - pv.cost_price) / pv.cost_price * 100)::numeric, 2)
+                                     ELSE 0 END as profit_margin_percent
+                         FROM products p
+                         JOIN product_variants pv ON pv.product_id = p.id
+                         WHERE p.name ILIKE $1 AND pv.status = 'active'
+                         ORDER BY profit_margin_percent DESC LIMIT $2`;
+                params = [`%${product_name}%`, parseInt(limit) || 20];
+            } else {
+                query = `SELECT p.name as product_name, pv.size_name, pv.selling_price, pv.cost_price,
+                                (pv.selling_price - pv.cost_price)::numeric as profit_per_unit,
+                                CASE WHEN pv.cost_price > 0
+                                     THEN ROUND(((pv.selling_price - pv.cost_price) / pv.cost_price * 100)::numeric, 2)
+                                     ELSE 0 END as profit_margin_percent
+                         FROM products p
+                         JOIN product_variants pv ON pv.product_id = p.id
+                         WHERE pv.status = 'active' AND pv.selling_price > 0 AND pv.cost_price > 0
+                         ORDER BY profit_margin_percent DESC LIMIT $1`;
+                params = [parseInt(limit) || 20];
+            }
+            const result = await db.query(query, params);
+            return _sanitize(result.rows);
+        }
+    },
+
 ];
 
 // =============================================================================
