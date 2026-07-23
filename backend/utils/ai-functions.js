@@ -96,15 +96,16 @@ const AI_FUNCTIONS = [
             else dateFilter = `o.created_at >= date_trunc('month', NOW())`;
 
             const result = await db.query(
-                `SELECT pv.product_name, pv.size,
+                `SELECT p.name as product_name, pv.size_name as size,
                         SUM(oi.quantity)::numeric as total_qty,
                         SUM(oi.quantity * oi.unit_price)::numeric as total_revenue
                  FROM order_items oi
                  JOIN orders o ON o.id = oi.order_id
                  JOIN product_variants pv ON pv.id = oi.variant_id
+                 JOIN products p ON p.id = pv.product_id
                  WHERE o.status NOT IN ('quote', 'cancelled', 'draft')
                    AND ${dateFilter}
-                 GROUP BY pv.product_name, pv.size
+                 GROUP BY p.name, pv.size_name
                  ORDER BY total_qty DESC
                  LIMIT $1`,
                 [parseInt(limit) || 10]
@@ -197,13 +198,14 @@ const AI_FUNCTIONS = [
         async execute(args, user) {
             const { threshold = 100 } = args;
             const result = await db.query(
-                `SELECT pv.product_name, pv.size,
+                `SELECT p.name as product_name, pv.size_name as size,
                         COALESCE(SUM(ws.quantity), 0)::numeric as total_stock,
                         w.name as warehouse_name
                  FROM product_variants pv
+                 JOIN products p ON p.id = pv.product_id
                  CROSS JOIN warehouses w
                  LEFT JOIN warehouse_stock ws ON ws.variant_id = pv.id AND ws.warehouse_id = w.id
-                 GROUP BY pv.product_name, pv.size, w.name
+                 GROUP BY p.name, pv.size_name, w.name
                  HAVING COALESCE(SUM(ws.quantity), 0) < $1
                  ORDER BY total_stock ASC
                  LIMIT 20`,
@@ -232,18 +234,26 @@ const AI_FUNCTIONS = [
             const { supplier_name, product_name } = args;
             let query, params;
             if (supplier_name) {
-                query = `SELECT s.name as supplier_name, pv.product_name, pv.size, pv.cost_price
-                         FROM product_variants pv
-                         JOIN suppliers s ON s.id = pv.supplier_id
-                         WHERE pv.product_name ILIKE $1 AND s.name ILIKE $2
-                         ORDER BY pv.cost_price ASC LIMIT 20`;
+                query = `SELECT s.name as supplier_name, p.name as product_name, pv.size_name as size,
+                                pii.unit_cost as cost_price, pi.invoice_date
+                         FROM purchase_invoice_items pii
+                         JOIN purchase_invoices pi ON pi.id = pii.purchase_invoice_id
+                         JOIN suppliers s ON s.id = pi.supplier_id
+                         JOIN product_variants pv ON pv.id = pii.variant_id
+                         JOIN products p ON p.id = pv.product_id
+                         WHERE p.name ILIKE $1 AND s.name ILIKE $2 AND pi.status != 'cancelled'
+                         ORDER BY pii.unit_cost ASC LIMIT 20`;
                 params = [`%${product_name}%`, `%${supplier_name}%`];
             } else {
-                query = `SELECT s.name as supplier_name, pv.product_name, pv.size, pv.cost_price
-                         FROM product_variants pv
-                         LEFT JOIN suppliers s ON s.id = pv.supplier_id
-                         WHERE pv.product_name ILIKE $1
-                         ORDER BY pv.cost_price ASC LIMIT 20`;
+                query = `SELECT s.name as supplier_name, p.name as product_name, pv.size_name as size,
+                                pii.unit_cost as cost_price, pi.invoice_date
+                         FROM purchase_invoice_items pii
+                         JOIN purchase_invoices pi ON pi.id = pii.purchase_invoice_id
+                         LEFT JOIN suppliers s ON s.id = pi.supplier_id
+                         JOIN product_variants pv ON pv.id = pii.variant_id
+                         JOIN products p ON p.id = pv.product_id
+                         WHERE p.name ILIKE $1 AND pi.status != 'cancelled'
+                         ORDER BY pii.unit_cost ASC LIMIT 20`;
                 params = [`%${product_name}%`];
             }
             const result = await db.query(query, params);
@@ -268,11 +278,15 @@ const AI_FUNCTIONS = [
         async execute(args, user) {
             const { product_name } = args;
             const result = await db.query(
-                `SELECT s.name as supplier_name, pv.product_name, pv.size, pv.cost_price
-                 FROM product_variants pv
-                 JOIN suppliers s ON s.id = pv.supplier_id
-                 WHERE pv.product_name ILIKE $1
-                 ORDER BY pv.cost_price ASC`,
+                `SELECT s.name as supplier_name, p.name as product_name, pv.size_name as size,
+                        pii.unit_cost as cost_price, pi.invoice_date
+                 FROM purchase_invoice_items pii
+                 JOIN purchase_invoices pi ON pi.id = pii.purchase_invoice_id
+                 JOIN suppliers s ON s.id = pi.supplier_id
+                 JOIN product_variants pv ON pv.id = pii.variant_id
+                 JOIN products p ON p.id = pv.product_id
+                 WHERE p.name ILIKE $1 AND pi.status != 'cancelled'
+                 ORDER BY pii.unit_cost ASC`,
                 [`%${product_name}%`]
             );
             return _sanitize(result.rows);
