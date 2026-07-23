@@ -134,7 +134,7 @@ const AI_FUNCTIONS = [
                 `SELECT c.id, c.name,
                         COALESCE(SUM(i.grand_total), 0)::numeric as total_invoiced,
                         COALESCE(SUM(i.paid_amount), 0)::numeric as total_paid,
-                        COALESCE(SUM(i.balance_due), 0)::numeric as balance_due,
+                        COALESCE(SUM(i.grand_total - i.paid_amount), 0)::numeric as balance_due,
                         COUNT(DISTINCT i.id) as invoice_count,
                         COUNT(DISTINCT o.id) as order_count
                  FROM clients c
@@ -166,15 +166,15 @@ const AI_FUNCTIONS = [
         async execute(args, user) {
             const { supplier_name } = args;
             const result = await db.query(
-                `SELECT s.id, s.name,
-                        COALESCE(SUM(pi.total_amount), 0)::numeric as total_purchased,
+                `SELECT s.id, s.company_name as name,
+                        COALESCE(SUM(pi.grand_total), 0)::numeric as total_purchased,
                         COALESCE(SUM(pi.paid_amount), 0)::numeric as total_paid,
-                        COALESCE(SUM(pi.balance_due), 0)::numeric as balance_due,
+                        COALESCE(SUM(pi.grand_total - pi.paid_amount), 0)::numeric as balance_due,
                         COUNT(DISTINCT pi.id) as invoice_count
                  FROM suppliers s
                  LEFT JOIN purchase_invoices pi ON pi.supplier_id = s.id AND pi.status != 'cancelled'
-                 WHERE s.name ILIKE $1
-                 GROUP BY s.id, s.name
+                 WHERE s.company_name ILIKE $1
+                 GROUP BY s.id, s.company_name
                  LIMIT 5`,
                 [`%${supplier_name}%`]
             );
@@ -311,8 +311,8 @@ const AI_FUNCTIONS = [
         async execute(args, user) {
             const { product_name, limit = 10 } = args;
             const result = await db.query(
-                `SELECT pi.invoice_date, s.name as supplier_name,
-                        pii.product_name, pii.quantity, pii.unit_price
+                `SELECT pi.invoice_date, s.company_name as supplier_name,
+                        pii.product_name, pii.quantity, pii.unit_cost as unit_price
                  FROM purchase_invoice_items pii
                  JOIN purchase_invoices pi ON pi.id = pii.purchase_invoice_id
                  LEFT JOIN suppliers s ON s.id = pi.supplier_id
@@ -403,11 +403,12 @@ const AI_FUNCTIONS = [
             const { limit = 20 } = args;
             const result = await db.query(
                 `SELECT c.name as client_name, i.invoice_number, i.invoice_date,
-                        i.grand_total, i.paid_amount, i.balance_due
+                        i.grand_total, i.paid_amount,
+                        (i.grand_total - i.paid_amount) as balance_due
                  FROM invoices i
                  JOIN clients c ON c.id = i.client_id
-                 WHERE i.balance_due > 0 AND i.status != 'cancelled'
-                 ORDER BY i.balance_due DESC
+                 WHERE (i.grand_total - i.paid_amount) > 0 AND i.status != 'cancelled'
+                 ORDER BY (i.grand_total - i.paid_amount) DESC
                  LIMIT $1`,
                 [parseInt(limit) || 20]
             );
