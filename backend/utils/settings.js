@@ -19,7 +19,7 @@ async function getSetting(key, defaultValue = null) {
 
     try {
         const result = await db.query(
-            'SELECT value, type FROM system_settings WHERE key = $1',
+            'SELECT value, data_type FROM system_settings WHERE key = $1',
             [key]
         );
         if (result.rows.length === 0) {
@@ -27,11 +27,11 @@ async function getSetting(key, defaultValue = null) {
         }
         const row = result.rows[0];
         let value = row.value;
-        if (row.type === 'number') {
+        if (row.data_type === 'number') {
             value = parseFloat(value);
-        } else if (row.type === 'boolean') {
+        } else if (row.data_type === 'boolean') {
             value = value === 'true' || value === '1';
-        } else if (row.type === 'json') {
+        } else if (row.data_type === 'json') {
             value = JSON.parse(value);
         }
         cache.set(key, { value, expiresAt: now + CACHE_TTL_MS });

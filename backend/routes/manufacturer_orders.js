@@ -1095,6 +1095,15 @@ router.delete('/:id', restrictDelete, async (req, res) => {
                 }
             }
 
+            // Delete receipt session items that reference MO items (FK constraint)
+            await client.query(
+                `DELETE FROM mo_receipt_session_items
+                 WHERE manufacturer_order_item_id IN (
+                     SELECT id FROM manufacturer_order_items WHERE manufacturer_order_id = $1
+                 )`,
+                [id]
+            );
+
             // Delete manufacturer order items
             await client.query(
                 `DELETE FROM manufacturer_order_items WHERE manufacturer_order_id = $1`,
@@ -1457,6 +1466,15 @@ router.delete('/:id', restrictDelete, async (req, res) => {
             }
         }
         
+        // Delete receipt session items that reference MO items (FK constraint)
+        await client.query(
+            `DELETE FROM mo_receipt_session_items
+             WHERE manufacturer_order_item_id IN (
+                 SELECT id FROM manufacturer_order_items WHERE manufacturer_order_id = $1
+             )`,
+            [id]
+        );
+        
         // Delete MO items first (foreign key constraint)
         await client.query(
             `DELETE FROM manufacturer_order_items WHERE manufacturer_order_id = $1`,
@@ -1543,6 +1561,15 @@ router.post('/revert-order/:orderId', restrictDelete, async (req, res) => {
                         );
                     }
                 }
+
+                // Delete receipt session items that reference MO items (FK constraint)
+                await client.query(
+                    `DELETE FROM mo_receipt_session_items
+                     WHERE manufacturer_order_item_id IN (
+                         SELECT id FROM manufacturer_order_items WHERE manufacturer_order_id = $1
+                     )`,
+                    [mo.id]
+                );
 
                 // Delete MO items then MO
                 await client.query(
