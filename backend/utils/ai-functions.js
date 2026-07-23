@@ -441,6 +441,308 @@ const AI_FUNCTIONS = [
         }
     },
 
+    // ── 13. getTopClients ────────────────────────────────────────────────────
+    {
+        type: 'function',
+        function: {
+            name: 'getTopClients',
+            description: 'يرجع أفضل العملاء حسب حجم المبيعات أو الإيرادات في فترة معينة.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    period: { type: 'string', enum: ['month', 'quarter', 'year', 'all'], description: 'الفترة الزمنية (افتراضي: all)' },
+                    limit: { type: 'integer', description: 'عدد النتائج (افتراضي 10)' },
+                    metric: { type: 'string', enum: ['revenue', 'orders'], description: 'معيار الترتيب: revenue (إيرادات) أو orders (عدد طلبات). افتراضي: revenue' }
+                }
+            }
+        },
+        async execute(args, user) {
+            const { period = 'all', limit = 10, metric = 'revenue' } = args;
+            let dateFilter = '';
+            const params = [];
+            if (period === 'month') dateFilter = `AND o.created_at >= date_trunc('month', NOW())`;
+            else if (period === 'quarter') dateFilter = `AND o.created_at >= date_trunc('quarter', NOW())`;
+            else if (period === 'year') dateFilter = `AND o.created_at >= date_trunc('year', NOW())`;
+
+            const orderBy = metric === 'orders' ? 'order_count DESC' : 'total_revenue DESC';
+
+            params.push(parseInt(limit) || 10);
+            const result = await db.query(
+                `SELECT c.id, c.name,
+                        COUNT(DISTINCT o.id) as order_count,
+                        COALESCE(SUM(o.grand_total), 0)::numeric as total_revenue,
+                        COALESCE(SUM(o.paid_amount), 0)::numeric as total_paid,
+                        COALESCE(SUM(o.grand_total - o.paid_amount), 0)::numeric as balance_due
+                 FROM clients c
+                 JOIN orders o ON o.client_id = c.id
+                 WHERE o.status NOT IN ('cancelled', 'draft') ${dateFilter}
+                 GROUP BY c.id, c.name
+                 ORDER BY ${orderBy}
+                 LIMIT $1`,
+                params
+            );
+            return _sanitize(result.rows);
+        }
+    },
+
+    // ── 14. getSalesTrend ────────────────────────────────────────────────────
+    {
+        type: 'function',
+        function: {
+            name: 'getSalesTrend',
+            description: 'يرجع اتجاه المبيعات الشهري (آخر 6 أو 12 شهر) لمقارنة الأداء.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    months: { type: 'integer', description: 'عدد الأشهر السابقة (افتراضي 6)' }
+                }
+            }
+        },
+        async execute(args, user) {
+            const { months = 6 } = args;
+            const result = await db.query(
+                `SELECT TO_CHAR(date_trunc('month', o.created_at), 'YYYY-MM') as month,
+                        COUNT(DISTINCT o.id) as order_count,
+                        COALESCE(SUM(o.grand_total), 0)::numeric as total_revenue,
+                        COALESCE(SUM(o.paid_amount), 0)::numeric as total_paid
+                 FROM orders o
+                 WHERE o.status NOT IN ('cancelled', 'draft')
+                   AND o.created_at >= date_trunc('month', NOW()) - INTERVAL '${parseInt(months) || 6} months'
+                 GROUP BY date_trunc('month', o.created_at)
+                 ORDER BY month DESC`
+            );
+            return _sanitize(result.rows);
+        }
+    },
+
+    // ── 15. getRecentOrders ──────────────────────────────────────────────────
+    {
+        type: 'function',
+        function: {
+            name: 'getRecentOrders',
+            description: 'يرجع آخر الطلبات/العروض في النظام مع اسم العميل والحالة.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    limit: { type: 'integer', description: 'عدد النتائج (افتراضي 10)' },
+                    status: { type: 'string', description: 'فلتر بالحالة (quote, confirmed, production, delivered, cancelled). اختياري.' }
+                }
+            }
+        },
+        async execute(args, user) {
+            const { limit = 10, status } = args;
+            let query, params;
+            if (status) {
+                query = `SELECT o.id, o.order_number, o.status, o.pricing_status,
+                                o.created_at, o.grand_total, o.client_response,
+                                c.name as client_name
+                         FROM orders o
+                         JOIN clients c ON c.id = o.client_id
+                         WHERE o.status = $1
+                         ORDER BY o.created_at DESC LIMIT $2`;
+                params = [status, parseInt(limit) || 10];
+            } else {
+                query = `SELECT o.id, o.order_number, o.status, o.pricing_status,
+                                o.created_at, o.grand_total, o.client_response,
+                                c.name as client_name
+                         FROM orders o
+                         JOIN clients c ON c.id = o.client_id
+                         ORDER BY o.created_at DESC LIMIT $1`;
+                params = [parseInt(limit) || 10];
+            }
+            const result = await db.query(query, params);
+            return _sanitize(result.rows);
+        }
+    },
+
+    // ── 16. getDashboardStats ────────────────────────────────────────────────
+    {
+        type: 'function',
+        function: {
+            name: 'getDashboardStats',
+            description: 'يرجع إحصائيات عامة للنظام: إجمالي المبيعات، عدد الطلبات، عدد العملاء، عدد المنتجات، المخزون الكلي.',
+            parameters: {
+                type: 'object',
+                properties: {}
+            }
+        },
+        async execute(args, user) {
+            const salesRes = await db.query(
+                `SELECT COALESCE(SUM(grand_total), 0)::numeric as total_sales,
+                        COUNT(*) as total_orders
+                 FROM orders WHERE status NOT IN ('cancelled', 'draft')`
+            );
+            const clientsRes = await db.query(
+                `SELECT COUNT(*) as total_clients FROM clients WHERE status = 'active'`
+            );
+            const productsRes = await db.query(
+                `SELECT COUNT(*) as total_products FROM products`
+            );
+            const stockRes = await db.query(
+                `SELECT COALESCE(SUM(quantity), 0)::numeric as total_stock FROM warehouse_stock`
+            );
+            const invoicesRes = await db.query(
+                `SELECT COALESCE(SUM(grand_total), 0)::numeric as total_invoiced,
+                        COALESCE(SUM(paid_amount), 0)::numeric as total_collected,
+                        COALESCE(SUM(grand_total - paid_amount), 0)::numeric as total_outstanding
+                 FROM invoices WHERE status != 'cancelled'`
+            );
+            return _sanitize([{
+                ...salesRes.rows[0],
+                ...clientsRes.rows[0],
+                ...productsRes.rows[0],
+                ...stockRes.rows[0],
+                ...invoicesRes.rows[0],
+            }]);
+        }
+    },
+
+    // ── 17. searchProducts ───────────────────────────────────────────────────
+    {
+        type: 'function',
+        function: {
+            name: 'searchProducts',
+            description: 'يبحث عن منتج بالاسم ويرجع تفاصيله: السعر، التكلفة، المقاسات المتاحة، المخزون.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    product_name: { type: 'string', description: 'اسم المنتج أو جزء منه' }
+                },
+                required: ['product_name']
+            }
+        },
+        async execute(args, user) {
+            const { product_name } = args;
+            const result = await db.query(
+                `SELECT p.id, p.name, p.description,
+                        pv.size_name, pv.sku, pv.selling_price, pv.cost_price, pv.status,
+                        COALESCE(ws.qty, 0)::numeric as total_stock
+                 FROM products p
+                 JOIN product_variants pv ON pv.product_id = p.id
+                 LEFT JOIN (
+                     SELECT variant_id, SUM(quantity) as qty
+                     FROM warehouse_stock GROUP BY variant_id
+                 ) ws ON ws.variant_id = pv.id
+                 WHERE p.name ILIKE $1
+                 ORDER BY p.name, pv.size_name
+                 LIMIT 20`,
+                [`%${product_name}%`]
+            );
+            return _sanitize(result.rows);
+        }
+    },
+
+    // ── 18. getClientBalance ─────────────────────────────────────────────────
+    {
+        type: 'function',
+        function: {
+            name: 'getClientBalance',
+            description: 'يرجع كشف حساب عميل: الفواتير، المدفوعات، الرصيد المتبقي، وآخر نشاط.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    client_name: { type: 'string', description: 'اسم العميل أو جزء منه' }
+                },
+                required: ['client_name']
+            }
+        },
+        async execute(args, user) {
+            const { client_name } = args;
+            const summaryRes = await db.query(
+                `SELECT c.id, c.name, c.phone, c.email,
+                        COALESCE(SUM(i.grand_total), 0)::numeric as total_invoiced,
+                        COALESCE(SUM(i.paid_amount), 0)::numeric as total_paid,
+                        COALESCE(SUM(i.grand_total - i.paid_amount), 0)::numeric as balance_due,
+                        COUNT(DISTINCT i.id) as invoice_count
+                 FROM clients c
+                 LEFT JOIN invoices i ON i.client_id = c.id AND i.status != 'cancelled'
+                 WHERE c.name ILIKE $1
+                 GROUP BY c.id, c.name, c.phone, c.email
+                 LIMIT 1`,
+                [`%${client_name}%`]
+            );
+            if (summaryRes.rows.length === 0) return { error: 'لم يتم العثور على العميل' };
+            const clientId = summaryRes.rows[0].id;
+            const invoicesRes = await db.query(
+                `SELECT i.invoice_number, i.invoice_date, i.grand_total, i.paid_amount,
+                        (i.grand_total - i.paid_amount) as balance_due, i.status
+                 FROM invoices i
+                 WHERE i.client_id = $1 AND i.status != 'cancelled'
+                 ORDER BY i.invoice_date DESC LIMIT 10`,
+                [clientId]
+            );
+            return _sanitize([{
+                ...summaryRes.rows[0],
+                recent_invoices: invoicesRes.rows,
+            }]);
+        }
+    },
+
+    // ── 19. getMonthlyComparison ─────────────────────────────────────────────
+    {
+        type: 'function',
+        function: {
+            name: 'getMonthlyComparison',
+            description: 'يقارن مبيعات الشهر الحالي بالشهر السابق: إجمالي المبيعات، عدد الطلبات، متوسط قيمة الطلب.',
+            parameters: {
+                type: 'object',
+                properties: {}
+            }
+        },
+        async execute(args, user) {
+            const result = await db.query(
+                `SELECT
+                    CASE WHEN o.created_at >= date_trunc('month', NOW()) THEN 'current'
+                         ELSE 'previous' END as period,
+                    COUNT(DISTINCT o.id) as order_count,
+                    COALESCE(SUM(o.grand_total), 0)::numeric as total_revenue,
+                    COALESCE(AVG(o.grand_total), 0)::numeric as avg_order_value
+                 FROM orders o
+                 WHERE o.status NOT IN ('cancelled', 'draft')
+                   AND o.created_at >= date_trunc('month', NOW()) - INTERVAL '1 month'
+                 GROUP BY CASE WHEN o.created_at >= date_trunc('month', NOW()) THEN 'current'
+                               ELSE 'previous' END`
+            );
+            return _sanitize(result.rows);
+        }
+    },
+
+    // ── 20. getStockValuation ────────────────────────────────────────────────
+    {
+        type: 'function',
+        function: {
+            name: 'getStockValuation',
+            description: 'يرجع تقييم المخزون: قيمة المخزون الكلية، عدد الأصناف، توزيع المخزون حسب المستودع.',
+            parameters: {
+                type: 'object',
+                properties: {}
+            }
+        },
+        async execute(args, user) {
+            const totalRes = await db.query(
+                `SELECT COALESCE(SUM(ws.quantity * pv.cost_price), 0)::numeric as total_value,
+                        COUNT(DISTINCT ws.variant_id) as variant_count,
+                        COALESCE(SUM(ws.quantity), 0)::numeric as total_quantity
+                 FROM warehouse_stock ws
+                 JOIN product_variants pv ON pv.id = ws.variant_id`
+            );
+            const byWarehouseRes = await db.query(
+                `SELECT w.name as warehouse_name,
+                        COALESCE(SUM(ws.quantity), 0)::numeric as total_quantity,
+                        COALESCE(SUM(ws.quantity * pv.cost_price), 0)::numeric as stock_value
+                 FROM warehouses w
+                 LEFT JOIN warehouse_stock ws ON ws.warehouse_id = w.id
+                 LEFT JOIN product_variants pv ON pv.id = ws.variant_id
+                 GROUP BY w.name
+                 ORDER BY stock_value DESC`
+            );
+            return _sanitize([{
+                ...totalRes.rows[0],
+                by_warehouse: byWarehouseRes.rows,
+            }]);
+        }
+    },
+
 ];
 
 // =============================================================================
