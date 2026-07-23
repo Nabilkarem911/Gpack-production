@@ -21,12 +21,14 @@ const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 const OPENAI_BASE_URL = (process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '');
 const AI_ENABLED = process.env.AI_ASSISTANT_ENABLED !== 'false' && OPENAI_API_KEY.length > 0;
 
-const SYSTEM_PROMPT = `أنت مساعد ذكي لنظام G.PACK لإدارة المستودعات والمبيعات.
+const SYSTEM_PROMPT = `أنت مساعد ذكي لنظام G.PACK 2.0 لإدارة المستودعات والمبيعات والتصنيع.
 تجاوب باللغة العربية دائماً.
-استخدم الدوال (functions) المتاحة لجلب البيانات من النظام.
-إذا لم تكن هناك دالة مناسبة، أبلغ المستخدم أنك لا تستطيع الإجابة على هذا السؤال حالياً.
-كن مختصراً ودقيقاً. استخدم الأرقام والعملة (ريال سعودي) عند عرض القيم المالية.
-إذا كانت النتيجة فارغة، أبلغ المستخدم أنه لا توجد بيانات متاحة.`;
+استخدم الدوال المتاحة لجلب البيانات. اختر الدالة المناسبة بسرعة.
+إذا لم تكن هناك دالة مناسبة، أبلغ المستخدم بوضوح.
+كن مختصراً ودقيقاً. استخدم الجداول Markdown عند عرض بيانات متعددة.
+استخدم الريال السعودي للقيم المالية.
+إذا كانت النتيجة فارغة، قل أنه لا توجد بيانات.
+عند اقتراح أسعار، اراعِ التكلفة وهامش الربح المعقول (15-30%).`;
 
 // =============================================================================
 // GET /api/ai-assistant/health
@@ -117,7 +119,7 @@ router.post('/chat', async (req, res) => {
         // ── 5. Handle function calls (may loop multiple times) ───────────────
         let assistantMessage = openaiResponse;
         let loopCount = 0;
-        const MAX_LOOPS = 3;
+        const MAX_LOOPS = 5;
 
         while (assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0 && loopCount < MAX_LOOPS) {
             loopCount++;
@@ -159,7 +161,11 @@ router.post('/chat', async (req, res) => {
         }
 
         // ── 6. Extract final reply ───────────────────────────────────────────
-        const reply = assistantMessage.content || 'عذراً، لم أتمكن من توليد رد.';
+        let reply = assistantMessage.content;
+        if (!reply && assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0) {
+            reply = 'وصلت لحد أقصى عدد استدعاءات الدوال. حاول إعادة صياغة السؤال بشكل أبسط.';
+        }
+        reply = reply || 'عذراً، لم أتمكن من توليد رد. حاول مرة أخرى.';
 
         // ── 7. Save assistant reply ──────────────────────────────────────────
         await db.query(
@@ -191,7 +197,7 @@ async function _callOpenAI(messages, tools) {
         model: OPENAI_MODEL,
         messages,
         temperature: 0.3,
-        max_tokens: 1000,
+        max_tokens: 2500,
     };
 
     if (tools && tools.length > 0) {

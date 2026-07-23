@@ -942,6 +942,71 @@ const AI_FUNCTIONS = [
         }
     },
 
+    // ── 26. suggestProductPrice ──────────────────────────────────────────────
+    {
+        type: 'function',
+        function: {
+            name: 'suggestProductPrice',
+            description: 'يقترح سعر بيع لمنتج بناءً على التكلفة، السعر الحالي، متوسط أسعار البيع السابقة، وهامش الربح.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    product_name: { type: 'string', description: 'اسم المنتج أو جزء منه' },
+                    target_margin: { type: 'number', description: 'هامش الربح المستهدف بالنسبة المئوية (افتراضي 20%)' }
+                },
+                required: ['product_name']
+            }
+        },
+        async execute(args, user) {
+            const { product_name, target_margin = 20 } = args;
+            const variantsRes = await db.query(
+                `SELECT p.name as product_name, pv.id as variant_id, pv.size_name,
+                        pv.selling_price, pv.cost_price, pv.sku
+                 FROM products p
+                 JOIN product_variants pv ON pv.product_id = p.id
+                 WHERE p.name ILIKE $1 AND pv.status = 'active'
+                 LIMIT 10`,
+                [`%${product_name}%`]
+            );
+            if (variantsRes.rows.length === 0) return { error: 'لم يتم العثور على المنتج' };
+
+            const results = [];
+            for (const v of variantsRes.rows) {
+                const histRes = await db.query(
+                    `SELECT AVG(oi.unit_price)::numeric as avg_selling_price,
+                            MAX(oi.unit_price)::numeric as max_price,
+                            MIN(oi.unit_price)::numeric as min_price,
+                            COUNT(*) as times_sold
+                     FROM order_items oi
+                     JOIN orders o ON o.id = oi.order_id
+                     WHERE oi.variant_id = $1 AND o.status NOT IN ('cancelled', 'draft', 'quote')`,
+                    [v.variant_id]
+                );
+                const cost = parseFloat(v.cost_price || 0);
+                const currentPrice = parseFloat(v.selling_price || 0);
+                const avgHist = parseFloat(histRes.rows[0].avg_selling_price || 0);
+                const margin = cost > 0 ? ((currentPrice - cost) / cost * 100) : 0;
+                const suggestedPrice = cost > 0 ? (cost * (1 + target_margin / 100)) : currentPrice;
+
+                results.push({
+                    product_name: v.product_name,
+                    size_name: v.size_name,
+                    sku: v.sku,
+                    cost_price: cost,
+                    current_selling_price: currentPrice,
+                    current_margin_percent: Math.round(margin * 100) / 100,
+                    avg_historical_price: avgHist,
+                    min_historical_price: parseFloat(histRes.rows[0].min_price || 0),
+                    max_historical_price: parseFloat(histRes.rows[0].max_price || 0),
+                    times_sold: parseInt(histRes.rows[0].times_sold || 0),
+                    suggested_price: Math.round(suggestedPrice * 100) / 100,
+                    target_margin_percent: target_margin,
+                });
+            }
+            return _sanitize(results);
+        }
+    },
+
 ];
 
 // =============================================================================
