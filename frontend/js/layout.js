@@ -39,6 +39,7 @@ var NAV_ITEMS = [ // var allows re-declaration if script loads more than once in
     { view: 'sales-invoice-detail', label: 'تفاصيل الفاتورة', icon: 'fa-file-invoice', permission: 'sales', hidden: true }, // ✅ sales-invoice-detail.html
     { view: 'quotations',       label: 'عروض الأسعار',     icon: 'fa-file-lines',    permission: 'quotations' }, // ✅ quotations.html
     { view: 'production_orders', label: 'أوامر التشغيل',    icon: 'fa-industry',      permission: 'production_orders' }, // ✅ production_orders.html
+    { view: 'designer',          label: 'المصمم',           icon: 'fa-pen-ruler',     permission: 'designer' }, // ✅ designer.html
     { view: 'forecast',            label: 'مركز الذكاء (AI)',  icon: 'fa-brain',         permission: 'forecast' }, // ✅ forecast.html
 
     // ─────────────────────────────────────────────────────────────────────────────
@@ -173,6 +174,7 @@ function _buildSidebarUser() {
         sales_rep:          'مندوب مبيعات',
         inventory_manager:  'مدير المستودع',
         accountant:         'محاسب',
+        designer:           'مصمم',
     };
     const roleLabel = roleLabels[user.role] || user.role;
 

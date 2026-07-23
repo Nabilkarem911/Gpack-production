@@ -13,6 +13,10 @@ services:
       SHARE_TOKEN_SECRET: ${SHARE_TOKEN_SECRET}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost}
       AI_SERVICE_URL: http://ai-service:8000
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      AI_ASSISTANT_ENABLED: ${AI_ASSISTANT_ENABLED:-true}
       NODE_ENV: production
       PORT: 3000
     expose:

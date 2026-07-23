@@ -16,7 +16,11 @@
         churn:            { icon: 'fa-user-slash',      color: 'text-rose-500' },
         task:             { icon: 'fa-list-check',      color: 'text-purple-500' },
         quote_approved:   { icon: 'fa-circle-check',    color: 'text-emerald-500' },
-        quote_rejected:   { icon: 'fa-circle-xmark',    color: 'text-red-500' }
+        quote_rejected:   { icon: 'fa-circle-xmark',    color: 'text-red-500' },
+        design_assigned:  { icon: 'fa-pen-ruler',        color: 'text-blue-500' },
+        design_completed: { icon: 'fa-check-circle',     color: 'text-green-500' },
+        design_approved:  { icon: 'fa-check-double',     color: 'text-emerald-500' },
+        design_revision:  { icon: 'fa-rotate-left',      color: 'text-orange-500' }
     };
 
     const TYPE_ROUTES = {
@@ -27,7 +31,11 @@
         churn:             'forecast',
         task:              'tasks',
         quote_approved:    'quotations',
-        quote_rejected:    'quotations'
+        quote_rejected:    'quotations',
+        design_assigned:   'designer',
+        design_completed:  'quotations',
+        design_approved:   'designer',
+        design_revision:   'designer'
     };
 
     const TYPE_LABELS = {
@@ -38,7 +46,11 @@
         churn:             'عميل متقاعس',
         task:              'مهمة',
         quote_approved:    'موافقة على عرض',
-        quote_rejected:    'رفض عرض سعر'
+        quote_rejected:    'رفض عرض سعر',
+        design_assigned:   'طلب تصميم جديد',
+        design_completed:  'تصميم مكتمل',
+        design_approved:   'تصميم معتمد',
+        design_revision:   'مطلوب تعديل تصميم'
     };
 
     function _el(id) { return document.getElementById(id); }

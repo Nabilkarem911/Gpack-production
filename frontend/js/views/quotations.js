@@ -344,6 +344,11 @@
                                        hover:text-amber-600 hover:bg-amber-50 transition-colors">
                             <i class="fa-solid fa-industry text-xs"></i>
                         </button>
+                        <button onclick="window.openSendToDesignerModal('${q.id}')" title="إرسال للمصمم"
+                                class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400
+                                       hover:text-purple-600 hover:bg-purple-50 transition-colors">
+                            <i class="fa-solid fa-pen-ruler text-xs"></i>
+                        </button>
                         <button onclick="window.openQuoteModal('${q.id}')" title="تعديل"
                                 class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400
                                        hover:text-brand-600 hover:bg-brand-50 transition-colors">
@@ -3931,6 +3936,152 @@
             modal.classList.remove('opacity-100');
             modal.querySelector('div').classList.remove('scale-100');
             setTimeout(() => { modal.style.display = 'none'; }, 200);
+        }
+    };
+
+    // ── Send to Designer Modal ────────────────────────────────────────────────
+    window.openSendToDesignerModal = async function(orderId) {
+        // Fetch designers list
+        let designers = [];
+        try {
+            const res = await window.apiFetch('/api/designer/designers-list');
+            designers = res.designers || [];
+        } catch (err) {
+            window.showToast('فشل في تحميل قائمة المصممين', 'error');
+            return;
+        }
+
+        // Fetch order items for per-item notes
+        let orderItems = [];
+        try {
+            const res = await window.apiFetch(`/api/orders/${orderId}`);
+            orderItems = (res.items || res.order_items || []).map(it => ({
+                id: it.id,
+                name: it.product_name || it.variant_name || 'صنف',
+                size: it.size || '',
+                quantity: it.quantity,
+            }));
+        } catch {
+            // If we can't load items, still allow sending without per-item notes
+        }
+
+        // Build modal HTML
+        const existing = document.getElementById('send-to-designer-modal');
+        if (existing) existing.remove();
+
+        const modal = document.createElement('div');
+        modal.id = 'send-to-designer-modal';
+        modal.className = 'fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4';
+        modal.innerHTML = `
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
+                <div class="flex items-center justify-between px-5 py-4 border-b border-slate-200">
+                    <h2 class="text-lg font-bold text-slate-800">إرسال للمصمم</h2>
+                    <button onclick="document.getElementById('send-to-designer-modal').remove()" class="text-slate-400 hover:text-slate-600 transition-colors">
+                        <i class="fa-solid fa-xmark text-xl"></i>
+                    </button>
+                </div>
+                <div class="flex-1 overflow-y-auto p-5 space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">المصمم</label>
+                        <select id="std-designer-select" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+                            <option value="">-- اختر المصمم --</option>
+                            ${designers.map(d => `<option value="${d.id}">${_escapeHtml(d.name)}${d.email ? ' (' + _escapeHtml(d.email) + ')' : ''}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">تعليمات عامة للمصمم</label>
+                        <textarea id="std-design-brief" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" rows="3"
+                            placeholder="اكتب تعليمات عامة للمصمم..."></textarea>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">ملفات مرجعية (شعار، صور، مراجع)</label>
+                        <input type="file" id="std-brief-files" multiple
+                            accept=".jpg,.jpeg,.png,.gif,.pdf,.ai,.psd,.eps,.svg,.webp,.tiff,.tif,.bmp,.raw,.heic"
+                            class="w-full text-sm text-slate-500 file:ml-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100" />
+                    </div>
+                    ${orderItems.length > 0 ? `
+                        <div>
+                            <p class="text-sm font-medium text-slate-700 mb-2">ملاحظات لكل صنف (اختياري)</p>
+                            <div class="space-y-2 max-h-48 overflow-y-auto">
+                                ${orderItems.map(it => `
+                                    <div class="flex items-start gap-2">
+                                        <div class="flex-shrink-0 w-32 text-xs text-slate-600 pt-2">
+                                            <p class="font-medium">${_escapeHtml(it.name)}</p>
+                                            <p class="text-slate-400">${_escapeHtml(it.size || '')} — qty: ${it.quantity}</p>
+                                        </div>
+                                        <textarea data-item-id="${it.id}" class="std-item-notes flex-1 px-2 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-brand-500" rows="2"
+                                            placeholder="ملاحظات خاصة بهذا الصنف..."></textarea>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    ` : ''}
+                </div>
+                <div class="px-5 py-4 border-t border-slate-200 flex items-center justify-end gap-2 bg-slate-50">
+                    <button onclick="document.getElementById('send-to-designer-modal').remove()" class="px-4 py-2 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 text-sm transition-colors">إلغاء</button>
+                    <button id="std-submit-btn" class="px-4 py-2 rounded-lg bg-brand-700 hover:bg-brand-800 text-white text-sm transition-colors flex items-center gap-2">
+                        <i class="fa-solid fa-paper-plane"></i>
+                        <span>إرسال للمصمم</span>
+                    </button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+
+        // Bind submit
+        const submitBtn = document.getElementById('std-submit-btn');
+        if (submitBtn) {
+            submitBtn.addEventListener('click', async () => {
+                const designerId = document.getElementById('std-designer-select')?.value;
+                const brief = document.getElementById('std-design-brief')?.value.trim();
+                const filesInput = document.getElementById('std-brief-files');
+                const files = filesInput ? Array.from(filesInput.files) : [];
+
+                if (!designerId) {
+                    window.showToast('يرجى اختيار المصمم', 'warning');
+                    return;
+                }
+
+                // Collect per-item notes
+                const itemNotes = [];
+                document.querySelectorAll('.std-item-notes').forEach(ta => {
+                    const notes = ta.value.trim();
+                    if (notes) itemNotes.push({ item_id: ta.getAttribute('data-item-id'), notes });
+                });
+
+                const formData = new FormData();
+                formData.append('order_id', orderId);
+                formData.append('designer_id', designerId);
+                formData.append('design_brief', brief);
+                formData.append('item_notes', JSON.stringify(itemNotes));
+                files.forEach(f => formData.append('design_brief_files', f));
+
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i><span>جاري الإرسال...</span>';
+
+                try {
+                    const url = '/api/designer/assign';
+                    const fullUrl = url.startsWith('/api') ? url : `/api${url}`;
+                    const response = await fetch(fullUrl, {
+                        method: 'POST',
+                        credentials: 'include',
+                        body: formData,
+                    });
+                    if (!response.ok) {
+                        const data = await response.json().catch(() => ({}));
+                        throw new Error(data.error || 'فشل في الإرسال');
+                    }
+                    const data = await response.json();
+                    window.showToast(data.message || 'تم إرسال العرض للمصمم بنجاح', 'success');
+                    modal.remove();
+                    await loadQuotes();
+                } catch (err) {
+                    window.showToast(err.message || 'فشل في إرسال العرض للمصمم', 'error');
+                } finally {
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = '<i class="fa-solid fa-paper-plane"></i><span>إرسال للمصمم</span>';
+                }
+            });
         }
     };
 

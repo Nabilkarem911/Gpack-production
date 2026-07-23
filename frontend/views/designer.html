@@ -1,0 +1,89 @@
+<!-- =============================================================================
+     G.PACK 2.0 — Designer Page (designer.html)
+     Shows design tasks assigned to the current designer.
+     ============================================================================= -->
+<div class="p-4 lg:p-6 max-w-7xl mx-auto">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-800">المهام التصميمية</h1>
+            <p class="text-sm text-slate-500 mt-1">عروض الأسعار المسندة إليك للتصميم</p>
+        </div>
+        <div class="flex items-center gap-2">
+            <button id="designer-refresh-btn" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 text-sm transition-colors flex items-center gap-2">
+                <i class="fa-solid fa-rotate-right"></i>
+                <span>تحديث</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="flex gap-1 mb-6 border-b border-slate-200">
+        <button class="designer-tab px-4 py-2.5 text-sm font-medium border-b-2 border-brand-700 text-brand-700 transition-colors" data-tab="pending">
+            بانتظار التصميم
+            <span id="designer-tab-pending-count" class="mr-1 text-xs bg-brand-100 text-brand-700 px-1.5 py-0.5 rounded-full">0</span>
+        </button>
+        <button class="designer-tab px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700 transition-colors" data-tab="in_progress">
+            قيد التنفيذ
+            <span id="designer-tab-progress-count" class="mr-1 text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">0</span>
+        </button>
+        <button class="designer-tab px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700 transition-colors" data-tab="revision">
+            مطلوب تعديل
+            <span id="designer-tab-revision-count" class="mr-1 text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full">0</span>
+        </button>
+        <button class="designer-tab px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700 transition-colors" data-tab="completed">
+            مكتملة
+            <span id="designer-tab-completed-count" class="mr-1 text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">0</span>
+        </button>
+    </div>
+
+    <!-- Tasks Grid -->
+    <div id="designer-tasks-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <!-- Cards injected by JS -->
+    </div>
+
+    <!-- Empty state -->
+    <div id="designer-empty-state" class="hidden flex-col items-center justify-center py-16 text-center">
+        <div class="w-20 h-20 rounded-full bg-slate-100 flex items-center justify-center mb-4">
+            <i class="fa-solid fa-pen-ruler text-3xl text-slate-300"></i>
+        </div>
+        <p class="text-lg font-semibold text-slate-400">لا توجد مهام تصميمية</p>
+        <p class="text-sm text-slate-400 mt-1">عندما يتم إرسال عرض سعر لك، سيظهر هنا</p>
+    </div>
+
+</div>
+
+<!-- =============================================================================
+     Task Detail Modal
+     ============================================================================= -->
+<div id="designer-task-modal" class="hidden fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+        <!-- Modal Header -->
+        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-200">
+            <div>
+                <h2 id="designer-modal-title" class="text-lg font-bold text-slate-800">تفاصيل العرض</h2>
+                <p id="designer-modal-client" class="text-sm text-slate-500"></p>
+            </div>
+            <button id="designer-modal-close" class="text-slate-400 hover:text-slate-600 transition-colors">
+                <i class="fa-solid fa-xmark text-xl"></i>
+            </button>
+        </div>
+
+        <!-- Modal Body -->
+        <div id="designer-modal-body" class="flex-1 overflow-y-auto p-5 space-y-4">
+            <!-- Content injected by JS -->
+        </div>
+
+        <!-- Modal Footer -->
+        <div id="designer-modal-footer" class="px-5 py-4 border-t border-slate-200 flex items-center justify-between bg-slate-50">
+            <div id="designer-modal-status" class="text-sm text-slate-500"></div>
+            <button id="designer-modal-close-btn" class="px-4 py-2 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 text-sm transition-colors">
+                إغلاق
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Load designer.js -->
+<script src="/js/views/designer.js?v=20260724"></script>

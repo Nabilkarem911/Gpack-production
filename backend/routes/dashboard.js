@@ -351,6 +351,54 @@ router.get('/alerts', authenticate, async (req, res) => {
             });
         });
 
+        // 5. Designer Workflow Alerts
+        // 5a. For designers: orders assigned to them awaiting design
+        if (req.user.role === 'designer' || (req.user.permissions && req.user.permissions.designer)) {
+            const designTasksResult = await db.query(
+                `SELECT o.id as order_id, o.order_number, c.name as client_name,
+                        o.design_status, o.design_sent_at
+                 FROM orders o
+                 JOIN clients c ON c.id = o.client_id
+                 WHERE o.assigned_designer_id = $1
+                   AND o.design_status IN ('pending', 'in_progress', 'revision')
+                 ORDER BY o.design_sent_at DESC LIMIT 10`,
+                [req.user.id]
+            );
+            designTasksResult.rows.forEach(row => {
+                alerts.push({
+                    type: 'design_assigned',
+                    severity: row.design_status === 'revision' ? 'warning' : 'info',
+                    title: `طلب تصميم #${row.order_number} — ${row.design_status === 'revision' ? 'مطلوب تعديل' : 'بانتظار التصميم'}`,
+                    message: `العميل: ${row.client_name}`,
+                    order_id: row.order_id,
+                    created_at: row.design_sent_at
+                });
+            });
+        }
+
+        // 5b. For managers/admins: orders awaiting design review
+        if (isAdmin) {
+            const reviewResult = await db.query(
+                `SELECT o.id as order_id, o.order_number, c.name as client_name,
+                        o.design_completed_at, u.name as designer_name
+                 FROM orders o
+                 JOIN clients c ON c.id = o.client_id
+                 LEFT JOIN users u ON u.id = o.assigned_designer_id
+                 WHERE o.design_status = 'in_review'
+                 ORDER BY o.design_completed_at DESC LIMIT 10`
+            );
+            reviewResult.rows.forEach(row => {
+                alerts.push({
+                    type: 'design_completed',
+                    severity: 'info',
+                    title: `تصميم جاهز للمراجعة #${row.order_number}`,
+                    message: `العميل: ${row.client_name} — المصمم: ${row.designer_name || 'غير محدد'}`,
+                    order_id: row.order_id,
+                    created_at: row.design_completed_at
+                });
+            });
+        }
+
         // Sort by severity (critical first)
         alerts.sort((a, b) => {
             const severityOrder = { critical: 0, warning: 1, info: 2 };
