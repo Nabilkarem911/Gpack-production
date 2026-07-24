@@ -335,6 +335,12 @@
                     ${q.client_response === 'approved' ? '<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700 mr-1"><i class="fa-solid fa-circle-check"></i> وافق</span>' : ''}
                     ${q.client_response === 'rejected' ? '<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-600 mr-1"><i class="fa-solid fa-circle-xmark"></i> رفض</span>' : ''}
                     ${q.share_token && !q.client_response ? '<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-600 mr-1"><i class="fa-solid fa-share-nodes"></i> مُرسَل</span>' : ''}
+                    ${q.design_status === 'pending' ? '<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600 mr-1"><i class="fa-solid fa-pen-ruler"></i> تصميم: معلق</span>' : ''}
+                    ${q.design_status === 'in_progress' ? '<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700 mr-1"><i class="fa-solid fa-pen-ruler"></i> تصميم: جاري</span>' : ''}
+                    ${q.design_status === 'in_review' ? '<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 mr-1"><i class="fa-solid fa-eye"></i> تصميم: مراجعة</span>' : ''}
+                    ${q.design_status === 'revision' ? '<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-700 mr-1"><i class="fa-solid fa-rotate"></i> تصميم: تعديل</span>' : ''}
+                    ${q.design_status === 'client_review' ? '<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-700 mr-1"><i class="fa-solid fa-user-check"></i> تصميم: لدى العميل</span>' : ''}
+                    ${q.design_status === 'completed' ? '<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700 mr-1"><i class="fa-solid fa-check-double"></i> تصميم: معتمد</span>' : ''}
                 </td>
                 <td class="py-3.5 px-4">
                     <div class="flex items-center justify-end gap-1">
@@ -349,6 +355,12 @@
                                        hover:text-purple-600 hover:bg-purple-50 transition-colors">
                             <i class="fa-solid fa-pen-ruler text-xs"></i>
                         </button>
+                        ${['in_review', 'revision', 'client_review'].includes(q.design_status) ? `
+                        <button onclick="window.sendDesignToClient('${q.id}')" title="إرسال التصميم للعميل"
+                                class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400
+                                       hover:text-indigo-600 hover:bg-indigo-50 transition-colors">
+                            <i class="fa-solid fa-paper-plane text-xs"></i>
+                        </button>` : ''}
                         <button onclick="window.openQuoteModal('${q.id}')" title="تعديل"
                                 class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400
                                        hover:text-brand-600 hover:bg-brand-50 transition-colors">
@@ -4081,6 +4093,77 @@
                     submitBtn.disabled = false;
                     submitBtn.innerHTML = '<i class="fa-solid fa-paper-plane"></i><span>إرسال للمصمم</span>';
                 }
+            });
+        }
+    };
+
+    // ── Send Design to Client ─────────────────────────────────────────────────
+    window.sendDesignToClient = async function(orderId) {
+        if (!confirm('تأكيد إرسال التصاميم للعميل للمراجعة؟\n\nسيتم إنشاء رابط آمن يمكن إرساله للعميل.')) return;
+
+        try {
+            const res = await window.apiFetch(`/api/designer/send-to-client/${orderId}`, {
+                method: 'POST',
+            });
+
+            if (res?.share_url) {
+                // Show modal with the share URL
+                const existing = document.getElementById('design-client-link-modal');
+                if (existing) existing.remove();
+
+                const modal = document.createElement('div');
+                modal.id = 'design-client-link-modal';
+                modal.className = 'fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4';
+                modal.innerHTML = `
+                    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+                        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-200">
+                            <h2 class="text-lg font-bold text-slate-800">رابط مراجعة التصميم</h2>
+                            <button onclick="document.getElementById('design-client-link-modal').remove()" class="text-slate-400 hover:text-slate-600 transition-colors">
+                                <i class="fa-solid fa-xmark text-xl"></i>
+                            </button>
+                        </div>
+                        <div class="p-5 space-y-4">
+                            <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-center gap-2">
+                                <i class="fa-solid fa-circle-check text-emerald-500"></i>
+                                <span class="text-sm text-emerald-700">${res.message || 'تم إنشاء الرابط بنجاح'}</span>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 mb-1">رابط المراجعة للعميل</label>
+                                <div class="flex items-center gap-2">
+                                    <input type="text" id="design-client-url" readonly value="${res.share_url}"
+                                        class="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-600 bg-slate-50 font-mono" />
+                                    <button onclick="window._copyDesignClientUrl()" class="px-3 py-2 bg-brand-700 hover:bg-brand-800 text-white rounded-lg text-sm transition-colors flex items-center gap-1">
+                                        <i class="fa-solid fa-copy"></i> نسخ
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="text-xs text-slate-400">
+                                <i class="fa-solid fa-clock ml-1"></i> صلاحية الرابط: 30 يوم
+                            </div>
+                        </div>
+                        <div class="px-5 py-4 border-t border-slate-200 flex items-center justify-end gap-2 bg-slate-50">
+                            <button onclick="document.getElementById('design-client-link-modal').remove()" class="px-4 py-2 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 text-sm transition-colors">إغلاق</button>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+                await loadQuotes();
+            } else {
+                window.showToast(res?.message || 'تم إنشاء الرابط', 'success');
+            }
+        } catch (err) {
+            window.showToast(err.message || 'فشل في إنشاء رابط المراجعة', 'error');
+        }
+    };
+
+    window._copyDesignClientUrl = function() {
+        const input = document.getElementById('design-client-url');
+        if (input) {
+            input.select();
+            navigator.clipboard.writeText(input.value).then(() => {
+                window.showToast('تم نسخ الرابط', 'success');
+            }).catch(() => {
+                window.showToast('فشل نسخ الرابط', 'error');
             });
         }
     };

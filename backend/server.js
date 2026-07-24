@@ -249,6 +249,7 @@ _mountRoute('/ai-assistant',        authenticate, require('./routes/ai-assistant
 _mountRoute('/designer',            authenticate, require('./routes/designer'));
 _mountRoute('/public',              publicLimiter, require('./routes/public-statement')); // No auth required
 _mountRoute('/public/invoice',      publicLimiter, require('./routes/public-invoice'));   // No auth required
+_mountRoute('/public/design',       publicLimiter, require('./routes/public-design'));    // No auth required
 
 // Static files for uploads — serve with proper headers and no fallthrough to 404 JSON
 const uploadsDir = path.join(__dirname, 'uploads');

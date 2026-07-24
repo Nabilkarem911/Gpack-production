@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>مراجعة التصميم | G.PACK</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <style>
+        * { font-family: 'Cairo', sans-serif; }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen">
+
+<!-- Loading -->
+<div id="loading" class="fixed inset-0 bg-white flex flex-col items-center justify-center z-50">
+    <div class="w-14 h-14 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+    <p class="text-slate-500 text-sm">جاري تحميل التصاميم...</p>
+</div>
+
+<!-- Error State -->
+<div id="error-state" class="hidden fixed inset-0 bg-slate-100 flex flex-col items-center justify-center p-6">
+    <div class="bg-white rounded-2xl shadow-lg p-10 max-w-md w-full text-center">
+        <div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <i class="fa-solid fa-link-slash text-2xl text-red-500"></i>
+        </div>
+        <h2 class="text-xl font-bold text-slate-800 mb-2">الرابط غير صالح</h2>
+        <p id="error-msg" class="text-slate-500 text-sm">انتهت صلاحية هذا الرابط أو أنه غير موجود.</p>
+    </div>
+</div>
+
+<!-- Success State -->
+<div id="success-state" class="hidden fixed inset-0 bg-slate-100 flex flex-col items-center justify-center p-6">
+    <div class="bg-white rounded-2xl shadow-lg p-10 max-w-md w-full text-center">
+        <div id="success-icon" class="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 bg-emerald-100">
+            <i class="fa-solid fa-circle-check text-3xl text-emerald-500"></i>
+        </div>
+        <h2 id="success-title" class="text-xl font-bold text-slate-800 mb-2">تم تسجيل ردك!</h2>
+        <p id="success-msg" class="text-slate-500 text-sm">شكراً، سيتواصل معك فريقنا قريباً.</p>
+    </div>
+</div>
+
+<!-- Main Content -->
+<div id="main-content" class="hidden max-w-4xl mx-auto py-8 px-4">
+
+    <!-- Header -->
+    <div class="bg-white rounded-2xl shadow-sm p-6 mb-5 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <img src="/images/logo.png" alt="G.PACK" class="h-12 w-auto" />
+            <div>
+                <div class="flex items-center gap-2 mb-1">
+                    <span class="text-2xl font-black text-indigo-700">G.PACK</span>
+                    <span class="text-slate-300">|</span>
+                    <span class="text-sm text-slate-500">حلول التعبئة والتغليف</span>
+                </div>
+                <p class="text-xs text-slate-400">ينبع، المملكة العربية السعودية</p>
+            </div>
+        </div>
+        <div class="text-left">
+            <p class="text-xs text-slate-400">مراجعة التصميم</p>
+            <p class="font-bold text-slate-700 text-sm">#<span id="d-order-number">—</span></p>
+        </div>
+    </div>
+
+    <!-- Client Info -->
+    <div class="bg-white rounded-2xl shadow-sm p-5 mb-5">
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center">
+                <i class="fa-solid fa-user text-indigo-600"></i>
+            </div>
+            <div>
+                <p class="text-xs text-slate-400">العميل</p>
+                <p class="font-bold text-slate-800" id="d-client-name">—</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Already Responded Banner -->
+    <div id="responded-banner" class="hidden mb-5"></div>
+
+    <!-- Items with designs -->
+    <div id="design-items" class="space-y-5"></div>
+
+    <!-- Submit Section -->
+    <div id="submit-section" class="hidden bg-white rounded-2xl shadow-sm p-6 mb-5">
+        <button id="submit-btn" onclick="submitResponse()"
+            class="w-full py-3.5 rounded-xl font-bold text-white text-sm transition-all active:scale-[0.98] bg-indigo-600 hover:bg-indigo-700">
+            <i class="fa-solid fa-paper-plane ml-2"></i>إرسال الرد
+        </button>
+    </div>
+
+    <!-- Footer -->
+    <p class="text-center text-xs text-slate-400 mb-8">
+        G.PACK • حلول التعبئة والتغليف — ينبع، المملكة العربية السعودية
+    </p>
+</div>
+
+<script>
+let designToken = null;
+let designData = null;
+let itemResponses = {}; // { item_id: { action: 'approve'|'revision', notes: '' } }
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+(async () => {
+    designToken = new URLSearchParams(window.location.search).get('token');
+    if (!designToken) return showError('الرابط غير صالح — لا يوجد token.');
+
+    try {
+        const res = await fetch(`/api/public/design/view/${designToken}`);
+        const data = await res.json();
+
+        if (!res.ok) return showError(data.error || 'حدث خطأ.');
+
+        designData = data;
+        renderDesigns(data);
+    } catch (e) {
+        showError('تعذّر الاتصال بالخادم.');
+    }
+})();
+
+function showError(msg) {
+    document.getElementById('loading').classList.add('hidden');
+    document.getElementById('error-msg').textContent = msg;
+    document.getElementById('error-state').classList.remove('hidden');
+}
+
+function esc(str) {
+    if (!str) return '';
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function getFileExt(url) {
+    if (!url) return '';
+    const clean = url.split('?')[0].split('#')[0];
+    const idx = clean.lastIndexOf('.');
+    return idx === -1 ? '' : clean.substring(idx + 1).toLowerCase();
+}
+
+function renderDesigns(data) {
+    document.getElementById('loading').classList.add('hidden');
+    document.getElementById('main-content').classList.remove('hidden');
+
+    document.getElementById('d-order-number').textContent = data.order_number || '—';
+    document.getElementById('d-client-name').textContent = data.client_name || '—';
+
+    const container = document.getElementById('design-items');
+    container.innerHTML = data.items.map((item, idx) => {
+        const files = Array.isArray(item.design_files) ? item.design_files : [];
+        const filesHtml = files.map(f => {
+            const ext = getFileExt(f.path);
+            const safePath = esc(f.path);
+            const safeName = esc(f.original_name || f.filename);
+            if (['png', 'jpg', 'jpeg', 'svg', 'gif', 'webp', 'bmp', 'tif', 'tiff'].includes(ext)) {
+                return `<div class="rounded-xl overflow-hidden border border-slate-200 bg-white">
+                    <img src="${safePath}" alt="${safeName}" class="w-full max-h-96 object-contain bg-slate-50" />
+                    <div class="p-2 flex items-center justify-between bg-slate-50">
+                        <span class="text-xs text-slate-500 truncate">${safeName}</span>
+                        <a href="${safePath}" download class="text-xs text-indigo-600 hover:text-indigo-700"><i class="fa-solid fa-download"></i></a>
+                    </div>
+                </div>`;
+            } else if (ext === 'pdf') {
+                return `<div class="rounded-xl overflow-hidden border border-slate-200 bg-white">
+                    <object data="${safePath}#toolbar=0&navpanes=0" type="application/pdf" class="w-full h-96 border-0 bg-white">
+                        <div class="p-8 text-center text-slate-500">
+                            <i class="fa-solid fa-file-pdf text-4xl text-red-400 mb-2"></i>
+                            <p class="text-sm">${safeName}</p>
+                            <a href="${safePath}" target="_blank" class="text-xs text-indigo-600 mt-2 inline-block">فتح الملف</a>
+                        </div>
+                    </object>
+                    <div class="p-2 flex items-center justify-between bg-slate-50">
+                        <span class="text-xs text-slate-500 truncate">${safeName}</span>
+                        <a href="${safePath}" download class="text-xs text-indigo-600 hover:text-indigo-700"><i class="fa-solid fa-download"></i></a>
+                    </div>
+                </div>`;
+            } else {
+                return `<div class="rounded-xl border border-slate-200 bg-white p-6 text-center">
+                    <i class="fa-solid fa-file text-4xl text-slate-300 mb-2"></i>
+                    <p class="text-sm text-slate-600">${safeName}</p>
+                    <a href="${safePath}" target="_blank" class="text-xs text-indigo-600 mt-2 inline-block">
+                        <i class="fa-solid fa-download ml-1"></i>تحميل الملف
+                    </a>
+                </div>`;
+            }
+        }).join('');
+
+        const designerNotes = item.designer_notes
+            ? `<div class="bg-slate-50 rounded-lg p-3 mb-3">
+                <p class="text-xs font-semibold text-slate-600 mb-1"><i class="fa-solid fa-comment-dots ml-1"></i>ملاحظات المصمم</p>
+                <p class="text-sm text-slate-700">${esc(item.designer_notes)}</p>
+            </div>`
+            : '';
+
+        // Check if already responded
+        const alreadyApproved = item.client_design_status === 'approved';
+        const alreadyRevision = item.client_design_status === 'revision_requested';
+
+        let responseHtml = '';
+        if (alreadyApproved) {
+            responseHtml = `<div class="bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex items-center gap-2">
+                <i class="fa-solid fa-circle-check text-emerald-500"></i>
+                <span class="text-sm text-emerald-700 font-semibold">تمت الموافقة على هذا التصميم</span>
+            </div>`;
+        } else if (alreadyRevision) {
+            responseHtml = `<div class="bg-orange-50 border border-orange-200 rounded-lg p-3">
+                <p class="text-sm text-orange-700 font-semibold flex items-center gap-2"><i class="fa-solid fa-rotate"></i>تم طلب تعديل على هذا التصميم</p>
+                ${item.client_revision_notes ? `<p class="text-xs text-orange-600 mt-1">${esc(item.client_revision_notes)}</p>` : ''}
+            </div>`;
+        } else {
+            responseHtml = `
+                <div class="grid grid-cols-2 gap-3 mt-3">
+                    <button onclick="selectItemResponse('${item.id}', 'approve')"
+                        id="btn-approve-${item.id}"
+                        class="flex flex-col items-center gap-1.5 p-3 border-2 border-slate-200 rounded-xl hover:border-emerald-500 hover:bg-emerald-50 transition-all cursor-pointer">
+                        <i class="fa-solid fa-circle-check text-xl text-slate-300" id="icon-approve-${item.id}"></i>
+                        <span class="text-xs font-bold text-slate-700">أوافق على التصميم</span>
+                    </button>
+                    <button onclick="selectItemResponse('${item.id}', 'revision')"
+                        id="btn-revision-${item.id}"
+                        class="flex flex-col items-center gap-1.5 p-3 border-2 border-slate-200 rounded-xl hover:border-orange-400 hover:bg-orange-50 transition-all cursor-pointer">
+                        <i class="fa-solid fa-rotate text-xl text-slate-300" id="icon-revision-${item.id}"></i>
+                        <span class="text-xs font-bold text-slate-700">أطلب تعديل</span>
+                    </button>
+                </div>
+                <div id="revision-notes-${item.id}" class="hidden mt-3">
+                    <textarea rows="2" placeholder="اكتب ملاحظات التعديل المطلوبة..."
+                        oninput="updateRevisionNotes('${item.id}', this.value)"
+                        class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-orange-400 resize-none"></textarea>
+                </div>
+            `;
+        }
+
+        return `
+            <div class="bg-white rounded-2xl shadow-sm overflow-hidden">
+                <div class="bg-gradient-to-l from-indigo-600 to-indigo-800 p-4 text-white">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-indigo-200 text-xs">صنف #${idx + 1}</p>
+                            <h3 class="text-lg font-bold">${esc(item.product_name || 'صنف')} ${item.size_name ? '— ' + esc(item.size_name) : ''}</h3>
+                        </div>
+                        <div class="text-left text-sm text-indigo-200">
+                            <p>الكمية: ${item.quantity}</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="p-5">
+                    ${designerNotes}
+                    <div class="space-y-3">${filesHtml}</div>
+                    ${responseHtml}
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    // Check if all items already approved
+    const allApproved = data.items.every(i => i.client_design_status === 'approved');
+    const anyRevision = data.items.some(i => i.client_design_status === 'revision_requested');
+
+    if (allApproved || anyRevision) {
+        showAlreadyResponded(data, allApproved);
+    } else {
+        document.getElementById('submit-section').classList.remove('hidden');
+    }
+}
+
+function selectItemResponse(itemId, action) {
+    itemResponses[itemId] = { action, notes: itemResponses[itemId]?.notes || '' };
+
+    const btnA = document.getElementById(`btn-approve-${itemId}`);
+    const btnR = document.getElementById(`btn-revision-${itemId}`);
+    const iconA = document.getElementById(`icon-approve-${itemId}`);
+    const iconR = document.getElementById(`icon-revision-${itemId}`);
+    const notesDiv = document.getElementById(`revision-notes-${itemId}`);
+
+    if (action === 'approve') {
+        btnA.classList.add('border-emerald-500', 'bg-emerald-50');
+        btnA.classList.remove('border-slate-200');
+        iconA.classList.remove('text-slate-300');
+        iconA.classList.add('text-emerald-500');
+        btnR.classList.add('border-slate-200');
+        btnR.classList.remove('border-orange-400', 'bg-orange-50');
+        iconR.classList.remove('text-orange-500');
+        iconR.classList.add('text-slate-300');
+        notesDiv.classList.add('hidden');
+    } else {
+        btnR.classList.add('border-orange-400', 'bg-orange-50');
+        btnR.classList.remove('border-slate-200');
+        iconR.classList.remove('text-slate-300');
+        iconR.classList.add('text-orange-500');
+        btnA.classList.add('border-slate-200');
+        btnA.classList.remove('border-emerald-500', 'bg-emerald-50');
+        iconA.classList.remove('text-emerald-500');
+        iconA.classList.add('text-slate-300');
+        notesDiv.classList.remove('hidden');
+    }
+}
+
+function updateRevisionNotes(itemId, notes) {
+    if (itemResponses[itemId]) {
+        itemResponses[itemId].notes = notes;
+    }
+}
+
+function showAlreadyResponded(data, allApproved) {
+    document.getElementById('submit-section').classList.add('hidden');
+    const banner = document.getElementById('responded-banner');
+    banner.innerHTML = `
+        <div class="flex items-center gap-4 p-4 rounded-2xl ${allApproved ? 'bg-emerald-50 border border-emerald-200' : 'bg-orange-50 border border-orange-200'}">
+            <i class="fa-solid ${allApproved ? 'fa-circle-check text-emerald-500' : 'fa-rotate text-orange-500'} text-2xl flex-shrink-0"></i>
+            <div>
+                <p class="font-bold text-sm ${allApproved ? 'text-emerald-700' : 'text-orange-700'}">
+                    ${allApproved ? 'تمت الموافقة على جميع التصاميم' : 'تم تسجيل طلب التعديل'}
+                </p>
+                <p class="text-xs text-slate-500 mt-0.5">شكراً لك، فريقنا سيتواصل معك قريباً.</p>
+            </div>
+        </div>`;
+    banner.classList.remove('hidden');
+}
+
+async function submitResponse() {
+    const items = designData.items.filter(i => !i.client_design_status || i.client_design_status === null);
+    const responses = items.map(i => ({
+        item_id: i.id,
+        action: itemResponses[i.id]?.action,
+        notes: itemResponses[i.id]?.notes || null,
+    })).filter(r => r.action);
+
+    if (responses.length === 0) {
+        alert('يرجى تحديد رد لصنف واحد على الأقل (موافقة أو تعديل).');
+        return;
+    }
+
+    // Validate revision notes
+    for (const r of responses) {
+        if (r.action === 'revision' && !r.notes) {
+            alert('يرجى كتابة ملاحظات التعديل لكل صنف طلبت تعديله.');
+            return;
+        }
+    }
+
+    const btn = document.getElementById('submit-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin ml-2"></i>جاري الإرسال...';
+
+    try {
+        const res = await fetch(`/api/public/design/respond/${designToken}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ items: responses }),
+        });
+        const data = await res.json();
+
+        if (!res.ok) throw new Error(data.error);
+
+        // Show success
+        document.getElementById('main-content').classList.add('hidden');
+        const hasRevision = data.revision_count > 0;
+        document.getElementById('success-icon').className = `w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${hasRevision ? 'bg-orange-100' : 'bg-emerald-100'}`;
+        document.getElementById('success-icon').querySelector('i').className = `fa-solid ${hasRevision ? 'fa-rotate text-3xl text-orange-500' : 'fa-circle-check text-3xl text-emerald-500'}`;
+        document.getElementById('success-title').textContent = hasRevision ? 'تم تسجيل طلب التعديل' : 'تمت الموافقة!';
+        document.getElementById('success-msg').textContent = data.message;
+        document.getElementById('success-state').classList.remove('hidden');
+
+    } catch (err) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-paper-plane ml-2"></i>إرسال الرد';
+        alert(err.message || 'حدث خطأ، يرجى المحاولة مجدداً.');
+    }
+}
+</script>
+</body>
+</html>

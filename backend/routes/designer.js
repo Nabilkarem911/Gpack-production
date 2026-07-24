@@ -15,6 +15,7 @@ const crypto = require('crypto');
 const db = require('../db');
 const authorize = require('../middleware/authorize');
 const { success, error } = require('../utils/response');
+const { encryptToken, hashToken, hasShareTokenSecret, decryptShareToken } = require('../utils/crypto');
 
 // =============================================================================
 // File Upload Configuration
@@ -530,6 +531,338 @@ router.get('/designers-list', authorize(['admin', 'manager', 'super_admin']), as
     } catch (err) {
         console.error('[Designer] Designers list error:', err.message);
         res.status(500).json({ error: 'فشل في تحميل قائمة المصممين' });
+    }
+});
+
+// =============================================================================
+// CLIENT DESIGN REVIEW — Send to client + public view + client response
+// =============================================================================
+
+// ── POST /api/designer/send-to-client/:orderId ──────────────────────────────
+// Manager: send approved designs to client via a secure share link.
+// Generates a design_share_token, sets design_status = 'client_review'.
+// Returns the share URL.
+// =============================================================================
+router.post('/send-to-client/:orderId', authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
+    const { orderId } = req.params;
+    try {
+        // Verify order exists and designs are ready
+        const orderRes = await db.query(
+            `SELECT id, order_number, status, design_status, client_id FROM orders WHERE id = $1`,
+            [orderId]
+        );
+        if (orderRes.rows.length === 0) {
+            return res.status(404).json({ error: 'العرض غير موجود' });
+        }
+        const order = orderRes.rows[0];
+
+        // Only allow if design_status is 'in_review' (all items submitted by designer)
+        // or 'revision' (manager already reviewed, some items approved)
+        if (!['in_review', 'revision', 'client_review'].includes(order.design_status)) {
+            return res.status(400).json({
+                error: 'يمكن إرسال التصاميم للعميل فقط بعد اعتماد المدير. الحالة الحالية: ' + (order.design_status || 'غير محدد')
+            });
+        }
+
+        // Check that at least one item has design_files
+        const itemsWithDesigns = await db.query(
+            `SELECT COUNT(*) as count FROM order_items
+             WHERE order_id = $1 AND design_files IS NOT NULL AND design_files != '[]'::jsonb`,
+            [orderId]
+        );
+        if (parseInt(itemsWithDesigns.rows[0].count) === 0) {
+            return res.status(400).json({ error: 'لا توجد تصاميم مرفوعة لعرضها على العميل' });
+        }
+
+        // Generate share token
+        const plainToken = crypto.randomBytes(32).toString('hex');
+        let storedToken = plainToken;
+        let tokenHash;
+        try {
+            storedToken = encryptToken(plainToken);
+            tokenHash = hashToken(plainToken);
+        } catch (cryptoErr) {
+            console.error('[Designer] Crypto error:', cryptoErr.message);
+            tokenHash = crypto.createHmac('sha256', plainToken).digest('hex');
+            storedToken = plainToken;
+        }
+
+        // 30-day expiry
+        const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+        await db.query(
+            `UPDATE orders SET
+                design_share_token = $1,
+                design_share_token_hash = $2,
+                design_token_expires_at = $3,
+                design_sent_to_client_at = NOW(),
+                design_client_status = 'sent',
+                design_status = 'client_review'
+             WHERE id = $4`,
+            [storedToken, tokenHash, expiresAt, orderId]
+        );
+
+        const shareUrl = `${req.protocol}://${req.get('host')}/public-design.html?token=${plainToken}`;
+
+        console.log(`[Designer] Sent to client — order ${order.order_number}, URL: ${shareUrl}`);
+
+        res.json({
+            success: true,
+            message: 'تم إنشاء رابط مراجعة التصميم للعميل',
+            share_url: shareUrl,
+            expires_at: expiresAt,
+        });
+    } catch (err) {
+        console.error('[Designer] Send-to-client error:', err.message);
+        res.status(500).json({ error: 'فشل في إنشاء رابط المراجعة' });
+    }
+});
+
+// ── GET /api/designer/client-view/:token ────────────────────────────────────
+// Public (no auth): client views design files for all items in the order.
+// =============================================================================
+router.get('/client-view/:token', async (req, res) => {
+    const { token } = req.params;
+    try {
+        // Lookup by hash first, then plaintext fallback
+        let orderRes = null;
+        try {
+            const tokenHash = hashToken(token);
+            orderRes = await db.query(
+                `SELECT o.id, o.order_number, o.design_token_expires_at, o.design_client_status,
+                        c.name as client_name
+                 FROM orders o
+                 JOIN clients c ON c.id = o.client_id
+                 WHERE o.design_share_token_hash = $1`,
+                [tokenHash]
+            );
+        } catch { /* hashToken may throw if SECRET missing */ }
+
+        if (!orderRes || orderRes.rows.length === 0) {
+            orderRes = await db.query(
+                `SELECT o.id, o.order_number, o.design_token_expires_at, o.design_client_status,
+                        c.name as client_name
+                 FROM orders o
+                 JOIN clients c ON c.id = o.client_id
+                 WHERE o.design_share_token = $1`,
+                [token]
+            );
+        }
+
+        if (orderRes.rows.length === 0) {
+            return res.status(404).json({ error: 'الرابط غير صالح أو منتهي الصلاحية' });
+        }
+
+        const order = orderRes.rows[0];
+
+        // Check expiry
+        if (order.design_token_expires_at && new Date(order.design_token_expires_at) < new Date()) {
+            return res.status(410).json({ error: 'انتهت صلاحية هذا الرابط' });
+        }
+
+        // Get items with design files
+        const itemsRes = await db.query(
+            `SELECT oi.id, oi.variant_id, oi.quantity,
+                    pv.product_name, pv.size_name,
+                    oi.design_files, oi.designer_notes,
+                    oi.client_design_status, oi.client_revision_notes
+             FROM order_items oi
+             LEFT JOIN product_variants pv ON pv.id = oi.variant_id
+             WHERE oi.order_id = $1
+             ORDER BY oi.id ASC`,
+            [order.id]
+        );
+
+        // Filter out items with no design files
+        const items = itemsRes.rows.filter(item => {
+            if (!item.design_files) return false;
+            const files = Array.isArray(item.design_files) ? item.design_files : [];
+            return files.length > 0;
+        });
+
+        res.json({
+            order_number: order.order_number,
+            client_name: order.client_name,
+            design_client_status: order.design_client_status,
+            items: items.map(item => ({
+                id: item.id,
+                product_name: item.product_name,
+                size_name: item.size_name,
+                quantity: item.quantity,
+                designer_notes: item.designer_notes,
+                design_files: item.design_files,
+                client_design_status: item.client_design_status,
+                client_revision_notes: item.client_revision_notes,
+            })),
+        });
+    } catch (err) {
+        console.error('[Designer] Client-view error:', err.message);
+        res.status(500).json({ error: 'فشل في تحميل التصاميم' });
+    }
+});
+
+// ── POST /api/designer/client-response/:token ───────────────────────────────
+// Public (no auth): client submits approval or revision request per item.
+// Body: { items: [{ item_id, action: 'approve'|'revision', notes? }] }
+// =============================================================================
+router.post('/client-response/:token', async (req, res) => {
+    const { token } = req.params;
+    const { items } = req.body;
+
+    if (!items || !Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ error: 'يجب تقديم رد لصنف واحد على الأقل' });
+    }
+
+    const client = await db.getClient();
+    try {
+        // Lookup order by token
+        let orderRes = null;
+        try {
+            const tokenHash = hashToken(token);
+            orderRes = await client.query(
+                `SELECT id, order_number, design_client_status FROM orders WHERE design_share_token_hash = $1`,
+                [tokenHash]
+            );
+        } catch { /* SECRET missing */ }
+
+        if (!orderRes || orderRes.rows.length === 0) {
+            orderRes = await client.query(
+                `SELECT id, order_number, design_client_status FROM orders WHERE design_share_token = $1`,
+                [token]
+            );
+        }
+
+        if (orderRes.rows.length === 0) {
+            return res.status(404).json({ error: 'الرابط غير صالح' });
+        }
+
+        const order = orderRes.rows[0];
+
+        await client.query('BEGIN');
+
+        let approvedCount = 0;
+        let revisionCount = 0;
+
+        for (const item of items) {
+            if (!item.item_id || !item.action) continue;
+
+            if (item.action === 'approve') {
+                await client.query(
+                    `UPDATE order_items
+                     SET client_design_status = 'approved', client_approved_at = NOW()
+                     WHERE id = $1 AND order_id = $2`,
+                    [item.item_id, order.id]
+                );
+                approvedCount++;
+            } else if (item.action === 'revision') {
+                await client.query(
+                    `UPDATE order_items
+                     SET client_design_status = 'revision_requested', client_revision_notes = $1
+                     WHERE id = $2 AND order_id = $3`,
+                    [item.notes || null, item.item_id, order.id]
+                );
+                revisionCount++;
+            }
+        }
+
+        // Determine overall status
+        if (revisionCount > 0) {
+            // Client requested revisions → back to designer
+            await client.query(
+                `UPDATE orders SET design_client_status = 'revision_requested', design_status = 'revision'
+                 WHERE id = $1`,
+                [order.id]
+            );
+            // Set items with revision to design_status = 'revision' so designer sees them
+            await client.query(
+                `UPDATE order_items SET design_status = 'revision'
+                 WHERE order_id = $1 AND client_design_status = 'revision_requested'`,
+                [order.id]
+            );
+        } else if (approvedCount > 0 && revisionCount === 0) {
+            // All submitted items approved
+            // Check if ALL order items with design files are approved
+            const pendingRes = await client.query(
+                `SELECT COUNT(*) as count FROM order_items
+                 WHERE order_id = $1
+                   AND design_files IS NOT NULL AND design_files != '[]'::jsonb
+                   AND client_design_status != 'approved'`,
+                [order.id]
+            );
+            if (parseInt(pendingRes.rows[0].count) === 0) {
+                // All approved → convert to production
+                await client.query(
+                    `UPDATE orders SET
+                        design_client_status = 'approved',
+                        design_status = 'completed',
+                        design_completed_at = NOW(),
+                        status = 'production'
+                     WHERE id = $1`,
+                    [order.id]
+                );
+                // Save approved designs to client_designs
+                const allItemsRes = await client.query(
+                    `SELECT oi.variant_id, oi.design_files, oi.order_id
+                     FROM order_items oi
+                     WHERE oi.order_id = $1
+                       AND oi.design_files IS NOT NULL AND oi.design_files != '[]'::jsonb`,
+                    [order.id]
+                );
+                const clientIdRes = await client.query(
+                    `SELECT client_id FROM orders WHERE id = $1`, [order.id]
+                );
+                const clientId = clientIdRes.rows[0]?.client_id;
+                for (const item of allItemsRes.rows) {
+                    if (!item.variant_id) continue;
+                    // Get next design_number
+                    const dnRes = await client.query(
+                        `SELECT COALESCE(MAX(design_number), 0) + 1 AS next
+                         FROM client_designs WHERE client_id = $1 AND variant_id = $2`,
+                        [clientId, item.variant_id]
+                    );
+                    const designNumber = dnRes.rows[0].next;
+                    const designName = `تصميم معتمد — طلب #${order.order_number}`;
+                    const designIns = await client.query(
+                        `INSERT INTO client_designs (client_id, variant_id, design_number, design_name, is_active)
+                         VALUES ($1, $2, $3, $4, true) RETURNING id`,
+                        [clientId, item.variant_id, designNumber, designName]
+                    );
+                    const designId = designIns.rows[0].id;
+                    // Insert files
+                    const files = Array.isArray(item.design_files) ? item.design_files : [];
+                    for (const f of files) {
+                        await client.query(
+                            `INSERT INTO client_design_files (design_id, file_type, file_path, original_name)
+                             VALUES ($1, $2, $3, $4)`,
+                            [designId, 'design', f.path, f.original_name || f.filename]
+                        );
+                    }
+                }
+            } else {
+                // Some items not yet responded
+                await client.query(
+                    `UPDATE orders SET design_client_status = 'sent' WHERE id = $1`,
+                    [order.id]
+                );
+            }
+        }
+
+        await client.query('COMMIT');
+
+        let message;
+        if (revisionCount > 0) {
+            message = `تم تسجيل طلب التعديل على ${revisionCount} صنف. سيتم إرسالها للمصمم للمراجعة.`;
+        } else {
+            message = `تم تسجيل موافقة العميل على ${approvedCount} صنف.`;
+        }
+
+        res.json({ success: true, message, approved_count: approvedCount, revision_count: revisionCount });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('[Designer] Client-response error:', err.message);
+        res.status(500).json({ error: 'فشل في تسجيل رد العميل' });
+    } finally {
+        client.release();
     }
 });
 
