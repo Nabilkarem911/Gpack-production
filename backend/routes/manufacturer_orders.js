@@ -72,6 +72,51 @@ const restrictReverse = (req, res, next) => {
     return res.status(403).json({ error: 'Forbidden: No permission to reverse receipts.' });
 };
 
+// ── Auto-update order status based on aggregate MO statuses ──────────────────
+// Rules:
+//   production  → processing  : when any MO reaches 'sent' or beyond
+//   processing  → completed   : when ALL MOs are 'received'
+//   completed   → processing  : when a receipt is reversed and not all MOs are received
+// Does NOT touch orders in: delivered, cancelled, archived
+async function _autoUpdateOrderStatus(client, orderId) {
+    const orderRes = await client.query(
+        `SELECT status FROM orders WHERE id = $1`,
+        [orderId]
+    );
+    if (!orderRes.rows.length) return;
+    const currentStatus = orderRes.rows[0].status;
+
+    if (!['production', 'processing', 'completed'].includes(currentStatus)) return;
+
+    const mosRes = await client.query(
+        `SELECT status FROM manufacturer_orders WHERE order_id = $1`,
+        [orderId]
+    );
+    if (!mosRes.rows.length) return;
+
+    const moStatuses = mosRes.rows.map(r => r.status);
+    const allReceived = moStatuses.every(s => s === 'received');
+    const anySentOrBeyond = moStatuses.some(s => ['sent', 'partially_received', 'received'].includes(s));
+
+    let newStatus = null;
+
+    if (currentStatus === 'production' && anySentOrBeyond) {
+        newStatus = 'processing';
+    } else if (currentStatus === 'processing' && allReceived) {
+        newStatus = 'completed';
+    } else if (currentStatus === 'completed' && !allReceived && anySentOrBeyond) {
+        newStatus = 'processing';
+    }
+
+    if (newStatus && newStatus !== currentStatus) {
+        await client.query(
+            `UPDATE orders SET status = $1, updated_at = NOW() WHERE id = $2`,
+            [newStatus, orderId]
+        );
+        console.log(`[autoStatus] Order ${orderId}: ${currentStatus} → ${newStatus}`);
+    }
+}
+
 // =============================================================================
 // GET /api/manufacturer-orders
 // Returns manufacturer orders with supplier info and item counts.
@@ -471,15 +516,16 @@ router.patch('/:id/status', restrictEdit, validateBody(manufacturerOrderStatusUp
 
     try {
         const result = await db.withTransaction(async (client) => {
-            // Get current status
+            // Get current status and order_id
             const currentResult = await client.query(
-                `SELECT status FROM manufacturer_orders WHERE id = $1`,
+                `SELECT status, order_id FROM manufacturer_orders WHERE id = $1`,
                 [id]
             );
             if (currentResult.rowCount === 0) {
                 throw new Error('أمر التشغيل غير موجود.');
             }
             const currentStatus = currentResult.rows[0].status;
+            const orderId = currentResult.rows[0].order_id;
 
             // Validate transition
             const validTransitions = {
@@ -526,6 +572,9 @@ router.patch('/:id/status', restrictEdit, validateBody(manufacturerOrderStatusUp
                     );
                 }
             }
+
+            // Auto-update order status based on aggregate MO statuses
+            await _autoUpdateOrderStatus(client, orderId);
 
             return updateResult.rows[0];
         });
@@ -779,6 +828,9 @@ router.delete('/:id/receipts/:sessionId', restrictReverse, async (req, res) => {
                 `UPDATE manufacturer_orders SET status = $1, updated_at = NOW() WHERE id = $2`,
                 [newStatus, id]
             );
+
+            // Auto-update order status (might revert from completed to processing)
+            await _autoUpdateOrderStatus(client, mo.order_id);
 
             return { newStatus };
         });
@@ -1036,6 +1088,9 @@ router.post('/:id/receive', restrictReceive, validateBody(manufacturerOrderRecei
 
             // No accounting vouchers or payments — manager approves invoice later
 
+            // Auto-update order status based on aggregate MO statuses
+            await _autoUpdateOrderStatus(client, mo.order_id);
+
             return { newStatus, purchaseInvoiceId, invoiceNumber };
         });
 
@@ -1063,11 +1118,11 @@ router.delete('/:id', restrictDelete, async (req, res) => {
     try {
         await db.withTransaction(async (client) => {
             const checkResult = await client.query(
-                `SELECT mo.status, COALESCE(SUM(moi.received_qty), 0) as total_received
+                `SELECT mo.status, mo.order_id, COALESCE(SUM(moi.received_qty), 0) as total_received
                  FROM manufacturer_orders mo
                  LEFT JOIN manufacturer_order_items moi ON moi.manufacturer_order_id = mo.id
                  WHERE mo.id = $1
-                 GROUP BY mo.id`,
+                 GROUP BY mo.id, mo.order_id`,
                 [id]
             );
             if (checkResult.rowCount === 0) {
@@ -1075,6 +1130,7 @@ router.delete('/:id', restrictDelete, async (req, res) => {
             }
 
             const status = checkResult.rows[0].status;
+            const orderId = checkResult.rows[0].order_id;
             if (!['pending', 'sent'].includes(status)) {
                 throw new Error('لا يمكن الإلغاء إلا للأوامر المعلقة أو المرسلة فقط.');
             }
@@ -1123,6 +1179,9 @@ router.delete('/:id', restrictDelete, async (req, res) => {
                 `DELETE FROM manufacturer_orders WHERE id = $1`,
                 [id]
             );
+
+            // Auto-update order status (might revert to production if no MOs are sent+)
+            await _autoUpdateOrderStatus(client, orderId);
         });
 
         return res.status(200).json({ message: 'تم حذف أمر التشغيل بنجاح.' });
@@ -1337,6 +1396,9 @@ router.post('/by-order/:orderId/finalize', restrictEdit, validateBody(moFinalize
             totalUpdated++;
         }
 
+        // Auto-update order status (all MOs received → should transition to completed)
+        await _autoUpdateOrderStatus(client, orderId);
+
         await client.query('COMMIT');
         res.json({
             success: true,
@@ -1364,11 +1426,11 @@ router.post('/:id/revert-send', restrictEdit, async (req, res) => {
         
         // Check current status and if any items received
         const moRes = await client.query(
-            `SELECT mo.status, COALESCE(SUM(moi.received_qty), 0) as total_received
+            `SELECT mo.status, mo.order_id, COALESCE(SUM(moi.received_qty), 0) as total_received
              FROM manufacturer_orders mo
              LEFT JOIN manufacturer_order_items moi ON moi.manufacturer_order_id = mo.id
              WHERE mo.id = $1
-             GROUP BY mo.id, mo.status`,
+             GROUP BY mo.id, mo.status, mo.order_id`,
             [id]
         );
         
@@ -1398,6 +1460,9 @@ router.post('/:id/revert-send', restrictEdit, async (req, res) => {
              WHERE id = $1`,
             [id]
         );
+        
+        // Auto-update order status (might revert to production if no MOs are sent+)
+        await _autoUpdateOrderStatus(client, mo.order_id);
         
         await client.query('COMMIT');
         return success(res, { message: 'تم تراجع الإرسال بنجاح - الأمر عاد لحالة "معلق"' });

@@ -210,8 +210,8 @@
     };
 
     const STATUS_FLOW = {
-        production: [{ s: 'processing', label: 'بدء التنفيذ',  cls: 'bg-blue-600 hover:bg-blue-700 text-white' }],
-        processing: [{ s: 'completed',  label: 'تم الإكمال',   cls: 'bg-emerald-600 hover:bg-emerald-700 text-white' }],
+        production: [{ s: 'processing', label: 'بدء التنفيذ (يدوي)',  cls: 'bg-blue-600 hover:bg-blue-700 text-white' }],
+        processing: [{ s: 'completed',  label: 'تم الإكمال (يدوي)',   cls: 'bg-emerald-600 hover:bg-emerald-700 text-white' }],
         completed:  [{ s: 'delivered',  label: 'تم التسليم',   cls: 'bg-purple-600 hover:bg-purple-700 text-white' }],
     };
 
@@ -476,6 +476,10 @@
         if (actionsEl) {
             const canRevertOrder = ['production', 'processing'].includes(_hubOrder.status);
             const canRevertExecution = _hubOrder.status === 'processing';
+            const hasMOs = _hubMOs && _hubMOs.length > 0;
+            const autoHint = hasMOs && ['production', 'processing', 'completed'].includes(_hubOrder.status)
+                ? `<span class="text-xs text-slate-400 italic flex items-center gap-1"><i class="fa-solid fa-circle-info"></i> الحالة تتحدث تلقائياً حسب أوامر الموردين</span>`
+                : '';
             const nextBtns = nextSteps.map(s =>
                 `<button onclick="window.poView.updateStatus('${s.s}')"
                          class="flex items-center gap-2 px-4 py-2.5 text-sm font-bold rounded-xl shadow transition-all active:scale-[0.98] ${s.cls}">
@@ -495,8 +499,8 @@
                        <i class="fa-solid fa-rotate-left"></i> تراجع وأرشفة
                    </button>`
                 : '';
-            actionsEl.innerHTML = (nextBtns || revertBtn || revertExecBtn)
-                ? nextBtns + revertExecBtn + revertBtn
+            actionsEl.innerHTML = (nextBtns || revertBtn || revertExecBtn || autoHint)
+                ? nextBtns + revertExecBtn + revertBtn + autoHint
                 : '<span class="text-xs text-slate-400">لا يوجد إجراء متاح</span>';
         }
 
