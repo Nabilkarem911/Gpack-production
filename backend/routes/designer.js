@@ -331,11 +331,12 @@ router.get('/task/:orderId', async (req, res) => {
         // Get order items with design info
         const itemsResult = await db.query(
             `SELECT oi.id, oi.variant_id, oi.quantity, oi.unit_price,
-                    pv.product_name, pv.size,
+                    p.name AS product_name, pv.size_name AS size,
                     oi.design_notes, oi.design_files, oi.design_status,
                     oi.designer_notes, oi.revision_notes, oi.design_completed_at
              FROM order_items oi
              LEFT JOIN product_variants pv ON pv.id = oi.variant_id
+             LEFT JOIN products p ON p.id = pv.product_id
              WHERE oi.order_id = $1
              ORDER BY oi.id ASC`,
             [orderId]
@@ -675,11 +676,12 @@ router.get('/client-view/:token', async (req, res) => {
         // Get items with design files
         const itemsRes = await db.query(
             `SELECT oi.id, oi.variant_id, oi.quantity,
-                    pv.product_name, pv.size_name,
+                    p.name AS product_name, pv.size_name,
                     oi.design_files, oi.designer_notes,
                     oi.client_design_status, oi.client_revision_notes
              FROM order_items oi
              LEFT JOIN product_variants pv ON pv.id = oi.variant_id
+             LEFT JOIN products p ON p.id = pv.product_id
              WHERE oi.order_id = $1
              ORDER BY oi.id ASC`,
             [order.id]
