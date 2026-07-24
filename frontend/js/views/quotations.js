@@ -361,6 +361,12 @@
                                        hover:text-indigo-600 hover:bg-indigo-50 transition-colors">
                             <i class="fa-solid fa-paper-plane text-xs"></i>
                         </button>` : ''}
+                        ${q.design_status === 'completed' && q.design_client_status === 'approved' ? `
+                        <button onclick="window.viewDesignApproval('${q.id}')" title="شهادة الاعتماد"
+                                class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400
+                                       hover:text-emerald-600 hover:bg-emerald-50 transition-colors">
+                            <i class="fa-solid fa-file-circle-check text-xs"></i>
+                        </button>` : ''}
                         <button onclick="window.openQuoteModal('${q.id}')" title="تعديل"
                                 class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400
                                        hover:text-brand-600 hover:bg-brand-50 transition-colors">
@@ -4165,6 +4171,145 @@
             }).catch(() => {
                 window.showToast('فشل نسخ الرابط', 'error');
             });
+        }
+    };
+
+    // ── View Design Approval Certificate ─────────────────────────────────────
+    window.viewDesignApproval = async function(orderId) {
+        try {
+            const [approvalRes, activityRes] = await Promise.all([
+                window.apiFetch(`/api/designer/approval/${orderId}`),
+                window.apiFetch(`/api/designer/activity-log/${orderId}`),
+            ]);
+
+            const approval = approvalRes?.approval;
+            const activities = activityRes?.activities || [];
+
+            if (!approval) {
+                window.showToast('لا يوجد سجل اعتماد', 'error');
+                return;
+            }
+
+            const existing = document.getElementById('design-approval-modal');
+            if (existing) existing.remove();
+
+            const timelineHtml = activities.map(a => {
+                const icons = {
+                    'sent_to_client': 'fa-paper-plane text-indigo-500',
+                    'link_opened': 'fa-link text-slate-500',
+                    'approved': 'fa-circle-check text-emerald-500',
+                    'rejected': 'fa-circle-xmark text-red-500',
+                    'revision_requested': 'fa-rotate text-orange-500',
+                    'pdf_generated': 'fa-file-pdf text-red-400',
+                    'whatsapp_opened': 'fa-brands fa-whatsapp text-green-500',
+                    'signature_captured': 'fa-file-signature text-indigo-500',
+                };
+                const icon = icons[a.event_type] || 'fa-circle text-slate-400';
+                const time = new Date(a.created_at).toLocaleString('ar-SA');
+                let detail = '';
+                try {
+                    const d = typeof a.event_details === 'string' ? JSON.parse(a.event_details) : a.event_details;
+                    if (d.signer_name) detail = `بواسطة: ${d.signer_name}`;
+                    else if (d.reasons && d.reasons.length) detail = `أسباب: ${d.reasons.join('، ')}`;
+                } catch {}
+                return `<div class="flex items-start gap-3 py-2 border-b border-slate-100 last:border-0">
+                    <i class="fa-solid ${icon} text-sm mt-0.5"></i>
+                    <div class="flex-1">
+                        <p class="text-sm text-slate-700 font-medium">${a.event_type.replace(/_/g, ' ')}</p>
+                        ${detail ? `<p class="text-xs text-slate-400">${detail}</p>` : ''}
+                        <p class="text-xs text-slate-400 mt-0.5">${time} ${a.client_ip ? '• IP: ' + a.client_ip : ''}</p>
+                    </div>
+                </div>`;
+            }).join('');
+
+            const modal = document.createElement('div');
+            modal.id = 'design-approval-modal';
+            modal.className = 'fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4 overflow-y-auto';
+            modal.innerHTML = `
+                <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl my-8 overflow-hidden">
+                    <div class="flex items-center justify-between px-5 py-4 border-b border-slate-200 sticky top-0 bg-white z-10">
+                        <h2 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+                            <i class="fa-solid fa-file-circle-check text-emerald-600"></i>
+                            شهادة اعتماد التصميم
+                        </h2>
+                        <button onclick="document.getElementById('design-approval-modal').remove()" class="text-slate-400 hover:text-slate-600 transition-colors">
+                            <i class="fa-solid fa-xmark text-xl"></i>
+                        </button>
+                    </div>
+                    <div class="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
+                        <!-- Approval Info -->
+                        <div class="bg-slate-50 rounded-xl p-4 grid grid-cols-2 gap-3 text-sm">
+                            <div>
+                                <p class="text-xs text-slate-400 mb-1">رقم الطلب</p>
+                                <p class="font-bold text-slate-800">#${approval.order_number || '—'}</p>
+                            </div>
+                            <div>
+                                <p class="text-xs text-slate-400 mb-1">العميل</p>
+                                <p class="font-bold text-slate-800">${approval.client_name || approval.client_name || '—'}</p>
+                            </div>
+                            <div>
+                                <p class="text-xs text-slate-400 mb-1">تم الاعتماد بواسطة</p>
+                                <p class="font-bold text-slate-800">${approval.signer_name || '—'}</p>
+                            </div>
+                            <div>
+                                <p class="text-xs text-slate-400 mb-1">وقت الاعتماد</p>
+                                <p class="font-bold text-slate-800">${new Date(approval.approved_at).toLocaleString('ar-SA')}</p>
+                            </div>
+                            <div>
+                                <p class="text-xs text-slate-400 mb-1">IP</p>
+                                <p class="font-mono text-xs text-slate-600">${approval.client_ip || '—'}</p>
+                            </div>
+                            <div>
+                                <p class="text-xs text-slate-400 mb-1">الجهاز</p>
+                                <p class="text-xs text-slate-600">${approval.device_info || '—'}</p>
+                            </div>
+                        </div>
+
+                        <!-- Signature -->
+                        ${approval.signature_image ? `
+                        <div>
+                            <p class="text-sm font-bold text-slate-700 mb-2">التوقيع الإلكتروني</p>
+                            <div class="border border-slate-200 rounded-xl p-3 bg-white">
+                                <img src="${approval.signature_image}" alt="signature" class="max-h-32 mx-auto" />
+                            </div>
+                        </div>` : ''}
+
+                        <!-- PDF Download -->
+                        ${approval.approval_pdf_path ? `
+                        <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center justify-between">
+                            <div class="flex items-center gap-2">
+                                <i class="fa-solid fa-file-pdf text-red-500 text-xl"></i>
+                                <div>
+                                    <p class="text-sm font-bold text-slate-700">شهادة الاعتماد (PDF)</p>
+                                    <p class="text-xs text-slate-400">ملف PDF رسمي يحتوي على كل البيانات</p>
+                                </div>
+                            </div>
+                            <a href="${approval.approval_pdf_path}" target="_blank" download
+                                class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-bold transition-colors flex items-center gap-2">
+                                <i class="fa-solid fa-download"></i> تحميل
+                            </a>
+                        </div>` : ''}
+
+                        <!-- Activity Timeline -->
+                        <div>
+                            <p class="text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
+                                <i class="fa-solid fa-timeline text-indigo-500"></i>
+                                سجل النشاط
+                            </p>
+                            <div class="bg-white border border-slate-200 rounded-xl p-3 max-h-60 overflow-y-auto">
+                                ${timelineHtml || '<p class="text-xs text-slate-400 text-center py-4">لا يوجد نشاط مسجل</p>'}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="px-5 py-4 border-t border-slate-200 flex items-center justify-end gap-2 bg-slate-50">
+                        <button onclick="document.getElementById('design-approval-modal').remove()" class="px-4 py-2 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 text-sm transition-colors">إغلاق</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+
+        } catch (err) {
+            window.showToast(err.message || 'فشل في جلب بيانات الاعتماد', 'error');
         }
     };
 

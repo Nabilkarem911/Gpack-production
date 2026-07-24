@@ -604,6 +604,17 @@ router.post('/send-to-client/:orderId', authorize(['admin', 'manager', 'super_ad
 
         const shareUrl = `${req.protocol}://${req.get('host')}/public-design.html?token=${plainToken}`;
 
+        // Log activity: sent to client
+        try {
+            await db.query(
+                `INSERT INTO design_activity_log (order_id, event_type, event_details, actor)
+                 VALUES ($1, 'sent_to_client', $2, 'manager')`,
+                [orderId, JSON.stringify({ share_url: shareUrl, expires_at: expiresAt })]
+            );
+        } catch (logErr) {
+            console.error('[Designer] Activity log error:', logErr.message);
+        }
+
         console.log(`[Designer] Sent to client — order ${order.order_number}, URL: ${shareUrl}`);
 
         res.json({
@@ -863,6 +874,52 @@ router.post('/client-response/:token', async (req, res) => {
         res.status(500).json({ error: 'فشل في تسجيل رد العميل' });
     } finally {
         client.release();
+    }
+});
+
+// ── GET /api/designer/approval/:orderId ─────────────────────────────────────
+// Manager: fetch approval record (signature, PDF path, device info, IP).
+// =============================================================================
+router.get('/approval/:orderId', authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
+    const { orderId } = req.params;
+    try {
+        const result = await db.query(
+            `SELECT da.*, c.name as client_name
+             FROM design_approvals da
+             LEFT JOIN clients c ON c.id = da.client_id
+             WHERE da.order_id = $1`,
+            [orderId]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'لا يوجد سجل اعتماد لهذا الطلب' });
+        }
+
+        res.json({ success: true, approval: result.rows[0] });
+    } catch (err) {
+        console.error('[Designer] Approval fetch error:', err.message);
+        res.status(500).json({ error: 'فشل في جلب سجل الاعتماد' });
+    }
+});
+
+// ── GET /api/designer/activity-log/:orderId ──────────────────────────────────
+// Manager: fetch activity timeline for an order.
+// =============================================================================
+router.get('/activity-log/:orderId', authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
+    const { orderId } = req.params;
+    try {
+        const result = await db.query(
+            `SELECT event_type, event_details, actor, client_ip, user_agent, created_at
+             FROM design_activity_log
+             WHERE order_id = $1
+             ORDER BY created_at ASC`,
+            [orderId]
+        );
+
+        res.json({ success: true, activities: result.rows });
+    } catch (err) {
+        console.error('[Designer] Activity log fetch error:', err.message);
+        res.status(500).json({ error: 'فشل في جلب سجل النشاط' });
     }
 });
 

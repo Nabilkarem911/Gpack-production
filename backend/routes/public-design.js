@@ -3,13 +3,126 @@
 // =============================================================================
 // G.PACK 2.0 — Public Design Review Route (public-design.js)
 // No auth required. Client views designs and submits approval/revision.
+// Handles: signature capture, IP/device logging, PDF generation, activity log.
 // =============================================================================
 
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const crypto = require('crypto');
+const path = require('path');
+const fs = require('fs');
+const PDFDocument = require('pdfkit');
 const { encryptToken, hashToken, hasShareTokenSecret } = require('../utils/crypto');
+
+// Helper: lookup order by token (hash first, plaintext fallback)
+async function _findOrderByToken(client, token) {
+    let orderRes = null;
+    try {
+        const tokenHash = hashToken(token);
+        orderRes = await client.query(
+            `SELECT id, order_number, design_client_status, client_id FROM orders WHERE design_share_token_hash = $1`,
+            [tokenHash]
+        );
+    } catch { /* SECRET missing */ }
+
+    if (!orderRes || orderRes.rows.length === 0) {
+        orderRes = await client.query(
+            `SELECT id, order_number, design_client_status, client_id FROM orders WHERE design_share_token = $1`,
+            [token]
+        );
+    }
+    return orderRes.rows.length > 0 ? orderRes.rows[0] : null;
+}
+
+// Helper: log activity (INSERT only, immutable table)
+async function _logActivity(client, orderId, eventType, actor, ip, userAgent, details) {
+    try {
+        await client.query(
+            `INSERT INTO design_activity_log (order_id, event_type, event_details, actor, client_ip, user_agent)
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [orderId, eventType, JSON.stringify(details || {}), actor, ip || null, userAgent || null]
+        );
+    } catch (err) {
+        console.error('[PublicDesign] Activity log error:', err.message);
+    }
+}
+
+// Helper: generate approval PDF using pdfkit
+function _generateApprovalPDF(orderData, signatureBase64, outputPath) {
+    return new Promise((resolve, reject) => {
+        const doc = new PDFDocument({ size: 'A4', margin: 50 });
+        const stream = fs.createWriteStream(outputPath);
+        doc.pipe(stream);
+
+        // Header — G.PACK logo text
+        doc.fontSize(24).fillColor('#4f46e5').text('G.PACK', { align: 'center' });
+        doc.fontSize(10).fillColor('#94a3b8').text('حلول التعبئة والتغليف — ينبع، المملكة العربية السعودية', { align: 'center' });
+        doc.moveDown(1);
+
+        // Title
+        doc.fontSize(18).fillColor('#1e293b').text('Design Approval Certificate', { align: 'center' });
+        doc.fontSize(14).fillColor('#475569').text('شهادة اعتماد التصميم', { align: 'center' });
+        doc.moveDown(2);
+
+        // Order info
+        doc.fontSize(11).fillColor('#334155');
+        doc.text(`Order Number / رقم الطلب: #${orderData.order_number}`, 50);
+        doc.text(`Client / العميل: ${orderData.client_name}`, 50);
+        doc.text(`Date / التاريخ: ${new Date().toLocaleString('en-GB')}`, 50);
+        doc.text(`IP Address: ${orderData.client_ip}`, 50);
+        doc.text(`Device: ${orderData.device_info}`, 50);
+        doc.moveDown(1);
+
+        // Separator
+        doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor('#cbd5e1').lineWidth(1).stroke();
+        doc.moveDown(1);
+
+        // Items
+        doc.fontSize(12).fillColor('#1e293b').text('Approved Items / الأصناف المعتمدة:', 50);
+        doc.moveDown(0.5);
+        orderData.items.forEach((item, idx) => {
+            doc.fontSize(10).fillColor('#475569');
+            doc.text(`${idx + 1}. ${item.product_name || 'Item'} ${item.size_name ? '— ' + item.size_name : ''} (Qty: ${item.quantity})`, 70);
+        });
+        doc.moveDown(1);
+
+        // Separator
+        doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor('#cbd5e1').lineWidth(1).stroke();
+        doc.moveDown(1);
+
+        // Signature
+        doc.fontSize(12).fillColor('#1e293b').text('Approved By / تم الاعتماد بواسطة:', 50);
+        doc.moveDown(0.5);
+        doc.fontSize(11).fillColor('#334155').text(`Name: ${orderData.signer_name}`, 50);
+        doc.moveDown(1);
+
+        // Embed signature image
+        if (signatureBase64) {
+            try {
+                const sigBuffer = Buffer.from(signatureBase64.split(',')[1], 'base64');
+                doc.image(sigBuffer, 50, doc.y, { width: 200, height: 70 });
+                doc.moveDown(4);
+            } catch (e) {
+                doc.text('[Signature image]', 50);
+            }
+        }
+
+        doc.moveDown(1);
+        doc.fontSize(9).fillColor('#94a3b8').text(`Approved at: ${new Date().toISOString()}`, 50);
+        doc.text(`IP: ${orderData.client_ip} | Device: ${orderData.device_info}`, 50);
+
+        doc.moveDown(2);
+        // Approved stamp
+        doc.fontSize(16).fillColor('#059669').text('APPROVED', { align: 'center' });
+        doc.fontSize(9).fillColor('#94a3b8').text('G.PACK Design Approval System', { align: 'center' });
+
+        doc.end();
+
+        stream.on('finish', () => resolve(outputPath));
+        stream.on('error', reject);
+    });
+}
 
 // ── GET /api/public/design/view/:token ──────────────────────────────────────
 // Public: client views design files for all items in the order.
@@ -92,39 +205,31 @@ router.get('/view/:token', async (req, res) => {
 
 // ── POST /api/public/design/respond/:token ──────────────────────────────────
 // Public: client submits approval or revision request per item.
-// Body: { items: [{ item_id, action: 'approve'|'revision', notes? }] }
+// Body: {
+//   items: [{ item_id, action: 'approve'|'revision', notes? }],
+//   signature?: base64 PNG (canvas signature),
+//   signer_name?: string,
+//   rejection_reasons?: string[],
+//   device_info?: string,
+// }
 // =============================================================================
 router.post('/respond/:token', async (req, res) => {
     const { token } = req.params;
-    const { items } = req.body;
+    const { items, signature, signer_name, rejection_reasons, device_info } = req.body;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ error: 'يجب تقديم رد لصنف واحد على الأقل' });
     }
 
+    const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || req.ip || '';
+    const userAgent = req.headers['user-agent'] || '';
+
     const client = await db.getClient();
     try {
-        let orderRes = null;
-        try {
-            const tokenHash = hashToken(token);
-            orderRes = await client.query(
-                `SELECT id, order_number, design_client_status FROM orders WHERE design_share_token_hash = $1`,
-                [tokenHash]
-            );
-        } catch { /* SECRET missing */ }
-
-        if (!orderRes || orderRes.rows.length === 0) {
-            orderRes = await client.query(
-                `SELECT id, order_number, design_client_status FROM orders WHERE design_share_token = $1`,
-                [token]
-            );
-        }
-
-        if (orderRes.rows.length === 0) {
+        const order = await _findOrderByToken(client, token);
+        if (!order) {
             return res.status(404).json({ error: 'الرابط غير صالح' });
         }
-
-        const order = orderRes.rows[0];
 
         await client.query('BEGIN');
 
@@ -153,6 +258,8 @@ router.post('/respond/:token', async (req, res) => {
             }
         }
 
+        const allApprove = approvedCount > 0 && revisionCount === 0;
+
         if (revisionCount > 0) {
             await client.query(
                 `UPDATE orders SET design_client_status = 'revision_requested', design_status = 'revision'
@@ -164,7 +271,14 @@ router.post('/respond/:token', async (req, res) => {
                  WHERE order_id = $1 AND client_design_status = 'revision_requested'`,
                 [order.id]
             );
-        } else if (approvedCount > 0 && revisionCount === 0) {
+
+            // Log rejection activity
+            await _logActivity(client, order.id, 'revision_requested', 'client', clientIp, userAgent, {
+                reasons: rejection_reasons || [],
+                item_count: revisionCount,
+            });
+
+        } else if (allApprove) {
             const pendingRes = await client.query(
                 `SELECT COUNT(*) as count FROM order_items
                  WHERE order_id = $1
@@ -172,6 +286,7 @@ router.post('/respond/:token', async (req, res) => {
                    AND client_design_status != 'approved'`,
                 [order.id]
             );
+
             if (parseInt(pendingRes.rows[0].count) === 0) {
                 // All approved → convert to production + save to client_designs
                 await client.query(
@@ -183,13 +298,26 @@ router.post('/respond/:token', async (req, res) => {
                      WHERE id = $1`,
                     [order.id]
                 );
+
+                // Get client_name for PDF
+                const clientNameRes = await client.query(
+                    `SELECT c.name as client_name FROM orders o JOIN clients c ON c.id = o.client_id WHERE o.id = $1`,
+                    [order.id]
+                );
+                const clientName = clientNameRes.rows[0]?.client_name || '';
+
+                // Get items for PDF
                 const allItemsRes = await client.query(
-                    `SELECT oi.variant_id, oi.design_files
+                    `SELECT oi.variant_id, oi.design_files, oi.quantity,
+                            pv.product_name, pv.size_name
                      FROM order_items oi
+                     LEFT JOIN product_variants pv ON pv.id = oi.variant_id
                      WHERE oi.order_id = $1
                        AND oi.design_files IS NOT NULL AND oi.design_files != '[]'::jsonb`,
                     [order.id]
                 );
+
+                // Save to client_designs
                 const clientIdRes = await client.query(
                     `SELECT client_id FROM orders WHERE id = $1`, [order.id]
                 );
@@ -218,6 +346,66 @@ router.post('/respond/:token', async (req, res) => {
                         );
                     }
                 }
+
+                // Generate approval PDF
+                let pdfPath = null;
+                try {
+                    const uploadDir = path.join(__dirname, '../uploads/designs', order.id, 'approval');
+                    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+                    const pdfFileName = `approval_${Date.now()}.pdf`;
+                    const fullPath = path.join(uploadDir, pdfFileName);
+                    const pdfData = {
+                        order_number: order.order_number,
+                        client_name: clientName,
+                        client_ip: clientIp,
+                        device_info: device_info || '',
+                        signer_name: signer_name || '',
+                        items: allItemsRes.rows.map(r => ({
+                            product_name: r.product_name,
+                            size_name: r.size_name,
+                            quantity: r.quantity,
+                        })),
+                    };
+                    await _generateApprovalPDF(pdfData, signature, fullPath);
+                    pdfPath = `/uploads/designs/${order.id}/approval/${pdfFileName}`;
+                    console.log('[PublicDesign] Approval PDF generated:', pdfPath);
+                } catch (pdfErr) {
+                    console.error('[PublicDesign] PDF generation error:', pdfErr.message);
+                }
+
+                // Save approval record
+                try {
+                    await client.query(
+                        `INSERT INTO design_approvals
+                            (order_id, client_id, client_name, order_number,
+                             signature_image, signer_name, client_ip, user_agent, device_info,
+                             approval_pdf_path)
+                         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                         ON CONFLICT (order_id) DO UPDATE SET
+                            signature_image = EXCLUDED.signature_image,
+                            signer_name = EXCLUDED.signer_name,
+                            client_ip = EXCLUDED.client_ip,
+                            user_agent = EXCLUDED.user_agent,
+                            device_info = EXCLUDED.device_info,
+                            approval_pdf_path = EXCLUDED.approval_pdf_path,
+                            approved_at = NOW()`,
+                        [order.id, clientId, clientName, order.order_number,
+                         signature || null, signer_name || null, clientIp, userAgent,
+                         device_info || null, pdfPath]
+                    );
+                } catch (approvalErr) {
+                    console.error('[PublicDesign] Approval save error:', approvalErr.message);
+                }
+
+                // Log approval activity
+                await _logActivity(client, order.id, 'approved', 'client', clientIp, userAgent, {
+                    signer_name: signer_name,
+                    pdf_path: pdfPath,
+                });
+                await _logActivity(client, order.id, 'pdf_generated', 'system', null, null, {
+                    pdf_path: pdfPath,
+                });
+
             } else {
                 await client.query(
                     `UPDATE orders SET design_client_status = 'sent' WHERE id = $1`,
@@ -235,13 +423,48 @@ router.post('/respond/:token', async (req, res) => {
             message = `تم تسجيل موافقة العميل على ${approvedCount} صنف.`;
         }
 
-        res.json({ success: true, message, approved_count: approvedCount, revision_count: revisionCount });
+        // Return whatsapp number (from env or empty)
+        const whatsappNumber = process.env.WHATSAPP_NUMBER || '';
+
+        res.json({
+            success: true,
+            message,
+            approved_count: approvedCount,
+            revision_count: revisionCount,
+            whatsapp_number: whatsappNumber,
+        });
     } catch (err) {
         await client.query('ROLLBACK');
         console.error('[PublicDesign] Respond error:', err.message);
         res.status(500).json({ error: 'فشل في تسجيل رد العميل' });
     } finally {
         client.release();
+    }
+});
+
+// ── POST /api/public/design/activity/:token ─────────────────────────────────
+// Public: log client activity (link_opened, design_viewed, whatsapp_opened, etc.)
+// Body: { event_type: string, details?: object }
+// =============================================================================
+router.post('/activity/:token', async (req, res) => {
+    const { token } = req.params;
+    const { event_type, details } = req.body;
+
+    if (!event_type) return res.status(400).json({ error: 'event_type required' });
+
+    const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || req.ip || '';
+    const userAgent = req.headers['user-agent'] || '';
+
+    try {
+        const order = await _findOrderByToken(db, token);
+        if (!order) return res.status(404).json({ error: 'invalid token' });
+
+        await _logActivity(db, order.id, event_type, 'client', clientIp, userAgent, details);
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error('[PublicDesign] Activity error:', err.message);
+        res.status(500).json({ error: 'failed to log activity' });
     }
 });
 
