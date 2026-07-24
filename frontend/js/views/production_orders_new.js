@@ -830,10 +830,17 @@
                 body: { status: newStatus },
             });
             _toast('تم تحديث حالة أمر المورد');
-            // Refresh MOs
-            const moRes = await window.apiFetch(`/api/manufacturer-orders/by-order/${_hubOrderId}`);
-            _hubMOs = moRes?.data || [];
+            // Refresh both order (status may have auto-changed) and MOs
+            const [orderRes, moRes] = await Promise.all([
+                window.apiFetch(`/api/orders/${_hubOrderId}`),
+                window.apiFetch(`/api/manufacturer-orders/by-order/${_hubOrderId}`),
+            ]);
+            _hubOrder = orderRes?.data || _hubOrder;
+            _hubItems = _hubOrder?.items || [];
+            _hubMOs   = moRes?.data || [];
+            _renderHubHeader();
             _renderHubItems();
+            await _loadOrders();
         } catch (err) {
             _toast(err.message || 'فشل تحديث الحالة', 'error');
         }
@@ -853,9 +860,15 @@
             
             _toast('تم تراجع الإرسال بنجاح - الأمر عاد لحالة "معلق"');
 
-            // Refresh MOs
-            const moRes = await window.apiFetch(`/api/manufacturer-orders/by-order/${_hubOrderId}`);
-            _hubMOs = moRes?.data || [];
+            // Refresh both order (status may have auto-changed) and MOs
+            const [orderRes, moRes] = await Promise.all([
+                window.apiFetch(`/api/orders/${_hubOrderId}`),
+                window.apiFetch(`/api/manufacturer-orders/by-order/${_hubOrderId}`),
+            ]);
+            _hubOrder = orderRes?.data || _hubOrder;
+            _hubItems = _hubOrder?.items || [];
+            _hubMOs   = moRes?.data || [];
+            _renderHubHeader();
             _renderHubItems();
             await _loadOrders();
         } catch (err) {
