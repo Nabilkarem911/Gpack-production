@@ -166,11 +166,12 @@ router.get('/view/:token', async (req, res) => {
 
         const itemsRes = await db.query(
             `SELECT oi.id, oi.variant_id, oi.quantity,
-                    pv.product_name, pv.size_name,
+                    p.name AS product_name, pv.size_name,
                     oi.design_files, oi.designer_notes,
                     oi.client_design_status, oi.client_revision_notes
              FROM order_items oi
              LEFT JOIN product_variants pv ON pv.id = oi.variant_id
+             LEFT JOIN products p ON p.id = pv.product_id
              WHERE oi.order_id = $1
              ORDER BY oi.id ASC`,
             [order.id]
@@ -309,9 +310,10 @@ router.post('/respond/:token', async (req, res) => {
                 // Get items for PDF
                 const allItemsRes = await client.query(
                     `SELECT oi.variant_id, oi.design_files, oi.quantity,
-                            pv.product_name, pv.size_name
+                            p.name AS product_name, pv.size_name
                      FROM order_items oi
                      LEFT JOIN product_variants pv ON pv.id = oi.variant_id
+                     LEFT JOIN products p ON p.id = pv.product_id
                      WHERE oi.order_id = $1
                        AND oi.design_files IS NOT NULL AND oi.design_files != '[]'::jsonb`,
                     [order.id]

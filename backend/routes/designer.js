@@ -346,7 +346,7 @@ router.get('/task/:orderId', async (req, res) => {
         let pantoneColors = [];
         try {
             const pantoneResult = await db.query(
-                `SELECT color_name, color_code, hex_code FROM client_pantone_colors WHERE client_id = $1 AND is_active = true`,
+                `SELECT color_name, color_code, hex_value FROM client_pantone_colors WHERE client_id = $1`,
                 [orderResult.rows[0].client_id]
             );
             pantoneColors = pantoneResult.rows;
@@ -356,7 +356,7 @@ router.get('/task/:orderId', async (req, res) => {
         let clientDesigns = [];
         try {
             const designsResult = await db.query(
-                `SELECT id, title, file_path, file_type FROM client_designs WHERE client_id = $1 AND is_active = true`,
+                `SELECT id, design_name, description FROM client_designs WHERE client_id = $1 AND is_active = true`,
                 [orderResult.rows[0].client_id]
             );
             clientDesigns = designsResult.rows;

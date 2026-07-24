@@ -17,6 +17,7 @@
 
     // ── Init ──────────────────────────────────────────────────────────────────
     async function init() {
+        console.log('[Designer] init() called');
         _navToken = Date.now();
         await _loadTasks();
         _bindEvents();
@@ -28,9 +29,12 @@
         try {
             const res = await window.apiFetch('/api/designer/my-tasks');
             _allTasks = res.tasks || [];
+            console.log('[Designer] my-tasks response:', res);
+            console.log('[Designer] _allTasks count:', _allTasks.length, _allTasks);
 
             const completedRes = await window.apiFetch('/api/designer/my-completed');
             _completedTasks = completedRes.tasks || [];
+            console.log('[Designer] _completedTasks count:', _completedTasks.length);
 
             _renderTasks();
         } catch (err) {
@@ -43,6 +47,7 @@
     function _renderTasks() {
         const grid = document.getElementById('designer-tasks-grid');
         const emptyState = document.getElementById('designer-empty-state');
+        console.log('[Designer] _renderTasks called. grid found:', !!grid, 'emptyState found:', !!emptyState);
         if (!grid) return;
 
         let tasks;
@@ -51,6 +56,7 @@
         } else {
             tasks = _allTasks.filter(t => t.design_status === _currentTab);
         }
+        console.log('[Designer] current tab:', _currentTab, 'filtered tasks:', tasks.length, tasks);
 
         // Update tab counts
         _updateTabCounts();
