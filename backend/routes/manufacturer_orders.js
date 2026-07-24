@@ -1063,7 +1063,11 @@ router.delete('/:id', restrictDelete, async (req, res) => {
     try {
         await db.withTransaction(async (client) => {
             const checkResult = await client.query(
-                `SELECT status FROM manufacturer_orders WHERE id = $1`,
+                `SELECT mo.status, COALESCE(SUM(moi.received_qty), 0) as total_received
+                 FROM manufacturer_orders mo
+                 LEFT JOIN manufacturer_order_items moi ON moi.manufacturer_order_id = mo.id
+                 WHERE mo.id = $1
+                 GROUP BY mo.id`,
                 [id]
             );
             if (checkResult.rowCount === 0) {
@@ -1071,8 +1075,12 @@ router.delete('/:id', restrictDelete, async (req, res) => {
             }
 
             const status = checkResult.rows[0].status;
-            if (status !== 'pending') {
-                throw new Error('يمكن حذف أوامر التشغيل في حالة "معلق" فقط.');
+            if (!['pending', 'sent'].includes(status)) {
+                throw new Error('لا يمكن الإلغاء إلا للأوامر المعلقة أو المرسلة فقط.');
+            }
+
+            if (parseFloat(checkResult.rows[0].total_received) > 0) {
+                throw new Error('لا يمكن الإلغاء بعد بدء الاستلام من المورد.');
             }
 
             // Get items to revert order_items quantities
@@ -1398,106 +1406,6 @@ router.post('/:id/revert-send', restrictEdit, async (req, res) => {
         await client.query('ROLLBACK');
         console.error('[revert-send] Error:', err);
         res.status(500).json({ message: err.message || 'فشل تراجع الإرسال' });
-    } finally {
-        client.release();
-    }
-});
-
-// ── DELETE /api/manufacturer-orders/:id ───────────────────────────────────────
-// Cancel/Delete MO - only allowed if status is 'pending' or 'ordered' (not received)
-// Resets order items' manufacturer_po_qty to 0 (unassign them)
-router.delete('/:id', restrictDelete, async (req, res) => {
-    const { id } = req.params;
-    
-    const client = await db.getClient();
-    try {
-        await client.query('BEGIN');
-        
-        // Check MO status and get order_id
-        const moRes = await client.query(
-            `SELECT mo.status, mo.order_id, COALESCE(SUM(moi.received_qty), 0) as total_received
-             FROM manufacturer_orders mo
-             LEFT JOIN manufacturer_order_items moi ON moi.manufacturer_order_id = mo.id
-             WHERE mo.id = $1
-             GROUP BY mo.id, mo.status, mo.order_id`,
-            [id]
-        );
-        
-        if (!moRes.rows.length) {
-            await client.query('ROLLBACK');
-            return res.status(404).json({ message: 'أمر المورد غير موجود' });
-        }
-        
-        const mo = moRes.rows[0];
-        
-        // Only allow cancel if status is 'pending' or 'ordered' AND nothing received
-        if (!['pending', 'sent'].includes(mo.status)) {
-            await client.query('ROLLBACK');
-            return res.status(400).json({ message: 'لا يمكن الإلغاء إلا للأوامر المعلقة أو المرسلة' });
-        }
-        
-        if (parseFloat(mo.total_received) > 0) {
-            await client.query('ROLLBACK');
-            return res.status(400).json({ message: 'لا يمكن الإلغاء بعد بدء الاستلام' });
-        }
-        
-        // Get all order_item_ids to reset manufacturer_po_qty
-        const itemsRes = await client.query(
-            `SELECT order_item_id, mo_quantity FROM manufacturer_order_items WHERE manufacturer_order_id = $1`,
-            [id]
-        );
-        
-        // Reset manufacturer_po_qty for each order item
-        for (const item of itemsRes.rows) {
-            if (item.order_item_id) {
-                // Get current manufacturer_po_qty and subtract this MO's quantity
-                const currentRes = await client.query(
-                    `SELECT manufacturer_po_qty FROM order_items WHERE id = $1`,
-                    [item.order_item_id]
-                );
-                const currentQty = parseFloat(currentRes.rows[0]?.manufacturer_po_qty || 0);
-                const moQty = parseFloat(item.mo_quantity || 0);
-                const newQty = Math.max(0, currentQty - moQty);
-                
-                await client.query(
-                    `UPDATE order_items SET manufacturer_po_qty = $1 WHERE id = $2`,
-                    [newQty, item.order_item_id]
-                );
-            }
-        }
-        
-        // Delete receipt session items that reference MO items (FK constraint)
-        await client.query(
-            `DELETE FROM mo_receipt_session_items
-             WHERE manufacturer_order_item_id IN (
-                 SELECT id FROM manufacturer_order_items WHERE manufacturer_order_id = $1
-             )`,
-            [id]
-        );
-        
-        // Delete MO items first (foreign key constraint)
-        await client.query(
-            `DELETE FROM manufacturer_order_items WHERE manufacturer_order_id = $1`,
-            [id]
-        );
-        
-        // Delete the MO
-        await client.query(
-            `DELETE FROM manufacturer_orders WHERE id = $1`,
-            [id]
-        );
-        
-        await client.query('COMMIT');
-        res.json({ 
-            success: true, 
-            message: 'تم إلغاء أمر المورد بنجاح',
-            order_id: mo.order_id
-        });
-        
-    } catch (err) {
-        await client.query('ROLLBACK');
-        console.error('[cancel-mo] Error:', err);
-        res.status(500).json({ message: err.message || 'فشل إلغاء أمر المورد' });
     } finally {
         client.release();
     }

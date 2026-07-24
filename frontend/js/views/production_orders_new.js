@@ -475,11 +475,19 @@
         const actionsEl = _el('hub-status-actions');
         if (actionsEl) {
             const canRevertOrder = ['production', 'processing'].includes(_hubOrder.status);
+            const canRevertExecution = _hubOrder.status === 'processing';
             const nextBtns = nextSteps.map(s =>
                 `<button onclick="window.poView.updateStatus('${s.s}')"
                          class="flex items-center gap-2 px-4 py-2.5 text-sm font-bold rounded-xl shadow transition-all active:scale-[0.98] ${s.cls}">
                      <i class="fa-solid fa-arrow-right"></i> ${s.label}
                  </button>`).join('');
+            const revertExecBtn = canRevertExecution
+                ? `<button onclick="window.poView.revertExecution()"
+                           class="flex items-center gap-2 px-4 py-2.5 text-sm font-bold rounded-xl border-2 border-amber-300 text-amber-600 hover:bg-amber-50 transition-all active:scale-[0.98]"
+                           title="التراجع عن بدء التنفيذ وإعادة الأمر لمرحلة الإنتاج">
+                       <i class="fa-solid fa-undo"></i> تراجع عن التنفيذ
+                   </button>`
+                : '';
             const revertBtn = canRevertOrder
                 ? `<button onclick="window.poView.revertOrderToArchive()"
                            class="flex items-center gap-2 px-4 py-2.5 text-sm font-bold rounded-xl border-2 border-red-300 text-red-600 hover:bg-red-50 transition-all active:scale-[0.98]"
@@ -487,8 +495,8 @@
                        <i class="fa-solid fa-rotate-left"></i> تراجع وأرشفة
                    </button>`
                 : '';
-            actionsEl.innerHTML = (nextBtns || revertBtn)
-                ? nextBtns + revertBtn
+            actionsEl.innerHTML = (nextBtns || revertBtn || revertExecBtn)
+                ? nextBtns + revertExecBtn + revertBtn
                 : '<span class="text-xs text-slate-400">لا يوجد إجراء متاح</span>';
         }
 
@@ -934,6 +942,23 @@
         } catch (err) {
             console.error('[cancelMO] Error:', err);
             _toast(err.message || 'فشل إلغاء أمر المورد - تأكد من عدم وجود استلام', 'error');
+        }
+    }
+
+    // ── Revert Execution (processing → production) ───────────────────────────
+    async function _revertExecution() {
+        if (!confirm('هل أنت متأكد من التراجع عن بدء التنفيذ؟\n\nسيتم إعادة الأمر إلى مرحلة "إنتاج".')) return;
+        try {
+            await window.apiFetch(`/api/orders/${_hubOrderId}/status`, {
+                method: 'PATCH',
+                body: { status: 'production' },
+            });
+            _toast('تم التراجع عن التنفيذ بنجاح');
+            await _loadOrders();
+            await _openHub(_hubOrderId);
+        } catch (err) {
+            console.error('[revertExecution] Error:', err);
+            _toast(err.message || 'فشل التراجع عن التنفيذ', 'error');
         }
     }
 
@@ -3043,6 +3068,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         revertSendToSupplier: _revertSendToSupplier,
         editMO:             _editMO,
         cancelMO:           _cancelMO,
+        revertExecution:    _revertExecution,
         revertOrderToArchive: _revertOrderToArchive,
         printMO:            _printMO,
         printDN:            _printDN,

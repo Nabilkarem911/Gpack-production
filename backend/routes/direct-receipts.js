@@ -48,10 +48,27 @@ router.use(authenticate);
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function _moveFile(tempPath, targetDir, fileName) {
-    if (!tempPath || !fs.existsSync(tempPath)) return null;
+    if (!tempPath || !fs.existsSync(tempPath)) {
+        console.error('[DirectReceipts] _moveFile: temp file does not exist:', tempPath);
+        return null;
+    }
     fs.mkdirSync(targetDir, { recursive: true });
     const target = path.join(targetDir, fileName);
-    fs.renameSync(tempPath, target);
+    try {
+        fs.renameSync(tempPath, target);
+    } catch (renameErr) {
+        console.error('[DirectReceipts] _moveFile: renameSync failed:', renameErr.message);
+        try { fs.copyFileSync(tempPath, target); fs.unlinkSync(tempPath); }
+        catch (copyErr) {
+            console.error('[DirectReceipts] _moveFile: copyFileSync fallback failed:', copyErr.message);
+            return null;
+        }
+    }
+    if (!fs.existsSync(target)) {
+        console.error('[DirectReceipts] _moveFile: target file does not exist after move:', target);
+        return null;
+    }
+    console.log('[DirectReceipts] _moveFile: file saved to', target);
     return `/uploads/direct-receipts/${path.basename(targetDir)}/${fileName}`;
 }
 
