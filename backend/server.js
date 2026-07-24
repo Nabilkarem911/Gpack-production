@@ -321,6 +321,15 @@ runMigrations()
 
         process.on('SIGTERM', () => shutdown('SIGTERM'));
         process.on('SIGINT', () => shutdown('SIGINT'));
+
+        // Prevent process crash on unhandled errors
+        process.on('uncaughtException', (err) => {
+            console.error('[Server] Uncaught Exception:', err.message);
+            console.error(err.stack);
+        });
+        process.on('unhandledRejection', (reason, promise) => {
+            console.error('[Server] Unhandled Rejection:', reason);
+        });
     })
     .catch((err) => {
         console.error('[Server] Migration failed, aborting startup:', err.message);

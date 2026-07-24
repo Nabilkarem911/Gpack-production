@@ -25,7 +25,8 @@ if (!fs.existsSync(UPLOAD_BASE)) fs.mkdirSync(UPLOAD_BASE, { recursive: true });
 
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        const { orderId, itemId } = req.params;
+        const orderId = req.params.orderId || req.body.order_id || 'unassigned';
+        const itemId = req.params.itemId;
         let dir;
         if (itemId) {
             dir = path.join(UPLOAD_BASE, orderId, 'items', itemId);
