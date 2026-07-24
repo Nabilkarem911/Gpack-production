@@ -125,6 +125,9 @@ const publicLimiter = rateLimit({
 // Global Middleware
 // =============================================================================
 
+// Disable ETag to prevent 304 Not Modified responses that cause stale API data
+app.set('etag', false);
+
 app.use(helmet({
   contentSecurityPolicy: false,  // CSP is set by nginx for frontend
   crossOriginEmbedderPolicy: false,
