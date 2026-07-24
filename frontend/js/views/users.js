@@ -17,6 +17,7 @@ var usersView = (() => {
         { key: 'sales',              label: 'فواتير المبيعات' },
         { key: 'quotations',         label: 'عروض الأسعار' },
         { key: 'production_orders',  label: 'أوامر التشغيل' },
+        { key: 'designer',           label: 'المصمم' },
         { key: 'forecast',           label: 'مركز الذكاء (AI)' },
         // ── المشتريات ─────────────────────────────────
         { key: 'suppliers',          label: 'الموردين' },
@@ -51,6 +52,7 @@ var usersView = (() => {
             sales: 'مبيعات',
             accountant: 'محاسب',
             warehouse: 'مستودع',
+            designer: 'مصمم',
         };
         return map[roleName] || roleName;
     }

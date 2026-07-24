@@ -3,9 +3,9 @@
 const jwt = require('jsonwebtoken');
 const db = require('../db');
 
-// Lightweight in-memory cache for token_version checks (TTL: 30s)
+// Lightweight in-memory cache for token_version checks (TTL: 5s)
 const _tvCache = new Map();
-const _TV_TTL = 30000;
+const _TV_TTL = 5000;
 
 const authenticate = async (req, res, next) => {
   // Prefer HttpOnly cookie (secure against XSS)

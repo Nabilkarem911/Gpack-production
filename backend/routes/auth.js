@@ -79,7 +79,7 @@ router.post('/login', validateBody(loginBody), async (req, res) => {
     res.cookie('token', token, {
       httpOnly: true,
       secure: isProduction,         // HTTPS only in production
-      sameSite: isProduction ? 'strict' : 'lax',
+      sameSite: 'lax',              // lax for cross-device/mobile compatibility
       maxAge: 8 * 60 * 60 * 1000,   // 8 hours
     });
 
@@ -195,7 +195,7 @@ router.post('/logout', authenticate, (req, res) => {
   res.clearCookie('token', {
     httpOnly: true,
     secure: isProduction,
-    sameSite: isProduction ? 'strict' : 'lax',
+    sameSite: 'lax',
   });
   return res.status(200).json({ message: 'Logged out successfully.' });
 });
