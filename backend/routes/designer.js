@@ -282,6 +282,42 @@ router.get('/pending-review', authorize(['admin', 'manager', 'super_admin']), as
 // =============================================================================
 router.get('/my-tasks', async (req, res) => {
     try {
+        const isAdmin = ['admin', 'super_admin', 'manager'].includes(req.user.role) ||
+                        (req.user.permissions && req.user.permissions.all_access === true);
+
+        if (isAdmin) {
+            // Admin/Manager: see ALL design tasks (or filter by designer_id if provided)
+            const { designer_id } = req.query;
+            const params = [];
+            let paramIdx = 1;
+            let filterClause = '';
+
+            if (designer_id) {
+                params.push(designer_id);
+                filterClause = `AND o.assigned_designer_id = $${paramIdx++}`;
+            }
+
+            const result = await db.query(
+                `SELECT o.id, o.order_number, o.design_status, o.design_brief, o.design_brief_files,
+                        o.design_sent_at, o.created_at,
+                        c.name as client_name,
+                        u.name as designer_name,
+                        (SELECT COUNT(*) FROM order_items WHERE order_id = o.id) as item_count,
+                        (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND design_status = 'completed') as completed_count,
+                        (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND design_status = 'approved') as approved_count
+                 FROM orders o
+                 JOIN clients c ON c.id = o.client_id
+                 LEFT JOIN users u ON u.id = o.assigned_designer_id
+                 WHERE o.assigned_designer_id IS NOT NULL
+                   AND o.design_status IN ('pending', 'in_progress', 'revision')
+                   ${filterClause}
+                 ORDER BY o.design_sent_at DESC`,
+                params
+            );
+            return res.json({ tasks: result.rows });
+        }
+
+        // Designer: see only tasks assigned to me
         const result = await db.query(
             `SELECT o.id, o.order_number, o.design_status, o.design_brief, o.design_brief_files,
                     o.design_sent_at, o.created_at,
@@ -488,6 +524,24 @@ router.put('/item/:orderId/:itemId/submit', upload.array('design_files', 10), as
 // =============================================================================
 router.get('/my-completed', async (req, res) => {
     try {
+        const isAdmin = ['admin', 'super_admin', 'manager'].includes(req.user.role) ||
+                        (req.user.permissions && req.user.permissions.all_access === true);
+
+        if (isAdmin) {
+            const result = await db.query(
+                `SELECT o.id, o.order_number, o.design_status, o.design_completed_at,
+                        c.name as client_name,
+                        u.name as designer_name
+                 FROM orders o
+                 JOIN clients c ON c.id = o.client_id
+                 LEFT JOIN users u ON u.id = o.assigned_designer_id
+                 WHERE o.assigned_designer_id IS NOT NULL
+                   AND o.design_status IN ('completed', 'in_review')
+                 ORDER BY o.design_completed_at DESC NULLS LAST LIMIT 30`
+            );
+            return res.json({ tasks: result.rows });
+        }
+
         const result = await db.query(
             `SELECT o.id, o.order_number, o.design_status, o.design_completed_at,
                     c.name as client_name

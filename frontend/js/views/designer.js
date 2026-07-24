@@ -77,7 +77,9 @@
             emptyState.classList.remove('flex');
         }
 
-        grid.innerHTML = tasks.map(task => _renderTaskCard(task)).join('');
+        const cardsHtml = tasks.map(task => _renderTaskCard(task)).join('');
+        grid.innerHTML = cardsHtml;
+        console.log('[Designer] grid.innerHTML set, length:', cardsHtml.length, 'grid.children:', grid.children.length);
 
         // Bind card clicks
         grid.querySelectorAll('[data-task-id]').forEach(card => {
@@ -107,6 +109,7 @@
                     <div>
                         <p class="font-bold text-slate-800 text-sm">#${task.order_number}</p>
                         <p class="text-xs text-slate-500 mt-0.5">${_esc(task.client_name)}</p>
+                        ${task.designer_name ? `<p class="text-xs text-brand-600 mt-0.5"><i class="fa-solid fa-user-pen ml-1"></i>${_esc(task.designer_name)}</p>` : ''}
                     </div>
                     <span class="text-xs px-2 py-1 rounded-full ${st.color}">${st.label}</span>
                 </div>
