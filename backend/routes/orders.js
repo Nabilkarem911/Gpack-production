@@ -165,7 +165,7 @@ router.get('/', async (req, res) => {
                  GROUP BY mo.order_id
              ) mo_stats ON mo_stats.order_id = o.id
              ${whereClause}
-             GROUP BY o.id, c.name, o.paid_amount, o.pricing_status, o.pricing_notes, o.design_status, o.design_client_status, mo_stats.mo_count, mo_stats.total_mo_qty, mo_stats.total_received, design_completed_count
+             GROUP BY o.id, c.name, o.paid_amount, o.pricing_status, o.pricing_notes, o.design_status, o.design_client_status, mo_stats.mo_count, mo_stats.total_mo_qty, mo_stats.total_received
              ORDER BY o.created_at DESC
              LIMIT $${limitParam} OFFSET $${offsetParam}`,
             params
