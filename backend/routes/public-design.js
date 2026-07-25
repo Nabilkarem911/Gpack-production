@@ -170,7 +170,7 @@ router.get('/view/:token', async (req, res) => {
             const tokenHash = hashToken(token);
             orderRes = await db.query(
                 `SELECT o.id, o.order_number, o.design_token_expires_at, o.design_client_status,
-                        c.name as client_name
+                        o.design_status, c.name as client_name
                  FROM orders o
                  JOIN clients c ON c.id = o.client_id
                  WHERE o.design_share_token_hash = $1`,
@@ -181,7 +181,7 @@ router.get('/view/:token', async (req, res) => {
         if (!orderRes || orderRes.rows.length === 0) {
             orderRes = await db.query(
                 `SELECT o.id, o.order_number, o.design_token_expires_at, o.design_client_status,
-                        c.name as client_name
+                        o.design_status, c.name as client_name
                  FROM orders o
                  JOIN clients c ON c.id = o.client_id
                  WHERE o.design_share_token = $1`,
@@ -197,6 +197,27 @@ router.get('/view/:token', async (req, res) => {
 
         if (order.design_token_expires_at && new Date(order.design_token_expires_at) < new Date()) {
             return res.status(410).json({ error: 'انتهت صلاحية هذا الرابط' });
+        }
+
+        // Auto-reset stale client responses if the order moved back to revision/in_review
+        // (designer resubmitted after client revision request). This allows the client
+        // to respond again using the SAME link without manager needing to resend.
+        if (order.design_client_status === 'revision_requested' &&
+            ['revision', 'in_review', 'pending', 'in_progress'].includes(order.design_status)) {
+            await db.query(
+                `UPDATE order_items SET
+                    client_design_status = NULL,
+                    client_revision_notes = NULL,
+                    client_revision_files = NULL,
+                    client_approved_at = NULL
+                 WHERE order_id = $1 AND client_design_status = 'revision_requested'`,
+                [order.id]
+            );
+            await db.query(
+                `UPDATE orders SET design_client_status = 'sent' WHERE id = $1`,
+                [order.id]
+            );
+            console.log(`[PublicDesign] Auto-reset stale client response for order ${order.id} (design_status=${order.design_status})`);
         }
 
         const itemsRes = await db.query(
