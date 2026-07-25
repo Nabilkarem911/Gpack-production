@@ -3969,7 +3969,12 @@
             return;
         }
 
-        // Fetch order items for per-item notes
+        if (designers.length === 0) {
+            window.showToast('لا يوجد مصممين نشطين في النظام', 'error');
+            return;
+        }
+
+        // Fetch order items
         let orderItems = [];
         try {
             const res = await window.apiFetch(`/api/orders/${orderId}`);
@@ -3980,8 +3985,18 @@
                 quantity: it.quantity,
             }));
         } catch {
-            // If we can't load items, still allow sending without per-item notes
+            window.showToast('فشل في تحميل أصناف العرض', 'error');
+            return;
         }
+
+        if (orderItems.length === 0) {
+            window.showToast('لا توجد أصناف في هذا العرض', 'error');
+            return;
+        }
+
+        const designersOptions = designers.map(d =>
+            `<option value="${d.id}">${_escapeHtml(d.name)}${d.email ? ' (' + _escapeHtml(d.email) + ')' : ''}</option>`
+        ).join('');
 
         // Build modal HTML
         const existing = document.getElementById('send-to-designer-modal');
@@ -3991,7 +4006,7 @@
         modal.id = 'send-to-designer-modal';
         modal.className = 'fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4';
         modal.innerHTML = `
-            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
                 <div class="flex items-center justify-between px-5 py-4 border-b border-slate-200">
                     <h2 class="text-lg font-bold text-slate-800">إرسال للمصمم</h2>
                     <button onclick="document.getElementById('send-to-designer-modal').remove()" class="text-slate-400 hover:text-slate-600 transition-colors">
@@ -3999,49 +4014,72 @@
                     </button>
                 </div>
                 <div class="flex-1 overflow-y-auto p-5 space-y-4">
-                    <div>
-                        <label class="block text-sm font-medium text-slate-700 mb-1">المصمم</label>
-                        <select id="std-designer-select" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
-                            <option value="">-- اختر المصمم --</option>
-                            ${designers.map(d => `<option value="${d.id}">${_escapeHtml(d.name)}${d.email ? ' (' + _escapeHtml(d.email) + ')' : ''}</option>`).join('')}
-                        </select>
-                    </div>
+                    <!-- General brief -->
                     <div>
                         <label class="block text-sm font-medium text-slate-700 mb-1">تعليمات عامة للمصمم</label>
-                        <textarea id="std-design-brief" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" rows="3"
+                        <textarea id="std-design-brief" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" rows="2"
                             placeholder="اكتب تعليمات عامة للمصمم..."></textarea>
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-slate-700 mb-1">ملفات مرجعية (شعار، صور، مراجع)</label>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">ملفات مرجعية عامة (شعار، صور، مراجع)</label>
                         <input type="file" id="std-brief-files" multiple
                             accept=".jpg,.jpeg,.png,.gif,.pdf,.ai,.psd,.eps,.svg,.webp,.tiff,.tif,.bmp,.raw,.heic"
                             class="w-full text-sm text-slate-500 file:ml-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100" />
                     </div>
-                    ${orderItems.length > 0 ? `
-                        <div>
-                            <p class="text-sm font-medium text-slate-700 mb-2">ملاحظات وملفات لكل صنف (اختياري)</p>
-                            <div class="space-y-3 max-h-60 overflow-y-auto">
-                                ${orderItems.map(it => `
-                                    <div class="border border-slate-200 rounded-lg p-3 space-y-2">
-                                        <div class="flex items-start gap-2">
-                                            <div class="flex-shrink-0 w-32 text-xs text-slate-600 pt-2">
-                                                <p class="font-medium">${_escapeHtml(it.name)}</p>
-                                                <p class="text-slate-400">${_escapeHtml(it.size || '')} — qty: ${it.quantity}</p>
-                                            </div>
-                                            <textarea data-item-id="${it.id}" class="std-item-notes flex-1 px-2 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-brand-500" rows="2"
-                                                placeholder="ملاحظات خاصة بهذا الصنف..."></textarea>
-                                        </div>
-                                        <label class="flex items-center gap-2 px-2 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg cursor-pointer text-xs transition-colors w-fit">
-                                            <i class="fa-solid fa-paperclip text-slate-500"></i>
-                                            <span>ملفات مرجعية لهذا الصنف</span>
-                                            <input type="file" multiple data-item-id="${it.id}" class="std-item-files hidden" accept=".jpg,.jpeg,.png,.gif,.pdf,.ai,.psd,.eps,.svg,.webp,.tiff,.tif,.bmp,.raw,.heic" />
-                                        </label>
-                                        <span class="std-item-files-count text-xs text-slate-400" data-item-id="${it.id}"></span>
-                                    </div>
-                                `).join('')}
-                            </div>
+
+                    <!-- Quick assign all to one designer -->
+                    <div class="bg-slate-50 rounded-lg p-3 flex items-center gap-3">
+                        <p class="text-xs font-medium text-slate-600 whitespace-nowrap">إسناد سريع للكل:</p>
+                        <select id="std-quick-designer" class="flex-1 px-2 py-1.5 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-brand-500">
+                            <option value="">-- اختر مصمم للكل --</option>
+                            ${designersOptions}
+                        </select>
+                        <button id="std-quick-apply" class="px-3 py-1.5 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-xs font-medium transition-colors whitespace-nowrap">
+                            تطبيق على الكل
+                        </button>
+                    </div>
+
+                    <!-- Per-item assignment -->
+                    <div>
+                        <div class="flex items-center justify-between mb-2">
+                            <p class="text-sm font-medium text-slate-700">إسناد الأصناف للمصممين</p>
+                            <label class="flex items-center gap-2 text-xs text-slate-500 cursor-pointer">
+                                <input type="checkbox" id="std-select-all" class="rounded border-slate-300" />
+                                <span>تحديد الكل</span>
+                            </label>
                         </div>
-                    ` : ''}
+                        <div class="space-y-3 max-h-[40vh] overflow-y-auto">
+                            ${orderItems.map(it => `
+                                <div class="border border-slate-200 rounded-lg p-3 space-y-2" data-item-row="${it.id}">
+                                    <div class="flex items-start gap-3">
+                                        <input type="checkbox" data-item-id="${it.id}" class="std-item-check mt-1 rounded border-slate-300" />
+                                        <div class="flex-1 space-y-2">
+                                            <div class="flex items-center justify-between">
+                                                <div>
+                                                    <p class="font-medium text-sm text-slate-800">${_escapeHtml(it.name)}</p>
+                                                    <p class="text-xs text-slate-400">${_escapeHtml(it.size || '')} — qty: ${it.quantity}</p>
+                                                </div>
+                                                <select data-item-id="${it.id}" class="std-item-designer px-2 py-1 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-brand-500">
+                                                    <option value="">-- المصمم --</option>
+                                                    ${designersOptions}
+                                                </select>
+                                            </div>
+                                            <textarea data-item-id="${it.id}" class="std-item-notes w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-brand-500" rows="1"
+                                                placeholder="ملاحظات خاصة بهذا الصنف..."></textarea>
+                                            <div class="flex items-center gap-2">
+                                                <label class="flex items-center gap-1.5 px-2 py-1 bg-slate-100 hover:bg-slate-200 rounded-lg cursor-pointer text-xs transition-colors">
+                                                    <i class="fa-solid fa-paperclip text-slate-500"></i>
+                                                    <span>ملفات مرجعية</span>
+                                                    <input type="file" multiple data-item-id="${it.id}" class="std-item-files hidden" accept=".jpg,.jpeg,.png,.gif,.pdf,.ai,.psd,.eps,.svg,.webp,.tiff,.tif,.bmp,.raw,.heic" />
+                                                </label>
+                                                <span class="std-item-files-count text-xs text-slate-400" data-item-id="${it.id}"></span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
                 </div>
                 <div class="px-5 py-4 border-t border-slate-200 flex items-center justify-end gap-2 bg-slate-50">
                     <button onclick="document.getElementById('send-to-designer-modal').remove()" class="px-4 py-2 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 text-sm transition-colors">إلغاء</button>
@@ -4053,6 +4091,35 @@
             </div>
         `;
         document.body.appendChild(modal);
+
+        // Bind select all
+        const selectAll = document.getElementById('std-select-all');
+        if (selectAll) {
+            selectAll.addEventListener('change', () => {
+                document.querySelectorAll('.std-item-check').forEach(cb => {
+                    cb.checked = selectAll.checked;
+                });
+            });
+        }
+
+        // Bind quick apply
+        const quickApply = document.getElementById('std-quick-apply');
+        if (quickApply) {
+            quickApply.addEventListener('click', () => {
+                const quickDesigner = document.getElementById('std-quick-designer')?.value;
+                if (!quickDesigner) {
+                    window.showToast('اختر مصمم أولاً', 'warning');
+                    return;
+                }
+                document.querySelectorAll('.std-item-designer').forEach(sel => {
+                    sel.value = quickDesigner;
+                });
+                document.querySelectorAll('.std-item-check').forEach(cb => {
+                    cb.checked = true;
+                });
+                window.showToast('تم تطبيق المصمم على كل الأصناف', 'success');
+            });
+        }
 
         // Bind per-item file count display
         document.querySelectorAll('.std-item-files').forEach(input => {
@@ -4067,28 +4134,33 @@
         const submitBtn = document.getElementById('std-submit-btn');
         if (submitBtn) {
             submitBtn.addEventListener('click', async () => {
-                const designerId = document.getElementById('std-designer-select')?.value;
                 const brief = document.getElementById('std-design-brief')?.value.trim();
                 const filesInput = document.getElementById('std-brief-files');
                 const files = filesInput ? Array.from(filesInput.files) : [];
 
-                if (!designerId) {
-                    window.showToast('يرجى اختيار المصمم', 'warning');
+                // Collect item_assignments: only checked items with a designer selected
+                const itemAssignments = [];
+                document.querySelectorAll('.std-item-check').forEach(cb => {
+                    if (!cb.checked) return;
+                    const itemId = cb.getAttribute('data-item-id');
+                    const designerSelect = document.querySelector(`.std-item-designer[data-item-id="${itemId}"]`);
+                    const notesEl = document.querySelector(`.std-item-notes[data-item-id="${itemId}"]`);
+                    const designerId = designerSelect?.value;
+                    const notes = notesEl?.value.trim() || null;
+
+                    if (!designerId) return;
+                    itemAssignments.push({ item_id: itemId, designer_id: parseInt(designerId), notes });
+                });
+
+                if (itemAssignments.length === 0) {
+                    window.showToast('يرجى تحديد صنف واحد على الأقل واختيار مصمم له', 'warning');
                     return;
                 }
 
-                // Collect per-item notes
-                const itemNotes = [];
-                document.querySelectorAll('.std-item-notes').forEach(ta => {
-                    const notes = ta.value.trim();
-                    if (notes) itemNotes.push({ item_id: ta.getAttribute('data-item-id'), notes });
-                });
-
                 const formData = new FormData();
                 formData.append('order_id', orderId);
-                formData.append('designer_id', designerId);
                 formData.append('design_brief', brief);
-                formData.append('item_notes', JSON.stringify(itemNotes));
+                formData.append('item_assignments', JSON.stringify(itemAssignments));
                 files.forEach(f => formData.append('design_brief_files', f));
 
                 // Collect per-item files
