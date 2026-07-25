@@ -3978,7 +3978,8 @@
         let orderItems = [];
         try {
             const res = await window.apiFetch(`/api/orders/${orderId}`);
-            orderItems = (res.items || res.order_items || []).map(it => ({
+            const orderData = res.data || res;
+            orderItems = (orderData.items || orderData.order_items || []).map(it => ({
                 id: it.id,
                 name: it.product_name || it.variant_name || 'صنف',
                 size: it.size || '',
