@@ -12,8 +12,43 @@ const db = require('../db');
 const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
+const multer = require('multer');
 const PDFDocument = require('pdfkit');
 const { encryptToken, hashToken, hasShareTokenSecret } = require('../utils/crypto');
+
+// =============================================================================
+// File Upload Configuration (client revision files)
+// =============================================================================
+const UPLOAD_BASE = path.join(__dirname, '../uploads/designs');
+if (!fs.existsSync(UPLOAD_BASE)) fs.mkdirSync(UPLOAD_BASE, { recursive: true });
+
+const clientUploadStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const orderId = req.params.orderId || 'unassigned';
+        const dir = path.join(UPLOAD_BASE, orderId, 'client-revision');
+        fs.mkdirSync(dir, { recursive: true });
+        cb(null, dir);
+    },
+    filename: (_req, file, cb) => {
+        const ext = path.extname(file.originalname).toLowerCase();
+        const name = `client-${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`;
+        cb(null, name);
+    },
+});
+
+const clientUpload = multer({
+    storage: clientUploadStorage,
+    limits: { fileSize: 50 * 1024 * 1024 }, // 50MB per file
+    fileFilter: (_req, file, cb) => {
+        const allowedTypes = /jpeg|jpg|png|gif|pdf|webp|bmp|heic/;
+        const ext = path.extname(file.originalname).toLowerCase();
+        if (allowedTypes.test(ext)) {
+            cb(null, true);
+        } else {
+            cb(new Error('نوع الملف غير مدعوم. الأنواع المسموحة: JPG, PNG, GIF, PDF, WEBP, BMP, HEIC'));
+        }
+    },
+});
 
 // Helper: lookup order by token (hash first, plaintext fallback)
 async function _findOrderByToken(client, token) {
@@ -214,9 +249,17 @@ router.get('/view/:token', async (req, res) => {
 //   device_info?: string,
 // }
 // =============================================================================
-router.post('/respond/:token', async (req, res) => {
+router.post('/respond/:token', clientUpload.array('client_files', 10), async (req, res) => {
     const { token } = req.params;
-    const { items, signature, signer_name, rejection_reasons, device_info } = req.body;
+    let { items, signature, signer_name, rejection_reasons, device_info } = req.body;
+
+    // Parse items if sent as JSON string (multipart form)
+    if (typeof items === 'string') {
+        try { items = JSON.parse(items); } catch { items = null; }
+    }
+    if (typeof rejection_reasons === 'string') {
+        try { rejection_reasons = JSON.parse(rejection_reasons); } catch { rejection_reasons = []; }
+    }
 
     if (!items || !Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ error: 'يجب تقديم رد لصنف واحد على الأقل' });
@@ -237,6 +280,14 @@ router.post('/respond/:token', async (req, res) => {
         let approvedCount = 0;
         let revisionCount = 0;
 
+        // Collect uploaded client files (shared across all revision items)
+        const clientFiles = (req.files || []).map(f => ({
+            filename: f.filename,
+            original_name: f.originalname,
+            path: `/uploads/designs/${order.id}/client-revision/${f.filename}`,
+            size: f.size,
+        }));
+
         for (const item of items) {
             if (!item.item_id || !item.action) continue;
 
@@ -251,9 +302,11 @@ router.post('/respond/:token', async (req, res) => {
             } else if (item.action === 'revision') {
                 await client.query(
                     `UPDATE order_items
-                     SET client_design_status = 'revision_requested', client_revision_notes = $1
-                     WHERE id = $2 AND order_id = $3`,
-                    [item.notes || null, item.item_id, order.id]
+                     SET client_design_status = 'revision_requested',
+                         client_revision_notes = $1,
+                         client_revision_files = $2
+                     WHERE id = $3 AND order_id = $4`,
+                    [item.notes || null, JSON.stringify(clientFiles), item.item_id, order.id]
                 );
                 revisionCount++;
             }

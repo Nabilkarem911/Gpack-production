@@ -354,7 +354,8 @@ router.get('/task/:orderId', async (req, res) => {
         // Get order
         const orderResult = await db.query(
             `SELECT o.id, o.order_number, o.design_status, o.design_brief, o.design_brief_files,
-                    o.design_sent_at, o.client_id, c.name as client_name
+                    o.design_sent_at, o.client_id, c.name as client_name,
+                    o.design_client_status, o.design_share_token, o.design_sent_to_client_at
              FROM orders o
              JOIN clients c ON c.id = o.client_id
              WHERE o.id = $1`,
@@ -369,7 +370,9 @@ router.get('/task/:orderId', async (req, res) => {
             `SELECT oi.id, oi.variant_id, oi.quantity, oi.unit_price,
                     p.name AS product_name, pv.size_name AS size,
                     oi.design_notes, oi.design_files, oi.design_status,
-                    oi.designer_notes, oi.revision_notes, oi.design_completed_at
+                    oi.designer_notes, oi.revision_notes, oi.design_completed_at,
+                    oi.client_design_status, oi.client_revision_notes, oi.client_approved_at,
+                    oi.client_revision_files
              FROM order_items oi
              LEFT JOIN product_variants pv ON pv.id = oi.variant_id
              LEFT JOIN products p ON p.id = pv.product_id

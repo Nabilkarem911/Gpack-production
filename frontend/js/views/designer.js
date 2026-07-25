@@ -260,6 +260,39 @@
                 `;
             }
 
+            // Client response banner
+            if (res.order.design_client_status === 'approved') {
+                html += `
+                    <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center gap-3">
+                        <i class="fa-solid fa-circle-check text-emerald-500 text-xl"></i>
+                        <div>
+                            <p class="text-sm font-bold text-emerald-700">تمت موافقة العميل على التصاميم</p>
+                            <p class="text-xs text-emerald-600">تم تحويل الطلب إلى أمر تشغيل تلقائياً</p>
+                        </div>
+                    </div>
+                `;
+            } else if (res.order.design_client_status === 'revision_requested') {
+                html += `
+                    <div class="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3">
+                        <i class="fa-solid fa-user-pen text-red-500 text-xl"></i>
+                        <div>
+                            <p class="text-sm font-bold text-red-700">العميل طلب تعديلات على التصاميم</p>
+                            <p class="text-xs text-red-600">راجع ملاحظات العميل لكل صنف بالأسفل</p>
+                        </div>
+                    </div>
+                `;
+            } else if (res.order.design_client_status === 'sent' && res.order.design_status === 'client_review') {
+                html += `
+                    <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center gap-3">
+                        <i class="fa-solid fa-paper-plane text-blue-500 text-xl"></i>
+                        <div>
+                            <p class="text-sm font-bold text-blue-700">تم إرسال التصاميم للعميل</p>
+                            <p class="text-xs text-blue-600">بانتظار رد العميل على رابط المراجعة</p>
+                        </div>
+                    </div>
+                `;
+            }
+
             // Items
             html += `<div class="space-y-3">`;
             res.items.forEach(item => {
@@ -321,6 +354,41 @@
             `;
         }
 
+        let clientRevisionHtml = '';
+        if (item.client_design_status === 'revision_requested' && item.client_revision_notes) {
+            let clientFilesHtml = '';
+            if (item.client_revision_files && item.client_revision_files.length > 0) {
+                clientFilesHtml = `
+                    <div class="flex flex-wrap gap-2 mt-2">
+                        ${item.client_revision_files.map(f => `
+                            <a href="${f.path}" target="_blank" class="flex items-center gap-1 px-2 py-1 bg-white border border-red-200 rounded-lg text-xs hover:border-red-400 transition-colors">
+                                <i class="fa-solid fa-file text-red-400"></i>
+                                <span class="text-slate-600">${_esc(f.original_name || f.filename)}</span>
+                                <i class="fa-solid fa-download text-slate-300"></i>
+                            </a>
+                        `).join('')}
+                    </div>
+                `;
+            }
+            clientRevisionHtml = `
+                <div class="mt-2 bg-red-50 border border-red-200 rounded-lg p-2">
+                    <p class="text-xs font-semibold text-red-700 mb-1"><i class="fa-solid fa-user-tag ml-1"></i>ملاحظات العميل للتعديل:</p>
+                    <p class="text-xs text-red-600">${_esc(item.client_revision_notes)}</p>
+                    ${clientFilesHtml}
+                </div>
+            `;
+        }
+
+        let clientApprovedHtml = '';
+        if (item.client_design_status === 'approved') {
+            clientApprovedHtml = `
+                <div class="mt-2 bg-emerald-50 border border-emerald-200 rounded-lg p-2 flex items-center gap-2">
+                    <i class="fa-solid fa-circle-check text-emerald-500"></i>
+                    <span class="text-xs font-semibold text-emerald-700">تمت موافقة العميل على هذا التصميم</span>
+                </div>
+            `;
+        }
+
         const canSubmit = !isManagerView && (item.design_status === 'pending' || item.design_status === 'in_progress' || item.design_status === 'revision');
         const canReview = isManagerView && item.design_status === 'completed';
 
@@ -337,6 +405,8 @@
                 ${item.design_notes ? `<p class="text-xs text-slate-600 bg-slate-50 rounded-lg p-2 mt-2"><i class="fa-solid fa-comment-dots ml-1 text-slate-400"></i>${_esc(item.design_notes)}</p>` : ''}
 
                 ${revisionHtml}
+                ${clientRevisionHtml}
+                ${clientApprovedHtml}
                 ${filesHtml}
 
                 ${item.designer_notes ? `<p class="text-xs text-slate-500 mt-2">${isManagerView ? 'ملاحظات المصمم' : 'ملاحظاتك'}: ${_esc(item.designer_notes)}</p>` : ''}
