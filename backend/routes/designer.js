@@ -357,7 +357,8 @@ router.get('/task/:orderId', async (req, res) => {
         const orderResult = await db.query(
             `SELECT o.id, o.order_number, o.design_status, o.design_brief, o.design_brief_files,
                     o.design_sent_at, o.client_id, c.name as client_name,
-                    o.design_client_status, o.design_share_token, o.design_sent_to_client_at
+                    o.design_client_status, o.design_share_token, o.design_share_token_hash,
+                    o.design_sent_to_client_at
              FROM orders o
              JOIN clients c ON c.id = o.client_id
              WHERE o.id = $1`,
@@ -365,6 +366,17 @@ router.get('/task/:orderId', async (req, res) => {
         );
         if (orderResult.rows.length === 0) {
             return res.status(404).json({ error: 'العرض غير موجود' });
+        }
+
+        // Decrypt share token for frontend URL construction
+        const orderData = orderResult.rows[0];
+        if (orderData.design_share_token) {
+            try {
+                orderData.design_share_token = decryptShareToken(orderData.design_share_token);
+            } catch {
+                // If decryption fails, it might be stored as plain text (old data)
+                // Keep as-is
+            }
         }
 
         // Get order items with design info
@@ -426,7 +438,8 @@ router.get('/task/:orderId', async (req, res) => {
 
         // Get approval record if client approved
         let approvalData = null;
-        if (orderResult.rows[0].design_client_status === 'approved') {
+        // Also check partially_approved for approval data
+        if (orderData.design_client_status === 'approved' || orderData.design_client_status === 'partially_approved') {
             try {
                 const approvalRes = await db.query(
                     `SELECT signer_name, signature_image, approval_pdf_path,
@@ -441,12 +454,7 @@ router.get('/task/:orderId', async (req, res) => {
         }
 
         res.json({
-            order: {
-                ...orderResult.rows[0],
-                design_share_token: orderResult.rows[0].design_share_token
-                    ? decryptShareToken(orderResult.rows[0].design_share_token)
-                    : null,
-            },
+            order: orderData,
             items: itemsResult.rows,
             pantone_colors: pantoneColors,
             client_designs: clientDesigns,
@@ -691,10 +699,16 @@ router.post('/send-to-client/:orderId', authorize(['admin', 'manager', 'super_ad
             `SELECT design_share_token FROM orders WHERE id = $1`, [orderId]
         );
 
-        if (existingToken.rows[0]?.design_share_token && order.design_status === 'client_review') {
-            // Re-sending: keep the same token, just update expiry
-            plainToken = existingToken.rows[0].design_share_token;
-            storedToken = plainToken;
+        if (existingToken.rows[0]?.design_share_token) {
+            // Re-sending: decrypt the stored token to get plain token
+            const storedTok = existingToken.rows[0].design_share_token;
+            try {
+                plainToken = decryptShareToken(storedTok);
+            } catch {
+                // If decryption fails, it might be stored as plain text (old data)
+                plainToken = storedTok;
+            }
+            storedToken = storedTok; // keep same stored value
             try { tokenHash = hashToken(plainToken); } catch { tokenHash = crypto.createHmac('sha256', plainToken).digest('hex'); }
             shareUrl = `${req.protocol}://${req.get('host')}/public-design.html?token=${plainToken}`;
         } else {
