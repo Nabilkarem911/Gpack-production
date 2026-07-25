@@ -173,7 +173,8 @@
             const res = await window.apiFetch(`/api/designer/task/${taskId}`);
             _currentTask = res;
 
-            const isManager = _isManager();
+            const isManagerRole = _isManager();
+            const isManagerView = isManagerRole && _currentTab === 'review';
 
             const modal = document.getElementById('designer-task-modal');
             const title = document.getElementById('designer-modal-title');
@@ -187,7 +188,7 @@
             if (status) status.textContent = `الحالة: ${_statusLabel(res.order.design_status)}`;
 
             if (sendClientBtn) {
-                if (isManager && ['in_review', 'revision', 'client_review'].includes(res.order.design_status)) {
+                if (isManagerView && ['in_review', 'revision', 'client_review'].includes(res.order.design_status)) {
                     sendClientBtn.classList.remove('hidden');
                 } else {
                     sendClientBtn.classList.add('hidden');
@@ -262,7 +263,7 @@
             // Items
             html += `<div class="space-y-3">`;
             res.items.forEach(item => {
-                html += _renderItemCard(item, res.order.id, isManager);
+                html += _renderItemCard(item, res.order.id, isManagerView);
             });
             html += `</div>`;
 
@@ -274,8 +275,8 @@
             // Bind item events
             _bindItemEvents(res.order.id, res.items);
 
-            // Bind manager events if manager
-            if (isManager) {
+            // Bind manager events only when in manager review view
+            if (isManagerView) {
                 _bindManagerEvents(res.order.id, res.items);
             }
 
