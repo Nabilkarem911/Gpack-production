@@ -304,7 +304,8 @@ router.get('/my-tasks', async (req, res) => {
                         u.name as designer_name,
                         (SELECT COUNT(*) FROM order_items WHERE order_id = o.id) as item_count,
                         (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND design_status = 'completed') as completed_count,
-                        (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND design_status = 'approved') as approved_count
+                        (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND design_status = 'approved') as approved_count,
+                        (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND design_files IS NOT NULL AND design_files != '[]'::jsonb) as designed_count
                  FROM orders o
                  JOIN clients c ON c.id = o.client_id
                  LEFT JOIN users u ON u.id = o.assigned_designer_id
@@ -324,7 +325,8 @@ router.get('/my-tasks', async (req, res) => {
                     c.name as client_name,
                     (SELECT COUNT(*) FROM order_items WHERE order_id = o.id) as item_count,
                     (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND design_status = 'completed') as completed_count,
-                    (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND design_status = 'approved') as approved_count
+                    (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND design_status = 'approved') as approved_count,
+                    (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND design_files IS NOT NULL AND design_files != '[]'::jsonb) as designed_count
              FROM orders o
              JOIN clients c ON c.id = o.client_id
              WHERE o.assigned_designer_id = $1

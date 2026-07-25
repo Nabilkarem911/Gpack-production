@@ -75,6 +75,12 @@
             tasks = _completedTasks;
         } else if (_currentTab === 'review') {
             tasks = _reviewTasks;
+        } else if (_currentTab === 'client_review') {
+            // Show orders sent to client: either full client_review OR partial (in_progress + sent)
+            tasks = _allTasks.filter(t =>
+                t.design_status === 'client_review' ||
+                (t.design_status === 'in_progress' && t.design_client_status === 'sent')
+            );
         } else {
             tasks = _allTasks.filter(t => t.design_status === _currentTab);
         }
@@ -123,9 +129,13 @@
             client_review: { label: 'بانتظار مراجعة العميل', color: 'bg-cyan-100 text-cyan-700' },
         };
         const st = statusLabels[task.design_status] || statusLabels.pending;
-        const completedCount = task.completed_count !== undefined ? task.completed_count : (task.approved_count || 0);
-        const progressLabel = task.approved_count !== undefined ? 'المعتمد' : 'المكتمل';
-        const progress = task.item_count > 0 ? Math.round((completedCount / task.item_count) * 100) : 0;
+        const designedCount = task.designed_count !== undefined ? task.designed_count : (task.completed_count || 0);
+        const progress = task.item_count > 0 ? Math.round((designedCount / task.item_count) * 100) : 0;
+
+        // Show client status badge if sent to client
+        const clientBadge = task.design_client_status === 'sent' && task.design_status === 'in_progress'
+            ? '<span class="text-xs px-2 py-1 rounded-full bg-cyan-100 text-cyan-700">مُرسَل للعميل (جزئي)</span>'
+            : '';
 
         return `
             <div data-task-id="${task.id}"
@@ -136,12 +146,15 @@
                         <p class="text-xs text-slate-500 mt-0.5">${_esc(task.client_name)}</p>
                         ${task.designer_name ? `<p class="text-xs text-brand-600 mt-0.5"><i class="fa-solid fa-user-pen ml-1"></i>${_esc(task.designer_name)}</p>` : ''}
                     </div>
-                    <span class="text-xs px-2 py-1 rounded-full ${st.color}">${st.label}</span>
+                    <div class="flex flex-col gap-1 items-end">
+                        <span class="text-xs px-2 py-1 rounded-full ${st.color}">${st.label}</span>
+                        ${clientBadge}
+                    </div>
                 </div>
                 <div class="space-y-2">
                     <div class="flex items-center justify-between text-xs text-slate-500">
                         <span>عدد الأصناف: ${task.item_count}</span>
-                        <span>${progressLabel}: ${completedCount || 0}/${task.item_count}</span>
+                        <span>المصمم: ${designedCount || 0}/${task.item_count}</span>
                     </div>
                     <div class="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
                         <div class="h-full bg-brand-600 rounded-full transition-all" style="width: ${progress}%"></div>
@@ -159,7 +172,10 @@
         const revision = _allTasks.filter(t => t.design_status === 'revision').length;
         const completed = _completedTasks.length;
         const review = _reviewTasks.length;
-        const clientReview = _allTasks.filter(t => t.design_status === 'client_review').length;
+        const clientReview = _allTasks.filter(t =>
+            t.design_status === 'client_review' ||
+            (t.design_status === 'in_progress' && t.design_client_status === 'sent')
+        ).length;
 
         const el1 = document.getElementById('designer-tab-pending-count');
         const el2 = document.getElementById('designer-tab-progress-count');
@@ -347,7 +363,7 @@
                         </div>
                     </div>
                 `;
-            } else if (res.order.design_client_status === 'sent' && res.order.design_status === 'client_review') {
+            } else if (res.order.design_client_status === 'sent' && ['client_review', 'in_progress'].includes(res.order.design_status)) {
                 // Build the share URL from current location
                 const baseUrl = window.location.origin;
                 const shareUrl = res.order.design_share_token
