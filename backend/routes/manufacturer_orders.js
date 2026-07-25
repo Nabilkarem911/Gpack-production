@@ -1578,6 +1578,51 @@ router.post('/revert-order/:orderId', restrictDelete, async (req, res) => {
             [orderId]
         );
 
+        // 5b. Clean up ALL design data
+        // Delete design approval records
+        await client.query(
+            `DELETE FROM design_approvals WHERE order_id = $1`,
+            [orderId]
+        );
+        // Delete design activity log
+        await client.query(
+            `DELETE FROM design_activity_log WHERE order_id = $1`,
+            [orderId]
+        );
+        // Reset order_items design fields
+        await client.query(
+            `UPDATE order_items SET
+                design_status = 'pending',
+                design_files = NULL,
+                design_notes = NULL,
+                designer_notes = NULL,
+                revision_notes = NULL,
+                design_completed_at = NULL,
+                client_design_status = NULL,
+                client_revision_notes = NULL,
+                client_revision_files = NULL,
+                client_approved_at = NULL
+             WHERE order_id = $1`,
+            [orderId]
+        );
+        // Reset order-level design fields
+        await client.query(
+            `UPDATE orders SET
+                design_status = NULL,
+                design_client_status = NULL,
+                design_share_token = NULL,
+                design_share_token_hash = NULL,
+                design_token_expires_at = NULL,
+                design_sent_to_client_at = NULL,
+                design_sent_at = NULL,
+                design_brief = NULL,
+                design_brief_files = NULL,
+                assigned_designer_id = NULL,
+                design_completed_at = NULL
+             WHERE id = $1`,
+            [orderId]
+        );
+
         // 6. Archive the order
         const orderRes = await client.query(
             `UPDATE orders SET status = 'archived', updated_at = NOW() WHERE id = $1 RETURNING id, order_number`,
