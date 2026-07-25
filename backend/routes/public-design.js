@@ -425,8 +425,17 @@ router.post('/respond/:token', clientUpload.array('client_files', 10), async (re
                 [order.id]
             );
 
-            if (parseInt(pendingRes.rows[0].count) === 0) {
-                // All approved → mark as confirmed (awaiting deposit), NOT production
+            // Check if there are items WITHOUT design_files yet (not yet designed)
+            const noDesignRes = await client.query(
+                `SELECT COUNT(*) as count FROM order_items
+                 WHERE order_id = $1
+                   AND (design_files IS NULL OR design_files = '[]'::jsonb)`,
+                [order.id]
+            );
+            const hasUndesignedItems = parseInt(noDesignRes.rows[0].count) > 0;
+
+            if (parseInt(pendingRes.rows[0].count) === 0 && !hasUndesignedItems) {
+                // ALL items designed AND approved → mark as confirmed (awaiting deposit)
                 // Manager will set deposit amount and convert to production via existing flow
                 await client.query(
                     `UPDATE orders SET
@@ -547,10 +556,20 @@ router.post('/respond/:token', clientUpload.array('client_files', 10), async (re
                 });
 
             } else {
+                // Partial approval: all designed items approved, but some items don't have designs yet
+                // Keep order in client_review so manager can add more designs and re-send
                 await client.query(
-                    `UPDATE orders SET design_client_status = 'sent' WHERE id = $1`,
+                    `UPDATE orders SET design_client_status = 'partially_approved' WHERE id = $1`,
                     [order.id]
                 );
+
+                // Log partial approval activity
+                await _logActivity(client, order.id, 'approved', 'client', clientIp, userAgent, {
+                    signer_name: signer_name,
+                    partial: true,
+                    designed_items: allItemsRes.rows.length,
+                    total_items: (await client.query(`SELECT COUNT(*) as c FROM order_items WHERE order_id = $1`, [order.id])).rows[0].c,
+                });
             }
         }
 

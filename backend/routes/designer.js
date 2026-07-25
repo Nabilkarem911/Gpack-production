@@ -649,11 +649,10 @@ router.post('/send-to-client/:orderId', authorize(['admin', 'manager', 'super_ad
         }
         const order = orderRes.rows[0];
 
-        // Only allow if design_status is 'in_review' (all items submitted by designer)
-        // or 'revision' (manager already reviewed, some items approved)
-        if (!['in_review', 'revision', 'client_review'].includes(order.design_status)) {
+        // Allow sending at any point: in_progress (partial), in_review (all done), revision, or client_review (re-send)
+        if (!['in_progress', 'in_review', 'revision', 'client_review'].includes(order.design_status)) {
             return res.status(400).json({
-                error: 'يمكن إرسال التصاميم للعميل فقط بعد اعتماد المدير. الحالة الحالية: ' + (order.design_status || 'غير محدد')
+                error: 'لا يمكن إرسال التصاميم في الحالة الحالية: ' + (order.design_status || 'غير محدد')
             });
         }
 
@@ -667,17 +666,31 @@ router.post('/send-to-client/:orderId', authorize(['admin', 'manager', 'super_ad
             return res.status(400).json({ error: 'لا توجد تصاميم مرفوعة لعرضها على العميل' });
         }
 
-        // Generate share token
-        const plainToken = crypto.randomBytes(32).toString('hex');
-        let storedToken = plainToken;
-        let tokenHash;
-        try {
-            storedToken = encryptToken(plainToken);
-            tokenHash = hashToken(plainToken);
-        } catch (cryptoErr) {
-            console.error('[Designer] Crypto error:', cryptoErr.message);
-            tokenHash = crypto.createHmac('sha256', plainToken).digest('hex');
+        // Reuse existing token if already sent before (so link doesn't change)
+        let plainToken, storedToken, tokenHash, shareUrl;
+        const existingToken = await db.query(
+            `SELECT design_share_token FROM orders WHERE id = $1`, [orderId]
+        );
+
+        if (existingToken.rows[0]?.design_share_token && order.design_status === 'client_review') {
+            // Re-sending: keep the same token, just update expiry
+            plainToken = existingToken.rows[0].design_share_token;
             storedToken = plainToken;
+            try { tokenHash = hashToken(plainToken); } catch { tokenHash = crypto.createHmac('sha256', plainToken).digest('hex'); }
+            shareUrl = `${req.protocol}://${req.get('host')}/public-design.html?token=${plainToken}`;
+        } else {
+            // New send: generate fresh token
+            plainToken = crypto.randomBytes(32).toString('hex');
+            storedToken = plainToken;
+            try {
+                storedToken = encryptToken(plainToken);
+                tokenHash = hashToken(plainToken);
+            } catch (cryptoErr) {
+                console.error('[Designer] Crypto error:', cryptoErr.message);
+                tokenHash = crypto.createHmac('sha256', plainToken).digest('hex');
+                storedToken = plainToken;
+            }
+            shareUrl = `${req.protocol}://${req.get('host')}/public-design.html?token=${plainToken}`;
         }
 
         // 30-day expiry
@@ -695,18 +708,18 @@ router.post('/send-to-client/:orderId', authorize(['admin', 'manager', 'super_ad
             [storedToken, tokenHash, expiresAt, orderId]
         );
 
-        // Reset per-item client response so client can respond fresh
+        // Only reset client response on items that DON'T have design_files yet
+        // (keep already-responded items intact so partial approvals persist)
         await db.query(
             `UPDATE order_items SET
                 client_design_status = NULL,
                 client_revision_notes = NULL,
                 client_revision_files = NULL,
                 client_approved_at = NULL
-             WHERE order_id = $1`,
+             WHERE order_id = $1
+               AND (design_files IS NULL OR design_files = '[]'::jsonb)`,
             [orderId]
         );
-
-        const shareUrl = `${req.protocol}://${req.get('host')}/public-design.html?token=${plainToken}`;
 
         // Log activity: sent to client
         try {
