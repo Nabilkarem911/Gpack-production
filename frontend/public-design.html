@@ -465,9 +465,10 @@ function renderDesigns(data) {
     const orderStatus = data.design_client_status;
     const allApproved = orderStatus === 'approved';
     const anyRevision = orderStatus === 'revision_requested';
+    const partialApproved = orderStatus === 'partially_approved';
 
-    if (allApproved || anyRevision) {
-        showAlreadyResponded(data, allApproved);
+    if (allApproved || anyRevision || partialApproved) {
+        showAlreadyResponded(data, allApproved || partialApproved);
     } else {
         document.getElementById('warning-notice').classList.remove('hidden');
         document.getElementById('submit-section').classList.remove('hidden');

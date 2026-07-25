@@ -274,12 +274,70 @@
                     <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center gap-3">
                         <i class="fa-solid fa-circle-check text-emerald-500 text-xl"></i>
                         <div>
-                            <p class="text-sm font-bold text-emerald-700">تمت موافقة العميل على التصاميم</p>
-                            <p class="text-xs text-emerald-600">تم تحويل الطلب إلى أمر تشغيل تلقائياً</p>
+                            <p class="text-sm font-bold text-emerald-700">تمت موافقة العميل على جميع التصاميم</p>
+                            <p class="text-xs text-emerald-600">الطلب بانتظار تحديد مبلغ الدفعة وتحويله للإنتاج</p>
                         </div>
                     </div>
                 `;
-            } else if (res.order.design_client_status === 'revision_requested') {
+
+                // Show approval certificate if manager
+                if (isManagerRole && res.approval) {
+                    const a = res.approval;
+                    const approvedDate = a.approved_at ? new Date(a.approved_at).toLocaleString('ar-SA') : '';
+                    html += `
+                    <div class="bg-white border border-slate-200 rounded-xl p-5 space-y-3">
+                        <h3 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                            <i class="fa-solid fa-file-circle-check text-emerald-600"></i>
+                            شهادة اعتماد التصميم
+                        </h3>
+                        <div class="grid grid-cols-2 gap-3 text-sm">
+                            <div>
+                                <p class="text-xs text-slate-400 mb-1">تم الاعتماد بواسطة</p>
+                                <p class="font-bold text-slate-800">${_esc(a.signer_name || '—')}</p>
+                            </div>
+                            <div>
+                                <p class="text-xs text-slate-400 mb-1">وقت الاعتماد</p>
+                                <p class="font-bold text-slate-800">${approvedDate}</p>
+                            </div>
+                            <div>
+                                <p class="text-xs text-slate-400 mb-1">عنوان IP</p>
+                                <p class="font-mono text-xs text-slate-600">${_esc(a.client_ip || '—')}</p>
+                            </div>
+                            <div>
+                                <p class="text-xs text-slate-400 mb-1">الجهاز</p>
+                                <p class="text-xs text-slate-600">${_esc(a.device_info || '—')}</p>
+                            </div>
+                        </div>
+                        ${a.signature_image ? `
+                        <div>
+                            <p class="text-sm font-bold text-slate-700 mb-2">التوقيع الإلكتروني</p>
+                            <div class="border border-slate-200 rounded-xl p-3 bg-white">
+                                <img src="${a.signature_image}" alt="signature" class="max-h-32 mx-auto" />
+                            </div>
+                        </div>` : ''}
+                        ${a.approval_pdf_path ? `
+                        <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center justify-between">
+                            <div class="flex items-center gap-2">
+                                <i class="fa-solid fa-file-pdf text-red-500 text-xl"></i>
+                                <p class="text-sm font-bold text-slate-700">شهادة الاعتماد (PDF)</p>
+                            </div>
+                            <a href="${a.approval_pdf_path}" target="_blank" download
+                                class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-bold transition-colors flex items-center gap-2">
+                                <i class="fa-solid fa-download"></i> تحميل
+                            </a>
+                        </div>` : ''}
+                    </div>`;
+                }
+            } else if (res.order.design_client_status === 'partially_approved') {
+                html += `
+                    <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center gap-3">
+                        <i class="fa-solid fa-circle-half-stroke text-amber-500 text-xl"></i>
+                        <div>
+                            <p class="text-sm font-bold text-amber-700">موافقة جزئية من العميل</p>
+                            <p class="text-xs text-amber-600">العميل وافق على التصاميم المتاحة — لازال هناك أصناف بانتظار التصميم</p>
+                        </div>
+                    </div>
+                `;
                 html += `
                     <div class="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3">
                         <i class="fa-solid fa-user-pen text-red-500 text-xl"></i>

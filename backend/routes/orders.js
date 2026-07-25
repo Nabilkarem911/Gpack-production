@@ -137,6 +137,7 @@ router.get('/', async (req, res) => {
                 o.design_status,
                 o.design_client_status,
                 COUNT(oi.id)::int AS item_count,
+                COUNT(oi.id) FILTER (WHERE oi.design_status IN ('completed', 'approved'))::int AS design_completed_count,
                 COALESCE(SUM(oi.quantity), 0)::numeric AS total_order_qty,
                 -- Receiving status aggregation
                 COALESCE(mo_stats.mo_count, 0)::int AS mo_count,
@@ -164,7 +165,7 @@ router.get('/', async (req, res) => {
                  GROUP BY mo.order_id
              ) mo_stats ON mo_stats.order_id = o.id
              ${whereClause}
-             GROUP BY o.id, c.name, o.paid_amount, o.pricing_status, o.pricing_notes, o.design_status, o.design_client_status, mo_stats.mo_count, mo_stats.total_mo_qty, mo_stats.total_received
+             GROUP BY o.id, c.name, o.paid_amount, o.pricing_status, o.pricing_notes, o.design_status, o.design_client_status, mo_stats.mo_count, mo_stats.total_mo_qty, mo_stats.total_received, design_completed_count
              ORDER BY o.created_at DESC
              LIMIT $${limitParam} OFFSET $${offsetParam}`,
             params

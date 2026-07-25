@@ -422,6 +422,22 @@ router.get('/task/:orderId', async (req, res) => {
             clientDesigns = designsResult.rows;
         } catch { /* table might not exist — ignore */ }
 
+        // Get approval record if client approved
+        let approvalData = null;
+        if (orderResult.rows[0].design_client_status === 'approved') {
+            try {
+                const approvalRes = await db.query(
+                    `SELECT signer_name, signature_image, approval_pdf_path,
+                            client_ip, device_info, approved_at
+                     FROM design_approvals WHERE order_id = $1`,
+                    [orderId]
+                );
+                if (approvalRes.rows.length > 0) {
+                    approvalData = approvalRes.rows[0];
+                }
+            } catch { /* table might not exist */ }
+        }
+
         res.json({
             order: {
                 ...orderResult.rows[0],
@@ -432,6 +448,7 @@ router.get('/task/:orderId', async (req, res) => {
             items: itemsResult.rows,
             pantone_colors: pantoneColors,
             client_designs: clientDesigns,
+            approval: approvalData,
         });
     } catch (err) {
         console.error('[Designer] Task detail error:', err.message);
