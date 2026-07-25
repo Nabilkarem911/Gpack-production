@@ -11,6 +11,7 @@
     let _currentTab = 'pending';
     let _allTasks = [];
     let _completedTasks = [];
+    let _reviewTasks = [];
     let _currentTask = null;
     let _pollingInterval = null;
     let _navToken = 0;
@@ -19,6 +20,10 @@
     async function init() {
         console.log('[Designer] init() called');
         _navToken = Date.now();
+        const reviewTab = document.getElementById('designer-tab-review');
+        if (reviewTab && _isManager()) {
+            reviewTab.style.display = '';
+        }
         await _loadTasks();
         _bindEvents();
         _startPolling();
@@ -35,6 +40,17 @@
             const completedRes = await window.apiFetch('/api/designer/my-completed');
             _completedTasks = completedRes.tasks || [];
             console.log('[Designer] _completedTasks count:', _completedTasks.length);
+
+            if (_isManager()) {
+                try {
+                    const reviewRes = await window.apiFetch('/api/designer/pending-review');
+                    _reviewTasks = reviewRes.orders || [];
+                    console.log('[Designer] _reviewTasks count:', _reviewTasks.length);
+                } catch (e) {
+                    console.error('[Designer] Review tasks error:', e.message);
+                    _reviewTasks = [];
+                }
+            }
 
             _renderTasks();
         } catch (err) {
@@ -53,6 +69,8 @@
         let tasks;
         if (_currentTab === 'completed') {
             tasks = _completedTasks;
+        } else if (_currentTab === 'review') {
+            tasks = _reviewTasks;
         } else {
             tasks = _allTasks.filter(t => t.design_status === _currentTab);
         }
@@ -100,7 +118,9 @@
             completed: { label: 'مكتمل', color: 'bg-green-100 text-green-700' },
         };
         const st = statusLabels[task.design_status] || statusLabels.pending;
-        const progress = task.item_count > 0 ? Math.round((task.completed_count / task.item_count) * 100) : 0;
+        const completedCount = task.completed_count !== undefined ? task.completed_count : (task.approved_count || 0);
+        const progressLabel = task.approved_count !== undefined ? 'المعتمد' : 'المكتمل';
+        const progress = task.item_count > 0 ? Math.round((completedCount / task.item_count) * 100) : 0;
 
         return `
             <div data-task-id="${task.id}"
@@ -116,7 +136,7 @@
                 <div class="space-y-2">
                     <div class="flex items-center justify-between text-xs text-slate-500">
                         <span>عدد الأصناف: ${task.item_count}</span>
-                        <span>المكتمل: ${task.completed_count || 0}/${task.item_count}</span>
+                        <span>${progressLabel}: ${completedCount || 0}/${task.item_count}</span>
                     </div>
                     <div class="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
                         <div class="h-full bg-brand-600 rounded-full transition-all" style="width: ${progress}%"></div>
@@ -133,15 +153,18 @@
         const progress = _allTasks.filter(t => t.design_status === 'in_progress').length;
         const revision = _allTasks.filter(t => t.design_status === 'revision').length;
         const completed = _completedTasks.length;
+        const review = _reviewTasks.length;
 
         const el1 = document.getElementById('designer-tab-pending-count');
         const el2 = document.getElementById('designer-tab-progress-count');
         const el3 = document.getElementById('designer-tab-revision-count');
         const el4 = document.getElementById('designer-tab-completed-count');
+        const el5 = document.getElementById('designer-tab-review-count');
         if (el1) el1.textContent = pending;
         if (el2) el2.textContent = progress;
         if (el3) el3.textContent = revision;
         if (el4) el4.textContent = completed;
+        if (el5) el5.textContent = review;
     }
 
     // ── Open task detail ──────────────────────────────────────────────────────
@@ -150,15 +173,26 @@
             const res = await window.apiFetch(`/api/designer/task/${taskId}`);
             _currentTask = res;
 
+            const isManager = _isManager();
+
             const modal = document.getElementById('designer-task-modal');
             const title = document.getElementById('designer-modal-title');
             const client = document.getElementById('designer-modal-client');
             const body = document.getElementById('designer-modal-body');
             const status = document.getElementById('designer-modal-status');
+            const sendClientBtn = document.getElementById('designer-send-client-btn');
 
             if (title) title.textContent = `عرض سعر #${res.order.order_number}`;
             if (client) client.textContent = res.order.client_name;
             if (status) status.textContent = `الحالة: ${_statusLabel(res.order.design_status)}`;
+
+            if (sendClientBtn) {
+                if (isManager && ['in_review', 'revision', 'client_review'].includes(res.order.design_status)) {
+                    sendClientBtn.classList.remove('hidden');
+                } else {
+                    sendClientBtn.classList.add('hidden');
+                }
+            }
 
             // Build body
             let html = '';
@@ -228,7 +262,7 @@
             // Items
             html += `<div class="space-y-3">`;
             res.items.forEach(item => {
-                html += _renderItemCard(item, res.order.id);
+                html += _renderItemCard(item, res.order.id, isManager);
             });
             html += `</div>`;
 
@@ -240,6 +274,11 @@
             // Bind item events
             _bindItemEvents(res.order.id, res.items);
 
+            // Bind manager events if manager
+            if (isManager) {
+                _bindManagerEvents(res.order.id, res.items);
+            }
+
         } catch (err) {
             console.error('[Designer] Task detail error:', err.message);
             window.showToast?.('فشل في تحميل تفاصيل العرض', 'error');
@@ -247,7 +286,7 @@
     }
 
     // ── Render item card ──────────────────────────────────────────────────────
-    function _renderItemCard(item, orderId) {
+    function _renderItemCard(item, orderId, isManagerView) {
         const stLabels = {
             pending: { label: 'بانتظار التصميم', color: 'bg-slate-100 text-slate-600' },
             in_progress: { label: 'قيد التنفيذ', color: 'bg-blue-100 text-blue-700' },
@@ -281,7 +320,8 @@
             `;
         }
 
-        const canSubmit = item.design_status === 'pending' || item.design_status === 'in_progress' || item.design_status === 'revision';
+        const canSubmit = !isManagerView && (item.design_status === 'pending' || item.design_status === 'in_progress' || item.design_status === 'revision');
+        const canReview = isManagerView && item.design_status === 'completed';
 
         return `
             <div class="bg-white border border-slate-200 rounded-xl p-4" data-item-id="${item.id}">
@@ -298,7 +338,31 @@
                 ${revisionHtml}
                 ${filesHtml}
 
-                ${item.designer_notes ? `<p class="text-xs text-slate-500 mt-2">ملاحظاتك: ${_esc(item.designer_notes)}</p>` : ''}
+                ${item.designer_notes ? `<p class="text-xs text-slate-500 mt-2">${isManagerView ? 'ملاحظات المصمم' : 'ملاحظاتك'}: ${_esc(item.designer_notes)}</p>` : ''}
+
+                ${canReview ? `
+                    <div class="mt-3 space-y-2 border-t border-slate-100 pt-3">
+                        <div class="flex gap-2">
+                            <button class="manager-approve-btn px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs transition-colors" data-item-id="${item.id}" data-order-id="${orderId}">
+                                <i class="fa-solid fa-check ml-1"></i>اعتماد
+                            </button>
+                            <button class="manager-revision-btn px-3 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-xs transition-colors" data-item-id="${item.id}" data-order-id="${orderId}">
+                                <i class="fa-solid fa-rotate-left ml-1"></i>طلب تعديل
+                            </button>
+                        </div>
+                        <div class="manager-revision-box hidden" data-item-id="${item.id}">
+                            <textarea class="manager-revision-notes w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-orange-500" placeholder="ملاحظات التعديل للمصمم..." data-item-id="${item.id}"></textarea>
+                            <div class="flex gap-2 mt-1">
+                                <button class="manager-revision-confirm px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-xs transition-colors" data-item-id="${item.id}" data-order-id="${orderId}">
+                                    تأكيد طلب التعديل
+                                </button>
+                                <button class="manager-revision-cancel px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-xs transition-colors" data-item-id="${item.id}">
+                                    إلغاء
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                ` : ''}
 
                 ${canSubmit ? `
                     <div class="mt-3 space-y-2 border-t border-slate-100 pt-3">
@@ -439,6 +503,8 @@
     function _closeModal() {
         const modal = document.getElementById('designer-task-modal');
         if (modal) modal.classList.add('hidden');
+        const sendBtn = document.getElementById('designer-send-client-btn');
+        if (sendBtn) sendBtn.classList.add('hidden');
         _currentTask = null;
     }
 
@@ -465,6 +531,7 @@
             in_review: 'بانتظار مراجعة المدير',
             revision: 'مطلوب تعديل',
             completed: 'مكتمل',
+            client_review: 'بانتظار مراجعة العميل',
         };
         return labels[status] || status;
     }
@@ -477,6 +544,121 @@
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#39;');
+    }
+
+    function _isManager() {
+        const role = (window.GpackUser?.role || '').toLowerCase();
+        return ['admin', 'super_admin', 'manager'].includes(role);
+    }
+
+    // ── Bind manager events (inside modal) ────────────────────────────────────
+    function _bindManagerEvents(orderId, items) {
+        // Approve buttons
+        document.querySelectorAll('.manager-approve-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const itemId = btn.getAttribute('data-item-id');
+                const oid = btn.getAttribute('data-order-id');
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin ml-1"></i>جاري الاعتماد...';
+                try {
+                    const res = await window.apiFetch(`/api/designer/review/${oid}/item/${itemId}`, {
+                        method: 'PUT',
+                        body: JSON.stringify({ action: 'approve' }),
+                    });
+                    window.showToast?.(res.message || 'تم اعتماد التصميم', 'success');
+                    if (res.auto_converted) {
+                        window.showToast?.('تم تحويل العرض إلى أمر تشغيل تلقائياً', 'success');
+                    }
+                    await _openTaskDetail(orderId);
+                    await _loadTasks();
+                } catch (err) {
+                    window.showToast?.(err.message || 'فشل في اعتماد التصميم', 'error');
+                } finally {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fa-solid fa-check ml-1"></i>اعتماد';
+                }
+            });
+        });
+
+        // Revision buttons — show revision box
+        document.querySelectorAll('.manager-revision-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const itemId = btn.getAttribute('data-item-id');
+                const box = document.querySelector(`.manager-revision-box[data-item-id="${itemId}"]`);
+                if (box) box.classList.remove('hidden');
+            });
+        });
+
+        // Revision confirm
+        document.querySelectorAll('.manager-revision-confirm').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const itemId = btn.getAttribute('data-item-id');
+                const oid = btn.getAttribute('data-order-id');
+                const notesEl = document.querySelector(`textarea.manager-revision-notes[data-item-id="${itemId}"]`);
+                const revisionNotes = notesEl ? notesEl.value.trim() : '';
+
+                if (!revisionNotes) {
+                    window.showToast?.('يرجى كتابة ملاحظات التعديل', 'warning');
+                    return;
+                }
+
+                btn.disabled = true;
+                btn.textContent = 'جاري الإرسال...';
+                try {
+                    const res = await window.apiFetch(`/api/designer/review/${oid}/item/${itemId}`, {
+                        method: 'PUT',
+                        body: JSON.stringify({ action: 'revision', revision_notes: revisionNotes }),
+                    });
+                    window.showToast?.(res.message || 'تم طلب التعديل', 'success');
+                    await _openTaskDetail(orderId);
+                    await _loadTasks();
+                } catch (err) {
+                    window.showToast?.(err.message || 'فشل في طلب التعديل', 'error');
+                } finally {
+                    btn.disabled = false;
+                    btn.textContent = 'تأكيد طلب التعديل';
+                }
+            });
+        });
+
+        // Revision cancel
+        document.querySelectorAll('.manager-revision-cancel').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const itemId = btn.getAttribute('data-item-id');
+                const box = document.querySelector(`.manager-revision-box[data-item-id="${itemId}"]`);
+                if (box) box.classList.add('hidden');
+            });
+        });
+
+        // Send to client button
+        const sendBtn = document.getElementById('designer-send-client-btn');
+        if (sendBtn) {
+            sendBtn.onclick = async () => {
+                if (!confirm('هل تريد إرسال التصاميم للعميل للمراجعة؟')) return;
+                sendBtn.disabled = true;
+                sendBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin ml-1"></i>جاري الإرسال...';
+                try {
+                    const res = await window.apiFetch(`/api/designer/send-to-client/${orderId}`, {
+                        method: 'POST',
+                    });
+                    window.showToast?.(res.message || 'تم إنشاء رابط المراجعة', 'success');
+                    if (res.share_url) {
+                        try {
+                            await navigator.clipboard.writeText(res.share_url);
+                            window.showToast?.('تم نسخ الرابط للحافظة', 'success');
+                        } catch {
+                            window.showToast?.(`رابط المراجعة: ${res.share_url}`, 'info');
+                        }
+                    }
+                    await _loadTasks();
+                } catch (err) {
+                    window.showToast?.(err.message || 'فشل في إرسال التصاميم', 'error');
+                } finally {
+                    sendBtn.disabled = false;
+                    sendBtn.innerHTML = '<i class="fa-solid fa-share ml-1"></i>إرسال للعميل';
+                }
+            };
+        }
     }
 
     // ── Export init for SPA router ─────────────────────────────────────────────
