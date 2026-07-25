@@ -199,25 +199,44 @@ router.get('/view/:token', async (req, res) => {
             return res.status(410).json({ error: 'انتهت صلاحية هذا الرابط' });
         }
 
-        // Auto-reset stale client responses if the order moved back to revision/in_review
-        // (designer resubmitted after client revision request). This allows the client
-        // to respond again using the SAME link without manager needing to resend.
-        if (order.design_client_status === 'revision_requested' &&
-            ['revision', 'in_review', 'pending', 'in_progress'].includes(order.design_status)) {
-            await db.query(
+        // Auto-reset stale client revision responses when the order has moved
+        // past client_review (designer resubmitted, manager reviewing, etc).
+        // If an item has revision_requested but the order is no longer waiting
+        // for client review, that response is stale and should be cleared.
+        if (order.design_status !== 'client_review' && order.design_status !== 'completed') {
+            const staleRes = await db.query(
                 `UPDATE order_items SET
                     client_design_status = NULL,
                     client_revision_notes = NULL,
                     client_revision_files = NULL,
                     client_approved_at = NULL
-                 WHERE order_id = $1 AND client_design_status = 'revision_requested'`,
+                 WHERE order_id = $1
+                   AND client_design_status = 'revision_requested'
+                 RETURNING id`,
                 [order.id]
             );
-            await db.query(
-                `UPDATE orders SET design_client_status = 'sent' WHERE id = $1`,
+            if (staleRes.rows.length > 0) {
+                console.log(`[PublicDesign] Auto-reset ${staleRes.rows.length} stale revision items for order ${order.id}`);
+            }
+        }
+
+        // Also reset if manager re-sent to client (design_client_status='sent')
+        // but items still have old revision_requested from previous round
+        if (order.design_client_status === 'sent' && order.design_status === 'client_review') {
+            const staleRes = await db.query(
+                `UPDATE order_items SET
+                    client_design_status = NULL,
+                    client_revision_notes = NULL,
+                    client_revision_files = NULL,
+                    client_approved_at = NULL
+                 WHERE order_id = $1
+                   AND client_design_status = 'revision_requested'
+                 RETURNING id`,
                 [order.id]
             );
-            console.log(`[PublicDesign] Auto-reset stale client response for order ${order.id} (design_status=${order.design_status})`);
+            if (staleRes.rows.length > 0) {
+                console.log(`[PublicDesign] Auto-reset ${staleRes.rows.length} stale revision items on re-send for order ${order.id}`);
+            }
         }
 
         const itemsRes = await db.query(

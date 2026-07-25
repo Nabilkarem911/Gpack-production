@@ -402,8 +402,8 @@ function renderDesigns(data) {
             </div>`
             : '';
 
-        const alreadyApproved = item.client_design_status === 'approved';
-        const alreadyRevision = item.client_design_status === 'revision_requested';
+        const alreadyApproved = data.design_client_status === 'approved' && item.client_design_status === 'approved';
+        const alreadyRevision = data.design_client_status === 'revision_requested' && item.client_design_status === 'revision_requested';
 
         let responseHtml = '';
         if (alreadyApproved) {
@@ -462,8 +462,9 @@ function renderDesigns(data) {
         `;
     }).join('');
 
-    const allApproved = data.items.every(i => i.client_design_status === 'approved');
-    const anyRevision = data.items.some(i => i.client_design_status === 'revision_requested');
+    const orderStatus = data.design_client_status;
+    const allApproved = orderStatus === 'approved';
+    const anyRevision = orderStatus === 'revision_requested';
 
     if (allApproved || anyRevision) {
         showAlreadyResponded(data, allApproved);
@@ -578,7 +579,10 @@ function showAlreadyResponded(data, allApproved) {
 }
 
 async function submitResponse() {
-    const items = designData.items.filter(i => !i.client_design_status || i.client_design_status === null);
+    // Use all items — order-level status determines if client can respond
+    const items = designData.design_client_status === 'approved'
+        ? designData.items.filter(i => i.client_design_status !== 'approved')
+        : designData.items;
     const responses = items.map(i => ({
         item_id: i.id,
         action: itemResponses[i.id]?.action,
