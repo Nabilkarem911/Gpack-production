@@ -459,17 +459,17 @@ router.put('/item/:orderId/:itemId/submit', upload.array('design_files', 10), as
             return res.status(403).json({ error: 'غير مصرح لك' });
         }
 
-        // Get existing design files
+        // Get existing design files and current status
         const existingResult = await db.query(
-            'SELECT design_files FROM order_items WHERE id = $1 AND order_id = $2',
+            'SELECT design_files, design_status FROM order_items WHERE id = $1 AND order_id = $2',
             [itemId, orderId]
         );
         if (existingResult.rows.length === 0) {
             return res.status(404).json({ error: 'الصنف غير موجود' });
         }
 
-        let existingFiles = [];
-        try { existingFiles = existingResult.rows[0].design_files || []; } catch { existingFiles = []; }
+        const currentStatus = existingResult.rows[0].design_status;
+        const isResubmit = currentStatus === 'revision';
 
         const newFiles = (req.files || []).map(f => ({
             filename: f.filename,
@@ -478,7 +478,11 @@ router.put('/item/:orderId/:itemId/submit', upload.array('design_files', 10), as
             size: f.size,
         }));
 
-        const allFiles = [...(Array.isArray(existingFiles) ? existingFiles : []), ...newFiles];
+        // On resubmit (after revision): replace files entirely. On first submit: use new files only.
+        const allFiles = isResubmit ? newFiles : [
+            ...(Array.isArray(existingResult.rows[0].design_files) ? existingResult.rows[0].design_files : []),
+            ...newFiles
+        ];
 
         await client.query('BEGIN');
 
@@ -487,7 +491,11 @@ router.put('/item/:orderId/:itemId/submit', upload.array('design_files', 10), as
                 design_status = 'completed',
                 designer_notes = $1,
                 design_files = $2,
-                design_completed_at = NOW()
+                design_completed_at = NOW(),
+                client_design_status = NULL,
+                client_revision_notes = NULL,
+                client_revision_files = NULL,
+                client_approved_at = NULL
              WHERE id = $3 AND order_id = $4`,
             [designer_notes || null, JSON.stringify(allFiles), itemId, orderId]
         );
@@ -659,6 +667,17 @@ router.post('/send-to-client/:orderId', authorize(['admin', 'manager', 'super_ad
                 design_status = 'client_review'
              WHERE id = $4`,
             [storedToken, tokenHash, expiresAt, orderId]
+        );
+
+        // Reset per-item client response so client can respond fresh
+        await db.query(
+            `UPDATE order_items SET
+                client_design_status = NULL,
+                client_revision_notes = NULL,
+                client_revision_files = NULL,
+                client_approved_at = NULL
+             WHERE order_id = $1`,
+            [orderId]
         );
 
         const shareUrl = `${req.protocol}://${req.get('host')}/public-design.html?token=${plainToken}`;
