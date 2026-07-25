@@ -569,7 +569,6 @@
                 <div class="flex items-start justify-between mb-2">
                     <div>
                         <p class="font-semibold text-slate-800 text-sm">${_esc(item.product_name || 'صنف')} — ${_esc(item.size || '')}</p>
-                        <p class="text-xs text-slate-500 mt-0.5">الكمية: ${item.quantity}</p>
                     </div>
                     <span class="text-xs px-2 py-1 rounded-full ${st.color}">${st.label}</span>
                 </div>

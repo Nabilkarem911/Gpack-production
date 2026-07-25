@@ -4058,7 +4058,7 @@
                                             <div class="flex items-center justify-between">
                                                 <div>
                                                     <p class="font-medium text-sm text-slate-800">${_escapeHtml(it.name)}</p>
-                                                    <p class="text-xs text-slate-400">${_escapeHtml(it.size || '')} — qty: ${it.quantity}</p>
+                                                    <p class="text-xs text-slate-400">${_escapeHtml(it.size || '')}</p>
                                                 </div>
                                                 <select data-item-id="${it.id}" class="std-item-designer px-2 py-1 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-brand-500">
                                                     <option value="">-- المصمم --</option>
