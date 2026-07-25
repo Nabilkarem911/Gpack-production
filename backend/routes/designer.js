@@ -167,7 +167,7 @@ router.post('/assign', authorize(['admin', 'manager', 'super_admin']), upload.an
             const itemsResult = await db.query('SELECT id FROM order_items WHERE order_id = $1', [order_id]);
             itemAssignments = itemsResult.rows.map(it => ({
                 item_id: it.id,
-                designer_id: parseInt(legacyDesignerId),
+                designer_id: legacyDesignerId,
                 notes: null,
             }));
         }

@@ -4,7 +4,8 @@
 -- =============================================================================
 
 -- Add assigned_designer_id to order_items for per-item designer assignment
-ALTER TABLE order_items ADD COLUMN IF NOT EXISTS assigned_designer_id INTEGER REFERENCES users(id);
+-- users.id is UUID, so the column must be UUID type
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS assigned_designer_id UUID REFERENCES users(id);
 
 -- Index for fast lookup of items by designer
 CREATE INDEX IF NOT EXISTS idx_order_items_assigned_designer

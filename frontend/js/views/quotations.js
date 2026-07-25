@@ -4149,7 +4149,7 @@
                     const notes = notesEl?.value.trim() || null;
 
                     if (!designerId) return;
-                    itemAssignments.push({ item_id: itemId, designer_id: parseInt(designerId), notes });
+                    itemAssignments.push({ item_id: itemId, designer_id: designerId, notes });
                 });
 
                 if (itemAssignments.length === 0) {
