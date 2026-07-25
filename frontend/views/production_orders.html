@@ -178,6 +178,11 @@
                            text-slate-500 hover:text-slate-700 border-b-2 border-transparent whitespace-nowrap transition-colors">
                 <i class="fa-solid fa-comments"></i> ملاحظات
             </button>
+            <button onclick="window.poView.switchHubTab('approval')" id="hub-tab-approval"
+                    class="hub-tab flex items-center gap-2 px-5 py-3 text-sm font-semibold
+                           text-slate-500 hover:text-slate-700 border-b-2 border-transparent whitespace-nowrap transition-colors">
+                <i class="fa-solid fa-file-circle-check"></i> موافقة العميل
+            </button>
         </div>
 
         <!-- Hub Content Area -->
@@ -371,6 +376,20 @@
                     </div>
                 </div>
             </div>
+
+            <!-- ── TAB: CLIENT APPROVAL ── -->
+            <div id="hub-tab-approval-content" class="hidden">
+                <div id="hub-approval-loading" class="py-12 text-center text-slate-400">
+                    <i class="fa-solid fa-circle-notch fa-spin text-2xl"></i>
+                </div>
+                <div id="hub-approval-empty" class="hidden py-12 text-center text-slate-400">
+                    <i class="fa-solid fa-file-circle-exclamation text-5xl mb-3 text-slate-200"></i>
+                    <p class="font-semibold text-slate-500">لا يوجد سجل موافقة عميل لهذا الطلب</p>
+                    <p class="text-xs text-slate-400 mt-1">لم يقم العميل بالموافقة على التصميم بعد</p>
+                </div>
+                <div id="hub-approval-body" class="hidden space-y-4"></div>
+            </div>
+
         </div>
     </div>
 </div>

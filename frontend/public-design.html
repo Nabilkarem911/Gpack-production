@@ -565,7 +565,71 @@ function showAlreadyResponded(data, allApproved) {
     document.getElementById('submit-section').classList.add('hidden');
     document.getElementById('warning-notice').classList.add('hidden');
     const banner = document.getElementById('responded-banner');
-    banner.innerHTML = `
+
+    if (allApproved && data.approval) {
+        const a = data.approval;
+        const approvedDate = a.approved_at ? new Date(a.approved_at).toLocaleString('ar-SA') : '';
+        banner.innerHTML = `
+        <div class="space-y-4">
+            <div class="flex items-center gap-4 p-4 rounded-2xl bg-emerald-50 border border-emerald-200">
+                <i class="fa-solid fa-circle-check text-emerald-500 text-2xl flex-shrink-0"></i>
+                <div>
+                    <p class="font-bold text-sm text-emerald-700">تمت الموافقة على جميع التصاميم</p>
+                    <p class="text-xs text-slate-500 mt-0.5">شكراً لك، فريقنا سيتواصل معك قريباً.</p>
+                </div>
+            </div>
+
+            <div class="bg-white border border-slate-200 rounded-2xl p-5 space-y-4">
+                <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
+                    <i class="fa-solid fa-file-circle-check text-emerald-600"></i>
+                    شهادة اعتماد التصميم
+                </h3>
+
+                <div class="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                        <p class="text-xs text-slate-400 mb-1">تم الاعتماد بواسطة</p>
+                        <p class="font-bold text-slate-800">${esc(a.signer_name || '—')}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-slate-400 mb-1">وقت الاعتماد</p>
+                        <p class="font-bold text-slate-800">${approvedDate}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-slate-400 mb-1">عنوان IP</p>
+                        <p class="font-mono text-xs text-slate-600">${esc(a.client_ip || '—')}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-slate-400 mb-1">الجهاز</p>
+                        <p class="text-xs text-slate-600">${esc(a.device_info || '—')}</p>
+                    </div>
+                </div>
+
+                ${a.signature_image ? `
+                <div>
+                    <p class="text-sm font-bold text-slate-700 mb-2">التوقيع الإلكتروني</p>
+                    <div class="border border-slate-200 rounded-xl p-3 bg-white">
+                        <img src="${a.signature_image}" alt="signature" class="max-h-32 mx-auto" />
+                    </div>
+                </div>` : ''}
+
+                ${a.approval_pdf_path ? `
+                <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-file-pdf text-red-500 text-xl"></i>
+                        <div>
+                            <p class="text-sm font-bold text-slate-700">شهادة الاعتماد (PDF)</p>
+                            <p class="text-xs text-slate-400">ملف PDF رسمي يحتوي على كل البيانات</p>
+                        </div>
+                    </div>
+                    <a href="${a.approval_pdf_path}" target="_blank" download
+                        class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-bold transition-colors flex items-center gap-2">
+                        <i class="fa-solid fa-download"></i> تحميل
+                    </a>
+                </div>` : ''}
+            </div>
+        </div>`;
+    } else {
+        banner.innerHTML = `
         <div class="flex items-center gap-4 p-4 rounded-2xl ${allApproved ? 'bg-emerald-50 border border-emerald-200' : 'bg-orange-50 border border-orange-200'}">
             <i class="fa-solid ${allApproved ? 'fa-circle-check text-emerald-500' : 'fa-rotate text-orange-500'} text-2xl flex-shrink-0"></i>
             <div>
@@ -575,6 +639,7 @@ function showAlreadyResponded(data, allApproved) {
                 <p class="text-xs text-slate-500 mt-0.5">شكراً لك، فريقنا سيتواصل معك قريباً.</p>
             </div>
         </div>`;
+    }
     banner.classList.remove('hidden');
 }
 

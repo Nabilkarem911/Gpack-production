@@ -29,6 +29,7 @@
     };
 
     const STATUS_CFG = {
+        confirmed:  { label: 'بانتظار الدفعة', cls: 'bg-violet-100 text-violet-700',   icon: 'fa-hand-holding-dollar' },
         production: { label: 'في الانتظار', cls: 'bg-amber-100 text-amber-700',   icon: 'fa-clock' },
         processing: { label: 'قيد التنفيذ', cls: 'bg-blue-100 text-blue-700',     icon: 'fa-gears' },
         completed:  { label: 'مكتمل',       cls: 'bg-emerald-100 text-emerald-700', icon: 'fa-circle-check' },
@@ -38,6 +39,7 @@
     };
 
     const STATUS_FLOW = {
+        confirmed:  [{ s: 'production', label: 'تأكيد الدفعة وتحويل للإنتاج', cls: 'bg-violet-600 hover:bg-violet-700 text-white' }],
         production: [{ s: 'processing', label: 'بدء التنفيذ',  cls: 'bg-blue-600 hover:bg-blue-700 text-white' }],
         processing: [{ s: 'completed',  label: 'تم الإكمال',   cls: 'bg-emerald-600 hover:bg-emerald-700 text-white' }],
         completed:  [{ s: 'delivered',  label: 'تم التسليم',   cls: 'bg-purple-600 hover:bg-purple-700 text-white' }],
@@ -63,7 +65,7 @@
     async function _loadOrders() {
         try {
             const [activeRes, completedRes, archivedRes] = await Promise.all([
-                window.apiFetch('/api/orders?statuses=production,processing'),
+                window.apiFetch('/api/orders?statuses=confirmed,production,processing'),
                 window.apiFetch('/api/orders?status=completed'),
                 window.apiFetch('/api/orders?status=delivered'),
             ]);
@@ -562,7 +564,7 @@
     // ── Switch Hub Tab ─────────────────────────────────────────────────────────
     function _switchHubTab(tab) {
         _activeHubTab = tab;
-        ['items','financial','delivery','notes'].forEach(t => {
+        ['items','financial','delivery','notes','approval'].forEach(t => {
             const btn = document.getElementById(`hub-tab-${t}`);
             const content = document.getElementById(`hub-tab-${t}-content`);
             if (btn) {
@@ -578,6 +580,138 @@
             }
             if (content) content.classList.toggle('hidden', t !== tab);
         });
+
+        if (tab === 'approval' && _hubOrderId) {
+            _loadApprovalData();
+        }
+    }
+
+    // ── Load Client Approval Data ──────────────────────────────────────────────
+    async function _loadApprovalData() {
+        const loadingEl = document.getElementById('hub-approval-loading');
+        const emptyEl = document.getElementById('hub-approval-empty');
+        const bodyEl = document.getElementById('hub-approval-body');
+
+        loadingEl.classList.remove('hidden');
+        emptyEl.classList.add('hidden');
+        bodyEl.classList.add('hidden');
+
+        try {
+            const [approvalRes, activityRes] = await Promise.all([
+                window.apiFetch(`/api/designer/approval/${_hubOrderId}`).catch(() => null),
+                window.apiFetch(`/api/designer/activity-log/${_hubOrderId}`).catch(() => null),
+            ]);
+
+            const approval = approvalRes?.approval;
+            const activities = activityRes?.activities || [];
+
+            loadingEl.classList.add('hidden');
+
+            if (!approval) {
+                emptyEl.classList.remove('hidden');
+                return;
+            }
+
+            const approvedDate = approval.approved_at ? new Date(approval.approved_at).toLocaleString('ar-SA') : '—';
+
+            const timelineHtml = activities.map(a => {
+                const icons = {
+                    'sent_to_client': 'fa-paper-plane text-indigo-500',
+                    'link_opened': 'fa-link text-slate-500',
+                    'approved': 'fa-circle-check text-emerald-500',
+                    'rejected': 'fa-circle-xmark text-red-500',
+                    'revision_requested': 'fa-rotate text-orange-500',
+                    'pdf_generated': 'fa-file-pdf text-red-400',
+                    'whatsapp_opened': 'fa-brands fa-whatsapp text-green-500',
+                    'signature_captured': 'fa-file-signature text-indigo-500',
+                    'design_viewed': 'fa-eye text-slate-400',
+                };
+                const icon = icons[a.event_type] || 'fa-circle text-slate-400';
+                const time = new Date(a.created_at).toLocaleString('ar-SA');
+                let detail = '';
+                try {
+                    const d = typeof a.event_details === 'string' ? JSON.parse(a.event_details) : a.event_details;
+                    if (d.signer_name) detail = `بواسطة: ${d.signer_name}`;
+                    else if (d.reasons && d.reasons.length) detail = `أسباب: ${d.reasons.join('، ')}`;
+                    else if (d.pdf_path) detail = `PDF: ${d.pdf_path}`;
+                } catch {}
+                return `<div class="flex items-start gap-3 py-2 border-b border-slate-100 last:border-0">
+                    <i class="fa-solid ${icon} text-sm mt-0.5"></i>
+                    <div class="flex-1">
+                        <p class="text-sm text-slate-700 font-medium">${a.event_type.replace(/_/g, ' ')}</p>
+                        ${detail ? `<p class="text-xs text-slate-400">${detail}</p>` : ''}
+                        <p class="text-xs text-slate-400 mt-0.5">${time} ${a.client_ip ? '• IP: ' + a.client_ip : ''}</p>
+                    </div>
+                </div>`;
+            }).join('');
+
+            bodyEl.innerHTML = `
+                <div class="bg-slate-50 rounded-xl p-4 grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                        <p class="text-xs text-slate-400 mb-1">رقم الطلب</p>
+                        <p class="font-bold text-slate-800">#${approval.order_number || '—'}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-slate-400 mb-1">العميل</p>
+                        <p class="font-bold text-slate-800">${approval.client_name || '—'}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-slate-400 mb-1">تم الاعتماد بواسطة</p>
+                        <p class="font-bold text-slate-800">${approval.signer_name || '—'}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-slate-400 mb-1">وقت الاعتماد</p>
+                        <p class="font-bold text-slate-800">${approvedDate}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-slate-400 mb-1">عنوان IP</p>
+                        <p class="font-mono text-xs text-slate-600">${approval.client_ip || '—'}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-slate-400 mb-1">الجهاز</p>
+                        <p class="text-xs text-slate-600">${approval.device_info || '—'}</p>
+                    </div>
+                </div>
+
+                ${approval.signature_image ? `
+                <div>
+                    <p class="text-sm font-bold text-slate-700 mb-2">التوقيع الإلكتروني</p>
+                    <div class="border border-slate-200 rounded-xl p-3 bg-white">
+                        <img src="${approval.signature_image}" alt="signature" class="max-h-32 mx-auto" />
+                    </div>
+                </div>` : ''}
+
+                ${approval.approval_pdf_path ? `
+                <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-file-pdf text-red-500 text-xl"></i>
+                        <div>
+                            <p class="text-sm font-bold text-slate-700">شهادة الاعتماد (PDF)</p>
+                            <p class="text-xs text-slate-400">ملف PDF رسمي يحتوي على كل البيانات</p>
+                        </div>
+                    </div>
+                    <a href="${approval.approval_pdf_path}" target="_blank" download
+                        class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-bold transition-colors flex items-center gap-2">
+                        <i class="fa-solid fa-download"></i> تحميل
+                    </a>
+                </div>` : ''}
+
+                <div>
+                    <p class="text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
+                        <i class="fa-solid fa-timeline text-indigo-500"></i>
+                        سجل النشاط
+                    </p>
+                    <div class="bg-white border border-slate-200 rounded-xl p-3 max-h-60 overflow-y-auto">
+                        ${timelineHtml || '<p class="text-xs text-slate-400 text-center py-4">لا يوجد نشاط مسجل</p>'}
+                    </div>
+                </div>
+            `;
+            bodyEl.classList.remove('hidden');
+        } catch (err) {
+            console.error('[poView] Approval load error:', err);
+            loadingEl.classList.add('hidden');
+            emptyEl.classList.remove('hidden');
+        }
     }
 
     // ── Update order status ────────────────────────────────────────────────────

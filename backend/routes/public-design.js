@@ -275,10 +275,25 @@ router.get('/view/:token', async (req, res) => {
             return files.length > 0;
         });
 
+        // Fetch approval record if client already approved
+        let approvalData = null;
+        if (order.design_client_status === 'approved') {
+            const approvalRes = await db.query(
+                `SELECT signer_name, signature_image, approval_pdf_path,
+                        client_ip, device_info, approved_at
+                 FROM design_approvals WHERE order_id = $1`,
+                [order.id]
+            );
+            if (approvalRes.rows.length > 0) {
+                approvalData = approvalRes.rows[0];
+            }
+        }
+
         res.json({
             order_number: order.order_number,
             client_name: order.client_name,
             design_client_status: order.design_client_status,
+            approval: approvalData,
             items: items.map(item => ({
                 id: item.id,
                 product_name: item.product_name,
@@ -411,13 +426,14 @@ router.post('/respond/:token', clientUpload.array('client_files', 10), async (re
             );
 
             if (parseInt(pendingRes.rows[0].count) === 0) {
-                // All approved → convert to production + save to client_designs
+                // All approved → mark as confirmed (awaiting deposit), NOT production
+                // Manager will set deposit amount and convert to production via existing flow
                 await client.query(
                     `UPDATE orders SET
                         design_client_status = 'approved',
                         design_status = 'completed',
                         design_completed_at = NOW(),
-                        status = 'production'
+                        status = 'confirmed'
                      WHERE id = $1`,
                     [order.id]
                 );
