@@ -40,6 +40,7 @@ services:
       context: .
       dockerfile: frontend/Dockerfile
     restart: unless-stopped
+    stop_grace_period: 10s
     expose:
       - "80"
     depends_on:
@@ -57,6 +58,7 @@ services:
   mcp-server:
     build: ./mcp-server
     restart: unless-stopped
+    stop_grace_period: 10s
     environment:
       DATABASE_HOST: ${DATABASE_HOST}
       DATABASE_PORT: 5432
@@ -73,6 +75,7 @@ services:
   ai-service:
     build: ./ai-service
     restart: unless-stopped
+    stop_grace_period: 10s
     environment:
       DB_HOST: ${DATABASE_HOST}
       DB_PORT: 5432
