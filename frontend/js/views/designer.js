@@ -81,6 +81,18 @@
                 t.design_status === 'client_review' ||
                 (t.design_status === 'in_progress' && t.design_client_status === 'sent')
             );
+        } else if (_currentTab === 'pending') {
+            // Show orders that have at least 1 item in pending status
+            tasks = _allTasks.filter(t => (parseInt(t.pending_count) || 0) > 0);
+        } else if (_currentTab === 'in_progress') {
+            // Show orders that have at least 1 item in_progress or completed (but not all approved)
+            tasks = _allTasks.filter(t =>
+                ((parseInt(t.in_progress_count) || 0) > 0 || (parseInt(t.completed_count) || 0) > 0) &&
+                (parseInt(t.approved_count) || 0) < (parseInt(t.item_count) || 0)
+            );
+        } else if (_currentTab === 'revision') {
+            // Show orders that have at least 1 item in revision status
+            tasks = _allTasks.filter(t => (parseInt(t.revision_count) || 0) > 0);
         } else {
             tasks = _allTasks.filter(t => t.design_status === _currentTab);
         }
@@ -120,17 +132,22 @@
 
     // ── Render single task card ───────────────────────────────────────────────
     function _renderTaskCard(task) {
-        const statusLabels = {
-            pending: { label: 'بانتظار التصميم', color: 'bg-slate-100 text-slate-600' },
-            in_progress: { label: 'قيد التنفيذ', color: 'bg-blue-100 text-blue-700' },
-            revision: { label: 'مطلوب تعديل', color: 'bg-orange-100 text-orange-700' },
-            in_review: { label: 'بانتظار مراجعة المدير', color: 'bg-purple-100 text-purple-700' },
-            completed: { label: 'مكتمل', color: 'bg-green-100 text-green-700' },
-            client_review: { label: 'بانتظار مراجعة العميل', color: 'bg-cyan-100 text-cyan-700' },
-        };
-        const st = statusLabels[task.design_status] || statusLabels.pending;
-        const designedCount = task.designed_count !== undefined ? task.designed_count : (task.completed_count || 0);
-        const progress = task.item_count > 0 ? Math.round((designedCount / task.item_count) * 100) : 0;
+        const pendingCount = parseInt(task.pending_count) || 0;
+        const inProgressCount = parseInt(task.in_progress_count) || 0;
+        const completedCount = parseInt(task.completed_count) || 0;
+        const approvedCount = parseInt(task.approved_count) || 0;
+        const revisionCount = parseInt(task.revision_count) || 0;
+        const itemCount = parseInt(task.item_count) || 0;
+        const designedCount = completedCount + approvedCount;
+        const progress = itemCount > 0 ? Math.round((designedCount / itemCount) * 100) : 0;
+
+        // Build status badges based on item-level counts
+        const badges = [];
+        if (pendingCount > 0) badges.push(`<span class="text-xs px-2 py-1 rounded-full bg-slate-100 text-slate-600">بانتظار: ${pendingCount}</span>`);
+        if (inProgressCount > 0) badges.push(`<span class="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-700">قيد التنفيذ: ${inProgressCount}</span>`);
+        if (completedCount > 0) badges.push(`<span class="text-xs px-2 py-1 rounded-full bg-purple-100 text-purple-700">تم التسليم: ${completedCount}</span>`);
+        if (revisionCount > 0) badges.push(`<span class="text-xs px-2 py-1 rounded-full bg-orange-100 text-orange-700">تعديل: ${revisionCount}</span>`);
+        if (approvedCount > 0) badges.push(`<span class="text-xs px-2 py-1 rounded-full bg-green-100 text-green-700">معتمد: ${approvedCount}</span>`);
 
         // Show client status badge if sent to client
         const clientBadge = task.design_client_status === 'sent' && task.design_status === 'in_progress'
@@ -147,14 +164,14 @@
                         ${task.designer_name ? `<p class="text-xs text-brand-600 mt-0.5"><i class="fa-solid fa-user-pen ml-1"></i>${_esc(task.designer_name)}</p>` : ''}
                     </div>
                     <div class="flex flex-col gap-1 items-end">
-                        <span class="text-xs px-2 py-1 rounded-full ${st.color}">${st.label}</span>
+                        ${badges.length > 0 ? badges.join('') : `<span class="text-xs px-2 py-1 rounded-full bg-slate-100 text-slate-600">${_statusLabel(task.design_status)}</span>`}
                         ${clientBadge}
                     </div>
                 </div>
                 <div class="space-y-2">
                     <div class="flex items-center justify-between text-xs text-slate-500">
-                        <span>عدد الأصناف: ${task.item_count}</span>
-                        <span>المصمم: ${designedCount || 0}/${task.item_count}</span>
+                        <span>عدد الأصناف: ${itemCount}</span>
+                        <span>المصمم: ${designedCount}/${itemCount}</span>
                     </div>
                     <div class="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
                         <div class="h-full bg-brand-600 rounded-full transition-all" style="width: ${progress}%"></div>
@@ -167,9 +184,12 @@
 
     // ── Update tab counts ─────────────────────────────────────────────────────
     function _updateTabCounts() {
-        const pending = _allTasks.filter(t => t.design_status === 'pending').length;
-        const progress = _allTasks.filter(t => t.design_status === 'in_progress').length;
-        const revision = _allTasks.filter(t => t.design_status === 'revision').length;
+        const pending = _allTasks.filter(t => (parseInt(t.pending_count) || 0) > 0).length;
+        const progress = _allTasks.filter(t =>
+            ((parseInt(t.in_progress_count) || 0) > 0 || (parseInt(t.completed_count) || 0) > 0) &&
+            (parseInt(t.approved_count) || 0) < (parseInt(t.item_count) || 0)
+        ).length;
+        const revision = _allTasks.filter(t => (parseInt(t.revision_count) || 0) > 0).length;
         const completed = _completedTasks.length;
         const review = _reviewTasks.length;
         const clientReview = _allTasks.filter(t =>
@@ -479,6 +499,23 @@
             `;
         }
 
+        let briefFilesHtml = '';
+        if (item.design_brief_files && item.design_brief_files.length > 0) {
+            briefFilesHtml = `
+                <div class="mt-2 bg-brand-50 border border-brand-200 rounded-lg p-2">
+                    <p class="text-xs font-semibold text-brand-700 mb-1"><i class="fa-solid fa-paperclip ml-1"></i>ملفات مرجعية من المدير:</p>
+                    <div class="flex flex-wrap gap-2">
+                        ${item.design_brief_files.map(f => `
+                            <a href="${f.path}" target="_blank" class="flex items-center gap-1 px-2 py-1 bg-white border border-brand-200 rounded-lg text-xs hover:border-brand-400 transition-colors">
+                                <i class="fa-solid fa-file text-brand-400"></i>
+                                <span class="text-slate-600">${_esc(f.original_name || f.filename)}</span>
+                            </a>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
         let revisionHtml = '';
         if (item.design_status === 'revision' && item.revision_notes) {
             revisionHtml = `
@@ -539,6 +576,7 @@
 
                 ${item.design_notes ? `<p class="text-xs text-slate-600 bg-slate-50 rounded-lg p-2 mt-2"><i class="fa-solid fa-comment-dots ml-1 text-slate-400"></i>${_esc(item.design_notes)}</p>` : ''}
 
+                ${briefFilesHtml}
                 ${revisionHtml}
                 ${clientRevisionHtml}
                 ${clientApprovedHtml}

@@ -4019,16 +4019,24 @@
                     </div>
                     ${orderItems.length > 0 ? `
                         <div>
-                            <p class="text-sm font-medium text-slate-700 mb-2">ملاحظات لكل صنف (اختياري)</p>
-                            <div class="space-y-2 max-h-48 overflow-y-auto">
+                            <p class="text-sm font-medium text-slate-700 mb-2">ملاحظات وملفات لكل صنف (اختياري)</p>
+                            <div class="space-y-3 max-h-60 overflow-y-auto">
                                 ${orderItems.map(it => `
-                                    <div class="flex items-start gap-2">
-                                        <div class="flex-shrink-0 w-32 text-xs text-slate-600 pt-2">
-                                            <p class="font-medium">${_escapeHtml(it.name)}</p>
-                                            <p class="text-slate-400">${_escapeHtml(it.size || '')} — qty: ${it.quantity}</p>
+                                    <div class="border border-slate-200 rounded-lg p-3 space-y-2">
+                                        <div class="flex items-start gap-2">
+                                            <div class="flex-shrink-0 w-32 text-xs text-slate-600 pt-2">
+                                                <p class="font-medium">${_escapeHtml(it.name)}</p>
+                                                <p class="text-slate-400">${_escapeHtml(it.size || '')} — qty: ${it.quantity}</p>
+                                            </div>
+                                            <textarea data-item-id="${it.id}" class="std-item-notes flex-1 px-2 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-brand-500" rows="2"
+                                                placeholder="ملاحظات خاصة بهذا الصنف..."></textarea>
                                         </div>
-                                        <textarea data-item-id="${it.id}" class="std-item-notes flex-1 px-2 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-brand-500" rows="2"
-                                            placeholder="ملاحظات خاصة بهذا الصنف..."></textarea>
+                                        <label class="flex items-center gap-2 px-2 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg cursor-pointer text-xs transition-colors w-fit">
+                                            <i class="fa-solid fa-paperclip text-slate-500"></i>
+                                            <span>ملفات مرجعية لهذا الصنف</span>
+                                            <input type="file" multiple data-item-id="${it.id}" class="std-item-files hidden" accept=".jpg,.jpeg,.png,.gif,.pdf,.ai,.psd,.eps,.svg,.webp,.tiff,.tif,.bmp,.raw,.heic" />
+                                        </label>
+                                        <span class="std-item-files-count text-xs text-slate-400" data-item-id="${it.id}"></span>
                                     </div>
                                 `).join('')}
                             </div>
@@ -4045,6 +4053,15 @@
             </div>
         `;
         document.body.appendChild(modal);
+
+        // Bind per-item file count display
+        document.querySelectorAll('.std-item-files').forEach(input => {
+            input.addEventListener('change', () => {
+                const itemId = input.getAttribute('data-item-id');
+                const countEl = document.querySelector(`.std-item-files-count[data-item-id="${itemId}"]`);
+                if (countEl) countEl.textContent = input.files.length > 0 ? `${input.files.length} ملف محدد` : '';
+            });
+        });
 
         // Bind submit
         const submitBtn = document.getElementById('std-submit-btn');
@@ -4073,6 +4090,14 @@
                 formData.append('design_brief', brief);
                 formData.append('item_notes', JSON.stringify(itemNotes));
                 files.forEach(f => formData.append('design_brief_files', f));
+
+                // Collect per-item files
+                document.querySelectorAll('.std-item-files').forEach(input => {
+                    const itemId = input.getAttribute('data-item-id');
+                    Array.from(input.files).forEach(f => {
+                        formData.append(`item_files_${itemId}`, f);
+                    });
+                });
 
                 submitBtn.disabled = true;
                 submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i><span>جاري الإرسال...</span>';
