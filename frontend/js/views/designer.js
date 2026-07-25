@@ -364,40 +364,67 @@
                     </div>
                 `;
             } else if (res.order.design_client_status === 'sent' && ['client_review', 'in_progress'].includes(res.order.design_status)) {
-                // Build the share URL from current location
                 const baseUrl = window.location.origin;
-                const shareUrl = res.order.design_share_token
-                    ? `${baseUrl}/public-design.html?token=${res.order.design_share_token}`
-                    : null;
+                const token = res.order.design_share_token;
 
                 html += `
                     <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center gap-3">
                         <i class="fa-solid fa-paper-plane text-blue-500 text-xl"></i>
                         <div>
                             <p class="text-sm font-bold text-blue-700">تم إرسال التصاميم للعميل</p>
-                            <p class="text-xs text-blue-600">بانتظار رد العميل على رابط المراجعة</p>
+                            <p class="text-xs text-blue-600">بانتظار رد العميل — كل صنف له رابط مستقل</p>
                         </div>
                     </div>
                 `;
 
-                if (shareUrl && isManagerRole) {
-                    html += `
-                        <div class="bg-white border-2 border-blue-200 rounded-xl p-4">
-                            <p class="text-xs font-semibold text-slate-600 mb-2"><i class="fa-solid fa-link ml-1 text-blue-500"></i>رابط مراجعة العميل</p>
-                            <div class="flex items-center gap-2">
-                                <input type="text" id="client-share-url-input" readonly value="${shareUrl}"
-                                    class="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-600 outline-none" />
-                                <button onclick="navigator.clipboard.writeText(document.getElementById('client-share-url-input').value).then(() => window.showToast?.('تم نسخ الرابط', 'success'))"
-                                    class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs transition-colors whitespace-nowrap">
-                                    <i class="fa-solid fa-copy ml-1"></i>نسخ
-                                </button>
-                                <a href="https://wa.me/?text=${encodeURIComponent('مراجعة تصميم G.PACK: ' + shareUrl)}" target="_blank"
-                                    class="px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs transition-colors whitespace-nowrap">
-                                    <i class="fa-brands fa-whatsapp ml-1"></i>واتساب
-                                </a>
+                if (token && isManagerRole) {
+                    // Build per-item links
+                    const designedItems = res.items.filter(it => it.design_files && (Array.isArray(it.design_files) ? it.design_files.length > 0 : true));
+                    if (designedItems.length > 0) {
+                        html += `<div class="bg-white border-2 border-blue-200 rounded-xl p-4 space-y-3">`;
+                        html += `<p class="text-xs font-semibold text-slate-600"><i class="fa-solid fa-link ml-1 text-blue-500"></i>روابط مراجعة العميل (لكل صنف)</p>`;
+                        designedItems.forEach((item, idx) => {
+                            const itemUrl = `${baseUrl}/public-design.html?token=${token}&item_id=${item.id}`;
+                            const itemName = `${_esc(item.product_name || 'صنف')}${item.size_name ? ' — ' + _esc(item.size_name) : ''}`;
+                            html += `
+                                <div class="border border-slate-200 rounded-lg p-3">
+                                    <p class="text-xs font-bold text-slate-700 mb-2">${idx + 1}. ${itemName}</p>
+                                    <div class="flex items-center gap-2">
+                                        <input type="text" id="item-url-${item.id}" readonly value="${itemUrl}"
+                                            class="flex-1 px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-[11px] text-slate-600 outline-none" />
+                                        <button onclick="navigator.clipboard.writeText(document.getElementById('item-url-${item.id}').value).then(() => window.showToast?.('تم نسخ رابط: ${itemName}', 'success'))"
+                                            class="px-2 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs transition-colors whitespace-nowrap">
+                                            <i class="fa-solid fa-copy"></i>
+                                        </button>
+                                        <a href="https://wa.me/?text=${encodeURIComponent('مراجعة تصميم G.PACK — ' + itemName + ': ' + itemUrl)}" target="_blank"
+                                            class="px-2 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs transition-colors whitespace-nowrap">
+                                            <i class="fa-brands fa-whatsapp"></i>
+                                        </a>
+                                    </div>
+                                </div>
+                            `;
+                        });
+                        // Also provide a combined link (all items)
+                        const allItemsUrl = `${baseUrl}/public-design.html?token=${token}`;
+                        html += `
+                            <div class="border-2 border-blue-200 rounded-lg p-3 bg-blue-50">
+                                <p class="text-xs font-bold text-blue-700 mb-2">رابط شامل (كل الأصناف)</p>
+                                <div class="flex items-center gap-2">
+                                    <input type="text" id="all-items-url" readonly value="${allItemsUrl}"
+                                        class="flex-1 px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-[11px] text-slate-600 outline-none" />
+                                    <button onclick="navigator.clipboard.writeText(document.getElementById('all-items-url').value).then(() => window.showToast?.('تم نسخ الرابط الشامل', 'success'))"
+                                        class="px-2 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs transition-colors whitespace-nowrap">
+                                        <i class="fa-solid fa-copy"></i>
+                                    </button>
+                                    <a href="https://wa.me/?text=${encodeURIComponent('مراجعة جميع تصاميم G.PACK: ' + allItemsUrl)}" target="_blank"
+                                        class="px-2 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs transition-colors whitespace-nowrap">
+                                        <i class="fa-brands fa-whatsapp"></i>
+                                    </a>
+                                </div>
                             </div>
-                        </div>
-                    `;
+                        `;
+                        html += `</div>`;
+                    }
                 }
             }
 

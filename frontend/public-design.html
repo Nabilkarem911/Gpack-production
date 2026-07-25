@@ -180,6 +180,7 @@
 
 <script>
 let designToken = null;
+let designItemId = null;
 let designData = null;
 let itemResponses = {};
 let sigCtx = null;
@@ -190,10 +191,14 @@ let lastX = 0, lastY = 0;
 // ── Init ─────────────────────────────────────────────────────────────────────
 (async () => {
     designToken = new URLSearchParams(window.location.search).get('token');
+    designItemId = new URLSearchParams(window.location.search).get('item_id');
     if (!designToken) return showError('الرابط غير صالح — لا يوجد token.');
 
     try {
-        const res = await fetch(`/api/public/design/view/${designToken}`);
+        const viewUrl = designItemId
+            ? `/api/public/design/view/${designToken}?item_id=${designItemId}`
+            : `/api/public/design/view/${designToken}`;
+        const res = await fetch(viewUrl);
         const data = await res.json();
 
         if (!res.ok) return showError(data.error || 'حدث خطأ.');

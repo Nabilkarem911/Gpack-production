@@ -164,6 +164,7 @@ function _generateApprovalPDF(orderData, signatureBase64, outputPath) {
 // =============================================================================
 router.get('/view/:token', async (req, res) => {
     const { token } = req.params;
+    const itemIdFilter = req.query.item_id ? parseInt(req.query.item_id) : null;
     try {
         let orderRes = null;
         try {
@@ -253,6 +254,8 @@ router.get('/view/:token', async (req, res) => {
         );
 
         const items = itemsRes.rows.filter(item => {
+            // If item_id filter is set, only show that item
+            if (itemIdFilter && item.id !== itemIdFilter) return false;
             if (!item.design_files) return false;
             const files = Array.isArray(item.design_files) ? item.design_files : [];
             // Deduplicate by path
