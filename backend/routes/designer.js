@@ -386,7 +386,7 @@ router.get('/task/:orderId', async (req, res) => {
             if (item.design_files && Array.isArray(item.design_files) && item.design_files.length > 1) {
                 const seen = new Set();
                 const unique = item.design_files.filter(f => {
-                    const key = f.path || f.filename || JSON.stringify(f);
+                    const key = f.original_name || f.path || f.filename || JSON.stringify(f);
                     if (seen.has(key)) return false;
                     seen.add(key);
                     return true;

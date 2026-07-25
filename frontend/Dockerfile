@@ -2,6 +2,7 @@
 FROM node:alpine AS builder
 WORKDIR /build
 RUN npm install -g terser@5
+ARG CACHEBUST=1
 COPY ./frontend /build/frontend
 RUN find /build/frontend/js -name "*.js" -type f | while read f; do \
       terser --compress --mangle --output "$f" "$f" || true; \

@@ -39,6 +39,8 @@ services:
     build:
       context: .
       dockerfile: frontend/Dockerfile
+      args:
+        CACHEBUST: ${CACHEBUST:-1}
     restart: unless-stopped
     stop_grace_period: 10s
     expose:
