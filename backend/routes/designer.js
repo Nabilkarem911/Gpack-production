@@ -381,6 +381,27 @@ router.get('/task/:orderId', async (req, res) => {
             [orderId]
         );
 
+        // Auto-deduplicate design_files (fix for old data with appended duplicates)
+        for (const item of itemsResult.rows) {
+            if (item.design_files && Array.isArray(item.design_files) && item.design_files.length > 1) {
+                const seen = new Set();
+                const unique = item.design_files.filter(f => {
+                    const key = f.path || f.filename || JSON.stringify(f);
+                    if (seen.has(key)) return false;
+                    seen.add(key);
+                    return true;
+                });
+                if (unique.length < item.design_files.length) {
+                    console.log(`[Designer] Deduplicating design_files for item ${item.id}: ${item.design_files.length} → ${unique.length}`);
+                    await db.query(
+                        `UPDATE order_items SET design_files = $1 WHERE id = $2`,
+                        [JSON.stringify(unique), item.id]
+                    );
+                    item.design_files = unique;
+                }
+            }
+        }
+
         // Get client pantone colors (if table exists)
         let pantoneColors = [];
         try {

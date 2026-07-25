@@ -23,9 +23,9 @@ const UPLOAD_BASE = path.join(__dirname, '../uploads/designs');
 if (!fs.existsSync(UPLOAD_BASE)) fs.mkdirSync(UPLOAD_BASE, { recursive: true });
 
 const clientUploadStorage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        const orderId = req.params.orderId || 'unassigned';
-        const dir = path.join(UPLOAD_BASE, orderId, 'client-revision');
+    destination: (_req, _file, cb) => {
+        // Save to temp dir first — we don't know order ID until we look up the token
+        const dir = path.join(UPLOAD_BASE, 'temp-client-revision');
         fs.mkdirSync(dir, { recursive: true });
         cb(null, dir);
     },
@@ -243,7 +243,7 @@ router.get('/view/:token', async (req, res) => {
             `SELECT oi.id, oi.variant_id, oi.quantity,
                     p.name AS product_name, pv.size_name,
                     oi.design_files, oi.designer_notes,
-                    oi.client_design_status, oi.client_revision_notes
+                    oi.client_design_status, oi.client_revision_notes, oi.client_revision_files
              FROM order_items oi
              LEFT JOIN product_variants pv ON pv.id = oi.variant_id
              LEFT JOIN products p ON p.id = pv.product_id
@@ -255,6 +255,23 @@ router.get('/view/:token', async (req, res) => {
         const items = itemsRes.rows.filter(item => {
             if (!item.design_files) return false;
             const files = Array.isArray(item.design_files) ? item.design_files : [];
+            // Deduplicate by path
+            if (files.length > 1) {
+                const seen = new Set();
+                const unique = files.filter(f => {
+                    const key = f.path || f.filename || JSON.stringify(f);
+                    if (seen.has(key)) return false;
+                    seen.add(key);
+                    return true;
+                });
+                if (unique.length < files.length) {
+                    console.log(`[PublicDesign] Deduplicating design_files for item ${item.id}: ${files.length} → ${unique.length}`);
+                    item.design_files = unique;
+                    // Also fix in DB
+                    db.query(`UPDATE order_items SET design_files = $1 WHERE id = $2`,
+                        [JSON.stringify(unique), item.id]).catch(() => {});
+                }
+            }
             return files.length > 0;
         });
 
@@ -271,6 +288,7 @@ router.get('/view/:token', async (req, res) => {
                 design_files: item.design_files,
                 client_design_status: item.client_design_status,
                 client_revision_notes: item.client_revision_notes,
+                client_revision_files: item.client_revision_files,
             })),
         });
     } catch (err) {
@@ -317,16 +335,27 @@ router.post('/respond/:token', clientUpload.array('client_files', 10), async (re
 
         await client.query('BEGIN');
 
+        // Move uploaded files from temp dir to order-specific dir
+        const targetDir = path.join(UPLOAD_BASE, order.id, 'client-revision');
+        fs.mkdirSync(targetDir, { recursive: true });
+        const clientFiles = (req.files || []).map(f => {
+            const oldPath = path.join(UPLOAD_BASE, 'temp-client-revision', f.filename);
+            const newPath = path.join(targetDir, f.filename);
+            try {
+                fs.renameSync(oldPath, newPath);
+            } catch (e) {
+                console.error('[PublicDesign] File move error:', e.message);
+            }
+            return {
+                filename: f.filename,
+                original_name: f.originalname,
+                path: `/uploads/designs/${order.id}/client-revision/${f.filename}`,
+                size: f.size,
+            };
+        });
+
         let approvedCount = 0;
         let revisionCount = 0;
-
-        // Collect uploaded client files (shared across all revision items)
-        const clientFiles = (req.files || []).map(f => ({
-            filename: f.filename,
-            original_name: f.originalname,
-            path: `/uploads/designs/${order.id}/client-revision/${f.filename}`,
-            size: f.size,
-        }));
 
         for (const item of items) {
             if (!item.item_id || !item.action) continue;
