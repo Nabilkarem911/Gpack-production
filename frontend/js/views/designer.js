@@ -196,7 +196,7 @@
             if (status) status.textContent = `الحالة: ${_statusLabel(res.order.design_status)}`;
 
             if (sendClientBtn) {
-                if (isManagerView && ['in_review', 'revision', 'client_review'].includes(res.order.design_status)) {
+                if (isManagerView && ['in_progress', 'in_review', 'revision', 'client_review'].includes(res.order.design_status)) {
                     sendClientBtn.classList.remove('hidden');
                 } else {
                     sendClientBtn.classList.add('hidden');

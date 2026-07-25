@@ -355,7 +355,7 @@
                                        hover:text-purple-600 hover:bg-purple-50 transition-colors">
                             <i class="fa-solid fa-pen-ruler text-xs"></i>
                         </button>
-                        ${['in_review', 'revision', 'client_review'].includes(q.design_status) ? `
+                        ${['in_progress', 'in_review', 'revision', 'client_review'].includes(q.design_status) ? `
                         <button onclick="window.sendDesignToClient('${q.id}')" title="إرسال التصميم للعميل"
                                 class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400
                                        hover:text-indigo-600 hover:bg-indigo-50 transition-colors">
