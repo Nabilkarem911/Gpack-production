@@ -277,7 +277,7 @@ router.get('/view/:token', async (req, res) => {
 
         // Fetch approval record if client already approved
         let approvalData = null;
-        if (order.design_client_status === 'approved') {
+        if (order.design_client_status === 'approved' || order.design_client_status === 'partially_approved') {
             const approvalRes = await db.query(
                 `SELECT signer_name, signature_image, approval_pdf_path,
                         client_ip, device_info, approved_at

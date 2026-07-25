@@ -713,6 +713,19 @@ router.post('/send-to-client/:orderId', authorize(['admin', 'manager', 'super_ad
         // 30-day expiry
         const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
+        // Check if there are still items WITHOUT design_files
+        const noDesignCount = await db.query(
+            `SELECT COUNT(*) as count FROM order_items
+             WHERE order_id = $1
+               AND (design_files IS NULL OR design_files = '[]'::jsonb)`,
+            [orderId]
+        );
+        const hasUndesignedItems = parseInt(noDesignCount.rows[0].count) > 0;
+
+        // Only set design_status to 'client_review' if ALL items have designs
+        // Otherwise keep 'in_progress' so designer can still see and work on remaining items
+        const newDesignStatus = hasUndesignedItems ? 'in_progress' : 'client_review';
+
         await db.query(
             `UPDATE orders SET
                 design_share_token = $1,
@@ -720,9 +733,9 @@ router.post('/send-to-client/:orderId', authorize(['admin', 'manager', 'super_ad
                 design_token_expires_at = $3,
                 design_sent_to_client_at = NOW(),
                 design_client_status = 'sent',
-                design_status = 'client_review'
-             WHERE id = $4`,
-            [storedToken, tokenHash, expiresAt, orderId]
+                design_status = $4
+             WHERE id = $5`,
+            [storedToken, tokenHash, expiresAt, newDesignStatus, orderId]
         );
 
         // Only reset client response on items that DON'T have design_files yet
