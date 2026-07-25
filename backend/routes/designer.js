@@ -299,7 +299,7 @@ router.get('/my-tasks', async (req, res) => {
 
             const result = await db.query(
                 `SELECT o.id, o.order_number, o.design_status, o.design_brief, o.design_brief_files,
-                        o.design_sent_at, o.created_at,
+                        o.design_sent_at, o.created_at, o.design_client_status,
                         c.name as client_name,
                         u.name as designer_name,
                         (SELECT COUNT(*) FROM order_items WHERE order_id = o.id) as item_count,
@@ -309,7 +309,7 @@ router.get('/my-tasks', async (req, res) => {
                  JOIN clients c ON c.id = o.client_id
                  LEFT JOIN users u ON u.id = o.assigned_designer_id
                  WHERE o.assigned_designer_id IS NOT NULL
-                   AND o.design_status IN ('pending', 'in_progress', 'revision')
+                   AND o.design_status IN ('pending', 'in_progress', 'revision', 'client_review')
                    ${filterClause}
                  ORDER BY o.design_sent_at DESC`,
                 params
@@ -402,7 +402,12 @@ router.get('/task/:orderId', async (req, res) => {
         } catch { /* table might not exist — ignore */ }
 
         res.json({
-            order: orderResult.rows[0],
+            order: {
+                ...orderResult.rows[0],
+                design_share_token: orderResult.rows[0].design_share_token
+                    ? decryptShareToken(orderResult.rows[0].design_share_token)
+                    : null,
+            },
             items: itemsResult.rows,
             pantone_colors: pantoneColors,
             client_designs: clientDesigns,

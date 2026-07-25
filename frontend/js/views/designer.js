@@ -24,6 +24,10 @@
         if (reviewTab && _isManager()) {
             reviewTab.style.display = '';
         }
+        const clientReviewTab = document.getElementById('designer-tab-client-review');
+        if (clientReviewTab && _isManager()) {
+            clientReviewTab.style.display = '';
+        }
         await _loadTasks();
         _bindEvents();
         _startPolling();
@@ -116,6 +120,7 @@
             revision: { label: 'مطلوب تعديل', color: 'bg-orange-100 text-orange-700' },
             in_review: { label: 'بانتظار مراجعة المدير', color: 'bg-purple-100 text-purple-700' },
             completed: { label: 'مكتمل', color: 'bg-green-100 text-green-700' },
+            client_review: { label: 'بانتظار مراجعة العميل', color: 'bg-cyan-100 text-cyan-700' },
         };
         const st = statusLabels[task.design_status] || statusLabels.pending;
         const completedCount = task.completed_count !== undefined ? task.completed_count : (task.approved_count || 0);
@@ -154,17 +159,20 @@
         const revision = _allTasks.filter(t => t.design_status === 'revision').length;
         const completed = _completedTasks.length;
         const review = _reviewTasks.length;
+        const clientReview = _allTasks.filter(t => t.design_status === 'client_review').length;
 
         const el1 = document.getElementById('designer-tab-pending-count');
         const el2 = document.getElementById('designer-tab-progress-count');
         const el3 = document.getElementById('designer-tab-revision-count');
         const el4 = document.getElementById('designer-tab-completed-count');
         const el5 = document.getElementById('designer-tab-review-count');
+        const el6 = document.getElementById('designer-tab-client-review-count');
         if (el1) el1.textContent = pending;
         if (el2) el2.textContent = progress;
         if (el3) el3.textContent = revision;
         if (el4) el4.textContent = completed;
         if (el5) el5.textContent = review;
+        if (el6) el6.textContent = clientReview;
     }
 
     // ── Open task detail ──────────────────────────────────────────────────────
@@ -282,6 +290,12 @@
                     </div>
                 `;
             } else if (res.order.design_client_status === 'sent' && res.order.design_status === 'client_review') {
+                // Build the share URL from current location
+                const baseUrl = window.location.origin;
+                const shareUrl = res.order.design_share_token
+                    ? `${baseUrl}/public-design.html?token=${res.order.design_share_token}`
+                    : null;
+
                 html += `
                     <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center gap-3">
                         <i class="fa-solid fa-paper-plane text-blue-500 text-xl"></i>
@@ -291,6 +305,26 @@
                         </div>
                     </div>
                 `;
+
+                if (shareUrl && isManagerRole) {
+                    html += `
+                        <div class="bg-white border-2 border-blue-200 rounded-xl p-4">
+                            <p class="text-xs font-semibold text-slate-600 mb-2"><i class="fa-solid fa-link ml-1 text-blue-500"></i>رابط مراجعة العميل</p>
+                            <div class="flex items-center gap-2">
+                                <input type="text" id="client-share-url-input" readonly value="${shareUrl}"
+                                    class="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-600 outline-none" />
+                                <button onclick="navigator.clipboard.writeText(document.getElementById('client-share-url-input').value).then(() => window.showToast?.('تم نسخ الرابط', 'success'))"
+                                    class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs transition-colors whitespace-nowrap">
+                                    <i class="fa-solid fa-copy ml-1"></i>نسخ
+                                </button>
+                                <a href="https://wa.me/?text=${encodeURIComponent('مراجعة تصميم G.PACK: ' + shareUrl)}" target="_blank"
+                                    class="px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs transition-colors whitespace-nowrap">
+                                    <i class="fa-brands fa-whatsapp ml-1"></i>واتساب
+                                </a>
+                            </div>
+                        </div>
+                    `;
+                }
             }
 
             // Items
