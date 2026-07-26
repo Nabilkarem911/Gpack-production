@@ -87,6 +87,32 @@
             </div>
         </div>
 
+        <!-- Certificate Image -->
+        <div id="cert-image-section" class="bg-white rounded-2xl shadow-sm p-6 mb-4 hidden">
+            <h2 class="text-sm font-bold text-slate-700 mb-3"><i class="fa-solid fa-image ml-1 text-brand-600"></i>شهادة الاعتماد</h2>
+            <img id="cert-image" src="" alt="شهادة الاعتماد" class="w-full rounded-xl border border-slate-200">
+        </div>
+
+        <!-- Design Image -->
+        <div id="design-image-section" class="bg-white rounded-2xl shadow-sm p-6 mb-4 hidden">
+            <h2 class="text-sm font-bold text-slate-700 mb-3"><i class="fa-solid fa-pen-ruler ml-1 text-brand-600"></i>التصميم المعتمد</h2>
+            <img id="design-image" src="" alt="التصميم المعتمد" class="w-full rounded-xl border border-slate-200">
+        </div>
+
+        <!-- Signature -->
+        <div id="signature-section" class="bg-white rounded-2xl shadow-sm p-6 mb-4 hidden">
+            <h2 class="text-sm font-bold text-slate-700 mb-3"><i class="fa-solid fa-signature ml-1 text-brand-600"></i>توقيع العميل</h2>
+            <img id="signature-image" src="" alt="توقيع العميل" class="max-h-40 rounded-xl border border-slate-200 bg-white">
+        </div>
+
+        <!-- PDF Download -->
+        <div id="pdf-section" class="bg-white rounded-2xl shadow-sm p-6 mb-4 hidden">
+            <a id="pdf-link" href="#" target="_blank" class="flex items-center justify-center gap-2 w-full py-3 bg-brand-600 text-white rounded-xl font-bold text-sm hover:bg-brand-700 transition">
+                <i class="fa-solid fa-file-pdf"></i>
+                تحميل ملف الاعتماد (PDF)
+            </a>
+        </div>
+
         <!-- Footer -->
         <div class="text-center">
             <p class="text-xs text-slate-400">G.PACK — حلول التعبئة والتغليف | نظام التحقق الإلكتروني</p>
@@ -139,6 +165,53 @@
         }
         if (data.declaration_text) {
             document.getElementById('cert-declaration').textContent = data.declaration_text;
+        }
+
+        // Certificate image
+        if (data.files && data.files.certificate_url) {
+            const img = document.getElementById('cert-image');
+            img.src = data.files.certificate_url;
+            document.getElementById('cert-image-section').classList.remove('hidden');
+        }
+
+        // Design image — try design_files first, then design_snapshot_files
+        let designUrl = null;
+        if (data.design_files) {
+            let files = data.design_files;
+            if (typeof files === 'string') { try { files = JSON.parse(files); } catch { files = []; } }
+            if (Array.isArray(files)) {
+                const imgFile = files.find(f => {
+                    const ext = (f.filename || f.original_name || f.path || '').split('.').pop().toLowerCase();
+                    return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].includes(ext);
+                });
+                if (imgFile) designUrl = imgFile.path || imgFile.url || null;
+            }
+        }
+        if (!designUrl && data.design_snapshot_files) {
+            let snaps = data.design_snapshot_files;
+            if (typeof snaps === 'string') { try { snaps = JSON.parse(snaps); } catch { snaps = []; } }
+            if (Array.isArray(snaps) && snaps.length > 0) {
+                designUrl = snaps[0].path || snaps[0].url || null;
+            }
+        }
+        if (designUrl) {
+            const img = document.getElementById('design-image');
+            img.src = designUrl;
+            document.getElementById('design-image-section').classList.remove('hidden');
+        }
+
+        // Signature
+        if (data.files && data.files.signature_url) {
+            const img = document.getElementById('signature-image');
+            img.src = data.files.signature_url;
+            document.getElementById('signature-section').classList.remove('hidden');
+        }
+
+        // PDF download
+        if (data.files && data.files.pdf_url) {
+            const link = document.getElementById('pdf-link');
+            link.href = data.files.pdf_url;
+            document.getElementById('pdf-section').classList.remove('hidden');
         }
     }
 

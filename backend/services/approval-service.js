@@ -161,6 +161,7 @@ async function processApproval(approvalData) {
             pkgDir, certificate_number, order_number, client_name, product_name, size_name,
             signer_name, approved_at: approvedDate,
             signature_path, qrPath, verifyUrl, declaration_text,
+            certImagePath, designPreviewPath,
         });
         await _updatePackageState(item_id, 'pdf_done');
         log.info('pdf_done', { item_id, certificate_number });
@@ -520,6 +521,8 @@ async function _generateCertificateImage(data) {
 }
 
 // ── Generate PDF ─────────────────────────────────────────────────────────────
+// Embeds the certificate image (Arabic rendered via canvas) + design preview + signature.
+// PDFKit cannot render Arabic text (no RTL/shaping), so we embed images instead.
 async function _generatePDF(data) {
     return new Promise((resolve, reject) => {
         const pdfPath = path.join(data.pkgDir, 'approval.pdf');
@@ -527,51 +530,56 @@ async function _generatePDF(data) {
         const stream = fs.createWriteStream(pdfPath);
         doc.pipe(stream);
 
-        // Header — brand bar
-        doc.rect(0, 0, doc.page.width, 80).fill('#1e3a5f');
-        doc.fillColor('#ffffff').fontSize(28).font('Helvetica-Bold');
-        doc.text('G.PACK', 50, 25);
-        doc.fontSize(12).font('Helvetica');
-        doc.text('Digital Design Approval Certificate', 50, 55);
-
-        // Certificate number
-        doc.fillColor('#1e3a5f').fontSize(16).font('Helvetica-Bold');
-        doc.text(`Certificate: ${data.certificate_number}`, 50, 110);
-
-        // Info table
-        doc.font('Helvetica').fontSize(11).fillColor('#475569');
-        let y = 150;
-        const rows = [
-            ['Order #', `#${data.order_number}`],
-            ['Client', data.client_name || '—'],
-            ['Product', data.product_name || '—'],
-            ['Size', data.size_name || '—'],
-            ['Signer', data.signer_name || '—'],
-            ['Date', new Date(data.approved_at).toLocaleString('en-GB')],
-            ['Verify URL', data.verifyUrl],
-        ];
-        for (const [label, value] of rows) {
-            doc.fillColor('#94a3b8').text(label, 50, y);
-            doc.fillColor('#1e293b').font('Helvetica-Bold').text(value, 200, y);
-            doc.font('Helvetica');
-            y += 25;
+        // ── Page 1: Certificate Image (has all Arabic content rendered by canvas) ──
+        if (data.certImagePath && fs.existsSync(data.certImagePath)) {
+            doc.image(data.certImagePath, {
+                fit: [doc.page.width - 100, doc.page.height - 120],
+                align: 'center',
+                valign: 'top',
+            });
+        } else {
+            // Fallback: text-only header if certificate image missing
+            doc.rect(0, 0, doc.page.width, 80).fill('#1e3a5f');
+            doc.fillColor('#ffffff').fontSize(28).font('Helvetica-Bold');
+            doc.text('G.PACK', 50, 25);
+            doc.fontSize(12).font('Helvetica');
+            doc.text('Digital Design Approval Certificate', 50, 55);
+            doc.fillColor('#1e3a5f').fontSize(16).font('Helvetica-Bold');
+            doc.text(`Certificate: ${data.certificate_number}`, 50, 110);
         }
 
-        // Declaration
-        y += 20;
-        doc.fillColor('#1e3a5f').font('Helvetica-Bold').fontSize(12).text('Declaration', 50, y);
-        y += 20;
-        doc.fillColor('#475569').font('Helvetica').fontSize(10).text(data.declaration_text || '', 50, y, { width: 500 });
-        y += 60;
+        // ── Page 2: Design Preview + Signature + QR ──
+        doc.addPage();
+
+        // Header on page 2
+        doc.rect(0, 0, doc.page.width, 60).fill('#1e3a5f');
+        doc.fillColor('#ffffff').fontSize(20).font('Helvetica-Bold');
+        doc.text('G.PACK — Design & Signature', 50, 20);
+
+        let y = 80;
+
+        // Design preview image
+        if (data.designPreviewPath && fs.existsSync(data.designPreviewPath)) {
+            doc.fillColor('#1e3a5f').fontSize(12).font('Helvetica-Bold').text('Design Preview', 50, y);
+            y += 20;
+            try {
+                doc.image(data.designPreviewPath, 50, y, {
+                    fit: [doc.page.width - 100, 350],
+                    align: 'center',
+                });
+                y += 360;
+            } catch { }
+        }
 
         // Signature
         if (data.signature_path) {
             try {
                 const sigSrc = path.join(UPLOAD_BASE, data.signature_path.replace('/uploads/designs/', ''));
                 if (fs.existsSync(sigSrc)) {
-                    doc.text('Signature:', 50, y);
-                    doc.image(sigSrc, 200, y - 10, { fit: [200, 80] });
-                    y += 90;
+                    doc.fillColor('#1e3a5f').fontSize(12).font('Helvetica-Bold').text('Client Signature', 50, y);
+                    y += 20;
+                    doc.image(sigSrc, 50, y, { fit: [300, 120] });
+                    y += 140;
                 }
             } catch { }
         }
@@ -579,10 +587,14 @@ async function _generatePDF(data) {
         // QR Code
         try {
             if (fs.existsSync(data.qrPath)) {
-                doc.image(data.qrPath, 50, y, { fit: [120, 120] });
-                doc.fillColor('#64748b').fontSize(9).text('Scan to verify', 50, y + 125);
+                doc.image(data.qrPath, doc.page.width - 170, y, { fit: [120, 120] });
+                doc.fillColor('#64748b').fontSize(9).font('Helvetica').text('Scan to verify', doc.page.width - 170, y + 125);
             }
         } catch { }
+
+        // Certificate number + verify URL (English-safe)
+        doc.fillColor('#94a3b8').fontSize(9).font('Helvetica').text(`Certificate: ${data.certificate_number}`, 50, y);
+        doc.fillColor('#94a3b8').text(`Verify: ${data.verifyUrl}`, 50, y + 15);
 
         // Footer
         doc.fillColor('#cbd5e1').fontSize(8).text(

@@ -1123,14 +1123,15 @@ router.get('/verify/:certificateNumber', async (req, res) => {
             `SELECT da.id, da.item_id, da.certificate_number, da.client_name, da.order_number,
                     da.signer_name, da.approved_at, da.client_ip,
                     da.declaration_text, da.signature_format,
-                    da.verification_hash,
+                    da.verification_hash, da.signature_path,
                     da.approval_image_path, da.approval_pdf_path,
                     da.certificate_sha256, da.pdf_sha256, da.signature_sha256,
                     da.package_manifest, da.manifest_sha256,
                     da.package_state, da.design_snapshot_files,
                     da.client_timezone, da.client_language, da.client_viewport,
                     da.client_referrer, da.client_device_fingerprint,
-                    p.name AS product_name, pv.size_name AS size_name
+                    p.name AS product_name, pv.size_name AS size_name,
+                    oi.design_files
              FROM design_approvals da
              LEFT JOIN order_items oi ON oi.id = da.item_id
              LEFT JOIN product_variants pv ON pv.id = oi.variant_id
@@ -1182,8 +1183,10 @@ router.get('/verify/:certificateNumber', async (req, res) => {
             files: {
                 certificate_url: row.approval_image_path || null,
                 pdf_url: row.approval_pdf_path || null,
+                signature_url: row.signature_path || null,
             },
             design_snapshot_files: row.design_snapshot_files || null,
+            design_files: row.design_files || null,
         });
     } catch (err) {
         console.error('[PublicDesign] Verify error:', err.message);
