@@ -52,35 +52,60 @@ async function runMigrations() {
             }
 
             console.log(`[Migrate] Applying: ${file}`);
-            const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
+            const rawSql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
 
-            await client.query('BEGIN');
-            try {
-                await client.query(sql);
-                await client.query(
-                    'INSERT INTO schema_migrations (filename) VALUES ($1)',
-                    [file]
-                );
-                await client.query('COMMIT');
-                console.log(`[Migrate] Done: ${file}`);
-            } catch (err) {
-                await client.query('ROLLBACK');
-                // If error is "already exists" (42P07 table, 42710 column, bj4vyu constraint, etc.)
-                // log warning, mark as applied, and continue so server can start.
-                const alreadyExists = /already exists/i.test(err.message);
-                const duplicate = /duplicate/i.test(err.message);
-                if (alreadyExists || duplicate) {
-                    console.warn(`[Migrate] Warning: ${file} — ${err.message} (recording as applied)`);
-                    try {
-                        await client.query(
-                            'INSERT INTO schema_migrations (filename) VALUES ($1) ON CONFLICT DO NOTHING',
-                            [file]
-                        );
-                    } catch (e) { /* ignore */ }
-                } else {
-                    console.error(`[Migrate] Failed: ${file} — ${err.message}`);
-                    throw err;
+            // Split SQL into individual statements so that one failure doesn't
+            // rollback the entire migration (e.g. "column already exists" on one
+            // ALTER shouldn't prevent the rest of the ALTERs from running).
+            const statements = rawSql
+                .split(/;[ \t]*\r?\n/)
+                .map(s => s.trim())
+                .filter(s => s.length > 0 && !s.startsWith('--'));
+
+            let skippedAny = false;
+            let failedAny = false;
+
+            for (const stmt of statements) {
+                try {
+                    await client.query(stmt);
+                } catch (err) {
+                    const msg = err.message || '';
+                    const alreadyExists = /already exists/i.test(msg);
+                    const duplicateColumn = /column .* already exists/i.test(msg);
+                    const duplicateObject = /duplicate/i.test(msg);
+                    const notFound = /does not exist/i.test(msg);
+
+                    if (alreadyExists || duplicateColumn || duplicateObject) {
+                        // Benign — object/column already exists, skip
+                        skippedAny = true;
+                        continue;
+                    }
+                    if (notFound && /DROP CONSTRAINT|DROP INDEX|DROP TRIGGER/i.test(stmt)) {
+                        // Benign — trying to drop something that doesn't exist
+                        skippedAny = true;
+                        continue;
+                    }
+                    // Real error — log and abort
+                    console.error(`[Migrate] Failed statement in ${file}: ${msg}`);
+                    console.error(`[Migrate] Statement: ${stmt.substring(0, 200)}...`);
+                    failedAny = true;
+                    break;
                 }
+            }
+
+            if (failedAny) {
+                throw new Error(`Migration ${file} failed — see logs above`);
+            }
+
+            // Mark as applied
+            await client.query(
+                'INSERT INTO schema_migrations (filename) VALUES ($1) ON CONFLICT DO NOTHING',
+                [file]
+            );
+            if (skippedAny) {
+                console.warn(`[Migrate] Done with warnings: ${file} (some statements skipped)`);
+            } else {
+                console.log(`[Migrate] Done: ${file}`);
             }
         }
 
