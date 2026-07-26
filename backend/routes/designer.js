@@ -55,6 +55,7 @@ const DESIGN_WORKFLOW = {
     client_revision: {
         allowed: [
             { to: 'in_progress', roles: ['designer', 'admin', 'super_admin', 'manager'] },
+            { to: 'manager_review', roles: ['designer', 'admin', 'super_admin', 'manager'], requires: 'files_or_notes' },
         ],
     },
     approved: {
