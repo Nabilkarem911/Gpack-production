@@ -1424,6 +1424,35 @@ router.get('/approval/:orderId', authorize(['admin', 'manager', 'super_admin']),
     }
 });
 
+// ── GET /api/designer/approval/:orderId/pdf ─────────────────────────────────
+// Securely download the approval PDF (nginx blocks direct access to /uploads/designs/approvals/)
+router.get('/approval/:orderId/pdf', authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
+    const { orderId } = req.params;
+    try {
+        const result = await db.query(
+            `SELECT approval_pdf_path FROM design_approvals WHERE order_id = $1`,
+            [orderId]
+        );
+        if (result.rows.length === 0 || !result.rows[0].approval_pdf_path) {
+            return res.status(404).json({ error: 'لا يوجد ملف اعتماد لهذا الطلب' });
+        }
+
+        const pdfPath = result.rows[0].approval_pdf_path;
+        const fullPath = path.join(__dirname, '..', pdfPath);
+
+        if (!fs.existsSync(fullPath)) {
+            return res.status(404).json({ error: 'الملف غير موجود على الخادم' });
+        }
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="approval-${orderId}.pdf"`);
+        fs.createReadStream(fullPath).pipe(res);
+    } catch (err) {
+        console.error('[Designer] Approval PDF download error:', err.message);
+        res.status(500).json({ error: 'فشل في تحميل ملف الاعتماد' });
+    }
+});
+
 // ── GET /api/designer/activity-log/:orderId ──────────────────────────────────
 router.get('/activity-log/:orderId', authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
     const { orderId } = req.params;
