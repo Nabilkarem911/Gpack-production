@@ -11,6 +11,9 @@ const fs = require('fs');
 const rateLimit = require('express-rate-limit');
 const db = require('./db');
 const { authenticate } = require('./middleware/authMiddleware');
+const authorize = require('./middleware/authorize');
+const log = require('./utils/logger');
+const metrics = require('./utils/metrics');
 
 // =============================================================================
 // MIGRATION RUNNER
@@ -188,9 +191,23 @@ app.get('/api/health', async (req, res) => {
 });
 
 // =============================================================================
+// Metrics Endpoint (Prometheus-style)
+// Protected by authenticate + authorize to prevent public access.
+// =============================================================================
+app.get('/api/metrics', authenticate, authorize(['super_admin', 'manager']), async (req, res) => {
+  try {
+    const text = await metrics.collectMetrics();
+    res.set('Content-Type', 'text/plain; version=0.0.4');
+    res.send(text);
+  } catch (err) {
+    log.error('metrics_error', { error: err.message });
+    res.status(500).send('# Error collecting metrics');
+  }
+});
+
+// =============================================================================
 // Protected Migration Endpoint (super_admin only)
 // =============================================================================
-const authorize = require('./middleware/authorize');
 app.get('/api/migrate-tax-rate', authenticate, authorize(['super_admin']), async (req, res) => {
     try {
         await db.query(`

@@ -19,6 +19,7 @@ const PDFDocument = require('pdfkit');
 const archiver = require('archiver');
 const NotificationService = require('./notification-service');
 const WhatsApp = require('./whatsapp-service');
+const log = require('../utils/logger');
 
 const UPLOAD_BASE = path.join(__dirname, '../uploads/designs');
 const db = require('../db');
@@ -29,7 +30,7 @@ async function processApproval(approvalData) {
             signer_name, certificate_number, verification_hash,
             signature_path, declaration_text, approved_at, client_ip } = approvalData;
 
-    console.log(`[ApprovalService] Processing approval ${certificate_number} for item ${item_id}`);
+    log.info('approval_processing_start', { item_id, certificate_number, order_number, correlation_id: approvalData.correlation_id });
 
     // Create approval package directory
     const approvedDate = new Date(approved_at);
@@ -133,7 +134,7 @@ async function processApproval(approvalData) {
                 console.error('[ApprovalService] Snapshot DB update error:', e.message);
             }
         }
-        await _updatePackageState(item_id, 'snapshot_done');
+        log.info('snapshot_done', { item_id, certificate_number, files: snapshotFiles.length });
 
         // ── Step 2: QR Code ──
         const qrBuffer = await QRCode.toBuffer(verifyUrl, {
@@ -144,6 +145,7 @@ async function processApproval(approvalData) {
         const qrPath = path.join(pkgDir, 'qr.png');
         fs.writeFileSync(qrPath, qrBuffer);
         await _updatePackageState(item_id, 'qr_done');
+        log.info('qr_done', { item_id, certificate_number });
 
         // ── Step 3: Certificate Image ──
         const certImagePath = await _generateCertificateImage({
@@ -152,6 +154,7 @@ async function processApproval(approvalData) {
             signature_path, qrBuffer, verifyUrl,
         });
         await _updatePackageState(item_id, 'certificate_done');
+        log.info('certificate_done', { item_id, certificate_number });
 
         // ── Step 4: PDF ──
         const pdfPath = await _generatePDF({
@@ -160,6 +163,7 @@ async function processApproval(approvalData) {
             signature_path, qrPath, verifyUrl, declaration_text,
         });
         await _updatePackageState(item_id, 'pdf_done');
+        log.info('pdf_done', { item_id, certificate_number });
 
         // ── Step 5: Copy signature to package + compute hash ──
         let sigPkgPath = null;
@@ -311,6 +315,7 @@ async function processApproval(approvalData) {
         const auditPath = path.join(pkgDir, 'audit.json');
         fs.writeFileSync(auditPath, JSON.stringify(auditBundle, null, 2));
         await _updatePackageState(item_id, 'audit_done');
+        log.info('audit_done', { item_id, certificate_number });
 
         // 8c. Generate signed manifest.json (THE reference document)
         // The manifest IS the source of truth — not just a collection of hashes.
@@ -338,8 +343,7 @@ async function processApproval(approvalData) {
             console.error('[ApprovalService] Manifest DB update error:', e.message);
         }
 
-        // Write manifest.sig (signature file alongside manifest.json)
-        fs.writeFileSync(path.join(pkgDir, 'manifest.sig'), manifestSignature);
+        log.info('manifest_signed', { item_id, certificate_number, manifest_sha256: manifestHash });
 
         // 9. Create ZIP archive of the approval package
         const zipPath = path.join(pkgDir, '..', `item-${item_id}.zip`);
@@ -354,7 +358,7 @@ async function processApproval(approvalData) {
                 archive.directory(pkgDir, false);
                 archive.finalize();
             });
-            console.log(`[ApprovalService] ZIP created: ${zipPath}`);
+            log.info('zip_created', { item_id, certificate_number, zip_path: zipPath });
         } catch (e) {
             console.error('[ApprovalService] ZIP creation skipped:', e.message);
         }
@@ -364,9 +368,9 @@ async function processApproval(approvalData) {
         const integrity = await verifyPackageIntegrity(item_id);
         if (integrity.verified) {
             await _updatePackageState(item_id, 'ready');
-            console.log(`[ApprovalService] Package verified — integrity OK`);
+            log.info('package_verified', { item_id, certificate_number });
         } else {
-            console.error(`[ApprovalService] Package integrity check FAILED:`, integrity.mismatches);
+            log.error('package_verify_failed', { item_id, certificate_number, mismatches: integrity.mismatches });
             await _updatePackageState(item_id, 'verify_failed');
         }
 
@@ -382,9 +386,9 @@ async function processApproval(approvalData) {
             console.warn('[ApprovalService] chmod 444 skipped:', e.message);
         }
 
-        console.log(`[ApprovalService] Approval ${certificate_number} package generated successfully`);
+        log.info('approval_package_complete', { item_id, certificate_number, order_number, correlation_id: approvalData.correlation_id });
     } catch (err) {
-        console.error('[ApprovalService] Processing error:', err.message);
+        log.error('approval_processing_error', { item_id, certificate_number, error: err.message, stack: err.stack });
     }
 }
 

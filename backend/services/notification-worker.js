@@ -19,6 +19,8 @@ const WhatsApp = require('./whatsapp-service');
 const NotificationService = require('./notification-service');
 const { processApproval } = require('./approval-service');
 const CircuitBreaker = require('./circuit-breaker');
+const log = require('../utils/logger');
+const metrics = require('../utils/metrics');
 
 const POLL_INTERVAL_MS = 15000; // 15 seconds
 const HEALTH_CHECK_INTERVAL_MS = 60000; // 60 seconds
@@ -299,10 +301,15 @@ async function _processItem(item) {
              WHERE id = $3 AND lease_id = $4`,
             [attemptNum, result?.id || result?.messageId || null, item.id, item.lease_id]
         );
+        metrics.inc('worker_jobs_total');
         console.log(`[NotificationWorker] Sent ${item.message_type} to ${item.recipient_name || item.recipient} (attempt ${attemptNum}, priority: ${item.priority})`);
+        metrics.inc('worker_jobs_success');
+        log.info('notification_sent', { item_id: item.id, message_type: item.message_type, recipient: item.recipient, attempt: attemptNum, correlation_id: item.correlation_id });
 
     } catch (err) {
         console.error(`[NotificationWorker] Failed ${item.message_type} to ${item.recipient} (attempt ${attemptNum}):`, err.message);
+        metrics.inc('worker_jobs_failed');
+        log.error('notification_failed', { item_id: item.id, message_type: item.message_type, recipient: item.recipient, attempt: attemptNum, error: err.message, correlation_id: item.correlation_id });
 
         const maxAttempts = 5;
 
@@ -339,6 +346,8 @@ async function _processItem(item) {
             );
 
             console.error(`[NotificationWorker] Moved ${item.id} to Dead Letter Queue (failed after ${attemptNum} attempts)`);
+            metrics.inc('worker_jobs_dlq');
+            log.error('notification_dlq', { item_id: item.id, message_type: item.message_type, attempts: attemptNum, correlation_id: item.correlation_id });
 
             // Notify ERP managers about the failure
             try {
@@ -370,6 +379,8 @@ async function _processItem(item) {
                  WHERE id = $5 AND lease_id = $6`,
                 [attemptNum, err.message, nextAttempt, retryEntry, item.id, item.lease_id]
             );
+            metrics.inc('worker_jobs_retried');
+            log.warn('notification_retry', { item_id: item.id, attempt: attemptNum, next_attempt_at: nextAttempt.toISOString(), correlation_id: item.correlation_id });
 
             console.log(`[NotificationWorker] Retry scheduled for ${item.recipient} in ${backoffMin}m (attempt ${attemptNum + 1}/${maxAttempts})`);
         }
