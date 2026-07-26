@@ -16,6 +16,9 @@ const crypto = require('crypto');
 const QRCode = require('qrcode');
 const { createCanvas, loadImage } = require('@napi-rs/canvas');
 const PDFDocument = require('pdfkit');
+const archiver = require('archiver');
+const NotificationService = require('./notification-service');
+const WhatsApp = require('./whatsapp-service');
 
 const UPLOAD_BASE = path.join(__dirname, '../uploads/designs');
 const db = require('../db');
@@ -38,6 +41,36 @@ async function processApproval(approvalData) {
 
     const baseUrl = process.env.BASE_URL || 'https://erp.gpacksa.com';
     const verifyUrl = `${baseUrl}/verify/${certificate_number}`;
+
+    // Fetch client phone, designer phone, and admin chat ID from DB
+    let client_phone = null;
+    let designer_phone = null;
+    let designer_name = null;
+    let admin_chat_id = process.env.WAHA_ADMIN_CHAT_ID || null;
+    let design_files = null;
+
+    try {
+        const infoRes = await db.query(
+            `SELECT c.phone AS client_phone,
+                    u.phone AS designer_phone,
+                    u.name AS designer_name,
+                    oi.design_files
+             FROM order_items oi
+             JOIN orders o ON o.id = oi.order_id
+             JOIN clients c ON c.id = o.client_id
+             LEFT JOIN users u ON u.id = oi.designer_id
+             WHERE oi.id = $1`,
+            [item_id]
+        );
+        if (infoRes.rows.length > 0) {
+            client_phone = infoRes.rows[0].client_phone;
+            designer_phone = infoRes.rows[0].designer_phone;
+            designer_name = infoRes.rows[0].designer_name;
+            design_files = infoRes.rows[0].design_files;
+        }
+    } catch (e) {
+        console.error('[ApprovalService] Info fetch error:', e.message);
+    }
 
     try {
         // 1. Generate QR Code
@@ -71,6 +104,40 @@ async function processApproval(approvalData) {
             try { fs.copyFileSync(sigSrc, sigPkgPath); } catch { }
         }
 
+        // 4b. Copy design preview (first image file) to package
+        let designPreviewPath = null;
+        if (design_files) {
+            let files = design_files;
+            if (typeof files === 'string') { try { files = JSON.parse(files); } catch { files = []; } }
+            if (Array.isArray(files)) {
+                const firstImage = files.find(f => {
+                    const ext = (f.filename || f.name || f.path || '').split('.').pop().toLowerCase();
+                    return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].includes(ext);
+                });
+                if (firstImage) {
+                    const srcPath = firstImage.path || firstImage.url || firstImage;
+                    const fullSrc = srcPath.startsWith('/') ? path.join(__dirname, '..', srcPath) : path.join(UPLOAD_BASE, srcPath);
+                    try {
+                        if (fs.existsSync(fullSrc)) {
+                            designPreviewPath = path.join(pkgDir, 'design-preview.jpg');
+                            // If it's already jpg, copy; otherwise load and re-save as jpg
+                            const ext = fullSrc.split('.').pop().toLowerCase();
+                            if (ext === 'jpg' || ext === 'jpeg') {
+                                fs.copyFileSync(fullSrc, designPreviewPath);
+                            } else {
+                                const img = await loadImage(fullSrc);
+                                const c = createCanvas(img.width, img.height);
+                                c.getContext('2d').drawImage(img, 0, 0);
+                                fs.writeFileSync(designPreviewPath, c.toBuffer('image/jpeg', { quality: 0.9 }));
+                            }
+                        }
+                    } catch (e) {
+                        console.error('[ApprovalService] Design preview error:', e.message);
+                    }
+                }
+            }
+        }
+
         // 5. Generate metadata.json
         const metadata = {
             certificate_number,
@@ -88,6 +155,7 @@ async function processApproval(approvalData) {
                 certificate_image: 'certificate.jpg',
                 approval_pdf: 'approval.pdf',
                 signature: sigPkgPath ? 'signature.png' : null,
+                design_preview: designPreviewPath ? 'design-preview.jpg' : null,
                 qr: 'qr.png',
             },
         };
@@ -141,11 +209,39 @@ async function processApproval(approvalData) {
             );
         } catch { }
 
-        // 9. Send WhatsApp notification (if WAHA configured)
-        await _sendWhatsAppNotification({
-            certificate_number, client_name, product_name, order_number,
-            signer_name, approved_at: approvedDate,
-            pdfPath, certImagePath, verifyUrl,
+        // 9. Create ZIP archive of the approval package
+        const zipPath = path.join(pkgDir, '..', `item-${item_id}.zip`);
+        try {
+            await new Promise((resolve, reject) => {
+                const output = fs.createWriteStream(zipPath);
+                const archive = archiver('zip', { zlib: { level: 9 } });
+                output.on('close', resolve);
+                output.on('error', reject);
+                archive.on('error', reject);
+                archive.pipe(output);
+                archive.directory(pkgDir, false);
+                archive.finalize();
+            });
+            console.log(`[ApprovalService] ZIP created: ${zipPath}`);
+        } catch (e) {
+            console.error('[ApprovalService] ZIP creation skipped:', e.message);
+        }
+
+        // 10. Enqueue WhatsApp notifications via NotificationService (decoupled)
+        const certAbsPath = path.join(UPLOAD_BASE, 'approvals', `${year}`, `${month}`, `${day}`, `item-${item_id}`, 'certificate.jpg');
+        const pdfAbsPath = path.join(UPLOAD_BASE, 'approvals', `${year}`, `${month}`, `${day}`, `item-${item_id}`, 'approval.pdf');
+
+        await NotificationService.notifyDesignApproved({
+            item_id, order_id, order_number,
+            client_name, client_phone,
+            product_name, size_name,
+            signer_name, certificate_number,
+            approved_at: approvedDate,
+            verify_url: verifyUrl,
+            pdf_path: pdfAbsPath,
+            cert_image_path: certAbsPath,
+            designer_phone, designer_name,
+            admin_chat_id,
         });
 
         console.log(`[ApprovalService] Approval ${certificate_number} processed successfully`);
@@ -358,88 +454,6 @@ async function _generatePDF(data) {
     });
 }
 
-// ── Send WhatsApp notification via WAHA ──────────────────────────────────────
-async function _sendWhatsAppNotification(data) {
-    const wahaUrl = process.env.WAHA_URL || '';
-    const wahaSession = process.env.WAHA_SESSION || 'default';
-    const wahaChatId = process.env.WAHA_CHAT_ID || ''; // Group or number to notify
-
-    if (!wahaUrl || !wahaChatId) {
-        console.log('[ApprovalService] WAHA not configured, skipping WhatsApp notification');
-        return;
-    }
-
-    const message = `✅ تم اعتماد التصميم\n\n` +
-        `العميل: ${data.client_name}\n` +
-        `العرض: #${data.order_number}\n` +
-        `المنتج: ${data.product_name || '—'}\n` +
-        `وقت الاعتماد: ${new Date(data.approved_at).toLocaleString('ar-SA')}\n` +
-        `رقم الاعتماد: ${data.certificate_number}\n` +
-        `الموقّع: ${data.signer_name || '—'}\n\n` +
-        `G.PACK — حلول التعبئة والتغليف`;
-
-    try {
-        // Send text message
-        const textRes = await fetch(`${wahaUrl}/api/sendText`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                session: wahaSession,
-                chatId: wahaChatId,
-                text: message,
-            }),
-        });
-
-        if (!textRes.ok) {
-            console.error('[ApprovalService] WAHA text send failed:', textRes.status);
-        }
-
-        // Send certificate image
-        if (data.certImagePath && fs.existsSync(data.certImagePath)) {
-            const imgBuffer = fs.readFileSync(data.certImagePath);
-            const imgBase64 = imgBuffer.toString('base64');
-
-            await fetch(`${wahaUrl}/api/sendImage`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    session: wahaSession,
-                    chatId: wahaChatId,
-                    file: {
-                        mimetype: 'image/jpeg',
-                        filename: `certificate-${data.certificate_number}.jpg`,
-                        data: imgBase64,
-                    },
-                    caption: `شهادة اعتماد — ${data.certificate_number}`,
-                }),
-            });
-        }
-
-        // Send PDF
-        if (data.pdfPath && fs.existsSync(data.pdfPath)) {
-            const pdfBuffer = fs.readFileSync(data.pdfPath);
-            const pdfBase64 = pdfBuffer.toString('base64');
-
-            await fetch(`${wahaUrl}/api/sendFile`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    session: wahaSession,
-                    chatId: wahaChatId,
-                    file: {
-                        mimetype: 'application/pdf',
-                        filename: `approval-${data.certificate_number}.pdf`,
-                        data: pdfBase64,
-                    },
-                    caption: `اعتماد التصميم — ${data.certificate_number}`,
-                }),
-            });
-        }
-
-        console.log('[ApprovalService] WhatsApp notification sent');
-    } catch (err) {
-        console.error('[ApprovalService] WhatsApp error:', err.message);
-    }
-}
+// ── _sendWhatsAppNotification removed — now handled by NotificationService ──
 
 module.exports = { processApproval };

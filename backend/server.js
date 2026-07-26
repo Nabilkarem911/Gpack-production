@@ -250,6 +250,7 @@ _mountRoute('/tasks',               authenticate, require('./routes/tasks'));
 _mountRoute('/forecast',            authenticate, require('./routes/forecast'));
 _mountRoute('/ai-assistant',        authenticate, require('./routes/ai-assistant'));
 _mountRoute('/designer',            authenticate, require('./routes/designer'));
+_mountRoute('/notifications',       authenticate, require('./routes/notifications'));
 _mountRoute('/public',              publicLimiter, require('./routes/public-statement')); // No auth required
 _mountRoute('/public/invoice',      publicLimiter, require('./routes/public-invoice'));   // No auth required
 _mountRoute('/public/design',       publicLimiter, require('./routes/public-design'));    // No auth required
@@ -300,11 +301,17 @@ runMigrations()
             console.log(`[Server] G.PACK 2.0 Backend running on port ${PORT}`);
             console.log(`[Server] Environment: ${process.env.NODE_ENV || 'development'}`);
             console.log(`[Server] Health check: http://localhost:${PORT}/api/health`);
+
+            // Start Notification Worker (processes WhatsApp/Email queue)
+            const notificationWorker = require('./services/notification-worker');
+            notificationWorker.start();
         });
 
         // Graceful shutdown — close HTTP server then drain DB pool
         const shutdown = async (signal) => {
             console.log(`[Server] ${signal} received, shutting down gracefully...`);
+            // Stop notification worker
+            require('./services/notification-worker').stop();
             server.close(async () => {
                 try {
                     await db.pool.end();

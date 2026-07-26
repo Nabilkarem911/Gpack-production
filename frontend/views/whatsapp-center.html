@@ -1,0 +1,139 @@
+<!-- =============================================================================
+     G.PACK 2.0 — WhatsApp Center
+     Manage WAHA session, view queue, retry failed messages, see stats.
+     Logic: /js/views/whatsapp-center.js
+============================================================================= -->
+<div class="p-4 lg:p-6 max-w-7xl mx-auto">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-800">
+                <i class="fa-brands fa-whatsapp text-emerald-600 ml-2"></i>
+                مركز واتساب
+            </h1>
+            <p class="text-sm text-slate-500 mt-1">إدارة جلسة WAHA وقائمة انتظار الإشعارات</p>
+        </div>
+        <button id="wa-refresh-btn" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium transition-colors">
+            <i class="fa-solid fa-rotate ml-1"></i>تحديث
+        </button>
+    </div>
+
+    <!-- Session Status Card -->
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-6 mb-6">
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-lg font-bold text-slate-800">حالة الجلسة</h2>
+            <button id="wa-start-session-btn" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-medium transition-colors hidden">
+                <i class="fa-solid fa-play ml-1"></i>بدء الجلسة
+            </button>
+        </div>
+        <div id="wa-session-status" class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div class="text-center">
+                <p class="text-xs text-slate-400 mb-1">الحالة</p>
+                <p id="wa-status-badge" class="text-sm font-bold">—</p>
+            </div>
+            <div class="text-center">
+                <p class="text-xs text-slate-400 mb-1">المزود</p>
+                <p id="wa-provider" class="text-sm font-bold">—</p>
+            </div>
+            <div class="text-center">
+                <p class="text-xs text-slate-400 mb-1">الجلسة</p>
+                <p id="wa-session-name" class="text-sm font-bold">—</p>
+            </div>
+            <div class="text-center">
+                <p class="text-xs text-slate-400 mb-1">الرابط</p>
+                <p id="wa-url" class="text-sm font-bold truncate">—</p>
+            </div>
+        </div>
+        <div id="wa-error-msg" class="mt-4 hidden">
+            <div class="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-600">
+                <i class="fa-solid fa-triangle-exclamation ml-1"></i><span id="wa-error-text"></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-amber-50 rounded-lg flex items-center justify-center">
+                    <i class="fa-solid fa-clock text-amber-500"></i>
+                </div>
+                <div>
+                    <p class="text-xs text-slate-400">في الانتظار</p>
+                    <p id="wa-queue-pending" class="text-xl font-bold text-slate-800">0</p>
+                </div>
+            </div>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-emerald-50 rounded-lg flex items-center justify-center">
+                    <i class="fa-solid fa-check text-emerald-500"></i>
+                </div>
+                <div>
+                    <p class="text-xs text-slate-400">مرسلة اليوم</p>
+                    <p id="wa-queue-sent-today" class="text-xl font-bold text-slate-800">0</p>
+                </div>
+            </div>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-red-50 rounded-lg flex items-center justify-center">
+                    <i class="fa-solid fa-xmark text-red-500"></i>
+                </div>
+                <div>
+                    <p class="text-xs text-slate-400">فاشلة اليوم</p>
+                    <p id="wa-queue-failed-today" class="text-xl font-bold text-slate-800">0</p>
+                </div>
+            </div>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center">
+                    <i class="fa-solid fa-list text-slate-500"></i>
+                </div>
+                <div>
+                    <p class="text-xs text-slate-400">الإجمالي</p>
+                    <p id="wa-queue-total" class="text-xl font-bold text-slate-800">0</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Queue Table -->
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+            <h2 class="font-bold text-slate-800">قائمة الانتظار</h2>
+            <div class="flex items-center gap-2">
+                <select id="wa-queue-filter" class="text-xs border border-slate-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-brand-500">
+                    <option value="all">الكل</option>
+                    <option value="pending">في الانتظار</option>
+                    <option value="processing">قيد المعالجة</option>
+                    <option value="sent">مرسلة</option>
+                    <option value="failed">فاشلة</option>
+                </select>
+            </div>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-slate-50 text-slate-500 text-xs">
+                    <tr>
+                        <th class="text-right px-4 py-3 font-medium">النوع</th>
+                        <th class="text-right px-4 py-3 font-medium">المستلم</th>
+                        <th class="text-right px-4 py-3 font-medium">الحالة</th>
+                        <th class="text-right px-4 py-3 font-medium">المحاولات</th>
+                        <th class="text-right px-4 py-3 font-medium">الوقت</th>
+                        <th class="text-right px-4 py-3 font-medium">الخطأ</th>
+                        <th class="text-right px-4 py-3 font-medium">إجراءات</th>
+                    </tr>
+                </thead>
+                <tbody id="wa-queue-body" class="divide-y divide-slate-100">
+                    <tr><td colspan="7" class="text-center py-8 text-slate-400">جاري التحميل...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Load whatsapp-center.js -->
+<script src="/js/views/whatsapp-center.js?v=20260726"></script>

@@ -4,6 +4,7 @@
 
     let _alerts = [];
     let _readAlerts = [];
+    let _dbNotifications = [];
     let _isOpen = false;
     let _pollTimer = null;
     const STORAGE_KEY = 'gpack_notif_read';
@@ -91,9 +92,21 @@
 
     async function loadAlerts() {
         try {
+            // Fetch dashboard alerts (legacy)
             const res = await window.apiFetch('/api/dashboard/alerts');
             const all = Array.isArray(res) ? res : (res.data || []);
             _alerts = all.filter(a => !_isRead(a));
+
+            // Fetch DB-backed notifications (new system)
+            try {
+                const notifRes = await window.apiFetch('/api/notifications?limit=20');
+                if (notifRes && notifRes.notifications) {
+                    _dbNotifications = notifRes.notifications;
+                }
+            } catch (e2) {
+                // Notifications endpoint may not be available yet
+            }
+
             _render();
         } catch (e) {
             console.error('[Notifications] Failed to load alerts:', e);
@@ -107,7 +120,9 @@
         const badge = _el('notif-badge');
         if (!body) return;
 
-        const unreadCount = _alerts.length;
+        // Count unread from both systems
+        const dbUnread = _dbNotifications.filter(n => !n.is_read).length;
+        const unreadCount = _alerts.length + dbUnread;
 
         if (badge) {
             if (unreadCount > 0) {
@@ -120,19 +135,63 @@
 
         let html = '';
 
-        if (unreadCount > 0) {
+        // Render DB-backed notifications first (newest first)
+        if (_dbNotifications.length > 0) {
+            html += _dbNotifications.slice(0, 15).map(n => _renderDbNotification(n)).join('');
+        }
+
+        // Then legacy alerts
+        if (_alerts.length > 0) {
+            if (_dbNotifications.length > 0) {
+                html += '<div class="px-4 py-2 border-t border-slate-100 bg-slate-50/50"><span class="text-xs font-bold text-slate-400">تنبيهات النظام</span></div>';
+            }
             html += _alerts.map(a => _renderItem(a, false)).join('');
-        } else {
-            html += '<div class="notif-empty"><i class="fa-solid fa-check-circle text-emerald-400 text-2xl mb-2 block"></i>لا توجد إشعارات جديدة</div>';
+        }
+
+        if (unreadCount === 0 && _readAlerts.length === 0) {
+            html = '<div class="notif-empty"><i class="fa-solid fa-check-circle text-emerald-400 text-2xl mb-2 block"></i>لا توجد إشعارات جديدة</div>';
         }
 
         if (_readAlerts.length > 0) {
             html += '<div class="px-4 py-2 border-t border-slate-100 bg-slate-50/50"><span class="text-xs font-bold text-slate-400">الإشعارات السابقة</span></div>';
-            html += _readAlerts.slice(0, 15).map(r => _renderItem(r, true)).join('');
+            html += _readAlerts.slice(0, 10).map(r => _renderItem(r, true)).join('');
         }
 
         body.innerHTML = html;
     }
+
+    function _renderDbNotification(n) {
+        const icon = n.icon || 'fa-bell';
+        const priorityColor = n.priority === 'high' ? 'border-r-amber-400' : n.priority === 'urgent' ? 'border-r-red-500' : 'border-r-brand-400';
+        const opacity = n.is_read ? 'opacity-50' : '';
+        const onClickAttr = !n.is_read && n.link ? `onclick="window.notifDbClick('${n.id}', '${n.link}')"` : (n.link ? `onclick="window.navigateTo('${n.link.replace(/^\//, '')}')"` : '');
+        const time = new Date(n.created_at).toLocaleString('ar-SA', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
+
+        return `
+            <div class="notif-item ${opacity} ${priorityColor}" ${onClickAttr}>
+                <div class="notif-dot ${n.priority === 'high' ? 'warning' : 'info'}"></div>
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-1.5 mb-0.5">
+                        <i class="fa-solid ${icon} text-xs text-slate-500"></i>
+                        <span class="text-[10px] font-bold text-slate-400 uppercase">${_esc(n.category || '')}</span>
+                        <span class="text-[10px] text-slate-300 mr-auto">${time}</span>
+                    </div>
+                    <p class="text-sm font-bold text-slate-800 truncate">${_esc(n.title || '')}</p>
+                    ${n.body ? `<p class="text-xs text-slate-500 mt-0.5 line-clamp-2">${_esc(n.body)}</p>` : ''}
+                </div>
+            </div>
+        `;
+    }
+
+    window.notifDbClick = async function(id, link) {
+        try {
+            await window.apiFetch(`/api/notifications/${id}/read`, { method: 'PUT' });
+            _dbNotifications = _dbNotifications.map(n => n.id === id ? { ...n, is_read: true } : n);
+            _render();
+        } catch (e) { /* ignore */ }
+        _closePanel();
+        if (link && window.navigateTo) window.navigateTo(link.replace(/^\//, ''));
+    };
 
     function _renderItem(a, isRead) {
         const cfg = TYPE_ICONS[a.type] || { icon: 'fa-bell', color: 'text-slate-400' };
@@ -185,9 +244,14 @@
         if (window.navigateTo) window.navigateTo(route);
     };
 
-    window.notifMarkAllRead = function () {
+    window.notifMarkAllRead = async function () {
         _alerts.forEach(a => _markRead(a));
         _alerts = [];
+        // Mark DB notifications as read too
+        try {
+            await window.apiFetch('/api/notifications/read-all', { method: 'PUT' });
+            _dbNotifications = _dbNotifications.map(n => ({ ...n, is_read: true }));
+        } catch (e) { /* ignore */ }
         _render();
     };
 

@@ -21,7 +21,8 @@ services:
       PORT: 3000
       WAHA_URL: ${WAHA_URL:-}
       WAHA_SESSION: ${WAHA_SESSION:-default}
-      WAHA_CHAT_ID: ${WAHA_CHAT_ID:-}
+      WAHA_ADMIN_CHAT_ID: ${WAHA_ADMIN_CHAT_ID:-}
+      WHATSAPP_PROVIDER: ${WHATSAPP_PROVIDER:-waha}
       BASE_URL: ${BASE_URL:-https://erp.gpacksa.com}
     expose:
       - "3000"

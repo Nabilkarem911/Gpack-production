@@ -79,6 +79,7 @@ var NAV_ITEMS = [ // var allows re-declaration if script loads more than once in
     { section: 'الإدارة' },
     { view: 'users',         label: 'المستخدمون',       icon: 'fa-user-gear',     permission: 'users'    }, // ✅ users.html
     { view: 'tasks',         label: 'المهام',           icon: 'fa-list-check',    permission: 'tasks'     }, // ✅ tasks.html
+    { view: 'whatsapp-center', label: 'مركز واتساب',     icon: 'fa-whatsapp',      permission: 'settings'  }, // ✅ whatsapp-center.html
     { view: 'settings',      label: 'الإعدادات',        icon: 'fa-gear',          permission: 'settings'  }, // ✅ settings.html
 
     // ─────────────────────────────────────────────────────────────────────────────

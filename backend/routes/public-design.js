@@ -16,6 +16,7 @@ const multer = require('multer');
 const PDFDocument = require('pdfkit');
 const { encryptToken, hashToken, hasShareTokenSecret } = require('../utils/crypto');
 const { processApproval } = require('../services/approval-service');
+const NotificationService = require('../services/notification-service');
 
 // =============================================================================
 // File Upload Configuration (client revision files)
@@ -1048,6 +1049,30 @@ router.post('/item/:token/activity', async (req, res) => {
 
         const item = itemRes.rows[0];
         await _logActivity(db, item.order_id, event_type, 'client', clientIp, userAgent, details);
+
+        // Fire in-app notification for key events (non-blocking)
+        const KEY_EVENTS = ['link_opened', 'design_viewed', 'file_downloaded', 'signature_captured', 'item_approved', 'item_revision_requested'];
+        if (KEY_EVENTS.includes(event_type)) {
+            try {
+                const infoRes = await db.query(
+                    `SELECT o.order_number, c.name AS client_name
+                     FROM order_items oi
+                     JOIN orders o ON o.id = oi.order_id
+                     JOIN clients c ON c.id = o.client_id
+                     WHERE oi.id = $1`,
+                    [item.id]
+                );
+                if (infoRes.rows.length > 0) {
+                    NotificationService.notifyClientOpenedLink({
+                        item_id: item.id,
+                        order_id: item.order_id,
+                        order_number: infoRes.rows[0].order_number,
+                        client_name: infoRes.rows[0].client_name,
+                        event_type,
+                    }).catch(() => { });
+                }
+            } catch { }
+        }
 
         res.json({ success: true });
     } catch (err) {
