@@ -583,7 +583,7 @@ router.get('/task/:orderId', async (req, res) => {
                     oi.client_design_status, oi.client_revision_notes, oi.client_approved_at,
                     oi.client_revision_files, oi.design_brief_files, oi.assigned_designer_id,
                     oi.review_token_hash, oi.review_token_expires_at, oi.review_sent_at,
-                    oi.design_client_status, oi.design_version
+                    oi.design_version
              FROM order_items oi
              LEFT JOIN product_variants pv ON pv.id = oi.variant_id
              LEFT JOIN products p ON p.id = pv.product_id
@@ -908,7 +908,7 @@ router.post('/item/:orderId/:itemId/send-to-client', authorize(['admin', 'manage
                 review_token_hash = $1,
                 review_token_expires_at = $2,
                 review_sent_at = NOW(),
-                design_client_status = 'sent'
+                client_design_status = 'sent'
              WHERE id = $3 AND order_id = $4`,
             [tokenHash, expiresAt, itemId, orderId]
         );
