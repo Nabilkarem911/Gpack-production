@@ -24,7 +24,7 @@ const crypto = require('crypto');
 const db = require('../db');
 const authorize = require('../middleware/authorize');
 const { success, error } = require('../utils/response');
-const { encryptToken, hashToken, hasShareTokenSecret, decryptShareToken } = require('../utils/crypto');
+const { encryptToken, hashToken, safeHashToken, hasShareTokenSecret, decryptShareToken } = require('../utils/crypto');
 
 // =============================================================================
 // WORKFLOW DEFINITION — Design State Machine
@@ -894,12 +894,7 @@ router.post('/item/:orderId/:itemId/send-to-client', authorize(['admin', 'manage
         }
 
         const rawToken = crypto.randomBytes(32).toString('hex');
-        let tokenHash;
-        try {
-            tokenHash = hashToken(rawToken);
-        } catch {
-            tokenHash = crypto.createHmac('sha256', rawToken).digest('hex');
-        }
+        const tokenHash = safeHashToken(rawToken);
 
         const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
@@ -1004,12 +999,7 @@ router.post('/item/:orderId/:itemId/resend-review', authorize(['admin', 'manager
         }
 
         const rawToken = crypto.randomBytes(32).toString('hex');
-        let tokenHash;
-        try {
-            tokenHash = hashToken(rawToken);
-        } catch {
-            tokenHash = crypto.createHmac('sha256', rawToken).digest('hex');
-        }
+        const tokenHash = safeHashToken(rawToken);
 
         const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
@@ -1112,14 +1102,14 @@ router.post('/send-to-client/:orderId', authorize(['admin', 'manager', 'super_ad
                 plainToken = storedTok;
             }
             storedToken = storedTok;
-            try { tokenHash = hashToken(plainToken); } catch { tokenHash = crypto.createHmac('sha256', plainToken).digest('hex'); }
+            try { tokenHash = safeHashToken(plainToken); } catch { tokenHash = crypto.createHmac('sha256', plainToken).digest('hex'); }
             shareUrl = `${req.protocol}://${req.get('host')}/public-design.html?token=${plainToken}`;
         } else {
             plainToken = crypto.randomBytes(32).toString('hex');
             storedToken = plainToken;
             try {
                 storedToken = encryptToken(plainToken);
-                tokenHash = hashToken(plainToken);
+                tokenHash = safeHashToken(plainToken);
             } catch (cryptoErr) {
                 console.error('[Designer] Crypto error:', cryptoErr.message);
                 tokenHash = crypto.createHmac('sha256', plainToken).digest('hex');
@@ -1188,7 +1178,7 @@ router.get('/client-view/:token', async (req, res) => {
     try {
         let orderRes = null;
         try {
-            const tokenHash = hashToken(token);
+            const tokenHash = safeHashToken(token);
             orderRes = await db.query(
                 `SELECT o.id, o.order_number, o.design_token_expires_at, o.design_client_status,
                         c.name as client_name
@@ -1272,7 +1262,7 @@ router.post('/client-response/:token', async (req, res) => {
     try {
         let orderRes = null;
         try {
-            const tokenHash = hashToken(token);
+            const tokenHash = safeHashToken(token);
             orderRes = await client.query(
                 `SELECT id, order_number, design_client_status FROM orders WHERE design_share_token_hash = $1`,
                 [tokenHash]

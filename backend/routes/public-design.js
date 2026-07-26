@@ -14,7 +14,7 @@ const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 const PDFDocument = require('pdfkit');
-const { encryptToken, hashToken, hasShareTokenSecret } = require('../utils/crypto');
+const { encryptToken, hashToken, safeHashToken, hasShareTokenSecret } = require('../utils/crypto');
 const { processApproval } = require('../services/approval-service');
 const NotificationService = require('../services/notification-service');
 
@@ -56,7 +56,7 @@ const clientUpload = multer({
 async function _findOrderByToken(client, token) {
     let orderRes = null;
     try {
-        const tokenHash = hashToken(token);
+        const tokenHash = safeHashToken(token);
         orderRes = await client.query(
             `SELECT id, order_number, design_client_status, client_id FROM orders WHERE design_share_token_hash = $1`,
             [tokenHash]
@@ -174,7 +174,7 @@ router.get('/view/:token', async (req, res) => {
     try {
         let orderRes = null;
         try {
-            const tokenHash = hashToken(token);
+            const tokenHash = safeHashToken(token);
             orderRes = await db.query(
                 `SELECT o.id, o.order_number, o.design_token_expires_at, o.design_client_status,
                         o.design_status, c.name as client_name
@@ -648,7 +648,7 @@ router.get('/item/:token', async (req, res) => {
     try {
         let itemRes = null;
         try {
-            const tokenHash = hashToken(token);
+            const tokenHash = safeHashToken(token);
             itemRes = await db.query(
                 `SELECT oi.id, oi.variant_id, oi.quantity, oi.design_files, oi.designer_notes,
                         oi.design_status, oi.client_design_status, oi.client_revision_notes,
@@ -737,7 +737,7 @@ router.post('/item/:token/respond', clientUpload.array('client_files', 10), asyn
     try {
         let itemRes = null;
         try {
-            const tokenHash = hashToken(token);
+            const tokenHash = safeHashToken(token);
             itemRes = await client.query(
                 `SELECT oi.id, oi.design_status, oi.order_id, o.order_number, o.client_id,
                         oi.review_token_used,
@@ -1069,7 +1069,7 @@ router.post('/item/:token/activity', async (req, res) => {
     try {
         let itemRes = null;
         try {
-            const tokenHash = hashToken(token);
+            const tokenHash = safeHashToken(token);
             itemRes = await db.query(
                 `SELECT oi.id, oi.order_id FROM order_items oi WHERE oi.review_token_hash = $1`,
                 [tokenHash]

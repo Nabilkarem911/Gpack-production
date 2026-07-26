@@ -61,6 +61,20 @@ function hashToken(plaintext) {
 }
 
 /**
+ * Safe version of hashToken that never throws.
+ * If SHARE_TOKEN_SECRET is missing or too short, falls back to
+ * HMAC-SHA256 with the token itself as the key (same as generation fallback).
+ * This ensures lookups work even if SECRET was not set when the token was generated.
+ */
+function safeHashToken(plaintext) {
+    try {
+        return hashToken(plaintext);
+    } catch {
+        return crypto.createHmac('sha256', plaintext).digest('hex');
+    }
+}
+
+/**
  * Safely decrypt a share_token field from a DB row.
  * If the value looks encrypted (contains ':') it attempts decryption.
  * On failure or if plaintext, returns the original value.
@@ -79,6 +93,7 @@ module.exports = {
     encryptToken,
     decryptToken,
     hashToken,
+    safeHashToken,
     decryptShareToken,
     hasShareTokenSecret,
 };
