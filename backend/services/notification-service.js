@@ -169,7 +169,7 @@ async function notifyDesignApproved(data) {
             certificate_number,
             product_name: product_name || '—',
             approved_date: dateStr,
-            verify_url: verifyUrl,
+            verify_url: verify_url,
         });
         const clientBody = tpl ? tpl.body :
             `شكراً لكم.\n\nتم تسجيل اعتماد التصميم بنجاح.\n\nرقم الاعتماد\n${certificate_number}\n\nالمنتج\n${product_name || '—'}\n\nتاريخ الاعتماد\n${dateStr}\n\nيمكنكم التحقق من الاعتماد عبر\n${verify_url}`;
