@@ -6,11 +6,15 @@
     <title>التحقق من اعتماد — G.PACK</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Segoe UI', Tahoma, sans-serif; }
+        * { font-family: 'Cairo', sans-serif; }
         .spinner { animation: spin 1s linear infinite; }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        .brand-gradient { background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%); }
+        .brand-gradient { background: linear-gradient(135deg, #7c3aed 0%, #4b0082 100%); }
+        .text-brand-600 { color: #7c3aed; }
+        .bg-brand-600 { background-color: #7c3aed; }
+        .hover\:bg-brand-700:hover { background-color: #6d28d9; }
     </style>
 </head>
 <body class="bg-slate-100 min-h-screen">
@@ -34,9 +38,7 @@
     <div id="verified-content" class="hidden max-w-2xl mx-auto p-4 lg:p-6">
         <!-- Header -->
         <div class="brand-gradient rounded-2xl shadow-lg p-6 mb-4 text-white text-center">
-            <div class="w-16 h-16 bg-white/15 rounded-full flex items-center justify-center mx-auto mb-3">
-                <i class="fa-solid fa-shield-halved text-3xl"></i>
-            </div>
+            <img src="/images/logo.png" alt="G.PACK" class="h-16 w-auto mx-auto mb-3" />
             <h1 class="text-xl font-bold">شهادة اعتماد تصميم</h1>
             <p class="text-xs text-white/70 mt-1">G.PACK — نظام التحقق من الاعتمادات</p>
         </div>
@@ -115,7 +117,7 @@
 
         <!-- Footer -->
         <div class="text-center">
-            <p class="text-xs text-slate-400">G.PACK — حلول التعبئة والتغليف | نظام التحقق الإلكتروني</p>
+            <p class="text-xs text-slate-400">G.PACK • حلول التعبئة والتغليف — ينبع، المملكة العربية السعودية</p>
         </div>
     </div>
 
