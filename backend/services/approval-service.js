@@ -87,6 +87,7 @@ async function processApproval(approvalData) {
             signer_name, approved_at: approvedDate,
             signature_path, qrBuffer, verifyUrl,
         });
+        await _updatePackageState(item_id, 'image_done');
 
         // 3. Generate PDF
         const pdfPath = await _generatePDF({
@@ -94,6 +95,7 @@ async function processApproval(approvalData) {
             signer_name, approved_at: approvedDate,
             signature_path, qrPath, verifyUrl, declaration_text,
         });
+        await _updatePackageState(item_id, 'pdf_done');
 
         // 4. Copy signature to package
         let sigPkgPath = null;
@@ -103,37 +105,69 @@ async function processApproval(approvalData) {
             try { fs.copyFileSync(sigSrc, sigPkgPath); } catch { }
         }
 
-        // 4b. Copy design preview (first image file) to package
+        // 4b. Immutable Design Snapshot — copy ALL design files to package
+        // This ensures the exact files the client approved are preserved.
+        // Even if the designer uploads new files later, this snapshot never changes.
         let designPreviewPath = null;
+        const snapshotDir = path.join(pkgDir, 'design-snapshot');
+        fs.mkdirSync(snapshotDir, { recursive: true });
+        const snapshotFiles = [];
+
         if (design_files) {
             let files = design_files;
             if (typeof files === 'string') { try { files = JSON.parse(files); } catch { files = []; } }
             if (Array.isArray(files)) {
-                const firstImage = files.find(f => {
-                    const ext = (f.filename || f.name || f.path || '').split('.').pop().toLowerCase();
-                    return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].includes(ext);
-                });
-                if (firstImage) {
-                    const srcPath = firstImage.path || firstImage.url || firstImage;
+                for (const f of files) {
+                    const srcPath = f.path || f.url || f;
                     const fullSrc = srcPath.startsWith('/') ? path.join(__dirname, '..', srcPath) : path.join(UPLOAD_BASE, srcPath);
                     try {
                         if (fs.existsSync(fullSrc)) {
-                            designPreviewPath = path.join(pkgDir, 'design-preview.jpg');
-                            // If it's already jpg, copy; otherwise load and re-save as jpg
-                            const ext = fullSrc.split('.').pop().toLowerCase();
-                            if (ext === 'jpg' || ext === 'jpeg') {
-                                fs.copyFileSync(fullSrc, designPreviewPath);
-                            } else {
-                                const img = await loadImage(fullSrc);
-                                const c = createCanvas(img.width, img.height);
-                                c.getContext('2d').drawImage(img, 0, 0);
-                                fs.writeFileSync(designPreviewPath, c.toBuffer('image/jpeg', { quality: 0.9 }));
+                            const filename = f.filename || f.original_name || path.basename(fullSrc);
+                            const destPath = path.join(snapshotDir, filename);
+                            fs.copyFileSync(fullSrc, destPath);
+
+                            // Compute hash of snapshot file
+                            const fileBuffer = fs.readFileSync(destPath);
+                            const fileHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+                            snapshotFiles.push({
+                                original_name: f.original_name || filename,
+                                snapshot_name: filename,
+                                sha256: fileHash,
+                                size: fileBuffer.length,
+                            });
+
+                            // Use first image as design-preview.jpg
+                            if (!designPreviewPath) {
+                                const ext = filename.split('.').pop().toLowerCase();
+                                if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].includes(ext)) {
+                                    designPreviewPath = path.join(pkgDir, 'design-preview.jpg');
+                                    if (ext === 'jpg' || ext === 'jpeg') {
+                                        fs.copyFileSync(destPath, designPreviewPath);
+                                    } else {
+                                        const img = await loadImage(destPath);
+                                        const c = createCanvas(img.width, img.height);
+                                        c.getContext('2d').drawImage(img, 0, 0);
+                                        fs.writeFileSync(designPreviewPath, c.toBuffer('image/jpeg', { quality: 0.9 }));
+                                    }
+                                }
                             }
                         }
                     } catch (e) {
-                        console.error('[ApprovalService] Design preview error:', e.message);
+                        console.error('[ApprovalService] Snapshot file error:', e.message);
                     }
                 }
+            }
+        }
+
+        // Store snapshot file list in DB
+        if (snapshotFiles.length > 0) {
+            try {
+                await db.query(
+                    `UPDATE design_approvals SET design_snapshot_files = $1 WHERE item_id = $2`,
+                    [JSON.stringify(snapshotFiles), item_id]
+                );
+            } catch (e) {
+                console.error('[ApprovalService] Snapshot DB update error:', e.message);
             }
         }
 
@@ -188,15 +222,22 @@ async function processApproval(approvalData) {
             console.error('[ApprovalService] Audit log error:', e.message);
         }
 
-        // 7. Update DB with file paths
+        // 7. Update DB with file paths + individual file hashes
         const certRelPath = `/uploads/designs/approvals/${year}/${month}/${day}/item-${item_id}/certificate.jpg`;
         const pdfRelPath = `/uploads/designs/approvals/${year}/${month}/${day}/item-${item_id}/approval.pdf`;
+
+        // Compute SHA-256 of generated files
+        const certHash = crypto.createHash('sha256').update(fs.readFileSync(certImagePath)).digest('hex');
+        const pdfHash = crypto.createHash('sha256').update(fs.readFileSync(pdfPath)).digest('hex');
+
         await db.query(
             `UPDATE design_approvals SET
                 approval_image_path = $1,
-                approval_pdf_path = $2
-             WHERE item_id = $3`,
-            [certRelPath, pdfRelPath, item_id]
+                approval_pdf_path = $2,
+                certificate_sha256 = $3,
+                pdf_sha256 = $4
+             WHERE item_id = $5`,
+            [certRelPath, pdfRelPath, certHash, pdfHash, item_id]
         );
 
         // 8. Log activity
@@ -211,13 +252,20 @@ async function processApproval(approvalData) {
         // 8b. Generate manifest.json (SHA-256 + size + mime for each file)
         const manifest = await _generateManifest(pkgDir, certificate_number);
         const manifestPath = path.join(pkgDir, 'manifest.json');
-        fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+        const manifestJson = JSON.stringify(manifest, null, 2);
+        fs.writeFileSync(manifestPath, manifestJson);
 
-        // Store manifest in DB
+        // Hash the manifest itself and store in DB (immutability chain)
+        const manifestHash = crypto.createHash('sha256').update(manifestJson).digest('hex');
+
         try {
             await db.query(
-                `UPDATE design_approvals SET package_manifest = $1 WHERE item_id = $2`,
-                [JSON.stringify(manifest), item_id]
+                `UPDATE design_approvals SET
+                    package_manifest = $1,
+                    manifest_sha256 = $2,
+                    package_state = 'manifest_done'
+                 WHERE item_id = $3`,
+                [manifestJson, manifestHash, item_id]
             );
         } catch (e) {
             console.error('[ApprovalService] Manifest DB update error:', e.message);
@@ -241,10 +289,9 @@ async function processApproval(approvalData) {
             console.error('[ApprovalService] ZIP creation skipped:', e.message);
         }
 
-        // 10. Approval package complete — notifications are handled via outbox pattern.
-        // The outbox event was written INSIDE the DB transaction in public-design.js.
-        // The notification worker picks it up and calls NotificationService.notifyDesignApproved.
-        // This file (approval-service) only generates the physical package files.
+        // 10. Mark package as fully done
+        await _updatePackageState(item_id, 'zip_done');
+
         console.log(`[ApprovalService] Approval ${certificate_number} package generated successfully`);
     } catch (err) {
         console.error('[ApprovalService] Processing error:', err.message);
@@ -457,6 +504,91 @@ async function _generatePDF(data) {
 
 // ── _sendWhatsAppNotification removed — now handled by NotificationService ──
 
+// ── Update package state (state machine for crash recovery) ─────────────────
+// States: pending → image_done → pdf_done → manifest_done → zip_done → notified
+async function _updatePackageState(itemId, state) {
+    try {
+        await db.query(
+            `UPDATE design_approvals SET
+                package_state = $1,
+                package_state_updated_at = NOW()
+             WHERE item_id = $2`,
+            [state, itemId]
+        );
+    } catch (e) {
+        console.error('[ApprovalService] Package state update error:', e.message);
+    }
+}
+
+// ── Verify package integrity (file immutability check) ──────────────────────
+// Recomputes SHA-256 of all files in the package and compares to manifest.
+// Also verifies the manifest hash matches what's stored in DB.
+// Returns { verified: true } or { verified: false, mismatches: [...] }
+async function verifyPackageIntegrity(itemId) {
+    try {
+        const res = await db.query(
+            `SELECT certificate_number, approval_image_path, approval_pdf_path,
+                    certificate_sha256, pdf_sha256,
+                    package_manifest, manifest_sha256,
+                    package_state
+             FROM design_approvals WHERE item_id = $1 ORDER BY id DESC LIMIT 1`,
+            [itemId]
+        );
+        if (res.rows.length === 0) {
+            return { verified: false, error: 'Approval not found' };
+        }
+
+        const appr = res.rows[0];
+        const mismatches = [];
+
+        // Verify certificate image hash
+        if (appr.approval_image_path && appr.certificate_sha256) {
+            const certFile = path.join(__dirname, '..', appr.approval_image_path);
+            if (fs.existsSync(certFile)) {
+                const currentHash = crypto.createHash('sha256').update(fs.readFileSync(certFile)).digest('hex');
+                if (currentHash !== appr.certificate_sha256) {
+                    mismatches.push({ file: 'certificate.jpg', expected: appr.certificate_sha256, actual: currentHash });
+                }
+            } else {
+                mismatches.push({ file: 'certificate.jpg', error: 'File missing' });
+            }
+        }
+
+        // Verify PDF hash
+        if (appr.approval_pdf_path && appr.pdf_sha256) {
+            const pdfFile = path.join(__dirname, '..', appr.approval_pdf_path);
+            if (fs.existsSync(pdfFile)) {
+                const currentHash = crypto.createHash('sha256').update(fs.readFileSync(pdfFile)).digest('hex');
+                if (currentHash !== appr.pdf_sha256) {
+                    mismatches.push({ file: 'approval.pdf', expected: appr.pdf_sha256, actual: currentHash });
+                }
+            } else {
+                mismatches.push({ file: 'approval.pdf', error: 'File missing' });
+            }
+        }
+
+        // Verify manifest hash
+        if (appr.package_manifest && appr.manifest_sha256) {
+            const manifestJson = typeof appr.package_manifest === 'string'
+                ? appr.package_manifest
+                : JSON.stringify(appr.package_manifest);
+            const currentManifestHash = crypto.createHash('sha256').update(manifestJson).digest('hex');
+            if (currentManifestHash !== appr.manifest_sha256) {
+                mismatches.push({ file: 'manifest.json', expected: appr.manifest_sha256, actual: currentManifestHash });
+            }
+        }
+
+        return {
+            verified: mismatches.length === 0,
+            mismatches,
+            package_state: appr.package_state,
+            certificate_number: appr.certificate_number,
+        };
+    } catch (err) {
+        return { verified: false, error: err.message };
+    }
+}
+
 // ── Generate manifest.json for approval package ─────────────────────────────
 // Computes SHA-256 hash, file size, and MIME type for every file in the package.
 // This ensures integrity verification — if any file is tampered with later,
@@ -498,4 +630,4 @@ async function _generateManifest(pkgDir, certificateNumber) {
     };
 }
 
-module.exports = { processApproval };
+module.exports = { processApproval, verifyPackageIntegrity };

@@ -12,6 +12,7 @@ const db = require('../db');
 const { authenticate } = require('../middleware/authMiddleware');
 const authorize = require('../middleware/authorize');
 const WhatsApp = require('../services/whatsapp-service');
+const CircuitBreaker = require('../services/circuit-breaker');
 
 // ── GET /api/notifications ──────────────────────────────────────────────────
 // Fetch notifications for the current user (or by target_role).
@@ -469,6 +470,7 @@ router.get('/whatsapp/health', authenticate, authorize(['admin', 'manager', 'sup
                 connected: current?.connected || false,
                 error: current?.error || null,
             },
+            circuit_breaker: CircuitBreaker.getState(),
             history: history.rows,
             last_connected_at: lastConnected.rows[0]?.checked_at || null,
             last_disconnected_at: lastDisconnected.rows[0]?.checked_at || null,

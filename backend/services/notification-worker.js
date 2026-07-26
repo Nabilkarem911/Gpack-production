@@ -18,6 +18,7 @@ const db = require('../db');
 const WhatsApp = require('./whatsapp-service');
 const NotificationService = require('./notification-service');
 const { processApproval } = require('./approval-service');
+const CircuitBreaker = require('./circuit-breaker');
 
 const POLL_INTERVAL_MS = 15000; // 15 seconds
 const HEALTH_CHECK_INTERVAL_MS = 60000; // 60 seconds
@@ -114,10 +115,14 @@ async function _processQueue() {
         await _reclaimStuckItems();
 
         // Claim up to 10 pending items — HIGH priority first, then by next_attempt_at
+        // Lease token: each claimed item gets a unique lease_id UUID.
+        // Only the worker holding the lease can update the item (prevents double processing).
         const claimRes = await db.query(
             `UPDATE notification_queue
              SET status = 'processing',
                  processing_started_at = NOW(),
+                 lease_id = gen_random_uuid(),
+                 processing_owner = $1,
                  updated_at = NOW()
              WHERE id IN (
                  SELECT id FROM notification_queue
@@ -129,10 +134,11 @@ async function _processQueue() {
                  LIMIT 10
                  FOR UPDATE SKIP LOCKED
              )
-             RETURNING id, channel, recipient, recipient_name, recipient_role,
+             RETURNING id, lease_id, channel, recipient, recipient_name, recipient_role,
                        message_type, subject, body, attachments, attempts,
                        entity_type, entity_id, metadata, priority, idempotency_key,
                        correlation_id`,
+            [`worker-${process.pid}`]
         );
 
         if (claimRes.rows.length === 0) {
@@ -163,6 +169,8 @@ async function _reclaimStuckItems() {
             `UPDATE notification_queue
              SET status = 'pending',
                  processing_started_at = NULL,
+                 lease_id = NULL,
+                 processing_owner = NULL,
                  last_error = 'Reclaimed: processing timeout (>10min)',
                  updated_at = NOW()
              WHERE status = 'processing'
@@ -274,7 +282,7 @@ async function _processItem(item) {
             throw new Error(`Unknown channel: ${item.channel}`);
         }
 
-        // Success
+        // Success — only update if we still hold the lease (prevents double processing)
         await db.query(
             `UPDATE notification_queue
              SET status = 'sent',
@@ -283,9 +291,11 @@ async function _processItem(item) {
                  sent_at = NOW(),
                  waha_message_id = $2,
                  waha_status = 'sent',
+                 lease_id = NULL,
+                 processing_owner = NULL,
                  updated_at = NOW()
-             WHERE id = $3`,
-            [attemptNum, result?.id || result?.messageId || null, item.id]
+             WHERE id = $3 AND lease_id = $4`,
+            [attemptNum, result?.id || result?.messageId || null, item.id, item.lease_id]
         );
         console.log(`[NotificationWorker] Sent ${item.message_type} to ${item.recipient_name || item.recipient} (attempt ${attemptNum}, priority: ${item.priority})`);
 
@@ -302,7 +312,7 @@ async function _processItem(item) {
         });
 
         if (attemptNum >= maxAttempts) {
-            // Move to Dead Letter Queue
+            // Move to Dead Letter Queue — only if we hold the lease
             await db.query(
                 `INSERT INTO notification_dead_queue
                     (original_id, channel, recipient, recipient_name, recipient_role,
@@ -316,14 +326,14 @@ async function _processItem(item) {
                         $1, max_attempts, $2,
                         COALESCE(retry_history, '[]') || $3::jsonb,
                         waha_message_id, waha_status, sent_at, delivered_at
-                 FROM notification_queue WHERE id = $4`,
-                [attemptNum, err.message, retryEntry, item.id]
+                 FROM notification_queue WHERE id = $4 AND lease_id = $5`,
+                [attemptNum, err.message, retryEntry, item.id, item.lease_id]
             );
 
             // Delete from main queue (it's now in DLQ)
             await db.query(
-                `DELETE FROM notification_queue WHERE id = $1`,
-                [item.id]
+                `DELETE FROM notification_queue WHERE id = $1 AND lease_id = $2`,
+                [item.id, item.lease_id]
             );
 
             console.error(`[NotificationWorker] Moved ${item.id} to Dead Letter Queue (failed after ${attemptNum} attempts)`);
@@ -339,7 +349,7 @@ async function _processItem(item) {
                 });
             } catch { }
         } else {
-            // Schedule retry with exponential backoff
+            // Schedule retry with exponential backoff — only if we hold the lease
             const backoffMin = BACKOFF_MINUTES[attemptNum - 1] || 60;
             const nextAttempt = new Date(Date.now() + backoffMin * 60 * 1000);
 
@@ -351,9 +361,12 @@ async function _processItem(item) {
                      last_attempt_at = NOW(),
                      next_attempt_at = $3,
                      retry_history = COALESCE(retry_history, '[]') || $4::jsonb,
+                     lease_id = NULL,
+                     processing_owner = NULL,
+                     processing_started_at = NULL,
                      updated_at = NOW()
-                 WHERE id = $5`,
-                [attemptNum, err.message, nextAttempt, retryEntry, item.id]
+                 WHERE id = $5 AND lease_id = $6`,
+                [attemptNum, err.message, nextAttempt, retryEntry, item.id, item.lease_id]
             );
 
             console.log(`[NotificationWorker] Retry scheduled for ${item.recipient} in ${backoffMin}m (attempt ${attemptNum + 1}/${maxAttempts})`);
@@ -370,6 +383,12 @@ async function _sendWhatsApp(item) {
         throw new Error('WhatsApp not configured (WAHA_URL not set)');
     }
 
+    // Circuit Breaker: fail fast if WAHA is down (no timeout waiting)
+    const canSend = await CircuitBreaker.canProceed();
+    if (!canSend) {
+        throw new Error('Circuit breaker OPEN — WAHA unavailable, message queued for retry');
+    }
+
     let textSent = false;
     let attachmentErrors = [];
 
@@ -378,7 +397,9 @@ async function _sendWhatsApp(item) {
         try {
             await WhatsApp.sendText(item.recipient, item.body);
             textSent = true;
+            await CircuitBreaker.recordSuccess();
         } catch (err) {
+            await CircuitBreaker.recordFailure();
             throw new Error(`Text send failed: ${err.message}`);
         }
     }

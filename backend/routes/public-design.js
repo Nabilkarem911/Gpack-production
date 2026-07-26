@@ -73,12 +73,16 @@ async function _findOrderByToken(client, token) {
 }
 
 // Helper: log activity (INSERT only, immutable table)
-async function _logActivity(client, orderId, eventType, actor, ip, userAgent, details) {
+async function _logActivity(client, orderId, eventType, actor, ip, userAgent, details, extra) {
     try {
+        const { timezone, language, viewport, referrer, device_fingerprint } = extra || {};
         await client.query(
-            `INSERT INTO design_activity_log (order_id, event_type, event_details, actor, client_ip, user_agent)
-             VALUES ($1, $2, $3, $4, $5, $6)`,
-            [orderId, eventType, JSON.stringify(details || {}), actor, ip || null, userAgent || null]
+            `INSERT INTO design_activity_log
+                (order_id, event_type, event_details, actor, client_ip, user_agent,
+                 timezone, language, viewport, referrer, device_fingerprint)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+            [orderId, eventType, JSON.stringify(details || {}), actor, ip || null, userAgent || null,
+             timezone || null, language || null, viewport || null, referrer || null, device_fingerprint || null]
         );
     } catch (err) {
         console.error('[PublicDesign] Activity log error:', err.message);
@@ -879,6 +883,12 @@ router.post('/item/:token/respond', clientUpload.array('client_files', 10), asyn
             // Log activity
             await _logActivity(client, item.order_id, 'item_approved', 'client', clientIp, userAgent, {
                 item_id: item.id, signer_name: signer_name || '',
+            }, {
+                timezone: req.body.timezone,
+                language: req.body.language,
+                viewport: req.body.viewport,
+                referrer: req.headers.referer || req.body.referrer,
+                device_fingerprint: req.body.device_fingerprint,
             });
 
             // ── Outbox Pattern: write event INSIDE the same transaction ──
@@ -988,6 +998,12 @@ router.post('/item/:token/respond', clientUpload.array('client_files', 10), asyn
 
             await _logActivity(client, item.order_id, 'item_revision_requested', 'client', clientIp, userAgent, {
                 item_id: item.id, notes: notes,
+            }, {
+                timezone: req.body.timezone,
+                language: req.body.language,
+                viewport: req.body.viewport,
+                referrer: req.headers.referer || req.body.referrer,
+                device_fingerprint: req.body.device_fingerprint,
             });
         }
 
@@ -1094,15 +1110,19 @@ router.post('/item/:token/activity', async (req, res) => {
 });
 
 // ── GET /api/public/design/verify/:certificateNumber ────────────────────────
-// Public: verify an approval by certificate number. Returns approval details.
+// Public: verify an approval by certificate number. Returns approval details + integrity.
 router.get('/verify/:certificateNumber', async (req, res) => {
     try {
         const { certificateNumber } = req.params;
         const result = await db.query(
-            `SELECT da.certificate_number, da.client_name, da.order_number,
+            `SELECT da.id, da.item_id, da.certificate_number, da.client_name, da.order_number,
                     da.signer_name, da.approved_at, da.client_ip,
                     da.declaration_text, da.signature_format,
                     da.verification_hash,
+                    da.approval_image_path, da.approval_pdf_path,
+                    da.certificate_sha256, da.pdf_sha256,
+                    da.package_manifest, da.manifest_sha256,
+                    da.package_state, da.design_snapshot_files,
                     p.name AS product_name, pv.size_name AS size_name
              FROM design_approvals da
              LEFT JOIN order_items oi ON oi.id = da.item_id
@@ -1117,6 +1137,14 @@ router.get('/verify/:certificateNumber', async (req, res) => {
         }
 
         const row = result.rows[0];
+
+        // Verify package integrity (file hashes)
+        let integrity = null;
+        if (row.item_id) {
+            const { verifyPackageIntegrity } = require('../services/approval-service');
+            integrity = await verifyPackageIntegrity(row.item_id);
+        }
+
         res.json({
             certificate_number: row.certificate_number,
             client_name: row.client_name,
@@ -1127,6 +1155,15 @@ router.get('/verify/:certificateNumber', async (req, res) => {
             approved_at: row.approved_at,
             declaration_text: row.declaration_text,
             verified: true,
+            package_state: row.package_state,
+            integrity,
+            files: {
+                certificate_url: row.approval_image_path || null,
+                pdf_url: row.approval_pdf_path || null,
+                certificate_sha256: row.certificate_sha256 || null,
+                pdf_sha256: row.pdf_sha256 || null,
+                manifest_sha256: row.manifest_sha256 || null,
+            },
         });
     } catch (err) {
         console.error('[PublicDesign] Verify error:', err.message);
