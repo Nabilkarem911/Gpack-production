@@ -33,7 +33,7 @@ function _idempotencyKey({ entity_type, entity_id, message_type, recipient }) {
 // the existing ID — no duplicate delivery.
 async function enqueue({ channel, recipient, recipient_name, recipient_role,
                          message_type, subject, body, attachments,
-                         entity_type, entity_id, metadata, priority }) {
+                         entity_type, entity_id, metadata, priority, correlation_id }) {
     const idempotencyKey = _idempotencyKey({ entity_type, entity_id, message_type, recipient });
 
     try {
@@ -41,8 +41,8 @@ async function enqueue({ channel, recipient, recipient_name, recipient_role,
             `INSERT INTO notification_queue
                 (channel, recipient, recipient_name, recipient_role,
                  message_type, subject, body, attachments,
-                 entity_type, entity_id, metadata, idempotency_key, priority)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                 entity_type, entity_id, metadata, idempotency_key, priority, correlation_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
              RETURNING id`,
             [
                 channel || 'whatsapp',
@@ -58,6 +58,7 @@ async function enqueue({ channel, recipient, recipient_name, recipient_role,
                 metadata ? JSON.stringify(metadata) : null,
                 idempotencyKey,
                 priority || 'normal',
+                correlation_id || null,
             ]
         );
         return result.rows[0].id;
@@ -78,12 +79,12 @@ async function enqueue({ channel, recipient, recipient_name, recipient_role,
 
 // ── In-app notification (Notification Center bell icon) ─────────────────────
 async function notifyInApp({ user_id, target_role, category, icon, title, body, link,
-                              priority, entity_type, entity_id, metadata }) {
+                              priority, entity_type, entity_id, metadata, correlation_id }) {
     await db.query(
         `INSERT INTO notifications
             (user_id, target_role, category, icon, title, body, link,
-             priority, entity_type, entity_id, metadata)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+             priority, entity_type, entity_id, metadata, correlation_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
         [
             user_id || null,
             target_role || null,
@@ -96,26 +97,71 @@ async function notifyInApp({ user_id, target_role, category, icon, title, body, 
             entity_type || null,
             entity_id || null,
             metadata ? JSON.stringify(metadata) : null,
+            correlation_id || null,
         ]
+    );
+}
+
+// ── Generate correlation ID ──────────────────────────────────────────────────
+// Format: APR-YYYYMMDD-XXXX (unique per approval event)
+function generateCorrelationId(prefix = 'EVT') {
+    const date = new Date();
+    const ymd = date.getFullYear().toString() +
+        String(date.getMonth() + 1).padStart(2, '0') +
+        String(date.getDate()).padStart(2, '0');
+    const rand = Math.random().toString(36).substring(2, 6).toUpperCase();
+    return `${prefix}-${ymd}-${rand}`;
+}
+
+// ── Get admin recipients from DB (not env var) ──────────────────────────────
+async function getAdminRecipients() {
+    try {
+        const result = await db.query(
+            `SELECT value FROM notification_settings WHERE key = 'admin_whatsapp_recipients'`
+        );
+        if (result.rows.length > 0) {
+            let val = result.rows[0].value;
+            if (typeof val === 'string') { try { val = JSON.parse(val); } catch { val = []; } }
+            if (Array.isArray(val)) return val;
+        }
+    } catch { }
+    // Fallback to env var if DB has no recipients
+    const envChatId = process.env.WAHA_ADMIN_CHAT_ID;
+    if (envChatId) return [{ name: 'الإدارة', phone: envChatId }];
+    return [];
+}
+
+// ── Write outbox event (same transaction as business operation) ─────────────
+// This ensures no message is lost even if the server crashes mid-approval.
+async function writeOutboxEvent({ event_type, entity_type, entity_id, correlation_id, payload }, client) {
+    const queryFn = client ? client.query.bind(client) : db.query;
+    await queryFn(
+        `INSERT INTO notification_outbox
+            (event_type, entity_type, entity_id, correlation_id, payload)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [event_type, entity_type, entity_id, correlation_id, JSON.stringify(payload)]
     );
 }
 
 // ── Convenience: Design Approved ────────────────────────────────────────────
 // Enqueues 3 WhatsApp messages (client, admin, designer) + in-app notifications.
 // Called from approval-service.js after package generation.
+// Uses correlation_id to link all related records.
 async function notifyDesignApproved(data) {
     const {
         item_id, order_id, order_number, client_name, client_phone,
         product_name, size_name, signer_name, certificate_number,
         approved_at, verify_url, pdf_path, cert_image_path,
         designer_phone, designer_name,
-        admin_chat_id,
     } = data;
+
+    // Generate correlation ID for this approval event
+    const correlationId = data.correlation_id || generateCorrelationId('APR');
 
     const dateStr = new Date(approved_at).toLocaleDateString('en-GB');
     const timeStr = new Date(approved_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 
-    // 1. Message to Client
+    // 1. Message to Client (PDF + image, NO ZIP — WhatsApp compresses files)
     if (client_phone) {
         const chatId = WhatsApp.normalizePhone(client_phone);
         const clientBody =
@@ -143,18 +189,24 @@ async function notifyDesignApproved(data) {
             entity_id: item_id,
             metadata: { certificate_number, order_number },
             priority: 'high',
+            correlation_id: correlationId,
         });
     }
 
-    // 2. Message to Management
-    if (admin_chat_id) {
+    // 2. Message to Management (from DB, not env var) — includes ZIP
+    const adminRecipients = await getAdminRecipients();
+    for (const admin of adminRecipients) {
+        const adminPhone = admin.phone || admin.chat_id;
+        if (!adminPhone) continue;
+        const adminChatId = WhatsApp.normalizePhone(adminPhone);
         const adminBody =
             `تم اعتماد التصميم\n\n` +
             `العميل\n${client_name}\n\n` +
             `المنتج\n${product_name || '—'}\n\n` +
             `المعتمد\n${signer_name || '—'}\n\n` +
             `وقت الاعتماد\n${timeStr}\n\n` +
-            `رقم الاعتماد\n${certificate_number}`;
+            `رقم الاعتماد\n${certificate_number}\n\n` +
+            `Correlation ID\n${correlationId}`;
 
         const adminAttachments = [];
         if (pdf_path) adminAttachments.push({ type: 'file', path: pdf_path, caption: `اعتماد التصميم — ${certificate_number}` });
@@ -162,8 +214,8 @@ async function notifyDesignApproved(data) {
 
         await enqueue({
             channel: 'whatsapp',
-            recipient: admin_chat_id,
-            recipient_name: 'الإدارة',
+            recipient: adminChatId,
+            recipient_name: admin.name || 'الإدارة',
             recipient_role: 'admin',
             message_type: 'design_approved_admin',
             subject: `اعتماد تصميم — ${certificate_number}`,
@@ -173,6 +225,7 @@ async function notifyDesignApproved(data) {
             entity_id: item_id,
             metadata: { certificate_number, order_number },
             priority: 'high',
+            correlation_id: correlationId,
         });
     }
 
@@ -183,7 +236,8 @@ async function notifyDesignApproved(data) {
             `🎉 تم اعتماد تصميمك\n\n` +
             `Offer #${order_number}\n` +
             `Item\n${product_name || '—'}\n\n` +
-            `العميل اعتمد التصميم.`;
+            `العميل اعتمد التصميم.\n\n` +
+            `Correlation ID\n${correlationId}`;
 
         await enqueue({
             channel: 'whatsapp',
@@ -198,6 +252,7 @@ async function notifyDesignApproved(data) {
             entity_id: item_id,
             metadata: { certificate_number, order_number },
             priority: 'high',
+            correlation_id: correlationId,
         });
     }
 
@@ -213,6 +268,7 @@ async function notifyDesignApproved(data) {
         entity_type: 'order_item',
         entity_id: item_id,
         metadata: { certificate_number, order_number, client_name },
+        correlation_id: correlationId,
     });
 
     await notifyInApp({
@@ -226,7 +282,10 @@ async function notifyDesignApproved(data) {
         entity_type: 'order_item',
         entity_id: item_id,
         metadata: { certificate_number, order_number },
+        correlation_id: correlationId,
     });
+
+    return correlationId;
 }
 
 // ── Convenience: Design Sent to Client ──────────────────────────────────────
@@ -318,5 +377,8 @@ module.exports = {
     notifyDesignSentToClient,
     notifyClientOpenedLink,
     notifyWhatsAppFailed,
+    generateCorrelationId,
+    getAdminRecipients,
+    writeOutboxEvent,
     WhatsApp, // Expose for worker
 };

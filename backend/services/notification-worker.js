@@ -47,10 +47,14 @@ async function _processQueue() {
     _polling = true;
 
     try {
+        // Reclaim stuck items (processing for > 10 minutes = worker crash)
+        await _reclaimStuckItems();
+
         // Claim up to 10 pending items — HIGH priority first, then by next_attempt_at
         const claimRes = await db.query(
             `UPDATE notification_queue
              SET status = 'processing',
+                 processing_started_at = NOW(),
                  updated_at = NOW()
              WHERE id IN (
                  SELECT id FROM notification_queue
@@ -64,18 +68,110 @@ async function _processQueue() {
              )
              RETURNING id, channel, recipient, recipient_name, recipient_role,
                        message_type, subject, body, attachments, attempts,
-                       entity_type, entity_id, metadata, priority, idempotency_key`,
+                       entity_type, entity_id, metadata, priority, idempotency_key,
+                       correlation_id`,
         );
 
-        if (claimRes.rows.length === 0) return;
+        if (claimRes.rows.length === 0) {
+            // Process outbox events (if any)
+            await _processOutbox();
+            return;
+        }
 
         for (const item of claimRes.rows) {
             await _processItem(item);
         }
+
+        // Also process outbox after queue items
+        await _processOutbox();
     } catch (err) {
         console.error('[NotificationWorker] Queue processing error:', err.message);
     } finally {
         _polling = false;
+    }
+}
+
+// ── Reclaim stuck items (processing for > 10 minutes) ───────────────────────
+// If a worker crashes while processing, the item is stuck in 'processing'.
+// This sweeper moves them back to 'pending' so they get retried.
+async function _reclaimStuckItems() {
+    try {
+        const result = await db.query(
+            `UPDATE notification_queue
+             SET status = 'pending',
+                 processing_started_at = NULL,
+                 last_error = 'Reclaimed: processing timeout (>10min)',
+                 updated_at = NOW()
+             WHERE status = 'processing'
+               AND processing_started_at < NOW() - INTERVAL '10 minutes'
+             RETURNING id, message_type, recipient`
+        );
+        if (result.rows.length > 0) {
+            console.log(`[NotificationWorker] Reclaimed ${result.rows.length} stuck item(s)`);
+        }
+    } catch (err) {
+        console.error('[NotificationWorker] Reclaim error:', err.message);
+    }
+}
+
+// ── Process outbox events ───────────────────────────────────────────────────
+// The outbox guarantees no message is lost: the business operation and the
+// event are written in the same DB transaction. The worker reads the outbox
+// and dispatches to NotificationService methods.
+async function _processOutbox() {
+    try {
+        const events = await db.query(
+            `UPDATE notification_outbox
+             SET status = 'processing'
+             WHERE id IN (
+                 SELECT id FROM notification_outbox
+                 WHERE status = 'pending'
+                 ORDER BY created_at ASC
+                 LIMIT 5
+                 FOR UPDATE SKIP LOCKED
+             )
+             RETURNING id, event_type, entity_type, entity_id, correlation_id, payload`
+        );
+
+        if (events.rows.length === 0) return;
+
+        for (const evt of events.rows) {
+            try {
+                let payload = evt.payload;
+                if (typeof payload === 'string') { try { payload = JSON.parse(payload); } catch { payload = {}; } }
+
+                // Dispatch based on event_type
+                switch (evt.event_type) {
+                    case 'design_approved':
+                        await NotificationService.notifyDesignApproved({
+                            ...payload,
+                            correlation_id: evt.correlation_id,
+                        });
+                        break;
+                    case 'design_sent_to_client':
+                        await NotificationService.notifyDesignSentToClient({
+                            ...payload,
+                            correlation_id: evt.correlation_id,
+                        });
+                        break;
+                    default:
+                        console.warn(`[NotificationWorker] Unknown outbox event: ${evt.event_type}`);
+                }
+
+                await db.query(
+                    `UPDATE notification_outbox SET status = 'processed', processed_at = NOW() WHERE id = $1`,
+                    [evt.id]
+                );
+            } catch (err) {
+                console.error(`[NotificationWorker] Outbox event ${evt.id} failed:`, err.message);
+                await db.query(
+                    `UPDATE notification_outbox SET status = 'pending', error = $1 WHERE id = $2`,
+                    [err.message, evt.id]
+                );
+            }
+        }
+    } catch (err) {
+        console.error('[NotificationWorker] Outbox processing error:', err.message);
     }
 }
 
@@ -121,18 +217,31 @@ async function _processItem(item) {
         });
 
         if (attemptNum >= maxAttempts) {
-            // Mark as failed permanently
+            // Move to Dead Letter Queue
             await db.query(
-                `UPDATE notification_queue
-                 SET status = 'failed',
-                     attempts = $1,
-                     last_error = $2,
-                     last_attempt_at = NOW(),
-                     retry_history = COALESCE(retry_history, '[]') || $3::jsonb,
-                     updated_at = NOW()
-                 WHERE id = $4`,
+                `INSERT INTO notification_dead_queue
+                    (original_id, channel, recipient, recipient_name, recipient_role,
+                     message_type, subject, body, attachments, entity_type, entity_id,
+                     metadata, idempotency_key, priority, correlation_id,
+                     attempts, max_attempts, last_error, retry_history,
+                     waha_message_id, waha_status, sent_at, delivered_at)
+                 SELECT id, channel, recipient, recipient_name, recipient_role,
+                        message_type, subject, body, attachments, entity_type, entity_id,
+                        metadata, idempotency_key, priority, correlation_id,
+                        $1, max_attempts, $2,
+                        COALESCE(retry_history, '[]') || $3::jsonb,
+                        waha_message_id, waha_status, sent_at, delivered_at
+                 FROM notification_queue WHERE id = $4`,
                 [attemptNum, err.message, retryEntry, item.id]
             );
+
+            // Delete from main queue (it's now in DLQ)
+            await db.query(
+                `DELETE FROM notification_queue WHERE id = $1`,
+                [item.id]
+            );
+
+            console.error(`[NotificationWorker] Moved ${item.id} to Dead Letter Queue (failed after ${attemptNum} attempts)`);
 
             // Notify ERP managers about the failure
             try {

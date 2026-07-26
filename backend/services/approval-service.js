@@ -46,7 +46,6 @@ async function processApproval(approvalData) {
     let client_phone = null;
     let designer_phone = null;
     let designer_name = null;
-    let admin_chat_id = process.env.WAHA_ADMIN_CHAT_ID || null;
     let design_files = null;
 
     try {
@@ -227,24 +226,34 @@ async function processApproval(approvalData) {
             console.error('[ApprovalService] ZIP creation skipped:', e.message);
         }
 
-        // 10. Enqueue WhatsApp notifications via NotificationService (decoupled)
+        // 10. Write outbox event (Outbox Pattern — guarantees no message loss)
+        // The outbox event is picked up by the notification worker which calls
+        // notifyDesignApproved with the correlation_id.
         const certAbsPath = path.join(UPLOAD_BASE, 'approvals', `${year}`, `${month}`, `${day}`, `item-${item_id}`, 'certificate.jpg');
         const pdfAbsPath = path.join(UPLOAD_BASE, 'approvals', `${year}`, `${month}`, `${day}`, `item-${item_id}`, 'approval.pdf');
 
-        await NotificationService.notifyDesignApproved({
-            item_id, order_id, order_number,
-            client_name, client_phone,
-            product_name, size_name,
-            signer_name, certificate_number,
-            approved_at: approvedDate,
-            verify_url: verifyUrl,
-            pdf_path: pdfAbsPath,
-            cert_image_path: certAbsPath,
-            designer_phone, designer_name,
-            admin_chat_id,
+        const correlationId = NotificationService.generateCorrelationId('APR');
+
+        await NotificationService.writeOutboxEvent({
+            event_type: 'design_approved',
+            entity_type: 'order_item',
+            entity_id: item_id,
+            correlation_id: correlationId,
+            payload: {
+                item_id, order_id, order_number,
+                client_name, client_phone,
+                product_name, size_name,
+                signer_name, certificate_number,
+                approved_at: approvedDate,
+                verify_url: verifyUrl,
+                pdf_path: pdfAbsPath,
+                cert_image_path: certAbsPath,
+                designer_phone, designer_name,
+                correlation_id: correlationId,
+            },
         });
 
-        console.log(`[ApprovalService] Approval ${certificate_number} processed successfully`);
+        console.log(`[ApprovalService] Approval ${certificate_number} processed — outbox event written (correlation: ${correlationId})`);
     } catch (err) {
         console.error('[ApprovalService] Processing error:', err.message);
     }

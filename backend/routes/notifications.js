@@ -6,6 +6,7 @@
 // =============================================================================
 
 const express = require('express');
+const crypto = require('crypto');
 const router = express.Router();
 const db = require('../db');
 const { authenticate } = require('../middleware/authMiddleware');
@@ -218,11 +219,18 @@ router.get('/whatsapp/qr', authenticate, authorize(['admin', 'super_admin']), as
 router.post('/whatsapp/webhook', async (req, res) => {
     try {
         const webhookSecret = process.env.WAHA_WEBHOOK_SECRET || '';
-        const providedSecret = req.headers['x-webhook-secret'] || req.query.secret || '';
 
-        // Verify shared secret if configured
-        if (webhookSecret && providedSecret !== webhookSecret) {
-            return res.status(403).json({ error: 'Invalid webhook secret' });
+        // HMAC Signature verification: WAHA sends X-Webhook-Signature header
+        // which is HMAC-SHA256 of the raw body, using the shared secret.
+        if (webhookSecret) {
+            const signature = req.headers['x-webhook-signature'] || '';
+            const rawBody = JSON.stringify(req.body);
+            const expectedSig = crypto.createHmac('sha256', webhookSecret).update(rawBody).digest('hex');
+
+            if (signature !== expectedSig) {
+                console.warn('[WAHA Webhook] Invalid signature — rejecting');
+                return res.status(403).json({ error: 'Invalid signature' });
+            }
         }
 
         const event = req.body;

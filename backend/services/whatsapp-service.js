@@ -13,6 +13,7 @@ const fs = require('fs');
 const PROVIDER = process.env.WHATSAPP_PROVIDER || 'waha';
 const WAHA_URL = process.env.WAHA_URL || '';
 const WAHA_SESSION = process.env.WAHA_SESSION || 'default';
+const WAHA_API_KEY = process.env.WAHA_API_KEY || '';
 
 // ── Normalize phone number to WAHA chatId format ────────────────────────────
 // Accepts: "0551234567", "+966551234567", "966551234567"
@@ -91,9 +92,13 @@ async function _wahaRequest(endpoint, options = {}) {
     if (!WAHA_URL) throw new Error('WAHA_URL not configured');
 
     const url = `${WAHA_URL}${endpoint}`;
+    const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+    if (WAHA_API_KEY) {
+        headers['X-Api-Key'] = WAHA_API_KEY;
+    }
     const res = await fetch(url, {
         method: options.method || 'GET',
-        headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+        headers,
         body: options.body ? JSON.stringify(options.body) : undefined,
     });
 

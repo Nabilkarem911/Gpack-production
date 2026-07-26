@@ -23,6 +23,7 @@ services:
       WAHA_SESSION: ${WAHA_SESSION:-default}
       WAHA_ADMIN_CHAT_ID: ${WAHA_ADMIN_CHAT_ID:-}
       WHATSAPP_PROVIDER: ${WHATSAPP_PROVIDER:-waha}
+      WAHA_API_KEY: ${WAHA_API_KEY:-}
       WAHA_WEBHOOK_SECRET: ${WAHA_WEBHOOK_SECRET:-}
       BASE_URL: ${BASE_URL:-https://erp.gpacksa.com}
     expose:
@@ -58,6 +59,7 @@ services:
       WAHA_SESSION: ${WAHA_SESSION:-default}
       WAHA_ADMIN_CHAT_ID: ${WAHA_ADMIN_CHAT_ID:-}
       WHATSAPP_PROVIDER: ${WHATSAPP_PROVIDER:-waha}
+      WAHA_API_KEY: ${WAHA_API_KEY:-}
       BASE_URL: ${BASE_URL:-https://erp.gpacksa.com}
     depends_on:
       backend:
