@@ -918,6 +918,11 @@ router.post('/item/:token/respond', clientUpload.array('client_files', 10), asyn
                     client_ip: clientIp,
                     verify_url: `${baseUrl}/verify/${certificateNumber}`,
                     correlation_id: correlationId,
+                    timezone: req.body.timezone || null,
+                    language: req.body.language || null,
+                    viewport: req.body.viewport || null,
+                    referrer: req.headers.referer || req.body.referrer || null,
+                    device_fingerprint: req.body.device_fingerprint || null,
                 },
             }, client);
 
@@ -1120,9 +1125,11 @@ router.get('/verify/:certificateNumber', async (req, res) => {
                     da.declaration_text, da.signature_format,
                     da.verification_hash,
                     da.approval_image_path, da.approval_pdf_path,
-                    da.certificate_sha256, da.pdf_sha256,
+                    da.certificate_sha256, da.pdf_sha256, da.signature_sha256,
                     da.package_manifest, da.manifest_sha256,
                     da.package_state, da.design_snapshot_files,
+                    da.client_timezone, da.client_language, da.client_viewport,
+                    da.client_referrer, da.client_device_fingerprint,
                     p.name AS product_name, pv.size_name AS size_name
              FROM design_approvals da
              LEFT JOIN order_items oi ON oi.id = da.item_id
@@ -1157,13 +1164,26 @@ router.get('/verify/:certificateNumber', async (req, res) => {
             verified: true,
             package_state: row.package_state,
             integrity,
+            client_environment: {
+                ip: row.client_ip,
+                timezone: row.client_timezone,
+                language: row.client_language,
+                viewport: row.client_viewport,
+                referrer: row.client_referrer,
+                device_fingerprint: row.client_device_fingerprint,
+            },
+            hashes: {
+                pdf_sha256: row.pdf_sha256 || null,
+                certificate_sha256: row.certificate_sha256 || null,
+                signature_sha256: row.signature_sha256 || null,
+                manifest_sha256: row.manifest_sha256 || null,
+                verification_hash: row.verification_hash || null,
+            },
             files: {
                 certificate_url: row.approval_image_path || null,
                 pdf_url: row.approval_pdf_path || null,
-                certificate_sha256: row.certificate_sha256 || null,
-                pdf_sha256: row.pdf_sha256 || null,
-                manifest_sha256: row.manifest_sha256 || null,
             },
+            design_snapshot_files: row.design_snapshot_files || null,
         });
     } catch (err) {
         console.error('[PublicDesign] Verify error:', err.message);

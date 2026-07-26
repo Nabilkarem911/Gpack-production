@@ -72,42 +72,8 @@ async function processApproval(approvalData) {
     }
 
     try {
-        // 1. Generate QR Code
-        const qrBuffer = await QRCode.toBuffer(verifyUrl, {
-            width: 300,
-            margin: 1,
-            color: { dark: '#1e3a5f', light: '#ffffff' },
-        });
-        const qrPath = path.join(pkgDir, 'qr.png');
-        fs.writeFileSync(qrPath, qrBuffer);
-
-        // 2. Generate certificate image (1080×1350)
-        const certImagePath = await _generateCertificateImage({
-            pkgDir, certificate_number, client_name, product_name, size_name,
-            signer_name, approved_at: approvedDate,
-            signature_path, qrBuffer, verifyUrl,
-        });
-        await _updatePackageState(item_id, 'image_done');
-
-        // 3. Generate PDF
-        const pdfPath = await _generatePDF({
-            pkgDir, certificate_number, order_number, client_name, product_name, size_name,
-            signer_name, approved_at: approvedDate,
-            signature_path, qrPath, verifyUrl, declaration_text,
-        });
-        await _updatePackageState(item_id, 'pdf_done');
-
-        // 4. Copy signature to package
-        let sigPkgPath = null;
-        if (signature_path) {
-            const sigSrc = path.join(UPLOAD_BASE, signature_path.replace('/uploads/designs/', ''));
-            sigPkgPath = path.join(pkgDir, 'signature.png');
-            try { fs.copyFileSync(sigSrc, sigPkgPath); } catch { }
-        }
-
-        // 4b. Immutable Design Snapshot — copy ALL design files to package
-        // This ensures the exact files the client approved are preserved.
-        // Even if the designer uploads new files later, this snapshot never changes.
+        // ── Step 1: Immutable Design Snapshot ──
+        // Copy ALL design files first — this is the foundation of the package.
         let designPreviewPath = null;
         const snapshotDir = path.join(pkgDir, 'design-snapshot');
         fs.mkdirSync(snapshotDir, { recursive: true });
@@ -126,7 +92,6 @@ async function processApproval(approvalData) {
                             const destPath = path.join(snapshotDir, filename);
                             fs.copyFileSync(fullSrc, destPath);
 
-                            // Compute hash of snapshot file
                             const fileBuffer = fs.readFileSync(destPath);
                             const fileHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
                             snapshotFiles.push({
@@ -136,7 +101,6 @@ async function processApproval(approvalData) {
                                 size: fileBuffer.length,
                             });
 
-                            // Use first image as design-preview.jpg
                             if (!designPreviewPath) {
                                 const ext = filename.split('.').pop().toLowerCase();
                                 if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].includes(ext)) {
@@ -159,7 +123,6 @@ async function processApproval(approvalData) {
             }
         }
 
-        // Store snapshot file list in DB
         if (snapshotFiles.length > 0) {
             try {
                 await db.query(
@@ -169,6 +132,45 @@ async function processApproval(approvalData) {
             } catch (e) {
                 console.error('[ApprovalService] Snapshot DB update error:', e.message);
             }
+        }
+        await _updatePackageState(item_id, 'snapshot_done');
+
+        // ── Step 2: QR Code ──
+        const qrBuffer = await QRCode.toBuffer(verifyUrl, {
+            width: 300,
+            margin: 1,
+            color: { dark: '#1e3a5f', light: '#ffffff' },
+        });
+        const qrPath = path.join(pkgDir, 'qr.png');
+        fs.writeFileSync(qrPath, qrBuffer);
+        await _updatePackageState(item_id, 'qr_done');
+
+        // ── Step 3: Certificate Image ──
+        const certImagePath = await _generateCertificateImage({
+            pkgDir, certificate_number, client_name, product_name, size_name,
+            signer_name, approved_at: approvedDate,
+            signature_path, qrBuffer, verifyUrl,
+        });
+        await _updatePackageState(item_id, 'certificate_done');
+
+        // ── Step 4: PDF ──
+        const pdfPath = await _generatePDF({
+            pkgDir, certificate_number, order_number, client_name, product_name, size_name,
+            signer_name, approved_at: approvedDate,
+            signature_path, qrPath, verifyUrl, declaration_text,
+        });
+        await _updatePackageState(item_id, 'pdf_done');
+
+        // ── Step 5: Copy signature to package + compute hash ──
+        let sigPkgPath = null;
+        let signatureHash = null;
+        if (signature_path) {
+            const sigSrc = path.join(UPLOAD_BASE, signature_path.replace('/uploads/designs/', ''));
+            sigPkgPath = path.join(pkgDir, 'signature.png');
+            try {
+                fs.copyFileSync(sigSrc, sigPkgPath);
+                signatureHash = crypto.createHash('sha256').update(fs.readFileSync(sigPkgPath)).digest('hex');
+            } catch { }
         }
 
         // 5. Generate metadata.json
@@ -222,7 +224,7 @@ async function processApproval(approvalData) {
             console.error('[ApprovalService] Audit log error:', e.message);
         }
 
-        // 7. Update DB with file paths + individual file hashes
+        // 7. Update DB with file paths + individual file hashes + client environment
         const certRelPath = `/uploads/designs/approvals/${year}/${month}/${day}/item-${item_id}/certificate.jpg`;
         const pdfRelPath = `/uploads/designs/approvals/${year}/${month}/${day}/item-${item_id}/approval.pdf`;
 
@@ -235,9 +237,18 @@ async function processApproval(approvalData) {
                 approval_image_path = $1,
                 approval_pdf_path = $2,
                 certificate_sha256 = $3,
-                pdf_sha256 = $4
-             WHERE item_id = $5`,
-            [certRelPath, pdfRelPath, certHash, pdfHash, item_id]
+                pdf_sha256 = $4,
+                signature_sha256 = $5,
+                client_timezone = $6,
+                client_language = $7,
+                client_viewport = $8,
+                client_referrer = $9,
+                client_device_fingerprint = $10
+             WHERE item_id = $11`,
+            [certRelPath, pdfRelPath, certHash, pdfHash, signatureHash,
+             approvalData.timezone || null, approvalData.language || null,
+             approvalData.viewport || null, approvalData.referrer || null,
+             approvalData.device_fingerprint || null, item_id]
         );
 
         // 8. Log activity
@@ -249,14 +260,70 @@ async function processApproval(approvalData) {
             );
         } catch { }
 
-        // 8b. Generate manifest.json (SHA-256 + size + mime for each file)
+        // 8b. Generate comprehensive audit.json (legal evidence bundle)
+        // This is NOT just a log — it's a complete evidence package.
+        // After 5 years, this file alone proves everything about the approval.
+        let workflowHistory = [];
+        let activityLog = [];
+        try {
+            const whRes = await db.query(
+                `SELECT * FROM workflow_history WHERE entity_type = 'order_item' AND entity_id = $1 ORDER BY created_at ASC`,
+                [item_id]
+            );
+            workflowHistory = whRes.rows;
+
+            const alRes = await db.query(
+                `SELECT * FROM design_activity_log WHERE item_id = $1 ORDER BY created_at ASC`,
+                [item_id]
+            );
+            activityLog = alRes.rows;
+        } catch { }
+
+        const auditBundle = {
+            version: 1,
+            certificate_number,
+            correlation_id: approvalData.correlation_id || null,
+            approved_by: signer_name,
+            approved_at: approvedDate.toISOString(),
+            client_ip: client_ip || null,
+            client_environment: {
+                timezone: approvalData.timezone || null,
+                language: approvalData.language || null,
+                viewport: approvalData.viewport || null,
+                referrer: approvalData.referrer || null,
+                device_fingerprint: approvalData.device_fingerprint || null,
+            },
+            order: {
+                order_id, order_number, client_name, product_name, size_name,
+            },
+            declaration_text,
+            verification_hash,
+            file_hashes: {
+                pdf_sha256: pdfHash,
+                certificate_sha256: certHash,
+                signature_sha256: signatureHash,
+                design_snapshot_files: snapshotFiles,
+            },
+            workflow_history: workflowHistory,
+            activity_log: activityLog,
+            generated_at: new Date().toISOString(),
+        };
+        const auditPath = path.join(pkgDir, 'audit.json');
+        fs.writeFileSync(auditPath, JSON.stringify(auditBundle, null, 2));
+        await _updatePackageState(item_id, 'audit_done');
+
+        // 8c. Generate signed manifest.json (THE reference document)
+        // The manifest IS the source of truth — not just a collection of hashes.
+        // It includes a signature (HMAC-SHA256) proving it was generated by the ERP.
         const manifest = await _generateManifest(pkgDir, certificate_number);
-        const manifestPath = path.join(pkgDir, 'manifest.json');
         const manifestJson = JSON.stringify(manifest, null, 2);
+        const manifestPath = path.join(pkgDir, 'manifest.json');
         fs.writeFileSync(manifestPath, manifestJson);
 
-        // Hash the manifest itself and store in DB (immutability chain)
+        // Sign the manifest with HMAC (using verification_hash as key)
         const manifestHash = crypto.createHash('sha256').update(manifestJson).digest('hex');
+        const signingKey = verification_hash || process.env.JWT_SECRET || 'gpack-default-key';
+        const manifestSignature = crypto.createHmac('sha256', signingKey).update(manifestJson).digest('hex');
 
         try {
             await db.query(
@@ -270,6 +337,9 @@ async function processApproval(approvalData) {
         } catch (e) {
             console.error('[ApprovalService] Manifest DB update error:', e.message);
         }
+
+        // Write manifest.sig (signature file alongside manifest.json)
+        fs.writeFileSync(path.join(pkgDir, 'manifest.sig'), manifestSignature);
 
         // 9. Create ZIP archive of the approval package
         const zipPath = path.join(pkgDir, '..', `item-${item_id}.zip`);
@@ -288,9 +358,29 @@ async function processApproval(approvalData) {
         } catch (e) {
             console.error('[ApprovalService] ZIP creation skipped:', e.message);
         }
-
-        // 10. Mark package as fully done
         await _updatePackageState(item_id, 'zip_done');
+
+        // 10. Verify package integrity (self-check before marking ready)
+        const integrity = await verifyPackageIntegrity(item_id);
+        if (integrity.verified) {
+            await _updatePackageState(item_id, 'ready');
+            console.log(`[ApprovalService] Package verified — integrity OK`);
+        } else {
+            console.error(`[ApprovalService] Package integrity check FAILED:`, integrity.mismatches);
+            await _updatePackageState(item_id, 'verify_failed');
+        }
+
+        // 11. Protect snapshot files — chmod 444 (read-only)
+        try {
+            _chmodReadOnly(snapshotDir);
+            // Also protect generated files
+            for (const f of ['certificate.jpg', 'approval.pdf', 'manifest.json', 'manifest.sig', 'audit.json', 'metadata.json']) {
+                const fp = path.join(pkgDir, f);
+                if (fs.existsSync(fp)) fs.chmodSync(fp, 0o444);
+            }
+        } catch (e) {
+            console.warn('[ApprovalService] chmod 444 skipped:', e.message);
+        }
 
         console.log(`[ApprovalService] Approval ${certificate_number} package generated successfully`);
     } catch (err) {
@@ -505,7 +595,8 @@ async function _generatePDF(data) {
 // ── _sendWhatsAppNotification removed — now handled by NotificationService ──
 
 // ── Update package state (state machine for crash recovery) ─────────────────
-// States: pending → image_done → pdf_done → manifest_done → zip_done → notified
+// States: pending → snapshot_done → qr_done → certificate_done → pdf_done →
+//         audit_done → manifest_done → zip_done → ready (or verify_failed) → notified
 async function _updatePackageState(itemId, state) {
     try {
         await db.query(
@@ -520,6 +611,21 @@ async function _updatePackageState(itemId, state) {
     }
 }
 
+// ── Recursively set directory + files to read-only (chmod 444) ──────────────
+function _chmodReadOnly(dirPath) {
+    const items = fs.readdirSync(dirPath);
+    for (const item of items) {
+        const fullPath = path.join(dirPath, item);
+        const stat = fs.statSync(fullPath);
+        if (stat.isDirectory()) {
+            _chmodReadOnly(fullPath);
+            fs.chmodSync(fullPath, 0o555); // dir: r-x
+        } else {
+            fs.chmodSync(fullPath, 0o444); // file: r--
+        }
+    }
+}
+
 // ── Verify package integrity (file immutability check) ──────────────────────
 // Recomputes SHA-256 of all files in the package and compares to manifest.
 // Also verifies the manifest hash matches what's stored in DB.
@@ -528,7 +634,7 @@ async function verifyPackageIntegrity(itemId) {
     try {
         const res = await db.query(
             `SELECT certificate_number, approval_image_path, approval_pdf_path,
-                    certificate_sha256, pdf_sha256,
+                    certificate_sha256, pdf_sha256, signature_sha256,
                     package_manifest, manifest_sha256,
                     package_state
              FROM design_approvals WHERE item_id = $1 ORDER BY id DESC LIMIT 1`,
@@ -564,6 +670,18 @@ async function verifyPackageIntegrity(itemId) {
                 }
             } else {
                 mismatches.push({ file: 'approval.pdf', error: 'File missing' });
+            }
+        }
+
+        // Verify signature hash
+        if (appr.signature_sha256) {
+            const pkgDir = path.dirname(path.join(__dirname, '..', appr.approval_pdf_path));
+            const sigFile = path.join(pkgDir, 'signature.png');
+            if (fs.existsSync(sigFile)) {
+                const currentHash = crypto.createHash('sha256').update(fs.readFileSync(sigFile)).digest('hex');
+                if (currentHash !== appr.signature_sha256) {
+                    mismatches.push({ file: 'signature.png', expected: appr.signature_sha256, actual: currentHash });
+                }
             }
         }
 

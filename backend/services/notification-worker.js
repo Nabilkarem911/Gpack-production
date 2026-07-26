@@ -123,6 +123,7 @@ async function _processQueue() {
                  processing_started_at = NOW(),
                  lease_id = gen_random_uuid(),
                  processing_owner = $1,
+                 lease_version = lease_version + 1,
                  updated_at = NOW()
              WHERE id IN (
                  SELECT id FROM notification_queue
@@ -134,7 +135,7 @@ async function _processQueue() {
                  LIMIT 10
                  FOR UPDATE SKIP LOCKED
              )
-             RETURNING id, lease_id, channel, recipient, recipient_name, recipient_role,
+             RETURNING id, lease_id, lease_version, channel, recipient, recipient_name, recipient_role,
                        message_type, subject, body, attachments, attempts,
                        entity_type, entity_id, metadata, priority, idempotency_key,
                        correlation_id`,
@@ -171,6 +172,7 @@ async function _reclaimStuckItems() {
                  processing_started_at = NULL,
                  lease_id = NULL,
                  processing_owner = NULL,
+                 lease_version = lease_version + 1,
                  last_error = 'Reclaimed: processing timeout (>10min)',
                  updated_at = NOW()
              WHERE status = 'processing'
