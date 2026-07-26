@@ -58,7 +58,7 @@ async function processApproval(approvalData) {
              FROM order_items oi
              JOIN orders o ON o.id = oi.order_id
              JOIN clients c ON c.id = o.client_id
-             LEFT JOIN users u ON u.id = oi.designer_id
+             LEFT JOIN users u ON u.id = oi.assigned_designer_id
              WHERE oi.id = $1`,
             [item_id]
         );
@@ -271,7 +271,7 @@ async function processApproval(approvalData) {
         let activityLog = [];
         try {
             const whRes = await db.query(
-                `SELECT * FROM workflow_history WHERE entity_type = 'order_item' AND entity_id = $1 ORDER BY created_at ASC`,
+                `SELECT * FROM workflow_history WHERE entity_type = 'order_item' AND entity_id = $1 ORDER BY changed_at ASC`,
                 [item_id]
             );
             workflowHistory = whRes.rows;
@@ -689,14 +689,19 @@ async function verifyPackageIntegrity(itemId) {
             }
         }
 
-        // Verify manifest hash
-        if (appr.package_manifest && appr.manifest_sha256) {
-            const manifestJson = typeof appr.package_manifest === 'string'
-                ? appr.package_manifest
-                : JSON.stringify(appr.package_manifest);
-            const currentManifestHash = crypto.createHash('sha256').update(manifestJson).digest('hex');
-            if (currentManifestHash !== appr.manifest_sha256) {
-                mismatches.push({ file: 'manifest.json', expected: appr.manifest_sha256, actual: currentManifestHash });
+        // Verify manifest hash — read from disk, not from DB JSONB
+        // (JSONB reorders keys, so re-serializing produces a different string/hash)
+        if (appr.manifest_sha256 && appr.approval_pdf_path) {
+            const pkgDir = path.dirname(path.join(__dirname, '..', appr.approval_pdf_path));
+            const manifestFile = path.join(pkgDir, 'manifest.json');
+            if (fs.existsSync(manifestFile)) {
+                const fileBuffer = fs.readFileSync(manifestFile);
+                const currentManifestHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+                if (currentManifestHash !== appr.manifest_sha256) {
+                    mismatches.push({ file: 'manifest.json', expected: appr.manifest_sha256, actual: currentManifestHash });
+                }
+            } else {
+                mismatches.push({ file: 'manifest.json', error: 'File missing' });
             }
         }
 
