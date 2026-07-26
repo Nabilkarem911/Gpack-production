@@ -69,8 +69,8 @@ async function render(code, lang = 'ar', vars = {}) {
         return null;
     }
 
-    let body = template.body;
-    let subject = template.subject || '';
+    let body = template.body.replace(/\\n/g, '\n');
+    let subject = (template.subject || '').replace(/\\n/g, '\n');
 
     // Replace {{var}} placeholders
     for (const [k, v] of Object.entries(vars)) {

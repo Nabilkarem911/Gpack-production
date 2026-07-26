@@ -122,8 +122,9 @@ async function _wahaSendText(chatId, text) {
 }
 
 async function _wahaSendImage(chatId, imagePath, caption) {
-    if (!fs.existsSync(imagePath)) throw new Error(`Image not found: ${imagePath}`);
-    const buffer = fs.readFileSync(imagePath);
+    const resolved = _resolvePath(imagePath);
+    if (!fs.existsSync(resolved)) throw new Error(`Image not found: ${imagePath}`);
+    const buffer = fs.readFileSync(resolved);
     const base64 = buffer.toString('base64');
     const ext = imagePath.split('.').pop().toLowerCase();
     const mime = ext === 'png' ? 'image/png' : 'image/jpeg';
@@ -133,15 +134,16 @@ async function _wahaSendImage(chatId, imagePath, caption) {
         body: {
             session: WAHA_SESSION,
             chatId,
-            file: { mimetype: mime, filename: imagePath.split('/').pop(), data: base64 },
+            file: { mimetype: mime, filename: resolved.split('/').pop(), data: base64 },
             caption: caption || '',
         },
     });
 }
 
 async function _wahaSendFile(chatId, filePath, caption) {
-    if (!fs.existsSync(filePath)) throw new Error(`File not found: ${filePath}`);
-    const buffer = fs.readFileSync(filePath);
+    const resolved = _resolvePath(filePath);
+    if (!fs.existsSync(resolved)) throw new Error(`File not found: ${filePath}`);
+    const buffer = fs.readFileSync(resolved);
     const base64 = buffer.toString('base64');
     const ext = filePath.split('.').pop().toLowerCase();
     const mimeMap = { pdf: 'application/pdf', doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' };
@@ -152,7 +154,7 @@ async function _wahaSendFile(chatId, filePath, caption) {
         body: {
             session: WAHA_SESSION,
             chatId,
-            file: { mimetype: mime, filename: filePath.split('/').pop(), data: base64 },
+            file: { mimetype: mime, filename: resolved.split('/').pop(), data: base64 },
             caption: caption || '',
         },
     });
@@ -199,6 +201,25 @@ async function _wahaStartSession() {
     } catch (err) {
         return { error: err.message };
     }
+}
+
+// ── Resolve file path for container environment ─────────────────────────────
+// DB stores paths like /uploads/designs/... but inside Docker the app runs
+// from /app, so files are at /app/uploads/designs/...
+function _resolvePath(filePath) {
+    if (!filePath) return filePath;
+    // Already absolute and exists → use as-is
+    if (fs.existsSync(filePath)) return filePath;
+    // Try prepending /app (Docker working directory)
+    if (filePath.startsWith('/uploads/')) {
+        const containerPath = '/app' + filePath;
+        if (fs.existsSync(containerPath)) return containerPath;
+    }
+    // Try relative to __dirname (local dev)
+    const relPath = require('path').join(__dirname, '..', filePath);
+    if (fs.existsSync(relPath)) return relPath;
+    // Return original (will fail with clear error)
+    return filePath;
 }
 
 // ── Send interactive buttons message ────────────────────────────────────────
