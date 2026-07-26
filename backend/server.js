@@ -60,7 +60,7 @@ async function runMigrations() {
             const statements = rawSql
                 .split(/;[ \t]*\r?\n/)
                 .map(s => s.trim())
-                .filter(s => s.length > 0 && !s.startsWith('--'));
+                .filter(s => s.length > 0);
 
             let skippedAny = false;
             let failedAny = false;
