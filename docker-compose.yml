@@ -23,6 +23,7 @@ services:
       WAHA_SESSION: ${WAHA_SESSION:-default}
       WAHA_ADMIN_CHAT_ID: ${WAHA_ADMIN_CHAT_ID:-}
       WHATSAPP_PROVIDER: ${WHATSAPP_PROVIDER:-waha}
+      WAHA_WEBHOOK_SECRET: ${WAHA_WEBHOOK_SECRET:-}
       BASE_URL: ${BASE_URL:-https://erp.gpacksa.com}
     expose:
       - "3000"
@@ -39,6 +40,33 @@ services:
         aliases:
           - gpack-api
       dokploy-network:
+
+  notification-worker:
+    build: ./backend
+    restart: unless-stopped
+    stop_grace_period: 10s
+    command: ["node", "services/notification-worker.js"]
+    environment:
+      DATABASE_HOST: ${DATABASE_HOST}
+      DATABASE_PORT: 5432
+      DATABASE_NAME: ${DATABASE_NAME}
+      DATABASE_USER: ${DATABASE_USER}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      NODE_ENV: production
+      WAHA_URL: ${WAHA_URL:-}
+      WAHA_SESSION: ${WAHA_SESSION:-default}
+      WAHA_ADMIN_CHAT_ID: ${WAHA_ADMIN_CHAT_ID:-}
+      WHATSAPP_PROVIDER: ${WHATSAPP_PROVIDER:-waha}
+      BASE_URL: ${BASE_URL:-https://erp.gpacksa.com}
+    depends_on:
+      backend:
+        condition: service_healthy
+    volumes:
+      - ./backend/uploads:/app/uploads
+    networks:
+      - default
+      - dokploy-network
 
   frontend:
     build:

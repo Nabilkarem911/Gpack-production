@@ -105,12 +105,14 @@
         <div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
             <h2 class="font-bold text-slate-800">قائمة الانتظار</h2>
             <div class="flex items-center gap-2">
+                <div id="wa-queue-stats" class="flex items-center gap-1.5 flex-wrap"></div>
                 <select id="wa-queue-filter" class="text-xs border border-slate-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-brand-500">
                     <option value="all">الكل</option>
-                    <option value="pending">في الانتظار</option>
+                    <option value="pending">منتظر</option>
                     <option value="processing">قيد المعالجة</option>
                     <option value="sent">مرسلة</option>
                     <option value="failed">فاشلة</option>
+                    <option value="cancelled">ملغية</option>
                 </select>
             </div>
         </div>
@@ -121,6 +123,7 @@
                         <th class="text-right px-4 py-3 font-medium">النوع</th>
                         <th class="text-right px-4 py-3 font-medium">المستلم</th>
                         <th class="text-right px-4 py-3 font-medium">الحالة</th>
+                        <th class="text-right px-4 py-3 font-medium">الأولوية</th>
                         <th class="text-right px-4 py-3 font-medium">المحاولات</th>
                         <th class="text-right px-4 py-3 font-medium">الوقت</th>
                         <th class="text-right px-4 py-3 font-medium">الخطأ</th>
@@ -128,7 +131,7 @@
                     </tr>
                 </thead>
                 <tbody id="wa-queue-body" class="divide-y divide-slate-100">
-                    <tr><td colspan="7" class="text-center py-8 text-slate-400">جاري التحميل...</td></tr>
+                    <tr><td colspan="8" class="text-center py-8 text-slate-400">جاري التحميل...</td></tr>
                 </tbody>
             </table>
         </div>

@@ -196,10 +196,54 @@ async function _wahaStartSession() {
     }
 }
 
+// ── Send interactive buttons message ────────────────────────────────────────
+async function sendButtons(chatId, text, buttons) {
+    if (!WAHA_URL) throw new Error('WAHA_URL not configured');
+    const normalizedId = _normalizePhone(chatId);
+
+    // WAHA buttons format: [{ id, title }, ...]
+    const wahaButtons = buttons.map((b, i) => ({
+        id: b.id || `btn_${i}`,
+        title: b.title || b.text || b,
+    }));
+
+    return _wahaRequest('/api/sendButtons', {
+        method: 'POST',
+        body: {
+            session: WAHA_SESSION,
+            chatId: normalizedId,
+            text,
+            buttons: wahaButtons,
+        },
+    });
+}
+
+// ── Send template message (for future use with Meta Cloud API) ──────────────
+async function sendTemplate(chatId, templateName, language, components) {
+    if (!WAHA_URL) throw new Error('WAHA_URL not configured');
+    const normalizedId = _normalizePhone(chatId);
+
+    // WAHA template format (may vary by provider)
+    return _wahaRequest('/api/sendTemplate', {
+        method: 'POST',
+        body: {
+            session: WAHA_SESSION,
+            chatId: normalizedId,
+            template: {
+                name: templateName,
+                language: { code: language || 'ar' },
+                components: components || [],
+            },
+        },
+    });
+}
+
 module.exports = {
     sendText,
     sendImage,
     sendFile,
+    sendButtons,
+    sendTemplate,
     getSessionStatus,
     getQRCode,
     startSession,

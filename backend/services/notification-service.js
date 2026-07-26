@@ -14,36 +14,66 @@
 // =============================================================================
 
 const db = require('../db');
+const crypto = require('crypto');
 const WhatsApp = require('./whatsapp-service');
+
+// ── Generate idempotency key ────────────────────────────────────────────────
+// SHA256 of (entity_type + entity_id + message_type + recipient)
+// Prevents the same message being enqueued/delivered multiple times on retry.
+function _idempotencyKey({ entity_type, entity_id, message_type, recipient }) {
+    const raw = `${entity_type || ''}:${entity_id || ''}:${message_type || ''}:${recipient || ''}`;
+    return crypto.createHash('sha256').update(raw).digest('hex');
+}
 
 // ── Enqueue a notification ──────────────────────────────────────────────────
 // This is the main method the ERP calls. It saves to notification_queue
 // and the worker picks it up asynchronously.
+// Idempotency: if the same message (same entity+event+recipient) is already
+// queued or sent, the INSERT fails on the unique constraint and we return
+// the existing ID — no duplicate delivery.
 async function enqueue({ channel, recipient, recipient_name, recipient_role,
                          message_type, subject, body, attachments,
-                         entity_type, entity_id, metadata }) {
-    const result = await db.query(
-        `INSERT INTO notification_queue
-            (channel, recipient, recipient_name, recipient_role,
-             message_type, subject, body, attachments,
-             entity_type, entity_id, metadata)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-         RETURNING id`,
-        [
-            channel || 'whatsapp',
-            recipient,
-            recipient_name || null,
-            recipient_role || null,
-            message_type,
-            subject || null,
-            body,
-            attachments ? JSON.stringify(attachments) : null,
-            entity_type || null,
-            entity_id || null,
-            metadata ? JSON.stringify(metadata) : null,
-        ]
-    );
-    return result.rows[0].id;
+                         entity_type, entity_id, metadata, priority }) {
+    const idempotencyKey = _idempotencyKey({ entity_type, entity_id, message_type, recipient });
+
+    try {
+        const result = await db.query(
+            `INSERT INTO notification_queue
+                (channel, recipient, recipient_name, recipient_role,
+                 message_type, subject, body, attachments,
+                 entity_type, entity_id, metadata, idempotency_key, priority)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+             RETURNING id`,
+            [
+                channel || 'whatsapp',
+                recipient,
+                recipient_name || null,
+                recipient_role || null,
+                message_type,
+                subject || null,
+                body,
+                attachments ? JSON.stringify(attachments) : null,
+                entity_type || null,
+                entity_id || null,
+                metadata ? JSON.stringify(metadata) : null,
+                idempotencyKey,
+                priority || 'normal',
+            ]
+        );
+        return result.rows[0].id;
+    } catch (err) {
+        // Unique constraint violation — message already queued/sent
+        if (err.code === '23505') {
+            const existing = await db.query(
+                `SELECT id FROM notification_queue WHERE idempotency_key = $1`,
+                [idempotencyKey]
+            );
+            if (existing.rows.length > 0) {
+                return existing.rows[0].id;
+            }
+        }
+        throw err;
+    }
 }
 
 // ── In-app notification (Notification Center bell icon) ─────────────────────
@@ -112,6 +142,7 @@ async function notifyDesignApproved(data) {
             entity_type: 'order_item',
             entity_id: item_id,
             metadata: { certificate_number, order_number },
+            priority: 'high',
         });
     }
 
@@ -141,6 +172,7 @@ async function notifyDesignApproved(data) {
             entity_type: 'order_item',
             entity_id: item_id,
             metadata: { certificate_number, order_number },
+            priority: 'high',
         });
     }
 
@@ -165,6 +197,7 @@ async function notifyDesignApproved(data) {
             entity_type: 'order_item',
             entity_id: item_id,
             metadata: { certificate_number, order_number },
+            priority: 'high',
         });
     }
 

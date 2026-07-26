@@ -211,4 +211,184 @@ router.get('/whatsapp/qr', authenticate, authorize(['admin', 'super_admin']), as
     }
 });
 
+// ── POST /api/notifications/whatsapp/webhook ────────────────────────────────
+// WAHA webhook receiver — WAHA calls this when message status changes.
+// Configure in WAHA: webhook URL = https://erp.gpacksa.com/api/notifications/whatsapp/webhook
+// This is UNAUTHENTICATED (WAHA can't send JWT) — but we verify via a shared secret.
+router.post('/whatsapp/webhook', async (req, res) => {
+    try {
+        const webhookSecret = process.env.WAHA_WEBHOOK_SECRET || '';
+        const providedSecret = req.headers['x-webhook-secret'] || req.query.secret || '';
+
+        // Verify shared secret if configured
+        if (webhookSecret && providedSecret !== webhookSecret) {
+            return res.status(403).json({ error: 'Invalid webhook secret' });
+        }
+
+        const event = req.body;
+        const eventType = event.event || event.type || 'unknown';
+        const session = event.session || event.sessionName || '';
+        const messageData = event.message || event.data || event.payload || {};
+
+        // Extract message ID and status
+        const messageId = messageData.id?._serialized || messageData.id || event.id || null;
+        const from = messageData.from || event.from || '';
+        const to = messageData.to || event.to || '';
+        const status = event.status || event.state || eventType;
+
+        console.log(`[WAHA Webhook] Event: ${eventType}, Session: ${session}, MsgID: ${messageId}, Status: ${status}`);
+
+        // Update queue item if we have a message ID match
+        if (messageId) {
+            // Try to find queue item by waha_message_id
+            const queueRes = await db.query(
+                `SELECT id, status FROM notification_queue WHERE waha_message_id = $1 AND status = 'sent'`,
+                [messageId]
+            );
+
+            if (queueRes.rows.length > 0) {
+                const item = queueRes.rows[0];
+
+                if (eventType === 'message.delivered' || status === 'delivered') {
+                    await db.query(
+                        `UPDATE notification_queue SET waha_status = 'delivered', delivered_at = NOW(), updated_at = NOW() WHERE id = $1`,
+                        [item.id]
+                    );
+                    console.log(`[WAHA Webhook] Marked ${item.id} as delivered`);
+                } else if (eventType === 'message.read' || status === 'read') {
+                    await db.query(
+                        `UPDATE notification_queue SET waha_status = 'read', updated_at = NOW() WHERE id = $1`,
+                        [item.id]
+                    );
+                    console.log(`[WAHA Webhook] Marked ${item.id} as read`);
+                } else if (eventType === 'message.failed' || status === 'failed') {
+                    await db.query(
+                        `UPDATE notification_queue SET waha_status = 'failed', last_error = $1, updated_at = NOW() WHERE id = $2`,
+                        [JSON.stringify(event).substring(0, 500), item.id]
+                    );
+                    console.log(`[WAHA Webhook] Marked ${item.id} as failed by WAHA`);
+                }
+            }
+        }
+
+        // Handle session status events
+        if (eventType === 'session.status' || eventType === 'status') {
+            const sessionStatus = event.status || event.state;
+            console.log(`[WAHA Webhook] Session ${session} status: ${sessionStatus}`);
+        }
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error('[WAHA Webhook] Error:', err.message);
+        res.status(200).json({ success: true }); // Always 200 so WAHA doesn't retry
+    }
+});
+
+// ── GET /api/notifications/queue/:id ────────────────────────────────────────
+// Get full details of a queue item (payload, error, retry history).
+router.get('/queue/:id', authenticate, authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
+    try {
+        const result = await db.query(
+            `SELECT * FROM notification_queue WHERE id = $1`,
+            [req.params.id]
+        );
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'not found' });
+        }
+        res.json({ success: true, item: result.rows[0] });
+    } catch (err) {
+        res.status(500).json({ error: 'failed to fetch' });
+    }
+});
+
+// ── PUT /api/notifications/queue/:id/cancel ─────────────────────────────────
+// Cancel a pending/processing queue item.
+router.put('/queue/:id/cancel', authenticate, authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
+    try {
+        await db.query(
+            `UPDATE notification_queue SET status = 'cancelled', updated_at = NOW()
+             WHERE id = $1 AND status IN ('pending', 'processing')`,
+            [req.params.id]
+        );
+        res.json({ success: true, message: 'تم إلغاء الإشعار' });
+    } catch (err) {
+        res.status(500).json({ error: 'فشل في الإلغاء' });
+    }
+});
+
+// ── PUT /api/notifications/queue/:id/priority ───────────────────────────────
+// Change priority of a queue item.
+router.put('/queue/:id/priority', authenticate, authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
+    try {
+        const { priority } = req.body;
+        if (!['high', 'normal', 'low'].includes(priority)) {
+            return res.status(400).json({ error: 'priority must be high, normal, or low' });
+        }
+        await db.query(
+            `UPDATE notification_queue SET priority = $1, updated_at = NOW() WHERE id = $2`,
+            [priority, req.params.id]
+        );
+        res.json({ success: true, message: 'تم تغيير الأولوية' });
+    } catch (err) {
+        res.status(500).json({ error: 'فشل في تغيير الأولوية' });
+    }
+});
+
+// ── GET /api/notifications/queue ────────────────────────────────────────────
+// Get all queue items (unified queue dashboard — not just WhatsApp).
+router.get('/queue', authenticate, authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
+    try {
+        const status = req.query.status || 'all';
+        const limit = parseInt(req.query.limit) || 100;
+
+        let query, params;
+        if (status === 'all') {
+            query = `SELECT id, channel, recipient, recipient_name, recipient_role,
+                            message_type, subject, body, status, priority, attempts, max_attempts,
+                            last_error, last_attempt_at, next_attempt_at,
+                            retry_history, idempotency_key, waha_message_id, waha_status,
+                            created_at, sent_at, delivered_at
+                     FROM notification_queue
+                     ORDER BY
+                        CASE priority WHEN 'high' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END,
+                        created_at DESC
+                     LIMIT $1`;
+            params = [limit];
+        } else {
+            query = `SELECT id, channel, recipient, recipient_name, recipient_role,
+                            message_type, subject, body, status, priority, attempts, max_attempts,
+                            last_error, last_attempt_at, next_attempt_at,
+                            retry_history, idempotency_key, waha_message_id, waha_status,
+                            created_at, sent_at, delivered_at
+                     FROM notification_queue
+                     WHERE status = $1
+                     ORDER BY
+                        CASE priority WHEN 'high' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END,
+                        created_at DESC
+                     LIMIT $2`;
+            params = [status, limit];
+        }
+
+        const result = await db.query(query, params);
+
+        // Get summary stats
+        const statsRes = await db.query(
+            `SELECT
+                COUNT(*) FILTER (WHERE status = 'pending') as pending,
+                COUNT(*) FILTER (WHERE status = 'processing') as processing,
+                COUNT(*) FILTER (WHERE status = 'sent') as sent,
+                COUNT(*) FILTER (WHERE status = 'failed') as failed,
+                COUNT(*) FILTER (WHERE status = 'cancelled') as cancelled,
+                COUNT(*) FILTER (WHERE priority = 'high' AND status = 'pending') as high_pending,
+                COUNT(*) as total
+             FROM notification_queue`
+        );
+
+        res.json({ success: true, queue: result.rows, stats: statsRes.rows[0] });
+    } catch (err) {
+        console.error('[Notifications] Queue fetch error:', err.message);
+        res.status(500).json({ error: 'فشل في جلب القائمة' });
+    }
+});
+
 module.exports = router;
