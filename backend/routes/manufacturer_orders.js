@@ -367,6 +367,9 @@ router.get('/:id', async (req, res) => {
                 cd.design_name,
                 cd.design_number,
                 cdf.file_path AS design_thumbnail,
+                srcf.original_name AS design_file_name,
+                srcf.file_size AS design_file_size,
+                srcf.mime_type AS design_mime_type,
                 moi.created_at
              FROM manufacturer_order_items moi
              JOIN order_items oi ON oi.id = moi.order_item_id
@@ -375,6 +378,7 @@ router.get('/:id', async (req, res) => {
              LEFT JOIN units u ON u.id = pv.unit_id
              LEFT JOIN client_designs cd ON cd.id = moi.design_id
              LEFT JOIN client_design_files cdf ON cdf.design_id = moi.design_id AND cdf.file_type = 'thumbnail'
+             LEFT JOIN client_design_files srcf ON srcf.design_id = moi.design_id AND srcf.file_type != 'thumbnail'
              WHERE moi.manufacturer_order_id = $1
              ORDER BY moi.id ASC`,
             [id]

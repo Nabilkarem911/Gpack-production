@@ -1010,6 +1010,50 @@
     }
 
     // ── Print MO ──────────────────────────────────────────────────────────────
+    const PRINT_MO_STATUS_CFG = {
+        pending:             { label: 'قيد التنفيذ',    bg: '#fef3c7', color: '#92400e', dot: '#f59e0b' },
+        sent:                { label: 'تم الإرسال',     bg: '#dbeafe', color: '#1d4ed8', dot: '#3b82f6' },
+        partially_received:  { label: 'استلام جزئي',    bg: '#ffedd5', color: '#9a3412', dot: '#f97316' },
+        received:            { label: 'مُستلم بالكامل', bg: '#d1fae5', color: '#065f46', dot: '#10b981' },
+        cancelled:           { label: 'ملغي',            bg: '#fee2e2', color: '#991b1b', dot: '#ef4444' },
+    };
+
+    function _fmtFileSize(bytes) {
+        const n = parseInt(bytes, 10);
+        if (!n || isNaN(n)) return '—';
+        if (n < 1024) return `${n} bytes`;
+        if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+        return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+    }
+
+    function _fileTypeMeta(ext) {
+        const e = (ext || '').toLowerCase();
+        const map = {
+            pdf:  { label: 'PDF', color: '#dc2626', bg: '#fef2f2', full: 'PDF Document' },
+            ai:   { label: 'AI',  color: '#f97316', bg: '#fff7ed', full: 'Adobe Illustrator' },
+            eps:  { label: 'EPS', color: '#7c3aed', bg: '#f5f3ff', full: 'Encapsulated PostScript' },
+            psd:  { label: 'PSD', color: '#2563eb', bg: '#eff6ff', full: 'Adobe Photoshop' },
+            png:  { label: 'PNG', color: '#0891b2', bg: '#ecfeff', full: 'صورة PNG' },
+            jpg:  { label: 'JPG', color: '#0891b2', bg: '#ecfeff', full: 'صورة JPG' },
+            jpeg: { label: 'JPG', color: '#0891b2', bg: '#ecfeff', full: 'صورة JPG' },
+        };
+        return map[e] || { label: e ? e.toUpperCase() : 'FILE', color: '#475569', bg: '#f1f5f9', full: 'ملف تصميم' };
+    }
+
+    function _fakeBarcodeSvg(text) {
+        const str = String(text || '000000').replace(/[^A-Za-z0-9]/g, '') || '000000';
+        let bars = '';
+        let x = 0;
+        for (let i = 0; i < str.length; i++) {
+            const code = str.charCodeAt(i);
+            const w = 2 + (code % 3);
+            if (code % 2 === 0) bars += `<rect x="${x}" y="0" width="${w}" height="26" fill="#1e293b"/>`;
+            x += w + 1;
+        }
+        if (!bars) { bars = '<rect x="0" y="0" width="2" height="26" fill="#1e293b"/>'; x = 3; }
+        return `<svg width="${x}" height="26" viewBox="0 0 ${x} 26" xmlns="http://www.w3.org/2000/svg" style="display:block;">${bars}</svg>`;
+    }
+
     async function _printMO(moId) {
         try {
             const res = await window.apiFetch(`/api/manufacturer-orders/${moId}`);
@@ -1017,6 +1061,7 @@
             if (!mo) { _toast('فشل تحميل بيانات أمر المورد', 'error'); return; }
 
             const logoBase64 = await _loadLogoBase64();
+            const statusCfg = PRINT_MO_STATUS_CFG[mo.status] || PRINT_MO_STATUS_CFG.pending;
 
             // ── Build table rows ──
             const items = (mo.items || []).map(i => {
@@ -1033,6 +1078,9 @@
                 const qty      = parseInt(i.mo_quantity || i.po_quantity || 0);
                 const unitName = i.unit_name || 'قطعة';
 
+                const fileExt  = _getFileExt(i.design_file_name || i.design_thumbnail || '');
+                const fileMeta = _fileTypeMeta(fileExt);
+
                 return `<tr>
                     <td style="padding:10px 12px;text-align:center;vertical-align:middle;border-bottom:1px solid #f1f5f9;">
                         ${thumbMarkup}
@@ -1042,6 +1090,11 @@
                     <td style="padding:10px 12px;text-align:center;font-size:13px;color:#475569;vertical-align:middle;border-bottom:1px solid #f1f5f9;">${i.size_name || '—'}</td>
                     <td style="padding:10px 12px;text-align:center;font-size:13px;color:#475569;vertical-align:middle;border-bottom:1px solid #f1f5f9;">${unitName}</td>
                     <td style="padding:10px 12px;text-align:center;font-size:18px;font-weight:900;color:#4c1d95;vertical-align:middle;border-bottom:1px solid #f1f5f9;">${qty}</td>
+                    <td style="padding:10px 12px;text-align:center;vertical-align:middle;border-bottom:1px solid #f1f5f9;">
+                        <span style="display:inline-flex;align-items:center;gap:5px;background:${fileMeta.bg};color:${fileMeta.color};padding:5px 10px;border-radius:20px;font-size:11px;font-weight:800;border:1px solid ${fileMeta.color}33;">
+                            ${fileMeta.label}
+                        </span>
+                    </td>
                     <td style="padding:10px 12px;text-align:center;vertical-align:middle;border-bottom:1px solid #f1f5f9;">
                         <span style="display:inline-flex;align-items:center;gap:5px;background:${designBg};color:${designText};padding:5px 10px;border-radius:20px;font-size:11px;font-weight:700;border:1px solid ${designBorder};">
                             <span>${designDot}</span>${designLabel}
@@ -1056,22 +1109,49 @@
                 .map((i, idx) => {
                     const normalizedUrl = _normalizeDesignUrl(i.design_thumbnail);
                     const previewMarkup = _buildPrintPreviewMarkup(normalizedUrl, i.design_name || '', 'page');
+                    const fileExt   = _getFileExt(i.design_file_name || i.design_thumbnail || '');
+                    const fileMeta  = _fileTypeMeta(fileExt);
+                    const fileName  = i.design_file_name || i.design_name || `تصميم-${idx + 1}`;
+                    const fileSize  = _fmtFileSize(i.design_file_size);
                     return `<div style="page-break-before:always;padding:30px 40px;">
                         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;padding-bottom:16px;border-bottom:2px solid #f1f5f9;">
-                            <div>
-                                <h2 style="margin:0;font-size:17px;font-weight:800;color:#1e293b;">ملحق التصميم ${idx + 1} — ${i.product_name || ''} ${i.size_name || ''}</h2>
-                                <p style="margin:4px 0 0;font-size:12px;color:#64748b;">
-                                    ${i.design_name ? `اسم التصميم: <b>${i.design_name}</b> &nbsp;|&nbsp; ` : ''}
-                                    الكمية: <b>${parseInt(i.mo_quantity || i.po_quantity || 0)}</b> &nbsp;|&nbsp; أمر #${mo.mo_number}
-                                </p>
+                            <div style="display:flex;align-items:center;gap:14px;">
+                                <div style="width:44px;height:44px;border-radius:12px;background:#5d198e;color:#fbbf24;display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:900;font-size:15px;line-height:1;">
+                                    <span>${idx + 1}</span>
+                                    <span style="font-size:8px;font-weight:700;color:#c4b5fd;">أمر</span>
+                                </div>
+                                <div>
+                                    <h2 style="margin:0;font-size:17px;font-weight:800;color:#1e293b;">ملحق التصميم ${idx + 1} — ${i.product_name || ''} ${i.size_name || ''}</h2>
+                                    <p style="margin:4px 0 0;font-size:12px;color:#64748b;">
+                                        ${i.design_name ? `اسم التصميم: <b>${i.design_name}</b> &nbsp;|&nbsp; ` : ''}
+                                        الكمية: <b>${parseInt(i.mo_quantity || i.po_quantity || 0)}</b> &nbsp;|&nbsp; أمر #${mo.mo_number}
+                                    </p>
+                                </div>
                             </div>
                             <span style="background:#5d198e;color:white;padding:8px 18px;border-radius:10px;font-size:13px;font-weight:900;">${mo.mo_number}</span>
                         </div>
-                        <div style="margin-top:25px;">
-                            ${previewMarkup}
+
+                        <div style="display:flex;gap:20px;margin-top:22px;align-items:flex-start;">
+                            <div style="flex:1;min-width:0;">
+                                <div style="display:flex;justify-content:space-between;align-items:center;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px 10px 0 0;padding:8px 14px;font-size:11px;color:#64748b;">
+                                    <span>معاينة ملف التصميم</span>
+                                    <span>1 / 1</span>
+                                </div>
+                                ${previewMarkup}
+                            </div>
+                            <div style="width:230px;flex-shrink:0;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:16px;">
+                                <p style="margin:0 0 12px;font-size:12px;font-weight:800;color:#5d198e;">معلومات الملف</p>
+                                <div style="display:flex;flex-direction:column;gap:10px;font-size:11px;">
+                                    <div><span style="color:#94a3b8;display:block;margin-bottom:2px;">اسم الملف</span><span style="font-weight:700;color:#1e293b;word-break:break-word;">${_escapeHtml(fileName)}</span></div>
+                                    <div><span style="color:#94a3b8;display:block;margin-bottom:2px;">نوع الملف</span><span style="font-weight:700;color:${fileMeta.color};">${fileMeta.full}</span></div>
+                                    <div><span style="color:#94a3b8;display:block;margin-bottom:2px;">حجم الملف</span><span style="font-weight:700;color:#1e293b;">${fileSize}</span></div>
+                                </div>
+                            </div>
                         </div>
-                        <div style="text-align:center;margin-top:16px;">
-                            <a href="${normalizedUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:8px;padding:10px 22px;background:#5d198e;color:white;text-decoration:none;border-radius:10px;font-size:13px;font-weight:700;">⬇️ تحميل ملف التصميم</a>
+
+                        <div style="text-align:center;margin-top:16px;display:flex;justify-content:center;gap:10px;">
+                            <a href="${normalizedUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:8px;padding:10px 22px;background:#f1f5f9;color:#1e293b;text-decoration:none;border-radius:10px;font-size:13px;font-weight:700;border:1px solid #e2e8f0;">📄 فتح في تبويب جديد</a>
+                            <a href="${normalizedUrl}" download style="display:inline-flex;align-items:center;gap:8px;padding:10px 22px;background:#5d198e;color:white;text-decoration:none;border-radius:10px;font-size:13px;font-weight:700;">⬇️ تحميل ملف التصميم</a>
                         </div>
                     </div>`;
                 }).join('');
@@ -1101,6 +1181,8 @@
   .header-brand img { width: 64px; height: 64px; object-fit: contain; }
   .header-brand-text h1 { font-size: 22px; font-weight: 900; color: #fbbf24; letter-spacing: 0.5px; }
   .header-brand-text p  { font-size: 12px; color: #c4b5fd; margin-top: 2px; }
+  .mo-badge-wrap { text-align: left; }
+  .mo-badge-wrap label { display: block; font-size: 10px; color: #c4b5fd; margin-bottom: 4px; font-weight: 700; }
   .mo-badge {
     background: #fbbf24;
     color: #4c1d95;
@@ -1110,13 +1192,15 @@
     font-weight: 900;
     letter-spacing: 1px;
     box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    display: inline-block;
   }
+  .mo-barcode { background: #fff; border-radius: 8px; padding: 6px 10px; margin-top: 8px; display: inline-block; }
 
   /* ── Body ── */
   .body-wrap { padding: 0 36px 36px; }
 
   /* ── Info Grid ── */
-  .info-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-bottom: 24px; }
+  .info-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 24px; }
   .info-box {
     background: #f8fafc;
     border: 1px solid #e2e8f0;
@@ -1126,6 +1210,8 @@
   }
   .info-box label { font-size: 10px; color: #94a3b8; display: block; margin-bottom: 5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; }
   .info-box span   { font-size: 15px; font-weight: 800; color: #1e293b; }
+  .status-pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 20px; font-size: 13px; font-weight: 800; }
+  .status-pill .dot { width: 8px; height: 8px; border-radius: 50%; }
 
   /* ── Section Title ── */
   .section-title {
@@ -1149,8 +1235,12 @@
   tbody tr:hover { background: #f3e8ff; }
   td { vertical-align: middle; }
 
-  /* ── Notes ── */
-  .notes-box { background: #fffbeb; border: 1px solid #fde68a; border-right: 4px solid #f59e0b; border-radius: 10px; padding: 12px 16px; margin-bottom: 20px; font-size: 13px; color: #92400e; }
+  /* ── Notes / Instructions ── */
+  .notes-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0; }
+  .notes-box { background: #fffbeb; border: 1px solid #fde68a; border-right: 4px solid #f59e0b; border-radius: 10px; padding: 12px 16px; font-size: 13px; color: #92400e; }
+  .instructions-box { background: #eff6ff; border: 1px solid #bfdbfe; border-right: 4px solid #3b82f6; border-radius: 10px; padding: 12px 16px; font-size: 13px; color: #1e3a8a; }
+  .instructions-box ul { margin: 6px 0 0; padding-right: 18px; }
+  .instructions-box li { margin-bottom: 4px; }
 
   /* ── Footer ── */
   .doc-footer {
@@ -1190,6 +1280,11 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
   .print-loading p { font-size: 14px; color: #5d198e; font-weight: 700; }
+
+  @media (max-width: 700px) {
+    .info-grid { grid-template-columns: repeat(2, 1fr); }
+    .notes-grid { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>
@@ -1200,10 +1295,14 @@
     ${logoBase64 ? `<img src="${logoBase64}" alt="G.PACK Logo">` : ''}
     <div class="header-brand-text">
       <h1>G.PACK</h1>
-      <p>أمر تشغيل مورد &nbsp;·&nbsp; Manufacturer Order</p>
+      <p>أمر تشغيل مورد &nbsp;·&nbsp; MANUFACTURER ORDER</p>
     </div>
   </div>
-  <div class="mo-badge">${mo.mo_number}</div>
+  <div class="mo-badge-wrap">
+    <label>رقم الأمر</label>
+    <div class="mo-badge">#${mo.mo_number}</div>
+    <div class="mo-barcode">${_fakeBarcodeSvg(mo.mo_number)}</div>
+  </div>
 </div>
 
 <!-- ── Body ── -->
@@ -1216,39 +1315,56 @@
       <span>${mo.supplier_name || '—'}</span>
     </div>
     <div class="info-box">
-      <label>تاريخ الأمر</label>
-      <span>${_fmtDate(mo.created_at)}</span>
+      <label>تاريخ إصدار الأمر</label>
+      <span>${_fmtDate(mo.order_date || mo.created_at)}</span>
     </div>
     <div class="info-box">
-      <label>تاريخ التسليم المتوقع</label>
+      <label>التسليم المتوقع</label>
       <span>${mo.expected_delivery ? _fmtDate(mo.expected_delivery) : '—'}</span>
     </div>
+    <div class="info-box">
+      <label>حالة الأمر</label>
+      <span class="status-pill" style="background:${statusCfg.bg};color:${statusCfg.color};">
+        <span class="dot" style="background:${statusCfg.dot};"></span>${statusCfg.label}
+      </span>
+    </div>
   </div>
-
-  ${mo.notes ? `<div class="notes-box"><b>ملاحظات:</b> ${mo.notes}</div>` : ''}
 
   <!-- Items Table -->
   <div class="section-title">بنود الطلب</div>
   <table>
     <thead>
       <tr>
-        <th style="text-align:center;width:88px;">التصميم</th>
+        <th style="text-align:center;width:80px;">التصميم</th>
         <th style="text-align:right;">اسم الصنف</th>
         <th style="text-align:center;width:90px;">المقاس</th>
-        <th style="text-align:center;width:80px;">الوحدة</th>
-        <th style="text-align:center;width:90px;">الكمية المطلوبة</th>
-        <th style="text-align:center;width:130px;">نوع التصميم</th>
+        <th style="text-align:center;width:70px;">الوحدة</th>
+        <th style="text-align:center;width:100px;">الكمية المطلوبة</th>
+        <th style="text-align:center;width:90px;">نوع الملف</th>
+        <th style="text-align:center;width:110px;">الحالة</th>
       </tr>
     </thead>
     <tbody>
-      ${items || '<tr><td colspan="6" style="text-align:center;padding:24px;color:#94a3b8;">لا توجد بنود</td></tr>'}
+      ${items || '<tr><td colspan="7" style="text-align:center;padding:24px;color:#94a3b8;">لا توجد بنود</td></tr>'}
     </tbody>
   </table>
 
+  <!-- Notes / Special Instructions -->
+  <div class="notes-grid">
+    ${mo.notes ? `<div class="notes-box"><b>📋 ملاحظات</b><br>${_escapeHtml(mo.notes)}</div>` : ''}
+    <div class="instructions-box" style="${mo.notes ? '' : 'grid-column:1 / -1;'}">
+      <b>⚠️ تعليمات خاصة</b>
+      <ul>
+        <li>التأكد من الجودة قبل الطباعة النهائية.</li>
+        <li>الالتزام بتاريخ التسليم المتفق عليه.</li>
+      </ul>
+    </div>
+  </div>
+
   <!-- Footer -->
   <div class="doc-footer">
+    <span>🖨️ تاريخ الطباعة: ${new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} - ${new Date().toLocaleDateString('en-GB')}</span>
     <span class="footer-brand">G.PACK ERP 2.0</span>
-    <span>تاريخ الطباعة: ${new Date().toLocaleDateString('en-GB')}</span>
   </div>
 
   <div class="no-print" style="text-align:center;margin-top:24px;">
