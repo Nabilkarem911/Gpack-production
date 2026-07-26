@@ -360,15 +360,15 @@ router.get('/alerts', authenticate, async (req, res) => {
                  FROM orders o
                  JOIN clients c ON c.id = o.client_id
                  WHERE o.assigned_designer_id = $1
-                   AND o.design_status IN ('pending', 'in_progress', 'revision')
+                   AND o.design_status IN ('waiting_design', 'in_progress', 'client_revision')
                  ORDER BY o.design_sent_at DESC LIMIT 10`,
                 [req.user.id]
             );
             designTasksResult.rows.forEach(row => {
                 alerts.push({
                     type: 'design_assigned',
-                    severity: row.design_status === 'revision' ? 'warning' : 'info',
-                    title: `طلب تصميم #${row.order_number} — ${row.design_status === 'revision' ? 'مطلوب تعديل' : 'بانتظار التصميم'}`,
+                    severity: row.design_status === 'client_revision' ? 'warning' : 'info',
+                    title: `طلب تصميم #${row.order_number} — ${row.design_status === 'client_revision' ? 'مطلوب تعديل' : 'بانتظار التصميم'}`,
                     message: `العميل: ${row.client_name}`,
                     order_id: row.order_id,
                     created_at: row.design_sent_at
@@ -384,7 +384,7 @@ router.get('/alerts', authenticate, async (req, res) => {
                  FROM orders o
                  JOIN clients c ON c.id = o.client_id
                  LEFT JOIN users u ON u.id = o.assigned_designer_id
-                 WHERE o.design_status = 'in_review'
+                 WHERE o.design_status = 'manager_review'
                  ORDER BY o.design_completed_at DESC LIMIT 10`
             );
             reviewResult.rows.forEach(row => {

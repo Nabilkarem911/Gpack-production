@@ -2,8 +2,17 @@
 
 // =============================================================================
 // G.PACK 2.0 — Designer Workflow Route (designer.js)
-// Handles: assign designer, designer tasks, submit designs, review/approve,
-//          file uploads for design briefs and design files.
+// Item-level design state machine with workflow validation + audit trail.
+//
+// State Machine:
+//   waiting_design → in_progress → manager_review → client_review → approved
+//                                         ↓                ↓
+//                                   client_revision   client_revision
+//                                         ↓
+//                                    in_progress (rework)
+//
+// Source of truth: order_items.design_status
+// Summary field:   orders.design_status (derived, for dashboard only)
 // =============================================================================
 
 const express = require('express');
@@ -16,6 +25,67 @@ const db = require('../db');
 const authorize = require('../middleware/authorize');
 const { success, error } = require('../utils/response');
 const { encryptToken, hashToken, hasShareTokenSecret, decryptShareToken } = require('../utils/crypto');
+
+// =============================================================================
+// WORKFLOW DEFINITION — Design State Machine
+// =============================================================================
+const DESIGN_WORKFLOW = {
+    waiting_design: {
+        allowed: [
+            { to: 'in_progress', roles: ['designer', 'admin', 'super_admin', 'manager'] },
+        ],
+    },
+    in_progress: {
+        allowed: [
+            { to: 'manager_review', roles: ['designer', 'admin', 'super_admin', 'manager'], requires: 'files_or_notes' },
+        ],
+    },
+    manager_review: {
+        allowed: [
+            { to: 'client_review', roles: ['admin', 'super_admin', 'manager'] },
+            { to: 'client_revision', roles: ['admin', 'super_admin', 'manager'], requires: 'notes' },
+        ],
+    },
+    client_review: {
+        allowed: [
+            { to: 'approved', roles: ['client', 'admin', 'super_admin', 'manager'] },
+            { to: 'client_revision', roles: ['client', 'admin', 'super_admin', 'manager'], requires: 'notes' },
+        ],
+    },
+    client_revision: {
+        allowed: [
+            { to: 'in_progress', roles: ['designer', 'admin', 'super_admin', 'manager'] },
+        ],
+    },
+    approved: {
+        allowed: [],
+    },
+};
+
+// ── canTransition: validate state transition + role ──────────────────────────
+function canTransition(fromState, toState, userRole) {
+    const def = DESIGN_WORKFLOW[fromState];
+    if (!def) return { ok: false, error: `حالة غير معروفة: ${fromState}` };
+    const rule = def.allowed.find(a => a.to === toState);
+    if (!rule) return { ok: false, error: `انتقال غير مسموح من ${fromState} إلى ${toState}` };
+    if (!rule.roles.includes(userRole)) {
+        return { ok: false, error: `دورك (${userRole}) غير مخول للانتقال من ${fromState} إلى ${toState}` };
+    }
+    return { ok: true, rule };
+}
+
+// ── _logTransition: write to workflow_history ───────────────────────────────
+async function _logTransition(client, entityType, entityId, workflow, fromState, toState, actorId, actorRole, notes, metadata) {
+    try {
+        await client.query(
+            `INSERT INTO workflow_history (entity_type, entity_id, workflow, from_state, to_state, actor_id, actor_role, notes, metadata)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            [entityType, entityId, workflow, fromState || null, toState, actorId || null, actorRole || null, notes || null, JSON.stringify(metadata || {})]
+        );
+    } catch (err) {
+        console.error('[Designer] Log transition error:', err.message);
+    }
+}
 
 // =============================================================================
 // File Upload Configuration
@@ -49,7 +119,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
     storage,
-    limits: { fileSize: 200 * 1024 * 1024 }, // 200MB
+    limits: { fileSize: 200 * 1024 * 1024 },
     fileFilter: (_req, file, cb) => {
         const allowedTypes = /jpeg|jpg|png|gif|pdf|ai|psd|eps|svg|webp|tiff|tif|bmp|raw|heic/;
         const ext = path.extname(file.originalname).toLowerCase();
@@ -73,11 +143,9 @@ function isValidUUID(str) {
 // =============================================================================
 async function _checkDesignerAccess(orderId, user) {
     if (user.role === 'admin' || user.role === 'super_admin' || user.role === 'manager') return true;
-    // Check order-level assignment (legacy)
     const orderResult = await db.query('SELECT assigned_designer_id FROM orders WHERE id = $1', [orderId]);
     if (orderResult.rows.length === 0) return false;
     if (orderResult.rows[0].assigned_designer_id === user.id) return true;
-    // Check item-level assignment (new per-item)
     const itemResult = await db.query(
         'SELECT 1 FROM order_items WHERE order_id = $1 AND assigned_designer_id = $2 LIMIT 1',
         [orderId, user.id]
@@ -87,56 +155,42 @@ async function _checkDesignerAccess(orderId, user) {
 
 // =============================================================================
 // Helper: recalculate order-level design_status from item-level statuses
-// Rules:
-//   - All items approved → 'completed'
-//   - Any item in revision → 'revision'
-//   - All items completed or approved (no pending/in_progress/revision) → 'in_review'
-//   - Any item in_progress or completed → 'in_progress'
-//   - All items pending → 'pending'
-//   - If client_review was set (sent to client), keep 'client_review'
 // =============================================================================
 async function _recalcOrderDesignStatus(client, orderId) {
     const counts = await client.query(
         `SELECT
-            COUNT(*) FILTER (WHERE design_status = 'pending') as pending,
+            COUNT(*) FILTER (WHERE design_status = 'waiting_design') as waiting,
             COUNT(*) FILTER (WHERE design_status = 'in_progress') as in_progress,
-            COUNT(*) FILTER (WHERE design_status = 'completed') as completed,
+            COUNT(*) FILTER (WHERE design_status = 'manager_review') as manager_review,
+            COUNT(*) FILTER (WHERE design_status = 'client_review') as client_review,
             COUNT(*) FILTER (WHERE design_status = 'approved') as approved,
-            COUNT(*) FILTER (WHERE design_status = 'revision') as revision,
+            COUNT(*) FILTER (WHERE design_status = 'client_revision') as client_revision,
             COUNT(*) as total
          FROM order_items WHERE order_id = $1`,
         [orderId]
     );
     const c = counts.rows[0];
-    const pending = parseInt(c.pending);
+    const waiting = parseInt(c.waiting);
     const inProgress = parseInt(c.in_progress);
-    const completed = parseInt(c.completed);
+    const mgrReview = parseInt(c.manager_review);
+    const clientReview = parseInt(c.client_review);
     const approved = parseInt(c.approved);
-    const revision = parseInt(c.revision);
+    const clientRevision = parseInt(c.client_revision);
     const total = parseInt(c.total);
 
     let newStatus;
     if (approved === total) {
         newStatus = 'completed';
-    } else if (revision > 0) {
-        newStatus = 'revision';
-    } else if (pending === 0 && inProgress === 0 && revision === 0) {
-        newStatus = 'in_review';
-    } else if (inProgress > 0 || completed > 0 || approved > 0) {
+    } else if (clientRevision > 0) {
+        newStatus = 'client_revision';
+    } else if (clientReview > 0) {
+        newStatus = 'client_review';
+    } else if (waiting === 0 && inProgress === 0 && clientRevision === 0) {
+        newStatus = 'manager_review';
+    } else if (inProgress > 0 || mgrReview > 0 || approved > 0) {
         newStatus = 'in_progress';
     } else {
-        newStatus = 'pending';
-    }
-
-    // Don't override client_review or completed if already set by other flows
-    const current = await client.query('SELECT design_status, design_client_status FROM orders WHERE id = $1', [orderId]);
-    if (current.rows.length > 0) {
-        const cur = current.rows[0].design_status;
-        const clientStatus = current.rows[0].design_client_status;
-        // If sent to client and not all approved, keep client_review
-        if (clientStatus === 'sent' && newStatus !== 'completed') {
-            newStatus = 'client_review';
-        }
+        newStatus = 'waiting_design';
     }
 
     await client.query('UPDATE orders SET design_status = $1 WHERE id = $2', [newStatus, orderId]);
@@ -148,14 +202,6 @@ async function _recalcOrderDesignStatus(client, orderId) {
 // =============================================================================
 
 // ── POST /api/designer/assign ───────────────────────────────────────────────
-// Assign designer(s) to order items with per-item notes and files.
-// Body (multipart/form-data):
-//   order_id, design_brief (general brief)
-//   item_assignments: JSON string [{item_id, designer_id, notes}] — per-item designer
-//   OR designer_id (legacy: assign all items to one designer)
-//   item_notes: JSON string [{item_id, notes}] — legacy per-item notes
-// Files: design_brief_files[] (order-level), item_files_<item_id>[] (per-item)
-// =============================================================================
 router.post('/assign', authorize(['admin', 'manager', 'super_admin']), upload.any(), async (req, res) => {
     const client = await db.getClient();
     try {
@@ -164,10 +210,8 @@ router.post('/assign', authorize(['admin', 'manager', 'super_admin']), upload.an
         let itemAssignments = [];
         try { itemAssignments = typeof itemAssignmentsRaw === 'string' ? JSON.parse(itemAssignmentsRaw) : (itemAssignmentsRaw || []); } catch { itemAssignments = []; }
 
-        // Legacy support: if designer_id provided and no item_assignments, assign all items to that designer
         const legacyDesignerId = req.body.designer_id;
         if (itemAssignments.length === 0 && legacyDesignerId) {
-            // Fetch all order items and assign them to the legacy designer
             const itemsResult = await db.query('SELECT id FROM order_items WHERE order_id = $1', [order_id]);
             itemAssignments = itemsResult.rows.map(it => ({
                 item_id: it.id,
@@ -176,7 +220,6 @@ router.post('/assign', authorize(['admin', 'manager', 'super_admin']), upload.an
             }));
         }
 
-        // Also merge legacy item_notes into item_assignments
         const itemNotesRaw = req.body.item_notes;
         let itemNotes = [];
         try { itemNotes = typeof itemNotesRaw === 'string' ? JSON.parse(itemNotesRaw) : (itemNotesRaw || []); } catch { itemNotes = []; }
@@ -194,7 +237,6 @@ router.post('/assign', authorize(['admin', 'manager', 'super_admin']), upload.an
 
         await client.query('BEGIN');
 
-        // Verify order exists and is a quote
         const orderCheck = await client.query('SELECT id, status FROM orders WHERE id = $1', [order_id]);
         if (orderCheck.rows.length === 0) {
             await client.query('ROLLBACK');
@@ -205,7 +247,6 @@ router.post('/assign', authorize(['admin', 'manager', 'super_admin']), upload.an
             return res.status(400).json({ error: 'يمكن إرسال العروض بحالة "quote" فقط للمصمم' });
         }
 
-        // Verify all designers exist
         const designerIds = [...new Set(itemAssignments.map(ia => ia.designer_id))];
         for (const did of designerIds) {
             const designerCheck = await client.query('SELECT id, name FROM users WHERE id = $1 AND status = \'active\'', [did]);
@@ -215,7 +256,6 @@ router.post('/assign', authorize(['admin', 'manager', 'super_admin']), upload.an
             }
         }
 
-        // Separate order-level brief files from per-item files
         const allFiles = req.files || [];
         const briefFiles = allFiles
             .filter(f => f.fieldname === 'design_brief_files')
@@ -226,7 +266,6 @@ router.post('/assign', authorize(['admin', 'manager', 'super_admin']), upload.an
                 size: f.size,
             }));
 
-        // Group per-item files by item_id
         const itemFilesMap = {};
         for (const f of allFiles) {
             const match = f.fieldname.match(/^item_files_(.+)$/);
@@ -242,11 +281,10 @@ router.post('/assign', authorize(['admin', 'manager', 'super_admin']), upload.an
             }
         }
 
-        // Set order-level design status and brief (use first designer as order-level assigned_designer_id for backward compat)
         const firstDesignerId = itemAssignments[0].designer_id;
         await client.query(
             `UPDATE orders SET
-                design_status = 'pending',
+                design_status = 'waiting_design',
                 assigned_designer_id = $1,
                 design_brief = $2,
                 design_brief_files = $3,
@@ -255,15 +293,16 @@ router.post('/assign', authorize(['admin', 'manager', 'super_admin']), upload.an
             [firstDesignerId, design_brief || null, JSON.stringify(briefFiles), order_id]
         );
 
-        // Update ALL items to pending first (reset)
         await client.query(
-            `UPDATE order_items SET design_status = 'pending' WHERE order_id = $1`,
+            `UPDATE order_items SET design_status = 'waiting_design' WHERE order_id = $1`,
             [order_id]
         );
 
-        // Set per-item designer_id, notes, and brief files
         for (const ia of itemAssignments) {
             if (!ia.item_id || !ia.designer_id) continue;
+
+            const curItem = await client.query('SELECT design_status FROM order_items WHERE id = $1 AND order_id = $2', [ia.item_id, order_id]);
+            const curStatus = curItem.rows.length > 0 ? curItem.rows[0].design_status : null;
 
             await client.query(
                 `UPDATE order_items SET
@@ -273,21 +312,20 @@ router.post('/assign', authorize(['admin', 'manager', 'super_admin']), upload.an
                 [ia.designer_id, ia.notes || null, ia.item_id, order_id]
             );
 
-            // Set per-item brief files if any
             if (itemFilesMap[ia.item_id]) {
                 await client.query(
                     `UPDATE order_items SET design_brief_files = $1 WHERE id = $2 AND order_id = $3`,
                     [JSON.stringify(itemFilesMap[ia.item_id]), ia.item_id, order_id]
                 );
             }
+
+            await _logTransition(client, 'order_item', ia.item_id, 'design', curStatus, 'waiting_design',
+                req.user.id, req.user.role, ia.notes || 'Assigned to designer', { designer_id: ia.designer_id });
         }
 
-        // Recalculate order-level design_status
         await _recalcOrderDesignStatus(client, order_id);
-
         await client.query('COMMIT');
 
-        // Get designer names for response
         const designerNames = [];
         for (const did of designerIds) {
             const dr = await db.query('SELECT name FROM users WHERE id = $1', [did]);
@@ -309,9 +347,7 @@ router.post('/assign', authorize(['admin', 'manager', 'super_admin']), upload.an
 });
 
 // ── PUT /api/designer/review/:orderId/item/:itemId ──────────────────────────
-// Manager reviews a design item: approve or request revision.
-// Body: { action: 'approve'|'revision', revision_notes? }
-// =============================================================================
+// Manager reviews a design item: approve (→ client_review) or request revision (→ client_revision).
 router.put('/review/:orderId/item/:itemId', authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
     const client = await db.getClient();
     try {
@@ -324,7 +360,6 @@ router.put('/review/:orderId/item/:itemId', authorize(['admin', 'manager', 'supe
 
         await client.query('BEGIN');
 
-        // Verify item exists and belongs to order
         const itemCheck = await client.query(
             'SELECT id, design_status FROM order_items WHERE id = $1 AND order_id = $2',
             [itemId, orderId]
@@ -334,45 +369,41 @@ router.put('/review/:orderId/item/:itemId', authorize(['admin', 'manager', 'supe
             return res.status(404).json({ error: 'الصنف غير موجود' });
         }
 
+        const curStatus = itemCheck.rows[0].design_status;
+        const newStatus = action === 'approve' ? 'client_review' : 'client_revision';
+
+        const transition = canTransition(curStatus, newStatus, req.user.role);
+        if (!transition.ok) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: transition.error });
+        }
+
         if (action === 'approve') {
             await client.query(
-                `UPDATE order_items SET design_status = 'approved' WHERE id = $1`,
+                `UPDATE order_items SET design_status = 'client_review' WHERE id = $1`,
                 [itemId]
             );
+            await _logTransition(client, 'order_item', itemId, 'design', curStatus, 'client_review',
+                req.user.id, req.user.role, 'Manager approved — ready for client review');
         } else {
+            if (!revision_notes) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ error: 'ملاحظات التعديل مطلوبة' });
+            }
             await client.query(
-                `UPDATE order_items SET design_status = 'revision', revision_notes = $1 WHERE id = $2`,
-                [revision_notes || null, itemId]
+                `UPDATE order_items SET design_status = 'client_revision', revision_notes = $1 WHERE id = $2`,
+                [revision_notes, itemId]
             );
+            await _logTransition(client, 'order_item', itemId, 'design', curStatus, 'client_revision',
+                req.user.id, req.user.role, revision_notes, { action: 'revision' });
         }
 
-        // Check if all items are approved → auto-convert to production
-        const pendingItems = await client.query(
-            `SELECT COUNT(*) as count FROM order_items
-             WHERE order_id = $1 AND design_status != 'approved'`,
-            [orderId]
-        );
-
-        let autoConverted = false;
-        if (parseInt(pendingItems.rows[0].count) === 0) {
-            // All items approved → convert to production
-            await client.query(
-                `UPDATE orders SET status = 'production', design_status = 'completed', design_completed_at = NOW()
-                 WHERE id = $1`,
-                [orderId]
-            );
-            autoConverted = true;
-        } else {
-            // Recalculate order-level design_status from item statuses
-            await _recalcOrderDesignStatus(client, orderId);
-        }
-
+        await _recalcOrderDesignStatus(client, orderId);
         await client.query('COMMIT');
 
         res.json({
             success: true,
-            message: action === 'approve' ? 'تم اعتماد التصميم' : 'تم طلب تعديل على التصميم',
-            auto_converted: autoConverted,
+            message: action === 'approve' ? 'تم اعتماد التصميم — جاهز لمراجعة العميل' : 'تم طلب تعديل على التصميم',
         });
     } catch (err) {
         await client.query('ROLLBACK');
@@ -384,8 +415,7 @@ router.put('/review/:orderId/item/:itemId', authorize(['admin', 'manager', 'supe
 });
 
 // ── GET /api/designer/pending-review ────────────────────────────────────────
-// Manager: get orders with design_status = 'in_review' (designer completed all items)
-// =============================================================================
+// Manager: get orders that have items in manager_review status.
 router.get('/pending-review', authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
     try {
         const result = await db.query(
@@ -394,12 +424,16 @@ router.get('/pending-review', authorize(['admin', 'manager', 'super_admin']), as
                     c.name as client_name,
                     u.name as designer_name,
                     (SELECT COUNT(*) FROM order_items WHERE order_id = o.id) as item_count,
+                    (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND design_status = 'manager_review') as manager_review_count,
                     (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND design_status = 'approved') as approved_count
              FROM orders o
              JOIN clients c ON c.id = o.client_id
              LEFT JOIN users u ON u.id = o.assigned_designer_id
-             WHERE o.design_status IN ('in_review', 'revision')
-             ORDER BY o.design_completed_at DESC NULLS LAST`,
+             WHERE EXISTS (
+                 SELECT 1 FROM order_items oi
+                 WHERE oi.order_id = o.id AND oi.design_status = 'manager_review'
+             )
+             ORDER BY o.design_sent_at DESC NULLS LAST`,
         );
         res.json({ orders: result.rows });
     } catch (err) {
@@ -413,8 +447,8 @@ router.get('/pending-review', authorize(['admin', 'manager', 'super_admin']), as
 // =============================================================================
 
 // ── GET /api/designer/my-tasks ──────────────────────────────────────────────
-// Designer: get orders assigned to me.
-// =============================================================================
+// Designer: get orders that have items assigned to me.
+// No order-level design_status filter — purely item-level counts.
 router.get('/my-tasks', async (req, res) => {
     try {
         const isAdmin = ['admin', 'super_admin', 'manager'].includes(req.user.role) ||
@@ -437,43 +471,51 @@ router.get('/my-tasks', async (req, res) => {
                         c.name as client_name,
                         u.name as designer_name,
                         (SELECT COUNT(*) FROM order_items WHERE order_id = o.id) as item_count,
-                        (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND design_status = 'pending') as pending_count,
+                        (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND design_status = 'waiting_design') as waiting_count,
                         (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND design_status = 'in_progress') as in_progress_count,
-                        (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND design_status = 'completed') as completed_count,
+                        (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND design_status = 'manager_review') as manager_review_count,
+                        (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND design_status = 'client_review') as client_review_count,
                         (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND design_status = 'approved') as approved_count,
-                        (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND design_status = 'revision') as revision_count,
+                        (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND design_status = 'client_revision') as client_revision_count,
                         (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND design_files IS NOT NULL AND design_files != '[]'::jsonb) as designed_count
                  FROM orders o
                  JOIN clients c ON c.id = o.client_id
                  LEFT JOIN users u ON u.id = o.assigned_designer_id
-                 WHERE o.design_status IN ('pending', 'in_progress', 'revision', 'client_review', 'in_review')
+                 WHERE o.status = 'quote'
+                   AND EXISTS (
+                       SELECT 1 FROM order_items oi
+                       WHERE oi.order_id = o.id
+                         AND oi.design_status IS NOT NULL
+                         AND oi.design_status != 'approved'
+                   )
                    ${filterClause}
-                 ORDER BY o.design_sent_at DESC`,
+                 ORDER BY o.design_sent_at DESC NULLS LAST`,
                 params
             );
             return res.json({ tasks: result.rows });
         }
 
-        // Designer: see only orders where I have items assigned to me
         const result = await db.query(
             `SELECT o.id, o.order_number, o.design_status, o.design_brief, o.design_brief_files,
                     o.design_sent_at, o.created_at,
                     c.name as client_name,
                     (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND assigned_designer_id = $1) as item_count,
-                    (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND assigned_designer_id = $1 AND design_status = 'pending') as pending_count,
+                    (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND assigned_designer_id = $1 AND design_status = 'waiting_design') as waiting_count,
                     (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND assigned_designer_id = $1 AND design_status = 'in_progress') as in_progress_count,
-                    (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND assigned_designer_id = $1 AND design_status = 'completed') as completed_count,
+                    (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND assigned_designer_id = $1 AND design_status = 'manager_review') as manager_review_count,
+                    (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND assigned_designer_id = $1 AND design_status = 'client_review') as client_review_count,
                     (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND assigned_designer_id = $1 AND design_status = 'approved') as approved_count,
-                    (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND assigned_designer_id = $1 AND design_status = 'revision') as revision_count,
+                    (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND assigned_designer_id = $1 AND design_status = 'client_revision') as client_revision_count,
                     (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND assigned_designer_id = $1 AND design_files IS NOT NULL AND design_files != '[]'::jsonb) as designed_count
              FROM orders o
              JOIN clients c ON c.id = o.client_id
              WHERE EXISTS (
                  SELECT 1 FROM order_items oi
                  WHERE oi.order_id = o.id AND oi.assigned_designer_id = $1
+                   AND oi.design_status IS NOT NULL
+                   AND oi.design_status != 'approved'
              )
-               AND o.design_status IN ('pending', 'in_progress', 'revision', 'in_review')
-             ORDER BY o.design_sent_at DESC`,
+             ORDER BY o.design_sent_at DESC NULLS LAST`,
             [req.user.id]
         );
         res.json({ tasks: result.rows });
@@ -484,18 +526,18 @@ router.get('/my-tasks', async (req, res) => {
 });
 
 // ── GET /api/designer/task/:orderId ─────────────────────────────────────────
-// Designer: get full details of an assigned order including items, client designs, pantone colors.
-// =============================================================================
+// Designer: get full details of an assigned order including items.
+// Query param: ?status=waiting_design — filter items by design_status (context-aware modal)
 router.get('/task/:orderId', async (req, res) => {
     try {
         const { orderId } = req.params;
+        const statusFilter = req.query.status || null;
 
         const hasAccess = await _checkDesignerAccess(orderId, req.user);
         if (!hasAccess) {
             return res.status(403).json({ error: 'غير مصرح لك بعرض هذا العرض' });
         }
 
-        // Get order
         const orderResult = await db.query(
             `SELECT o.id, o.order_number, o.design_status, o.design_brief, o.design_brief_files,
                     o.design_sent_at, o.client_id, c.name as client_name,
@@ -510,22 +552,28 @@ router.get('/task/:orderId', async (req, res) => {
             return res.status(404).json({ error: 'العرض غير موجود' });
         }
 
-        // Decrypt share token for frontend URL construction
         const orderData = orderResult.rows[0];
         if (orderData.design_share_token) {
             try {
                 orderData.design_share_token = decryptShareToken(orderData.design_share_token);
-            } catch {
-                // If decryption fails, it might be stored as plain text (old data)
-                // Keep as-is
-            }
+            } catch { }
         }
 
-        // Get order items with design info
-        // For designers (non-admin), only return items assigned to them
         const isManager = ['admin', 'super_admin', 'manager'].includes(req.user.role);
-        const designerFilter = isManager ? '' : 'AND oi.assigned_designer_id = $2';
-        const itemsParams = isManager ? [orderId] : [orderId, req.user.id];
+
+        let statusCondition = '';
+        const itemsParams = [orderId];
+        let paramIdx = 2;
+
+        if (!isManager) {
+            statusCondition += `AND oi.assigned_designer_id = $${paramIdx++}`;
+            itemsParams.push(req.user.id);
+        }
+
+        if (statusFilter) {
+            statusCondition += ` AND oi.design_status = $${paramIdx++}`;
+            itemsParams.push(statusFilter);
+        }
 
         const itemsResult = await db.query(
             `SELECT oi.id, oi.variant_id, oi.quantity, oi.unit_price,
@@ -533,16 +581,17 @@ router.get('/task/:orderId', async (req, res) => {
                     oi.design_notes, oi.design_files, oi.design_status,
                     oi.designer_notes, oi.revision_notes, oi.design_completed_at,
                     oi.client_design_status, oi.client_revision_notes, oi.client_approved_at,
-                    oi.client_revision_files, oi.design_brief_files, oi.assigned_designer_id
+                    oi.client_revision_files, oi.design_brief_files, oi.assigned_designer_id,
+                    oi.review_token_hash, oi.review_token_expires_at, oi.review_sent_at,
+                    oi.design_client_status
              FROM order_items oi
              LEFT JOIN product_variants pv ON pv.id = oi.variant_id
              LEFT JOIN products p ON p.id = pv.product_id
-             WHERE oi.order_id = $1 ${designerFilter}
+             WHERE oi.order_id = $1 ${statusCondition}
              ORDER BY oi.id ASC`,
             itemsParams
         );
 
-        // Auto-deduplicate design_files (fix for old data with appended duplicates)
         for (const item of itemsResult.rows) {
             if (item.design_files && Array.isArray(item.design_files) && item.design_files.length > 1) {
                 const seen = new Set();
@@ -553,7 +602,6 @@ router.get('/task/:orderId', async (req, res) => {
                     return true;
                 });
                 if (unique.length < item.design_files.length) {
-                    console.log(`[Designer] Deduplicating design_files for item ${item.id}: ${item.design_files.length} → ${unique.length}`);
                     await db.query(
                         `UPDATE order_items SET design_files = $1 WHERE id = $2`,
                         [JSON.stringify(unique), item.id]
@@ -563,49 +611,38 @@ router.get('/task/:orderId', async (req, res) => {
             }
         }
 
-        // Get client pantone colors (if table exists)
         let pantoneColors = [];
         try {
-            const pantoneResult = await db.query(
-                `SELECT color_name, color_code, hex_value FROM client_pantone_colors WHERE client_id = $1`,
-                [orderResult.rows[0].client_id]
+            const pantoneRes = await db.query(
+                `SELECT cp.* FROM client_pantone_colors cp
+                 WHERE cp.client_id = $1
+                 ORDER BY cp.created_at DESC LIMIT 10`,
+                [orderData.client_id]
             );
-            pantoneColors = pantoneResult.rows;
-        } catch { /* table might not exist — ignore */ }
+            pantoneColors = pantoneRes.rows;
+        } catch { }
 
-        // Get client designs (if table exists)
-        let clientDesigns = [];
+        let history = [];
         try {
-            const designsResult = await db.query(
-                `SELECT id, design_name, description FROM client_designs WHERE client_id = $1 AND is_active = true`,
-                [orderResult.rows[0].client_id]
-            );
-            clientDesigns = designsResult.rows;
-        } catch { /* table might not exist — ignore */ }
-
-        // Get approval record if client approved
-        let approvalData = null;
-        // Also check partially_approved for approval data
-        if (orderData.design_client_status === 'approved' || orderData.design_client_status === 'partially_approved') {
-            try {
-                const approvalRes = await db.query(
-                    `SELECT signer_name, signature_image, approval_pdf_path,
-                            client_ip, device_info, approved_at
-                     FROM design_approvals WHERE order_id = $1`,
-                    [orderId]
+            const itemIds = itemsResult.rows.map(i => i.id);
+            if (itemIds.length > 0) {
+                const historyRes = await db.query(
+                    `SELECT wh.*, u.name as actor_name
+                     FROM workflow_history wh
+                     LEFT JOIN users u ON u.id = wh.actor_id
+                     WHERE wh.entity_type = 'order_item' AND wh.entity_id = ANY($1::bigint[])
+                     ORDER BY wh.changed_at ASC`,
+                    [itemIds]
                 );
-                if (approvalRes.rows.length > 0) {
-                    approvalData = approvalRes.rows[0];
-                }
-            } catch { /* table might not exist */ }
-        }
+                history = historyRes.rows;
+            }
+        } catch { }
 
         res.json({
             order: orderData,
             items: itemsResult.rows,
             pantone_colors: pantoneColors,
-            client_designs: clientDesigns,
-            approval: approvalData,
+            workflow_history: history,
         });
     } catch (err) {
         console.error('[Designer] Task detail error:', err.message);
@@ -614,8 +651,6 @@ router.get('/task/:orderId', async (req, res) => {
 });
 
 // ── PUT /api/designer/item/:orderId/:itemId/start ───────────────────────────
-// Designer: mark an item as in_progress.
-// =============================================================================
 router.put('/item/:orderId/:itemId/start', async (req, res) => {
     const client = await db.getClient();
     try {
@@ -627,12 +662,31 @@ router.put('/item/:orderId/:itemId/start', async (req, res) => {
         }
 
         await client.query('BEGIN');
+
+        const itemRes = await client.query(
+            'SELECT design_status FROM order_items WHERE id = $1 AND order_id = $2',
+            [itemId, orderId]
+        );
+        if (itemRes.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'الصنف غير موجود' });
+        }
+
+        const curStatus = itemRes.rows[0].design_status;
+        const transition = canTransition(curStatus, 'in_progress', req.user.role);
+        if (!transition.ok) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: transition.error });
+        }
+
         await client.query(
             `UPDATE order_items SET design_status = 'in_progress' WHERE id = $1 AND order_id = $2`,
             [itemId, orderId]
         );
 
-        // Recalculate order-level design_status from item statuses
+        await _logTransition(client, 'order_item', itemId, 'design', curStatus, 'in_progress',
+            req.user.id, req.user.role, 'Designer started work');
+
         await _recalcOrderDesignStatus(client, orderId);
         await client.query('COMMIT');
 
@@ -647,9 +701,6 @@ router.put('/item/:orderId/:itemId/start', async (req, res) => {
 });
 
 // ── PUT /api/designer/item/:orderId/:itemId/submit ──────────────────────────
-// Designer: submit design for an item (upload files + notes).
-// Body (multipart/form-data): designer_notes, design_files[]
-// =============================================================================
 router.put('/item/:orderId/:itemId/submit', upload.array('design_files', 10), async (req, res) => {
     const client = await db.getClient();
     try {
@@ -661,7 +712,6 @@ router.put('/item/:orderId/:itemId/submit', upload.array('design_files', 10), as
             return res.status(403).json({ error: 'غير مصرح لك' });
         }
 
-        // Get existing design files and current status
         const existingResult = await db.query(
             'SELECT design_files, design_status FROM order_items WHERE id = $1 AND order_id = $2',
             [itemId, orderId]
@@ -670,8 +720,11 @@ router.put('/item/:orderId/:itemId/submit', upload.array('design_files', 10), as
             return res.status(404).json({ error: 'الصنف غير موجود' });
         }
 
-        const currentStatus = existingResult.rows[0].design_status;
-        const isResubmit = currentStatus === 'revision';
+        const curStatus = existingResult.rows[0].design_status;
+        const transition = canTransition(curStatus, 'manager_review', req.user.role);
+        if (!transition.ok) {
+            return res.status(400).json({ error: transition.error });
+        }
 
         const newFiles = (req.files || []).map(f => ({
             filename: f.filename,
@@ -680,17 +733,21 @@ router.put('/item/:orderId/:itemId/submit', upload.array('design_files', 10), as
             size: f.size,
         }));
 
-        // On resubmit (after revision): replace files entirely. On first submit: use new files only.
+        const isResubmit = curStatus === 'client_revision';
         const allFiles = isResubmit ? newFiles : [
             ...(Array.isArray(existingResult.rows[0].design_files) ? existingResult.rows[0].design_files : []),
             ...newFiles
         ];
 
+        if (allFiles.length === 0 && !designer_notes) {
+            return res.status(400).json({ error: 'يجب رفع ملف أو كتابة ملاحظات على الأقل' });
+        }
+
         await client.query('BEGIN');
 
         await client.query(
             `UPDATE order_items SET
-                design_status = 'completed',
+                design_status = 'manager_review',
                 designer_notes = $1,
                 design_files = $2,
                 design_completed_at = NOW(),
@@ -702,14 +759,16 @@ router.put('/item/:orderId/:itemId/submit', upload.array('design_files', 10), as
             [designer_notes || null, JSON.stringify(allFiles), itemId, orderId]
         );
 
-        // Recalculate order-level design_status from item statuses
-        await _recalcOrderDesignStatus(client, orderId);
+        await _logTransition(client, 'order_item', itemId, 'design', curStatus, 'manager_review',
+            req.user.id, req.user.role, designer_notes || 'Designer submitted design',
+            { files_count: newFiles.length });
 
+        await _recalcOrderDesignStatus(client, orderId);
         await client.query('COMMIT');
 
         res.json({
             success: true,
-            message: 'تم تسليم التصميم',
+            message: 'تم تسليم التصميم — في انتظار مراجعة المدير',
             files_added: newFiles.length,
         });
     } catch (err) {
@@ -722,8 +781,6 @@ router.put('/item/:orderId/:itemId/submit', upload.array('design_files', 10), as
 });
 
 // ── GET /api/designer/my-completed ──────────────────────────────────────────
-// Designer: get completed tasks (history).
-// =============================================================================
 router.get('/my-completed', async (req, res) => {
     try {
         const isAdmin = ['admin', 'super_admin', 'manager'].includes(req.user.role) ||
@@ -738,7 +795,7 @@ router.get('/my-completed', async (req, res) => {
                  JOIN clients c ON c.id = o.client_id
                  LEFT JOIN users u ON u.id = o.assigned_designer_id
                  WHERE o.assigned_designer_id IS NOT NULL
-                   AND o.design_status IN ('completed', 'in_review')
+                   AND o.design_status = 'completed'
                  ORDER BY o.design_completed_at DESC NULLS LAST LIMIT 30`
             );
             return res.json({ tasks: result.rows });
@@ -749,8 +806,11 @@ router.get('/my-completed', async (req, res) => {
                     c.name as client_name
              FROM orders o
              JOIN clients c ON c.id = o.client_id
-             WHERE o.assigned_designer_id = $1
-               AND o.design_status IN ('completed', 'in_review')
+             WHERE EXISTS (
+                 SELECT 1 FROM order_items oi
+                 WHERE oi.order_id = o.id AND oi.assigned_designer_id = $1
+                   AND oi.design_status = 'approved'
+             )
              ORDER BY o.design_completed_at DESC NULLS LAST LIMIT 30`,
             [req.user.id]
         );
@@ -766,8 +826,6 @@ router.get('/my-completed', async (req, res) => {
 // =============================================================================
 
 // ── GET /api/designer/designers-list ────────────────────────────────────────
-// Manager: get list of active users with designer role/permission.
-// =============================================================================
 router.get('/designers-list', authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
     try {
         const result = await db.query(
@@ -778,7 +836,6 @@ router.get('/designers-list', authorize(['admin', 'manager', 'super_admin']), as
                AND (r.role_name ILIKE '%design%' OR r.permissions::text ILIKE '%designer%')
              ORDER BY u.name`
         );
-        // If no designers found by role, return all active users (manager can pick anyone)
         if (result.rows.length === 0) {
             const fallback = await db.query(
                 `SELECT u.id, u.name, u.email FROM users u WHERE u.status = 'active' ORDER BY u.name`
@@ -793,18 +850,125 @@ router.get('/designers-list', authorize(['admin', 'manager', 'super_admin']), as
 });
 
 // =============================================================================
-// CLIENT DESIGN REVIEW — Send to client + public view + client response
+// ITEM-LEVEL CLIENT REVIEW
+// =============================================================================
+
+// ── POST /api/designer/item/:orderId/:itemId/send-to-client ─────────────────
+router.post('/item/:orderId/:itemId/send-to-client', authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
+    const client = await db.getClient();
+    try {
+        const { orderId, itemId } = req.params;
+
+        await client.query('BEGIN');
+
+        const itemRes = await client.query(
+            `SELECT oi.id, oi.design_status, oi.design_files, o.order_number, c.name as client_name
+             FROM order_items oi
+             JOIN orders o ON o.id = oi.order_id
+             JOIN clients c ON c.id = o.client_id
+             WHERE oi.id = $1 AND oi.order_id = $2`,
+            [itemId, orderId]
+        );
+        if (itemRes.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'الصنف غير موجود' });
+        }
+
+        const item = itemRes.rows[0];
+        const curStatus = item.design_status;
+        const transition = canTransition(curStatus, 'client_review', req.user.role);
+        if (!transition.ok) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: transition.error });
+        }
+
+        const hasFiles = item.design_files && Array.isArray(item.design_files) && item.design_files.length > 0;
+        if (!hasFiles) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'لا يوجد تصميم مرفوع لهذا الصنف' });
+        }
+
+        const rawToken = crypto.randomBytes(32).toString('hex');
+        let tokenHash;
+        try {
+            tokenHash = hashToken(rawToken);
+        } catch {
+            tokenHash = crypto.createHmac('sha256', rawToken).digest('hex');
+        }
+
+        const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+        await client.query(
+            `UPDATE order_items SET
+                design_status = 'client_review',
+                review_token_hash = $1,
+                review_token_expires_at = $2,
+                review_sent_at = NOW(),
+                design_client_status = 'sent'
+             WHERE id = $3 AND order_id = $4`,
+            [tokenHash, expiresAt, itemId, orderId]
+        );
+
+        await _logTransition(client, 'order_item', itemId, 'design', curStatus, 'client_review',
+            req.user.id, req.user.role, 'Sent to client for review',
+            { order_number: item.order_number, expires_at: expiresAt });
+
+        await _recalcOrderDesignStatus(client, orderId);
+        await client.query('COMMIT');
+
+        const shareUrl = `${req.protocol}://${req.get('host')}/design-review/${rawToken}`;
+
+        try {
+            await db.query(
+                `INSERT INTO design_activity_log (order_id, event_type, event_details, actor)
+                 VALUES ($1, 'item_sent_to_client', $2, 'manager')`,
+                [orderId, JSON.stringify({ item_id: itemId, share_url: shareUrl, expires_at: expiresAt })]
+            );
+        } catch { }
+
+        res.json({
+            success: true,
+            message: 'تم إنشاء رابط مراجعة التصميم للعميل',
+            share_url: shareUrl,
+            expires_at: expiresAt,
+            item_id: itemId,
+        });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('[Designer] Item send-to-client error:', err.message);
+        res.status(500).json({ error: 'فشل في إنشاء رابط المراجعة' });
+    } finally {
+        client.release();
+    }
+});
+
+// ── GET /api/designer/item-history/:itemId ──────────────────────────────────
+router.get('/item-history/:itemId', async (req, res) => {
+    try {
+        const { itemId } = req.params;
+        const result = await db.query(
+            `SELECT wh.*, u.name as actor_name
+             FROM workflow_history wh
+             LEFT JOIN users u ON u.id = wh.actor_id
+             WHERE wh.entity_type = 'order_item' AND wh.entity_id = $1
+             ORDER BY wh.changed_at ASC`,
+            [itemId]
+        );
+        res.json({ success: true, history: result.rows });
+    } catch (err) {
+        console.error('[Designer] Item history error:', err.message);
+        res.status(500).json({ error: 'فشل في تحميل سجل الحالة' });
+    }
+});
+
+// =============================================================================
+// LEGACY ORDER-LEVEL CLIENT REVIEW (backward compat)
 // =============================================================================
 
 // ── POST /api/designer/send-to-client/:orderId ──────────────────────────────
-// Manager: send approved designs to client via a secure share link.
-// Generates a design_share_token, sets design_status = 'client_review'.
-// Returns the share URL.
-// =============================================================================
 router.post('/send-to-client/:orderId', authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
     const { orderId } = req.params;
     try {
-        // Verify order exists and designs are ready
         const orderRes = await db.query(
             `SELECT id, order_number, status, design_status, client_id FROM orders WHERE id = $1`,
             [orderId]
@@ -814,14 +978,12 @@ router.post('/send-to-client/:orderId', authorize(['admin', 'manager', 'super_ad
         }
         const order = orderRes.rows[0];
 
-        // Allow sending at any point: in_progress (partial), in_review (all done), revision, or client_review (re-send)
-        if (!['in_progress', 'in_review', 'revision', 'client_review'].includes(order.design_status)) {
+        if (!['in_progress', 'manager_review', 'client_revision', 'client_review'].includes(order.design_status)) {
             return res.status(400).json({
                 error: 'لا يمكن إرسال التصاميم في الحالة الحالية: ' + (order.design_status || 'غير محدد')
             });
         }
 
-        // Check that at least one item has design_files
         const itemsWithDesigns = await db.query(
             `SELECT COUNT(*) as count FROM order_items
              WHERE order_id = $1 AND design_files IS NOT NULL AND design_files != '[]'::jsonb`,
@@ -831,26 +993,22 @@ router.post('/send-to-client/:orderId', authorize(['admin', 'manager', 'super_ad
             return res.status(400).json({ error: 'لا توجد تصاميم مرفوعة لعرضها على العميل' });
         }
 
-        // Reuse existing token if already sent before (so link doesn't change)
         let plainToken, storedToken, tokenHash, shareUrl;
         const existingToken = await db.query(
             `SELECT design_share_token FROM orders WHERE id = $1`, [orderId]
         );
 
         if (existingToken.rows[0]?.design_share_token) {
-            // Re-sending: decrypt the stored token to get plain token
             const storedTok = existingToken.rows[0].design_share_token;
             try {
                 plainToken = decryptShareToken(storedTok);
             } catch {
-                // If decryption fails, it might be stored as plain text (old data)
                 plainToken = storedTok;
             }
-            storedToken = storedTok; // keep same stored value
+            storedToken = storedTok;
             try { tokenHash = hashToken(plainToken); } catch { tokenHash = crypto.createHmac('sha256', plainToken).digest('hex'); }
             shareUrl = `${req.protocol}://${req.get('host')}/public-design.html?token=${plainToken}`;
         } else {
-            // New send: generate fresh token
             plainToken = crypto.randomBytes(32).toString('hex');
             storedToken = plainToken;
             try {
@@ -864,10 +1022,8 @@ router.post('/send-to-client/:orderId', authorize(['admin', 'manager', 'super_ad
             shareUrl = `${req.protocol}://${req.get('host')}/public-design.html?token=${plainToken}`;
         }
 
-        // 30-day expiry
         const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
-        // Check if there are still items WITHOUT design_files
         const noDesignCount = await db.query(
             `SELECT COUNT(*) as count FROM order_items
              WHERE order_id = $1
@@ -875,9 +1031,6 @@ router.post('/send-to-client/:orderId', authorize(['admin', 'manager', 'super_ad
             [orderId]
         );
         const hasUndesignedItems = parseInt(noDesignCount.rows[0].count) > 0;
-
-        // Only set design_status to 'client_review' if ALL items have designs
-        // Otherwise keep 'in_progress' so designer can still see and work on remaining items
         const newDesignStatus = hasUndesignedItems ? 'in_progress' : 'client_review';
 
         await db.query(
@@ -892,8 +1045,6 @@ router.post('/send-to-client/:orderId', authorize(['admin', 'manager', 'super_ad
             [storedToken, tokenHash, expiresAt, newDesignStatus, orderId]
         );
 
-        // Only reset client response on items that DON'T have design_files yet
-        // (keep already-responded items intact so partial approvals persist)
         await db.query(
             `UPDATE order_items SET
                 client_design_status = NULL,
@@ -905,18 +1056,13 @@ router.post('/send-to-client/:orderId', authorize(['admin', 'manager', 'super_ad
             [orderId]
         );
 
-        // Log activity: sent to client
         try {
             await db.query(
                 `INSERT INTO design_activity_log (order_id, event_type, event_details, actor)
                  VALUES ($1, 'sent_to_client', $2, 'manager')`,
                 [orderId, JSON.stringify({ share_url: shareUrl, expires_at: expiresAt })]
             );
-        } catch (logErr) {
-            console.error('[Designer] Activity log error:', logErr.message);
-        }
-
-        console.log(`[Designer] Sent to client — order ${order.order_number}, URL: ${shareUrl}`);
+        } catch { }
 
         res.json({
             success: true,
@@ -931,12 +1077,9 @@ router.post('/send-to-client/:orderId', authorize(['admin', 'manager', 'super_ad
 });
 
 // ── GET /api/designer/client-view/:token ────────────────────────────────────
-// Public (no auth): client views design files for all items in the order.
-// =============================================================================
 router.get('/client-view/:token', async (req, res) => {
     const { token } = req.params;
     try {
-        // Lookup by hash first, then plaintext fallback
         let orderRes = null;
         try {
             const tokenHash = hashToken(token);
@@ -948,7 +1091,7 @@ router.get('/client-view/:token', async (req, res) => {
                  WHERE o.design_share_token_hash = $1`,
                 [tokenHash]
             );
-        } catch { /* hashToken may throw if SECRET missing */ }
+        } catch { }
 
         if (!orderRes || orderRes.rows.length === 0) {
             orderRes = await db.query(
@@ -966,13 +1109,10 @@ router.get('/client-view/:token', async (req, res) => {
         }
 
         const order = orderRes.rows[0];
-
-        // Check expiry
         if (order.design_token_expires_at && new Date(order.design_token_expires_at) < new Date()) {
             return res.status(410).json({ error: 'انتهت صلاحية هذا الرابط' });
         }
 
-        // Get items with design files
         const itemsRes = await db.query(
             `SELECT oi.id, oi.variant_id, oi.quantity,
                     p.name AS product_name, pv.size_name,
@@ -986,7 +1126,6 @@ router.get('/client-view/:token', async (req, res) => {
             [order.id]
         );
 
-        // Filter out items with no design files
         const items = itemsRes.rows.filter(item => {
             if (!item.design_files) return false;
             const files = Array.isArray(item.design_files) ? item.design_files : [];
@@ -1015,9 +1154,6 @@ router.get('/client-view/:token', async (req, res) => {
 });
 
 // ── POST /api/designer/client-response/:token ───────────────────────────────
-// Public (no auth): client submits approval or revision request per item.
-// Body: { items: [{ item_id, action: 'approve'|'revision', notes? }] }
-// =============================================================================
 router.post('/client-response/:token', async (req, res) => {
     const { token } = req.params;
     const { items } = req.body;
@@ -1028,7 +1164,6 @@ router.post('/client-response/:token', async (req, res) => {
 
     const client = await db.getClient();
     try {
-        // Lookup order by token
         let orderRes = null;
         try {
             const tokenHash = hashToken(token);
@@ -1036,7 +1171,7 @@ router.post('/client-response/:token', async (req, res) => {
                 `SELECT id, order_number, design_client_status FROM orders WHERE design_share_token_hash = $1`,
                 [tokenHash]
             );
-        } catch { /* SECRET missing */ }
+        } catch { }
 
         if (!orderRes || orderRes.rows.length === 0) {
             orderRes = await client.query(
@@ -1050,7 +1185,6 @@ router.post('/client-response/:token', async (req, res) => {
         }
 
         const order = orderRes.rows[0];
-
         await client.query('BEGIN');
 
         let approvedCount = 0;
@@ -1059,61 +1193,63 @@ router.post('/client-response/:token', async (req, res) => {
         for (const item of items) {
             if (!item.item_id || !item.action) continue;
 
+            const itemCheck = await client.query(
+                'SELECT design_status FROM order_items WHERE id = $1 AND order_id = $2',
+                [item.item_id, order.id]
+            );
+            if (itemCheck.rows.length === 0) continue;
+            const curStatus = itemCheck.rows[0].design_status;
+
             if (item.action === 'approve') {
+                const transition = canTransition(curStatus, 'approved', 'client');
+                if (!transition.ok) continue;
+
                 await client.query(
                     `UPDATE order_items
-                     SET client_design_status = 'approved', client_approved_at = NOW()
+                     SET client_design_status = 'approved', client_approved_at = NOW(),
+                         design_status = 'approved'
                      WHERE id = $1 AND order_id = $2`,
                     [item.item_id, order.id]
                 );
+                await _logTransition(client, 'order_item', item.item_id, 'design', curStatus, 'approved',
+                    null, 'client', 'Client approved design');
                 approvedCount++;
             } else if (item.action === 'revision') {
+                const transition = canTransition(curStatus, 'client_revision', 'client');
+                if (!transition.ok) continue;
+
                 await client.query(
                     `UPDATE order_items
-                     SET client_design_status = 'revision_requested', client_revision_notes = $1
+                     SET client_design_status = 'revision_requested',
+                         client_revision_notes = $1,
+                         design_status = 'client_revision'
                      WHERE id = $2 AND order_id = $3`,
                     [item.notes || null, item.item_id, order.id]
                 );
+                await _logTransition(client, 'order_item', item.item_id, 'design', curStatus, 'client_revision',
+                    null, 'client', item.notes || 'Client requested revision');
                 revisionCount++;
             }
         }
 
-        // Determine overall status
-        if (revisionCount > 0) {
-            // Client requested revisions → back to designer
-            await client.query(
-                `UPDATE orders SET design_client_status = 'revision_requested', design_status = 'revision'
-                 WHERE id = $1`,
-                [order.id]
-            );
-            // Set items with revision to design_status = 'revision' so designer sees them
-            await client.query(
-                `UPDATE order_items SET design_status = 'revision'
-                 WHERE order_id = $1 AND client_design_status = 'revision_requested'`,
-                [order.id]
-            );
-        } else if (approvedCount > 0 && revisionCount === 0) {
-            // All submitted items approved
-            // Check if ALL order items with design files are approved
+        await _recalcOrderDesignStatus(client, order.id);
+
+        if (revisionCount === 0 && approvedCount > 0) {
             const pendingRes = await client.query(
                 `SELECT COUNT(*) as count FROM order_items
-                 WHERE order_id = $1
-                   AND design_files IS NOT NULL AND design_files != '[]'::jsonb
-                   AND client_design_status != 'approved'`,
+                 WHERE order_id = $1 AND design_status != 'approved'`,
                 [order.id]
             );
             if (parseInt(pendingRes.rows[0].count) === 0) {
-                // All approved → convert to production
                 await client.query(
                     `UPDATE orders SET
                         design_client_status = 'approved',
                         design_status = 'completed',
-                        design_completed_at = NOW(),
-                        status = 'production'
+                        design_completed_at = NOW()
                      WHERE id = $1`,
                     [order.id]
                 );
-                // Save approved designs to client_designs
+
                 const allItemsRes = await client.query(
                     `SELECT oi.variant_id, oi.design_files, oi.order_id
                      FROM order_items oi
@@ -1127,7 +1263,6 @@ router.post('/client-response/:token', async (req, res) => {
                 const clientId = clientIdRes.rows[0]?.client_id;
                 for (const item of allItemsRes.rows) {
                     if (!item.variant_id) continue;
-                    // Get next design_number
                     const dnRes = await client.query(
                         `SELECT COALESCE(MAX(design_number), 0) + 1 AS next
                          FROM client_designs WHERE client_id = $1 AND variant_id = $2`,
@@ -1141,7 +1276,6 @@ router.post('/client-response/:token', async (req, res) => {
                         [clientId, item.variant_id, designNumber, designName]
                     );
                     const designId = designIns.rows[0].id;
-                    // Insert files
                     const files = Array.isArray(item.design_files) ? item.design_files : [];
                     for (const f of files) {
                         await client.query(
@@ -1151,12 +1285,6 @@ router.post('/client-response/:token', async (req, res) => {
                         );
                     }
                 }
-            } else {
-                // Some items not yet responded
-                await client.query(
-                    `UPDATE orders SET design_client_status = 'sent' WHERE id = $1`,
-                    [order.id]
-                );
             }
         }
 
@@ -1180,8 +1308,6 @@ router.post('/client-response/:token', async (req, res) => {
 });
 
 // ── GET /api/designer/approval/:orderId ─────────────────────────────────────
-// Manager: fetch approval record (signature, PDF path, device info, IP).
-// =============================================================================
 router.get('/approval/:orderId', authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
     const { orderId } = req.params;
     try {
@@ -1192,11 +1318,9 @@ router.get('/approval/:orderId', authorize(['admin', 'manager', 'super_admin']),
              WHERE da.order_id = $1`,
             [orderId]
         );
-
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'لا يوجد سجل اعتماد لهذا الطلب' });
         }
-
         res.json({ success: true, approval: result.rows[0] });
     } catch (err) {
         console.error('[Designer] Approval fetch error:', err.message);
@@ -1205,8 +1329,6 @@ router.get('/approval/:orderId', authorize(['admin', 'manager', 'super_admin']),
 });
 
 // ── GET /api/designer/activity-log/:orderId ──────────────────────────────────
-// Manager: fetch activity timeline for an order.
-// =============================================================================
 router.get('/activity-log/:orderId', authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
     const { orderId } = req.params;
     try {
@@ -1217,7 +1339,6 @@ router.get('/activity-log/:orderId', authorize(['admin', 'manager', 'super_admin
              ORDER BY created_at ASC`,
             [orderId]
         );
-
         res.json({ success: true, activities: result.rows });
     } catch (err) {
         console.error('[Designer] Activity log fetch error:', err.message);

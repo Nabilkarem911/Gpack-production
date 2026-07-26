@@ -1594,7 +1594,7 @@ router.post('/revert-order/:orderId', restrictDelete, async (req, res) => {
         // Reset order_items design fields
         await client.query(
             `UPDATE order_items SET
-                design_status = 'pending',
+                design_status = 'waiting_design',
                 design_files = NULL,
                 design_notes = NULL,
                 designer_notes = NULL,

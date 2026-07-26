@@ -204,7 +204,7 @@ router.get('/view/:token', async (req, res) => {
         // past client_review (designer resubmitted, manager reviewing, etc).
         // If an item has revision_requested but the order is no longer waiting
         // for client review, that response is stale and should be cleared.
-        if (order.design_status !== 'client_review' && order.design_status !== 'completed') {
+        if (order.design_status !== 'client_review' && order.design_status !== 'completed' && order.design_status !== 'approved') {
             const staleRes = await db.query(
                 `UPDATE order_items SET
                     client_design_status = NULL,
@@ -223,7 +223,7 @@ router.get('/view/:token', async (req, res) => {
 
         // Also reset if manager re-sent to client (design_client_status='sent')
         // but items still have old revision_requested from previous round
-        if (order.design_client_status === 'sent' && order.design_status === 'client_review') {
+        if (order.design_client_status === 'sent' && (order.design_status === 'client_review' || order.design_status === 'approved')) {
             const staleRes = await db.query(
                 `UPDATE order_items SET
                     client_design_status = NULL,
@@ -403,12 +403,12 @@ router.post('/respond/:token', clientUpload.array('client_files', 10), async (re
 
         if (revisionCount > 0) {
             await client.query(
-                `UPDATE orders SET design_client_status = 'revision_requested', design_status = 'revision'
+                `UPDATE orders SET design_client_status = 'revision_requested', design_status = 'client_revision'
                  WHERE id = $1`,
                 [order.id]
             );
             await client.query(
-                `UPDATE order_items SET design_status = 'revision'
+                `UPDATE order_items SET design_status = 'client_revision'
                  WHERE order_id = $1 AND client_design_status = 'revision_requested'`,
                 [order.id]
             );
@@ -626,6 +626,318 @@ router.post('/activity/:token', async (req, res) => {
         res.json({ success: true });
     } catch (err) {
         console.error('[PublicDesign] Activity error:', err.message);
+        res.status(500).json({ error: 'failed to log activity' });
+    }
+});
+
+// =============================================================================
+// ITEM-LEVEL PUBLIC DESIGN REVIEW (token-based, hash-only)
+// =============================================================================
+
+// ── GET /api/public/design/item/:token ──────────────────────────────────────
+// Public: client views design for a single item via item-level token.
+// Token is hash-only — no plain token stored in DB.
+router.get('/item/:token', async (req, res) => {
+    const { token } = req.params;
+    try {
+        let itemRes = null;
+        try {
+            const tokenHash = hashToken(token);
+            itemRes = await db.query(
+                `SELECT oi.id, oi.variant_id, oi.quantity, oi.design_files, oi.designer_notes,
+                        oi.design_status, oi.client_design_status, oi.client_revision_notes,
+                        oi.client_revision_files, oi.review_token_expires_at,
+                        o.id as order_id, o.order_number, o.client_id,
+                        c.name as client_name,
+                        p.name AS product_name, pv.size_name AS size
+                 FROM order_items oi
+                 JOIN orders o ON o.id = oi.order_id
+                 JOIN clients c ON c.id = o.client_id
+                 LEFT JOIN product_variants pv ON pv.id = oi.variant_id
+                 LEFT JOIN products p ON p.id = pv.product_id
+                 WHERE oi.review_token_hash = $1`,
+                [tokenHash]
+            );
+        } catch { /* hashToken may throw if SECRET missing */ }
+
+        if (!itemRes || itemRes.rows.length === 0) {
+            return res.status(404).json({ error: 'الرابط غير صالح أو منتهي الصلاحية' });
+        }
+
+        const item = itemRes.rows[0];
+
+        if (item.review_token_expires_at && new Date(item.review_token_expires_at) < new Date()) {
+            return res.status(410).json({ error: 'انتهت صلاحية هذا الرابط' });
+        }
+
+        const files = Array.isArray(item.design_files) ? item.design_files : [];
+
+        // Deduplicate
+        if (files.length > 1) {
+            const seen = new Set();
+            const unique = files.filter(f => {
+                const key = f.original_name || f.path || f.filename || JSON.stringify(f);
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+            if (unique.length < files.length) {
+                item.design_files = unique;
+            }
+        }
+
+        res.json({
+            order_number: item.order_number,
+            client_name: item.client_name,
+            item: {
+                id: item.id,
+                product_name: item.product_name,
+                size_name: item.size_name,
+                quantity: item.quantity,
+                designer_notes: item.designer_notes,
+                design_files: item.design_files,
+                design_status: item.design_status,
+                client_design_status: item.client_design_status,
+                client_revision_notes: item.client_revision_notes,
+                client_revision_files: item.client_revision_files,
+            },
+        });
+    } catch (err) {
+        console.error('[PublicDesign] Item view error:', err.message);
+        res.status(500).json({ error: 'فشل في تحميل التصميم' });
+    }
+});
+
+// ── POST /api/public/design/item/:token/respond ─────────────────────────────
+// Public: client submits approval or revision for a single item.
+// Body: { action: 'approve'|'revision', notes?, signature?, signer_name?, device_info? }
+router.post('/item/:token/respond', clientUpload.array('client_files', 10), async (req, res) => {
+    const { token } = req.params;
+    let { action, notes, signature, signer_name, device_info } = req.body;
+
+    if (!action || !['approve', 'revision'].includes(action)) {
+        return res.status(400).json({ error: 'action يجب أن تكون approve أو revision' });
+    }
+
+    const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || req.ip || '';
+    const userAgent = req.headers['user-agent'] || '';
+
+    const client = await db.getClient();
+    try {
+        let itemRes = null;
+        try {
+            const tokenHash = hashToken(token);
+            itemRes = await client.query(
+                `SELECT oi.id, oi.design_status, oi.order_id, o.order_number, o.client_id
+                 FROM order_items oi
+                 JOIN orders o ON o.id = oi.order_id
+                 WHERE oi.review_token_hash = $1`,
+                [tokenHash]
+            );
+        } catch { }
+
+        if (!itemRes || itemRes.rows.length === 0) {
+            return res.status(404).json({ error: 'الرابط غير صالح' });
+        }
+
+        const item = itemRes.rows[0];
+        const curStatus = item.design_status;
+
+        // Validate transition
+        const DESIGN_WORKFLOW = {
+            client_review: {
+                allowed: [
+                    { to: 'approved', roles: ['client', 'admin', 'manager'] },
+                    { to: 'client_revision', roles: ['client', 'admin', 'manager'] },
+                ],
+            },
+        };
+
+        const newStatus = action === 'approve' ? 'approved' : 'client_revision';
+        const def = DESIGN_WORKFLOW[curStatus];
+        if (!def) {
+            return res.status(400).json({ error: `لا يمكن الرد في الحالة الحالية: ${curStatus}` });
+        }
+        const rule = def.allowed.find(a => a.to === newStatus);
+        if (!rule) {
+            return res.status(400).json({ error: `انتقال غير مسموح من ${curStatus} إلى ${newStatus}` });
+        }
+
+        await client.query('BEGIN');
+
+        // Move uploaded files
+        const targetDir = path.join(UPLOAD_BASE, item.order_id, 'client-revision');
+        fs.mkdirSync(targetDir, { recursive: true });
+        const clientFiles = (req.files || []).map(f => {
+            const oldPath = path.join(UPLOAD_BASE, 'temp-client-revision', f.filename);
+            const newPath = path.join(targetDir, f.filename);
+            try { fs.renameSync(oldPath, newPath); } catch (e) { console.error('[PublicDesign] File move error:', e.message); }
+            return {
+                filename: f.filename,
+                original_name: f.originalname,
+                path: `/uploads/designs/${item.order_id}/client-revision/${f.filename}`,
+                size: f.size,
+            };
+        });
+
+        if (action === 'approve') {
+            await client.query(
+                `UPDATE order_items SET
+                    client_design_status = 'approved',
+                    client_approved_at = NOW(),
+                    design_status = 'approved'
+                 WHERE id = $1`,
+                [item.id]
+            );
+
+            // Log to workflow_history
+            try {
+                await client.query(
+                    `INSERT INTO workflow_history (entity_type, entity_id, workflow, from_state, to_state, actor_role, notes)
+                     VALUES ('order_item', $1, 'design', $2, 'approved', 'client', $3)`,
+                    [item.id, curStatus, 'Client approved design']
+                );
+            } catch { }
+
+            // Log activity
+            await _logActivity(client, item.order_id, 'item_approved', 'client', clientIp, userAgent, {
+                item_id: item.id, signer_name: signer_name || '',
+            });
+
+            // Check if all items in order are approved → save client designs
+            const pendingRes = await client.query(
+                `SELECT COUNT(*) as count FROM order_items
+                 WHERE order_id = $1 AND design_status != 'approved'`,
+                [item.order_id]
+            );
+            if (parseInt(pendingRes.rows[0].count) === 0) {
+                await client.query(
+                    `UPDATE orders SET
+                        design_client_status = 'approved',
+                        design_status = 'completed',
+                        design_completed_at = NOW()
+                     WHERE id = $1`,
+                    [item.order_id]
+                );
+
+                // Save approved designs to client_designs
+                const allItemsRes = await client.query(
+                    `SELECT oi.variant_id, oi.design_files
+                     FROM order_items oi
+                     WHERE oi.order_id = $1
+                       AND oi.design_files IS NOT NULL AND oi.design_files != '[]'::jsonb`,
+                    [item.order_id]
+                );
+                for (const oi of allItemsRes.rows) {
+                    if (!oi.variant_id) continue;
+                    const dnRes = await client.query(
+                        `SELECT COALESCE(MAX(design_number), 0) + 1 AS next
+                         FROM client_designs WHERE client_id = $1 AND variant_id = $2`,
+                        [item.client_id, oi.variant_id]
+                    );
+                    const designNumber = dnRes.rows[0].next;
+                    const designName = `تصميم معتمد — طلب #${item.order_number}`;
+                    const designIns = await client.query(
+                        `INSERT INTO client_designs (client_id, variant_id, design_number, design_name, is_active)
+                         VALUES ($1, $2, $3, $4, true) RETURNING id`,
+                        [item.client_id, oi.variant_id, designNumber, designName]
+                    );
+                    const designId = designIns.rows[0].id;
+                    const files = Array.isArray(oi.design_files) ? oi.design_files : [];
+                    for (const f of files) {
+                        await client.query(
+                            `INSERT INTO client_design_files (design_id, file_type, file_path, original_name)
+                             VALUES ($1, $2, $3, $4)`,
+                            [designId, 'design', f.path, f.original_name || f.filename]
+                        );
+                    }
+                }
+            }
+
+        } else {
+            // Revision requested
+            if (!notes) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ error: 'يرجى كتابة ملاحظات التعديل' });
+            }
+
+            await client.query(
+                `UPDATE order_items SET
+                    client_design_status = 'revision_requested',
+                    client_revision_notes = $1,
+                    client_revision_files = $2,
+                    design_status = 'client_revision'
+                 WHERE id = $3`,
+                [notes, JSON.stringify(clientFiles), item.id]
+            );
+
+            try {
+                await client.query(
+                    `INSERT INTO workflow_history (entity_type, entity_id, workflow, from_state, to_state, actor_role, notes)
+                     VALUES ('order_item', $1, 'design', $2, 'client_revision', 'client', $3)`,
+                    [item.id, curStatus, notes]
+                );
+            } catch { }
+
+            await _logActivity(client, item.order_id, 'item_revision_requested', 'client', clientIp, userAgent, {
+                item_id: item.id, notes: notes,
+            });
+        }
+
+        await client.query('COMMIT');
+
+        const message = action === 'approve'
+            ? 'تم تسجيل موافقة العميل على التصميم'
+            : 'تم تسجيل طلب التعديل. سيتم إرساله للمصمم.';
+
+        const whatsappNumber = process.env.WHATSAPP_NUMBER || '';
+
+        res.json({
+            success: true,
+            message,
+            action,
+            whatsapp_number: whatsappNumber,
+        });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('[PublicDesign] Item respond error:', err.message);
+        res.status(500).json({ error: 'فشل في تسجيل رد العميل' });
+    } finally {
+        client.release();
+    }
+});
+
+// ── POST /api/public/design/item/:token/activity ────────────────────────────
+// Public: log client activity for item-level review.
+router.post('/item/:token/activity', async (req, res) => {
+    const { token } = req.params;
+    const { event_type, details } = req.body;
+
+    if (!event_type) return res.status(400).json({ error: 'event_type required' });
+
+    const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || req.ip || '';
+    const userAgent = req.headers['user-agent'] || '';
+
+    try {
+        let itemRes = null;
+        try {
+            const tokenHash = hashToken(token);
+            itemRes = await db.query(
+                `SELECT oi.id, oi.order_id FROM order_items oi WHERE oi.review_token_hash = $1`,
+                [tokenHash]
+            );
+        } catch { }
+
+        if (!itemRes || itemRes.rows.length === 0) {
+            return res.status(404).json({ error: 'invalid token' });
+        }
+
+        const item = itemRes.rows[0];
+        await _logActivity(db, item.order_id, event_type, 'client', clientIp, userAgent, details);
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error('[PublicDesign] Item activity error:', err.message);
         res.status(500).json({ error: 'failed to log activity' });
     }
 });
