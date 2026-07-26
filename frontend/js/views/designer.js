@@ -2,19 +2,37 @@
 
 // =============================================================================
 // G.PACK 2.0 — Designer Page Logic (designer.js)
-// Shows design tasks, task detail with per-item design files & notes.
+// Item-level design state machine with context-aware modal + smart cards.
+//
+// State Machine:
+//   waiting_design → in_progress → manager_review → client_review → approved
+//                                         ↓                ↓
+//                                   client_revision   client_revision
+//                                         ↓
+//                                    in_progress (rework)
 // =============================================================================
 
 (function () {
 
     // ── State ────────────────────────────────────────────────────────────────
-    let _currentTab = 'pending';
+    let _currentTab = 'waiting_design';
     let _allTasks = [];
     let _completedTasks = [];
     let _reviewTasks = [];
     let _currentTask = null;
     let _pollingInterval = null;
     let _navToken = 0;
+
+    // ── Status definitions ────────────────────────────────────────────────────
+    const STATUS_DEFS = {
+        waiting_design:    { label: 'بانتظار التصميم',   color: 'bg-slate-100 text-slate-600',   dot: '🟡' },
+        in_progress:       { label: 'قيد التنفيذ',       color: 'bg-blue-100 text-blue-700',     dot: '🔵' },
+        manager_review:    { label: 'مراجعة المدير',     color: 'bg-purple-100 text-purple-700', dot: '🟣' },
+        client_review:     { label: 'بانتظار العميل',     color: 'bg-cyan-100 text-cyan-700',     dot: '🔷' },
+        client_revision:   { label: 'مطلوب تعديل',       color: 'bg-orange-100 text-orange-700', dot: '🟠' },
+        approved:          { label: 'معتمد',             color: 'bg-green-100 text-green-700',   dot: '🟢' },
+        completed:         { label: 'مكتمل',             color: 'bg-emerald-100 text-emerald-700', dot: '✅' },
+    };
 
     // ── Init ──────────────────────────────────────────────────────────────────
     async function init() {
@@ -38,20 +56,15 @@
         try {
             const res = await window.apiFetch('/api/designer/my-tasks');
             _allTasks = res.tasks || [];
-            console.log('[Designer] my-tasks response:', res);
-            console.log('[Designer] _allTasks count:', _allTasks.length, _allTasks);
 
             const completedRes = await window.apiFetch('/api/designer/my-completed');
             _completedTasks = completedRes.tasks || [];
-            console.log('[Designer] _completedTasks count:', _completedTasks.length);
 
             if (_isManager()) {
                 try {
                     const reviewRes = await window.apiFetch('/api/designer/pending-review');
                     _reviewTasks = reviewRes.orders || [];
-                    console.log('[Designer] _reviewTasks count:', _reviewTasks.length);
                 } catch (e) {
-                    console.error('[Designer] Review tasks error:', e.message);
                     _reviewTasks = [];
                 }
             }
@@ -67,7 +80,6 @@
     function _renderTasks() {
         const grid = document.getElementById('designer-tasks-grid');
         const emptyState = document.getElementById('designer-empty-state');
-        console.log('[Designer] _renderTasks called. grid found:', !!grid, 'emptyState found:', !!emptyState);
         if (!grid) return;
 
         let tasks;
@@ -76,29 +88,19 @@
         } else if (_currentTab === 'review') {
             tasks = _reviewTasks;
         } else if (_currentTab === 'client_review') {
-            // Show orders sent to client: either full client_review OR partial (in_progress + sent)
-            tasks = _allTasks.filter(t =>
-                t.design_status === 'client_review' ||
-                (t.design_status === 'in_progress' && t.design_client_status === 'sent')
-            );
-        } else if (_currentTab === 'pending') {
-            // Show orders that have at least 1 item in pending status
-            tasks = _allTasks.filter(t => (parseInt(t.pending_count) || 0) > 0);
+            tasks = _allTasks.filter(t => (parseInt(t.client_review_count) || 0) > 0);
+        } else if (_currentTab === 'waiting_design') {
+            tasks = _allTasks.filter(t => (parseInt(t.waiting_count) || 0) > 0);
         } else if (_currentTab === 'in_progress') {
-            // Show orders that have at least 1 item in_progress or completed (but not all approved)
-            tasks = _allTasks.filter(t =>
-                ((parseInt(t.in_progress_count) || 0) > 0 || (parseInt(t.completed_count) || 0) > 0) &&
-                (parseInt(t.approved_count) || 0) < (parseInt(t.item_count) || 0)
-            );
-        } else if (_currentTab === 'revision') {
-            // Show orders that have at least 1 item in revision status
-            tasks = _allTasks.filter(t => (parseInt(t.revision_count) || 0) > 0);
+            tasks = _allTasks.filter(t => (parseInt(t.in_progress_count) || 0) > 0);
+        } else if (_currentTab === 'manager_review') {
+            tasks = _allTasks.filter(t => (parseInt(t.manager_review_count) || 0) > 0);
+        } else if (_currentTab === 'client_revision') {
+            tasks = _allTasks.filter(t => (parseInt(t.client_revision_count) || 0) > 0);
         } else {
-            tasks = _allTasks.filter(t => t.design_status === _currentTab);
+            tasks = _allTasks;
         }
-        console.log('[Designer] current tab:', _currentTab, 'filtered tasks:', tasks.length, tasks);
 
-        // Update tab counts
         _updateTabCounts();
 
         if (tasks.length === 0) {
@@ -119,9 +121,7 @@
 
         const cardsHtml = tasks.map(task => _renderTaskCard(task)).join('');
         grid.innerHTML = cardsHtml;
-        console.log('[Designer] grid.innerHTML set, length:', cardsHtml.length, 'grid.children:', grid.children.length);
 
-        // Bind card clicks
         grid.querySelectorAll('[data-task-id]').forEach(card => {
             card.addEventListener('click', () => {
                 const taskId = card.getAttribute('data-task-id');
@@ -130,29 +130,26 @@
         });
     }
 
-    // ── Render single task card ───────────────────────────────────────────────
+    // ── Render single task card (smart card with all status badges) ──────────
     function _renderTaskCard(task) {
-        const pendingCount = parseInt(task.pending_count) || 0;
-        const inProgressCount = parseInt(task.in_progress_count) || 0;
-        const completedCount = parseInt(task.completed_count) || 0;
-        const approvedCount = parseInt(task.approved_count) || 0;
-        const revisionCount = parseInt(task.revision_count) || 0;
+        const waiting = parseInt(task.waiting_count) || 0;
+        const inProgress = parseInt(task.in_progress_count) || 0;
+        const mgrReview = parseInt(task.manager_review_count) || 0;
+        const clientReview = parseInt(task.client_review_count) || 0;
+        const approved = parseInt(task.approved_count) || 0;
+        const clientRevision = parseInt(task.client_revision_count) || 0;
         const itemCount = parseInt(task.item_count) || 0;
-        const designedCount = completedCount + approvedCount;
+        const designedCount = parseInt(task.designed_count) || 0;
         const progress = itemCount > 0 ? Math.round((designedCount / itemCount) * 100) : 0;
 
-        // Build status badges based on item-level counts
+        // Smart badges — show all non-zero counts
         const badges = [];
-        if (pendingCount > 0) badges.push(`<span class="text-xs px-2 py-1 rounded-full bg-slate-100 text-slate-600">بانتظار: ${pendingCount}</span>`);
-        if (inProgressCount > 0) badges.push(`<span class="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-700">قيد التنفيذ: ${inProgressCount}</span>`);
-        if (completedCount > 0) badges.push(`<span class="text-xs px-2 py-1 rounded-full bg-purple-100 text-purple-700">تم التسليم: ${completedCount}</span>`);
-        if (revisionCount > 0) badges.push(`<span class="text-xs px-2 py-1 rounded-full bg-orange-100 text-orange-700">تعديل: ${revisionCount}</span>`);
-        if (approvedCount > 0) badges.push(`<span class="text-xs px-2 py-1 rounded-full bg-green-100 text-green-700">معتمد: ${approvedCount}</span>`);
-
-        // Show client status badge if sent to client
-        const clientBadge = task.design_client_status === 'sent' && task.design_status === 'in_progress'
-            ? '<span class="text-xs px-2 py-1 rounded-full bg-cyan-100 text-cyan-700">مُرسَل للعميل (جزئي)</span>'
-            : '';
+        if (waiting > 0)        badges.push(`<span class="text-xs px-2 py-1 rounded-full bg-slate-100 text-slate-600">🟡 بانتظار: ${waiting}</span>`);
+        if (inProgress > 0)     badges.push(`<span class="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-700">🔵 قيد التنفيذ: ${inProgress}</span>`);
+        if (mgrReview > 0)      badges.push(`<span class="text-xs px-2 py-1 rounded-full bg-purple-100 text-purple-700">🟣 مراجعة: ${mgrReview}</span>`);
+        if (clientReview > 0)   badges.push(`<span class="text-xs px-2 py-1 rounded-full bg-cyan-100 text-cyan-700">🔷 للعميل: ${clientReview}</span>`);
+        if (clientRevision > 0) badges.push(`<span class="text-xs px-2 py-1 rounded-full bg-orange-100 text-orange-700">🟠 تعديل: ${clientRevision}</span>`);
+        if (approved > 0)       badges.push(`<span class="text-xs px-2 py-1 rounded-full bg-green-100 text-green-700">🟢 معتمد: ${approved}</span>`);
 
         return `
             <div data-task-id="${task.id}"
@@ -165,7 +162,6 @@
                     </div>
                     <div class="flex flex-col gap-1 items-end">
                         ${badges.length > 0 ? badges.join('') : `<span class="text-xs px-2 py-1 rounded-full bg-slate-100 text-slate-600">${_statusLabel(task.design_status)}</span>`}
-                        ${clientBadge}
                     </div>
                 </div>
                 <div class="space-y-2">
@@ -184,41 +180,52 @@
 
     // ── Update tab counts ─────────────────────────────────────────────────────
     function _updateTabCounts() {
-        const pending = _allTasks.filter(t => (parseInt(t.pending_count) || 0) > 0).length;
-        const progress = _allTasks.filter(t =>
-            ((parseInt(t.in_progress_count) || 0) > 0 || (parseInt(t.completed_count) || 0) > 0) &&
-            (parseInt(t.approved_count) || 0) < (parseInt(t.item_count) || 0)
-        ).length;
-        const revision = _allTasks.filter(t => (parseInt(t.revision_count) || 0) > 0).length;
+        const waiting = _allTasks.filter(t => (parseInt(t.waiting_count) || 0) > 0).length;
+        const inProgress = _allTasks.filter(t => (parseInt(t.in_progress_count) || 0) > 0).length;
+        const mgrReview = _allTasks.filter(t => (parseInt(t.manager_review_count) || 0) > 0).length;
+        const clientReview = _allTasks.filter(t => (parseInt(t.client_review_count) || 0) > 0).length;
+        const clientRevision = _allTasks.filter(t => (parseInt(t.client_revision_count) || 0) > 0).length;
         const completed = _completedTasks.length;
         const review = _reviewTasks.length;
-        const clientReview = _allTasks.filter(t =>
-            t.design_status === 'client_review' ||
-            (t.design_status === 'in_progress' && t.design_client_status === 'sent')
-        ).length;
 
-        const el1 = document.getElementById('designer-tab-pending-count');
-        const el2 = document.getElementById('designer-tab-progress-count');
-        const el3 = document.getElementById('designer-tab-revision-count');
-        const el4 = document.getElementById('designer-tab-completed-count');
-        const el5 = document.getElementById('designer-tab-review-count');
-        const el6 = document.getElementById('designer-tab-client-review-count');
-        if (el1) el1.textContent = pending;
-        if (el2) el2.textContent = progress;
-        if (el3) el3.textContent = revision;
-        if (el4) el4.textContent = completed;
-        if (el5) el5.textContent = review;
-        if (el6) el6.textContent = clientReview;
+        const els = {
+            'designer-tab-pending-count': waiting,
+            'designer-tab-progress-count': inProgress,
+            'designer-tab-revision-count': clientRevision,
+            'designer-tab-completed-count': completed,
+            'designer-tab-review-count': review,
+            'designer-tab-client-review-count': clientReview,
+        };
+
+        for (const [id, count] of Object.entries(els)) {
+            const el = document.getElementById(id);
+            if (el) el.textContent = count;
+        }
     }
 
-    // ── Open task detail ──────────────────────────────────────────────────────
+    // ── Open task detail (context-aware: pass current tab status to API) ──────
     async function _openTaskDetail(taskId) {
         try {
-            const res = await window.apiFetch(`/api/designer/task/${taskId}`);
+            // Map current tab to status filter for context-aware modal
+            const statusMap = {
+                'waiting_design': 'waiting_design',
+                'in_progress': 'in_progress',
+                'manager_review': 'manager_review',
+                'client_review': 'client_review',
+                'client_revision': 'client_revision',
+                'review': 'manager_review',  // manager review tab
+                'completed': null,           // no filter for completed
+            };
+            const statusFilter = statusMap[_currentTab] || null;
+            const url = statusFilter
+                ? `/api/designer/task/${taskId}?status=${statusFilter}`
+                : `/api/designer/task/${taskId}`;
+
+            const res = await window.apiFetch(url);
             _currentTask = res;
 
             const isManagerRole = _isManager();
-            const isManagerView = isManagerRole && _currentTab === 'review';
+            const isManagerView = isManagerRole && (_currentTab === 'review' || _currentTab === 'manager_review');
 
             const modal = document.getElementById('designer-task-modal');
             const title = document.getElementById('designer-modal-title');
@@ -227,19 +234,15 @@
             const status = document.getElementById('designer-modal-status');
             const sendClientBtn = document.getElementById('designer-send-client-btn');
 
-            if (title) title.textContent = `عرض سعر #${res.order.order_number}`;
+            // Modal title includes context
+            const tabLabel = _currentTab !== 'completed' ? STATUS_DEFS[_currentTab]?.label || '' : '';
+            if (title) title.textContent = `عرض سعر #${res.order.order_number}${tabLabel ? ' — ' + tabLabel : ''}`;
             if (client) client.textContent = res.order.client_name;
             if (status) status.textContent = `الحالة: ${_statusLabel(res.order.design_status)}`;
 
-            if (sendClientBtn) {
-                if (isManagerView && ['in_progress', 'in_review', 'revision', 'client_review'].includes(res.order.design_status)) {
-                    sendClientBtn.classList.remove('hidden');
-                } else {
-                    sendClientBtn.classList.add('hidden');
-                }
-            }
+            // Hide the order-level send-to-client button (we use per-item now)
+            if (sendClientBtn) sendClientBtn.classList.add('hidden');
 
-            // Build body
             let html = '';
 
             // Design brief
@@ -287,23 +290,6 @@
                 `;
             }
 
-            // Client designs
-            if (res.client_designs && res.client_designs.length > 0) {
-                html += `
-                    <div class="bg-slate-50 rounded-xl p-4">
-                        <p class="text-xs font-semibold text-slate-600 mb-2"><i class="fa-solid fa-images ml-1"></i>تصاميم العميل السابقة</p>
-                        <div class="flex flex-wrap gap-2">
-                            ${res.client_designs.map(d => `
-                                <a href="${d.file_path}" target="_blank" class="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-lg hover:border-brand-300 transition-colors text-xs">
-                                    <i class="fa-solid fa-file-image text-slate-400"></i>
-                                    <span class="text-slate-700">${_esc(d.title || 'تصميم')}</span>
-                                </a>
-                            `).join('')}
-                        </div>
-                    </div>
-                `;
-            }
-
             // Client response banner
             if (res.order.design_client_status === 'approved') {
                 html += `
@@ -311,69 +297,11 @@
                         <i class="fa-solid fa-circle-check text-emerald-500 text-xl"></i>
                         <div>
                             <p class="text-sm font-bold text-emerald-700">تمت موافقة العميل على جميع التصاميم</p>
-                            <p class="text-xs text-emerald-600">الطلب بانتظار تحديد مبلغ الدفعة وتحويله للإنتاج</p>
+                            <p class="text-xs text-emerald-600">الطلب بانتظار تحويله للإنتاج</p>
                         </div>
                     </div>
                 `;
-
-                // Show approval certificate if manager
-                if (isManagerRole && res.approval) {
-                    const a = res.approval;
-                    const approvedDate = a.approved_at ? new Date(a.approved_at).toLocaleString('ar-SA') : '';
-                    html += `
-                    <div class="bg-white border border-slate-200 rounded-xl p-5 space-y-3">
-                        <h3 class="text-sm font-bold text-slate-800 flex items-center gap-2">
-                            <i class="fa-solid fa-file-circle-check text-emerald-600"></i>
-                            شهادة اعتماد التصميم
-                        </h3>
-                        <div class="grid grid-cols-2 gap-3 text-sm">
-                            <div>
-                                <p class="text-xs text-slate-400 mb-1">تم الاعتماد بواسطة</p>
-                                <p class="font-bold text-slate-800">${_esc(a.signer_name || '—')}</p>
-                            </div>
-                            <div>
-                                <p class="text-xs text-slate-400 mb-1">وقت الاعتماد</p>
-                                <p class="font-bold text-slate-800">${approvedDate}</p>
-                            </div>
-                            <div>
-                                <p class="text-xs text-slate-400 mb-1">عنوان IP</p>
-                                <p class="font-mono text-xs text-slate-600">${_esc(a.client_ip || '—')}</p>
-                            </div>
-                            <div>
-                                <p class="text-xs text-slate-400 mb-1">الجهاز</p>
-                                <p class="text-xs text-slate-600">${_esc(a.device_info || '—')}</p>
-                            </div>
-                        </div>
-                        ${a.signature_image ? `
-                        <div>
-                            <p class="text-sm font-bold text-slate-700 mb-2">التوقيع الإلكتروني</p>
-                            <div class="border border-slate-200 rounded-xl p-3 bg-white">
-                                <img src="${a.signature_image}" alt="signature" class="max-h-32 mx-auto" />
-                            </div>
-                        </div>` : ''}
-                        ${a.approval_pdf_path ? `
-                        <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center justify-between">
-                            <div class="flex items-center gap-2">
-                                <i class="fa-solid fa-file-pdf text-red-500 text-xl"></i>
-                                <p class="text-sm font-bold text-slate-700">شهادة الاعتماد (PDF)</p>
-                            </div>
-                            <a href="${a.approval_pdf_path}" target="_blank" download
-                                class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-bold transition-colors flex items-center gap-2">
-                                <i class="fa-solid fa-download"></i> تحميل
-                            </a>
-                        </div>` : ''}
-                    </div>`;
-                }
-            } else if (res.order.design_client_status === 'partially_approved') {
-                html += `
-                    <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center gap-3">
-                        <i class="fa-solid fa-circle-half-stroke text-amber-500 text-xl"></i>
-                        <div>
-                            <p class="text-sm font-bold text-amber-700">موافقة جزئية من العميل</p>
-                            <p class="text-xs text-amber-600">العميل وافق على التصاميم المتاحة — لازال هناك أصناف بانتظار التصميم</p>
-                        </div>
-                    </div>
-                `;
+            } else if (res.order.design_client_status === 'revision_requested') {
                 html += `
                     <div class="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3">
                         <i class="fa-solid fa-user-pen text-red-500 text-xl"></i>
@@ -383,87 +311,55 @@
                         </div>
                     </div>
                 `;
-            } else if (res.order.design_client_status === 'sent' && ['client_review', 'in_progress'].includes(res.order.design_status)) {
-                const baseUrl = window.location.origin;
-                const token = res.order.design_share_token;
-
+            } else if (res.order.design_client_status === 'sent') {
                 html += `
                     <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center gap-3">
                         <i class="fa-solid fa-paper-plane text-blue-500 text-xl"></i>
                         <div>
                             <p class="text-sm font-bold text-blue-700">تم إرسال التصاميم للعميل</p>
-                            <p class="text-xs text-blue-600">بانتظار رد العميل — كل صنف له رابط مستقل</p>
+                            <p class="text-xs text-blue-600">بانتظار رد العميل</p>
                         </div>
                     </div>
                 `;
-
-                if (token && isManagerRole) {
-                    // Build per-item links
-                    const designedItems = res.items.filter(it => it.design_files && (Array.isArray(it.design_files) ? it.design_files.length > 0 : true));
-                    if (designedItems.length > 0) {
-                        html += `<div class="bg-white border-2 border-blue-200 rounded-xl p-4 space-y-3">`;
-                        html += `<p class="text-xs font-semibold text-slate-600"><i class="fa-solid fa-link ml-1 text-blue-500"></i>روابط مراجعة العميل (لكل صنف)</p>`;
-                        designedItems.forEach((item, idx) => {
-                            const itemUrl = `${baseUrl}/public-design.html?token=${token}&item_id=${item.id}`;
-                            const itemName = `${_esc(item.product_name || 'صنف')}${item.size_name ? ' — ' + _esc(item.size_name) : ''}`;
-                            html += `
-                                <div class="border border-slate-200 rounded-lg p-3">
-                                    <p class="text-xs font-bold text-slate-700 mb-2">${idx + 1}. ${itemName}</p>
-                                    <div class="flex items-center gap-2">
-                                        <input type="text" id="item-url-${item.id}" readonly value="${itemUrl}"
-                                            class="flex-1 px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-[11px] text-slate-600 outline-none" />
-                                        <button onclick="navigator.clipboard.writeText(document.getElementById('item-url-${item.id}').value).then(() => window.showToast?.('تم نسخ رابط: ${itemName}', 'success'))"
-                                            class="px-2 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs transition-colors whitespace-nowrap">
-                                            <i class="fa-solid fa-copy"></i>
-                                        </button>
-                                        <a href="https://wa.me/?text=${encodeURIComponent('مراجعة تصميم G.PACK — ' + itemName + ': ' + itemUrl)}" target="_blank"
-                                            class="px-2 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs transition-colors whitespace-nowrap">
-                                            <i class="fa-brands fa-whatsapp"></i>
-                                        </a>
-                                    </div>
-                                </div>
-                            `;
-                        });
-                        // Also provide a combined link (all items)
-                        const allItemsUrl = `${baseUrl}/public-design.html?token=${token}`;
-                        html += `
-                            <div class="border-2 border-blue-200 rounded-lg p-3 bg-blue-50">
-                                <p class="text-xs font-bold text-blue-700 mb-2">رابط شامل (كل الأصناف)</p>
-                                <div class="flex items-center gap-2">
-                                    <input type="text" id="all-items-url" readonly value="${allItemsUrl}"
-                                        class="flex-1 px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-[11px] text-slate-600 outline-none" />
-                                    <button onclick="navigator.clipboard.writeText(document.getElementById('all-items-url').value).then(() => window.showToast?.('تم نسخ الرابط الشامل', 'success'))"
-                                        class="px-2 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs transition-colors whitespace-nowrap">
-                                        <i class="fa-solid fa-copy"></i>
-                                    </button>
-                                    <a href="https://wa.me/?text=${encodeURIComponent('مراجعة جميع تصاميم G.PACK: ' + allItemsUrl)}" target="_blank"
-                                        class="px-2 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs transition-colors whitespace-nowrap">
-                                        <i class="fa-brands fa-whatsapp"></i>
-                                    </a>
-                                </div>
-                            </div>
-                        `;
-                        html += `</div>`;
-                    }
-                }
             }
 
             // Items
             html += `<div class="space-y-3">`;
-            res.items.forEach(item => {
-                html += _renderItemCard(item, res.order.id, isManagerView);
-            });
+            if (res.items && res.items.length > 0) {
+                res.items.forEach(item => {
+                    html += _renderItemCard(item, res.order.id, isManagerView);
+                });
+            } else {
+                html += `<p class="text-sm text-slate-400 text-center py-4">لا توجد أصناف في هذه الحالة</p>`;
+            }
             html += `</div>`;
 
-            if (body) body.innerHTML = html;
+            // Workflow history (if available)
+            if (res.workflow_history && res.workflow_history.length > 0 && isManagerRole) {
+                html += `
+                    <div class="bg-slate-50 rounded-xl p-4 mt-4">
+                        <p class="text-xs font-semibold text-slate-600 mb-2"><i class="fa-solid fa-clock-rotate-left ml-1"></i>سجل الحالات</p>
+                        <div class="space-y-1">
+                            ${res.workflow_history.map(h => `
+                                <div class="flex items-center gap-2 text-xs text-slate-500">
+                                    <span class="text-slate-400">${h.changed_at ? new Date(h.changed_at).toLocaleString('ar-SA') : ''}</span>
+                                    <span class="font-semibold text-slate-600">${_statusLabel(h.from_state)}</span>
+                                    <i class="fa-solid fa-arrow-left text-slate-300"></i>
+                                    <span class="font-semibold text-slate-700">${_statusLabel(h.to_state)}</span>
+                                    ${h.actor_name ? `<span class="text-slate-400">— ${_esc(h.actor_name)}</span>` : ''}
+                                    ${h.notes ? `<span class="text-slate-400">(${_esc(h.notes)})</span>` : ''}
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }
 
-            // Show modal
+            if (body) body.innerHTML = html;
             if (modal) modal.classList.remove('hidden');
 
-            // Bind item events
             _bindItemEvents(res.order.id, res.items);
 
-            // Bind manager events only when in manager review view
             if (isManagerView) {
                 _bindManagerEvents(res.order.id, res.items);
             }
@@ -476,14 +372,7 @@
 
     // ── Render item card ──────────────────────────────────────────────────────
     function _renderItemCard(item, orderId, isManagerView) {
-        const stLabels = {
-            pending: { label: 'بانتظار التصميم', color: 'bg-slate-100 text-slate-600' },
-            in_progress: { label: 'قيد التنفيذ', color: 'bg-blue-100 text-blue-700' },
-            completed: { label: 'تم التسليم', color: 'bg-purple-100 text-purple-700' },
-            approved: { label: 'معتمد', color: 'bg-green-100 text-green-700' },
-            revision: { label: 'مطلوب تعديل', color: 'bg-orange-100 text-orange-700' },
-        };
-        const st = stLabels[item.design_status] || stLabels.pending;
+        const st = STATUS_DEFS[item.design_status] || STATUS_DEFS.waiting_design;
 
         let filesHtml = '';
         if (item.design_files && item.design_files.length > 0) {
@@ -517,7 +406,7 @@
         }
 
         let revisionHtml = '';
-        if (item.design_status === 'revision' && item.revision_notes) {
+        if (item.design_status === 'client_revision' && item.revision_notes) {
             revisionHtml = `
                 <div class="mt-2 bg-orange-50 border border-orange-200 rounded-lg p-2">
                     <p class="text-xs font-semibold text-orange-700 mb-1">ملاحظات المدير للتعديل:</p>
@@ -561,8 +450,10 @@
             `;
         }
 
-        const canSubmit = !isManagerView && (item.design_status === 'pending' || item.design_status === 'in_progress' || item.design_status === 'revision');
-        const canReview = isManagerView && item.design_status === 'completed';
+        const canStart = !isManagerView && item.design_status === 'waiting_design';
+        const canSubmit = !isManagerView && (item.design_status === 'in_progress' || item.design_status === 'client_revision');
+        const canReview = isManagerView && item.design_status === 'manager_review';
+        const canSendToClient = isManagerView && item.design_status === 'manager_review' && item.design_files && item.design_files.length > 0;
 
         return `
             <div class="bg-white border border-slate-200 rounded-xl p-4" data-item-id="${item.id}">
@@ -587,7 +478,7 @@
                     <div class="mt-3 space-y-2 border-t border-slate-100 pt-3">
                         <div class="flex gap-2">
                             <button class="manager-approve-btn px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs transition-colors" data-item-id="${item.id}" data-order-id="${orderId}">
-                                <i class="fa-solid fa-check ml-1"></i>اعتماد
+                                <i class="fa-solid fa-check ml-1"></i>اعتماد وإرسال للعميل
                             </button>
                             <button class="manager-revision-btn px-3 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-xs transition-colors" data-item-id="${item.id}" data-order-id="${orderId}">
                                 <i class="fa-solid fa-rotate-left ml-1"></i>طلب تعديل
@@ -607,29 +498,41 @@
                     </div>
                 ` : ''}
 
-                ${canSubmit ? `
-                    <div class="mt-3 space-y-2 border-t border-slate-100 pt-3">
-                        <textarea class="designer-item-notes w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-brand-500"
-                            placeholder="ملاحظاتك للمدير..." data-item-id="${item.id}">${_esc(item.designer_notes || '')}</textarea>
+                ${canSendToClient ? `
+                    <div class="mt-2 border-t border-slate-100 pt-2">
+                        <button class="item-send-client-btn px-3 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg text-xs transition-colors" data-item-id="${item.id}" data-order-id="${orderId}">
+                            <i class="fa-solid fa-share ml-1"></i>إرسال للعميل (رابط مستقل)
+                        </button>
+                    </div>
+                ` : ''}
 
-                        <div class="flex items-center gap-2">
-                            <label class="flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg cursor-pointer text-xs transition-colors">
-                                <i class="fa-solid fa-upload text-slate-500"></i>
-                                <span>رفع ملفات التصميم</span>
-                                <input type="file" multiple class="designer-item-files hidden" accept=".jpg,.jpeg,.png,.gif,.pdf,.ai,.psd,.eps,.svg,.webp,.tiff,.tif,.bmp,.raw,.heic" data-item-id="${item.id}" />
-                            </label>
-                            <span class="designer-files-count text-xs text-slate-400" data-item-id="${item.id}"></span>
-                        </div>
+                ${canStart || canSubmit ? `
+                    <div class="mt-3 space-y-2 border-t border-slate-100 pt-3">
+                        ${canSubmit ? `
+                            <textarea class="designer-item-notes w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-brand-500"
+                                placeholder="ملاحظاتك للمدير..." data-item-id="${item.id}">${_esc(item.designer_notes || '')}</textarea>
+
+                            <div class="flex items-center gap-2">
+                                <label class="flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg cursor-pointer text-xs transition-colors">
+                                    <i class="fa-solid fa-upload text-slate-500"></i>
+                                    <span>رفع ملفات التصميم</span>
+                                    <input type="file" multiple class="designer-item-files hidden" accept=".jpg,.jpeg,.png,.gif,.pdf,.ai,.psd,.eps,.svg,.webp,.tiff,.tif,.bmp,.raw,.heic" data-item-id="${item.id}" />
+                                </label>
+                                <span class="designer-files-count text-xs text-slate-400" data-item-id="${item.id}"></span>
+                            </div>
+                        ` : ''}
 
                         <div class="flex gap-2">
-                            ${item.design_status === 'pending' ? `
+                            ${canStart ? `
                                 <button class="designer-start-btn px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs transition-colors" data-item-id="${item.id}" data-order-id="${orderId}">
                                     <i class="fa-solid fa-play ml-1"></i>بدء التصميم
                                 </button>
                             ` : ''}
-                            <button class="designer-submit-btn px-3 py-2 bg-brand-700 hover:bg-brand-800 text-white rounded-lg text-xs transition-colors" data-item-id="${item.id}" data-order-id="${orderId}">
-                                <i class="fa-solid fa-paper-plane ml-1"></i>تسليم التصميم
-                            </button>
+                            ${canSubmit ? `
+                                <button class="designer-submit-btn px-3 py-2 bg-brand-700 hover:bg-brand-800 text-white rounded-lg text-xs transition-colors" data-item-id="${item.id}" data-order-id="${orderId}">
+                                    <i class="fa-solid fa-paper-plane ml-1"></i>تسليم التصميم
+                                </button>
+                            ` : ''}
                         </div>
                     </div>
                 ` : ''}
@@ -639,7 +542,6 @@
 
     // ── Bind events ───────────────────────────────────────────────────────────
     function _bindEvents() {
-        // Tabs
         document.querySelectorAll('.designer-tab').forEach(tab => {
             tab.addEventListener('click', () => {
                 document.querySelectorAll('.designer-tab').forEach(t => {
@@ -653,11 +555,9 @@
             });
         });
 
-        // Refresh
         const refreshBtn = document.getElementById('designer-refresh-btn');
         if (refreshBtn) refreshBtn.addEventListener('click', _loadTasks);
 
-        // Modal close
         const modalClose = document.getElementById('designer-modal-close');
         const modalCloseBtn = document.getElementById('designer-modal-close-btn');
         const modal = document.getElementById('designer-task-modal');
@@ -679,7 +579,7 @@
                     await _openTaskDetail(orderId);
                     await _loadTasks();
                 } catch (err) {
-                    window.showToast?.('فشل في بدء التصميم', 'error');
+                    window.showToast?.(err.message || 'فشل في بدء التصميم', 'error');
                 }
             });
         });
@@ -709,8 +609,7 @@
 
                 try {
                     const url = `/api/designer/item/${oid}/${itemId}/submit`;
-                    const fullUrl = url.startsWith('/api') ? url : `/api${url}`;
-                    const response = await fetch(fullUrl, {
+                    const response = await fetch(url, {
                         method: 'PUT',
                         credentials: 'include',
                         body: formData,
@@ -768,15 +667,7 @@
 
     // ── Helpers ───────────────────────────────────────────────────────────────
     function _statusLabel(status) {
-        const labels = {
-            pending: 'بانتظار التصميم',
-            in_progress: 'قيد التنفيذ',
-            in_review: 'بانتظار مراجعة المدير',
-            revision: 'مطلوب تعديل',
-            completed: 'مكتمل',
-            client_review: 'بانتظار مراجعة العميل',
-        };
-        return labels[status] || status;
+        return STATUS_DEFS[status]?.label || status || '—';
     }
 
     function _esc(str) {
@@ -809,16 +700,13 @@
                         body: JSON.stringify({ action: 'approve' }),
                     });
                     window.showToast?.(res.message || 'تم اعتماد التصميم', 'success');
-                    if (res.auto_converted) {
-                        window.showToast?.('تم تحويل العرض إلى أمر تشغيل تلقائياً', 'success');
-                    }
                     await _openTaskDetail(orderId);
                     await _loadTasks();
                 } catch (err) {
                     window.showToast?.(err.message || 'فشل في اعتماد التصميم', 'error');
                 } finally {
                     btn.disabled = false;
-                    btn.innerHTML = '<i class="fa-solid fa-check ml-1"></i>اعتماد';
+                    btn.innerHTML = '<i class="fa-solid fa-check ml-1"></i>اعتماد وإرسال للعميل';
                 }
             });
         });
@@ -873,11 +761,43 @@
             });
         });
 
-        // Send to client button
+        // Per-item send to client buttons
+        document.querySelectorAll('.item-send-client-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const itemId = btn.getAttribute('data-item-id');
+                const oid = btn.getAttribute('data-order-id');
+                if (!confirm('هل تريد إرسال تصميم هذا الصنف للعميل؟')) return;
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin ml-1"></i>جاري الإرسال...';
+                try {
+                    const res = await window.apiFetch(`/api/designer/item/${oid}/${itemId}/send-to-client`, {
+                        method: 'POST',
+                    });
+                    window.showToast?.(res.message || 'تم إنشاء رابط المراجعة', 'success');
+                    if (res.share_url) {
+                        try {
+                            await navigator.clipboard.writeText(res.share_url);
+                            window.showToast?.('تم نسخ رابط المراجعة للحافظة', 'success');
+                        } catch {
+                            window.showToast?.(`رابط المراجعة: ${res.share_url}`, 'info');
+                        }
+                    }
+                    await _openTaskDetail(orderId);
+                    await _loadTasks();
+                } catch (err) {
+                    window.showToast?.(err.message || 'فشل في إرسال التصميم', 'error');
+                } finally {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fa-solid fa-share ml-1"></i>إرسال للعميل (رابط مستقل)';
+                }
+            });
+        });
+
+        // Legacy order-level send to client button
         const sendBtn = document.getElementById('designer-send-client-btn');
         if (sendBtn) {
             sendBtn.onclick = async () => {
-                if (!confirm('هل تريد إرسال التصاميم للعميل للمراجعة؟')) return;
+                if (!confirm('هل تريد إرسال جميع التصاميم للعميل للمراجعة؟')) return;
                 sendBtn.disabled = true;
                 sendBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin ml-1"></i>جاري الإرسال...';
                 try {

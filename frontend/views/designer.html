@@ -20,25 +20,25 @@
 
     <!-- Tabs -->
     <div class="flex gap-1 mb-6 border-b border-slate-200">
-        <button class="designer-tab px-4 py-2.5 text-sm font-medium border-b-2 border-brand-700 text-brand-700 transition-colors" data-tab="pending">
-            بانتظار التصميم
+        <button class="designer-tab px-4 py-2.5 text-sm font-medium border-b-2 border-brand-700 text-brand-700 transition-colors" data-tab="waiting_design">
+            🟡 بانتظار التصميم
             <span id="designer-tab-pending-count" class="mr-1 text-xs bg-brand-100 text-brand-700 px-1.5 py-0.5 rounded-full">0</span>
         </button>
         <button class="designer-tab px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700 transition-colors" data-tab="in_progress">
             قيد التنفيذ
             <span id="designer-tab-progress-count" class="mr-1 text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">0</span>
         </button>
-        <button class="designer-tab px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700 transition-colors" data-tab="revision">
-            مطلوب تعديل
-            <span id="designer-tab-revision-count" class="mr-1 text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full">0</span>
-        </button>
-        <button class="designer-tab px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700 transition-colors" data-tab="review" id="designer-tab-review" style="display:none;">
-            مراجعة التصاميم
+        <button class="designer-tab px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700 transition-colors" data-tab="manager_review" id="designer-tab-review" style="display:none;">
+            🟣 مراجعة التصاميم
             <span id="designer-tab-review-count" class="mr-1 text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full">0</span>
         </button>
+        <button class="designer-tab px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700 transition-colors" data-tab="client_revision">
+            🟠 مطلوب تعديل
+            <span id="designer-tab-revision-count" class="mr-1 text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full">0</span>
+        </button>
         <button class="designer-tab px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700 transition-colors" data-tab="client_review" id="designer-tab-client-review" style="display:none;">
-            بانتظار العميل
-            <span id="designer-tab-client-review-count" class="mr-1 text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">0</span>
+            🔷 بانتظار العميل
+            <span id="designer-tab-client-review-count" class="mr-1 text-xs bg-cyan-100 text-cyan-700 px-1.5 py-0.5 rounded-full">0</span>
         </button>
         <button class="designer-tab px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700 transition-colors" data-tab="completed">
             مكتملة
@@ -99,4 +99,4 @@
 </div>
 
 <!-- Load designer.js -->
-<script src="/js/views/designer.js?v=20260725"></script>
+<script src="/js/views/designer.js?v=20260726"></script>

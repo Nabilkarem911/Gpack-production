@@ -335,10 +335,10 @@
                     ${q.client_response === 'approved' ? '<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700 mr-1"><i class="fa-solid fa-circle-check"></i> وافق</span>' : ''}
                     ${q.client_response === 'rejected' ? '<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-600 mr-1"><i class="fa-solid fa-circle-xmark"></i> رفض</span>' : ''}
                     ${q.share_token && !q.client_response ? '<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-600 mr-1"><i class="fa-solid fa-share-nodes"></i> مُرسَل</span>' : ''}
-                    ${q.design_status === 'pending' ? '<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600 mr-1"><i class="fa-solid fa-pen-ruler"></i> تصميم: معلق</span>' : ''}
+                    ${q.design_status === 'waiting_design' ? '<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600 mr-1"><i class="fa-solid fa-pen-ruler"></i> تصميم: معلق</span>' : ''}
                     ${q.design_status === 'in_progress' ? `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700 mr-1"><i class="fa-solid fa-pen-ruler"></i> تصميم: ${q.design_completed_count || 0}/${q.item_count || 0}</span>` : ''}
-                    ${q.design_status === 'in_review' ? '<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 mr-1"><i class="fa-solid fa-eye"></i> تصميم: مراجعة</span>' : ''}
-                    ${q.design_status === 'revision' ? '<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-700 mr-1"><i class="fa-solid fa-rotate"></i> تصميم: تعديل</span>' : ''}
+                    ${q.design_status === 'manager_review' ? '<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 mr-1"><i class="fa-solid fa-eye"></i> تصميم: مراجعة</span>' : ''}
+                    ${q.design_status === 'client_revision' ? '<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-700 mr-1"><i class="fa-solid fa-rotate"></i> تصميم: تعديل</span>' : ''}
                     ${q.design_status === 'client_review' ? `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-700 mr-1"><i class="fa-solid fa-user-check"></i> لدى العميل: ${q.design_completed_count || 0}/${q.item_count || 0}</span>` : ''}
                     ${q.design_status === 'completed' ? '<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700 mr-1"><i class="fa-solid fa-check-double"></i> تصميم: معتمد</span>' : ''}
                 </td>
@@ -355,7 +355,7 @@
                                        hover:text-purple-600 hover:bg-purple-50 transition-colors">
                             <i class="fa-solid fa-pen-ruler text-xs"></i>
                         </button>
-                        ${['in_progress', 'in_review', 'revision', 'client_review'].includes(q.design_status) ? `
+                        ${['in_progress', 'manager_review', 'client_revision', 'client_review'].includes(q.design_status) ? `
                         <button onclick="window.navigateTo('designer')" title="مراجعة التصميم وإرسال للعميل — من صفحة المصمم"
                                 class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400
                                        hover:text-indigo-600 hover:bg-indigo-50 transition-colors">
