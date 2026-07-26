@@ -235,36 +235,7 @@ async function notifyDesignApproved(data) {
         });
     }
 
-    // 3. Message to Designer
-    if (designer_phone) {
-        const chatId = WhatsApp.normalizePhone(designer_phone);
-        const designerTpl = await TemplateEngine.render('design_approved_designer', 'ar', {
-            order_number,
-            product_name: product_name || '—',
-            correlation_id: correlationId,
-        });
-        const designerBody = designerTpl ? designerTpl.body :
-            `🎉 تم اعتماد تصميمك\n\nOffer #${order_number}\nItem\n${product_name || '—'}\n\nالعميل اعتمد التصميم.\n\nCorrelation ID\n${correlationId}`;
-        const designerSubject = designerTpl ? designerTpl.subject : `تصميم معتمد — Offer #${order_number}`;
-
-        await enqueue({
-            channel: 'whatsapp',
-            recipient: chatId,
-            recipient_name: designer_name || 'المصمم',
-            recipient_role: 'designer',
-            message_type: 'design_approved_designer',
-            subject: designerSubject,
-            body: designerBody,
-            attachments: [],
-            entity_type: 'order_item',
-            entity_id: item_id,
-            metadata: { certificate_number, order_number },
-            priority: 'high',
-            correlation_id: correlationId,
-        });
-    }
-
-    // 4. In-app notifications for ERP users
+    // 3. In-app notifications for ERP users (designer gets in-app only, NOT WhatsApp)
     await notifyInApp({
         target_role: 'manager',
         category: 'approval',
