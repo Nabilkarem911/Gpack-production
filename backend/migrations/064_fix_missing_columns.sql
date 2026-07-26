@@ -81,3 +81,6 @@ ALTER TABLE notification_queue ADD COLUMN IF NOT EXISTS retry_history JSONB DEFA
 
 -- ── Verify: print column list for design_approvals ───────────────────────────
 -- (diagnostic — safe to run, output goes to PostgreSQL log)
+
+-- ── Fix: notification_outbox.entity_id is INTEGER but we pass UUIDs ──────────
+ALTER TABLE notification_outbox ALTER COLUMN entity_id TYPE VARCHAR(100) USING entity_id::text;
