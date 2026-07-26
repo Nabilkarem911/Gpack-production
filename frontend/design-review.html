@@ -343,8 +343,8 @@
             });
         }
 
-        // Check if already responded
-        if (item.client_design_status === 'approved') {
+        // Check if already responded or token used (locked)
+        if (item.review_token_used || item.client_design_status === 'approved') {
             document.getElementById('already-responded').classList.remove('hidden');
             document.getElementById('responded-approved').classList.remove('hidden');
             document.getElementById('response-section').classList.add('hidden');
@@ -356,6 +356,14 @@
                 if (item.client_approved_at) {
                     document.getElementById('approved-at').textContent = new Date(item.client_approved_at).toLocaleString('ar-SA');
                 }
+                // Add verify link
+                const verifyUrl = `${window.location.origin}/verify/${item.approval_certificate_number}`;
+                const verifyLink = document.createElement('a');
+                verifyLink.href = verifyUrl;
+                verifyLink.target = '_blank';
+                verifyLink.className = 'text-xs text-sky-600 hover:underline mt-2 inline-block';
+                verifyLink.innerHTML = '<i class="fa-solid fa-qrcode ml-1"></i>صفحة التحقق من الاعتماد';
+                document.getElementById('approval-certificate-info').appendChild(verifyLink);
             }
         } else if (item.client_design_status === 'revision_requested') {
             document.getElementById('already-responded').classList.remove('hidden');

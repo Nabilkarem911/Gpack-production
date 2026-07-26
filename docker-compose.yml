@@ -19,6 +19,10 @@ services:
       AI_ASSISTANT_ENABLED: ${AI_ASSISTANT_ENABLED:-true}
       NODE_ENV: production
       PORT: 3000
+      WAHA_URL: ${WAHA_URL:-}
+      WAHA_SESSION: ${WAHA_SESSION:-default}
+      WAHA_CHAT_ID: ${WAHA_CHAT_ID:-}
+      BASE_URL: ${BASE_URL:-https://erp.gpacksa.com}
     expose:
       - "3000"
     healthcheck:

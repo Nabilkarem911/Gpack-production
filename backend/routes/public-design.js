@@ -15,6 +15,7 @@ const fs = require('fs');
 const multer = require('multer');
 const PDFDocument = require('pdfkit');
 const { encryptToken, hashToken, hasShareTokenSecret } = require('../utils/crypto');
+const { processApproval } = require('../services/approval-service');
 
 // =============================================================================
 // File Upload Configuration (client revision files)
@@ -648,6 +649,7 @@ router.get('/item/:token', async (req, res) => {
                         oi.design_status, oi.client_design_status, oi.client_revision_notes,
                         oi.client_revision_files, oi.review_token_expires_at,
                         oi.approval_certificate_number, oi.client_approved_at,
+                        oi.review_token_used,
                         o.id as order_id, o.order_number, o.client_id,
                         c.name as client_name,
                         p.name AS product_name, pv.size_name AS size
@@ -703,6 +705,7 @@ router.get('/item/:token', async (req, res) => {
                 client_revision_files: item.client_revision_files,
                 approval_certificate_number: item.approval_certificate_number || null,
                 client_approved_at: item.client_approved_at || null,
+                review_token_used: item.review_token_used || false,
             },
         });
     } catch (err) {
@@ -732,10 +735,14 @@ router.post('/item/:token/respond', clientUpload.array('client_files', 10), asyn
             const tokenHash = hashToken(token);
             itemRes = await client.query(
                 `SELECT oi.id, oi.design_status, oi.order_id, o.order_number, o.client_id,
-                        c.name as client_name
+                        oi.review_token_used,
+                        c.name as client_name,
+                        p.name AS product_name, pv.size_name AS size_name
                  FROM order_items oi
                  JOIN orders o ON o.id = oi.order_id
                  JOIN clients c ON c.id = o.client_id
+                 LEFT JOIN product_variants pv ON pv.id = oi.variant_id
+                 LEFT JOIN products p ON p.id = pv.product_id
                  WHERE oi.review_token_hash = $1`,
                 [tokenHash]
             );
@@ -746,6 +753,10 @@ router.post('/item/:token/respond', clientUpload.array('client_files', 10), asyn
         }
 
         const item = itemRes.rows[0];
+
+        if (item.review_token_used) {
+            return res.status(410).json({ error: 'تم استخدام هذا الرابط للاعتماد بالفعل' });
+        }
         const curStatus = item.design_status;
 
         // Validate transition
@@ -803,29 +814,49 @@ router.post('/item/:token/respond', clientUpload.array('client_files', 10), asyn
             const declarationText = req.body.declaration ||
                 'أقر بأنني راجعت التصميم بالكامل من حيث النصوص والألوان والمقاسات والبيانات، وأوافق على طباعته كما هو. أتحمل مسؤولية أي أخطاء بعد اعتماد هذا التصميم.';
 
+            // Save signature as PNG file (not base64 in DB)
+            let signaturePath = null;
+            let signatureSha256 = null;
+            if (signature) {
+                try {
+                    const sigDir = path.join(UPLOAD_BASE, item.order_id, 'signatures');
+                    fs.mkdirSync(sigDir, { recursive: true });
+                    const sigFilename = `sig-${item.id}-${Date.now()}.png`;
+                    const sigFilePath = path.join(sigDir, sigFilename);
+                    const sigBuffer = Buffer.from(signature, 'base64');
+                    fs.writeFileSync(sigFilePath, sigBuffer);
+                    signaturePath = `/uploads/designs/${item.order_id}/signatures/${sigFilename}`;
+                    signatureSha256 = crypto.createHash('sha256').update(sigBuffer).digest('hex');
+                } catch (e) {
+                    console.error('[PublicDesign] Signature save error:', e.message);
+                }
+            }
+
             await client.query(
                 `UPDATE order_items SET
                     client_design_status = 'approved',
                     client_approved_at = NOW(),
                     design_status = 'approved',
                     approval_certificate_number = $2,
-                    approval_verification_hash = $3
+                    approval_verification_hash = $3,
+                    review_token_used = true
                  WHERE id = $1`,
                 [item.id, certificateNumber, verificationHash]
             );
 
-            // Store approval record with signature
+            // Store approval record with signature file path
             try {
                 await client.query(
                     `INSERT INTO design_approvals
                         (order_id, item_id, client_id, client_name, order_number,
-                         signature_image, signer_name, client_ip, user_agent, device_info,
-                         declaration_text, signature_format,
+                         signature_path, signature_sha256, signer_name,
+                         client_ip, user_agent, device_info,
+                         declaration_text,
                          certificate_number, verification_hash)
-                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'png', $12, $13)`,
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
                     [
                         item.order_id, item.id, item.client_id, item.client_name, item.order_number,
-                        signature || null, signer_name || null,
+                        signaturePath, signatureSha256, signer_name || null,
                         clientIp, userAgent, device_info || null,
                         declarationText,
                         certificateNumber, verificationHash,
@@ -957,6 +988,30 @@ router.post('/item/:token/respond', clientUpload.array('client_files', 10), asyn
         }
 
         res.json(responseObj);
+
+        // ── Background: generate approval package (PDF + image + WhatsApp) ──
+        // Fire-and-forget — does NOT block the response to the client.
+        if (action === 'approve') {
+            const approvalData = {
+                item_id: item.id,
+                order_id: item.order_id,
+                order_number: item.order_number,
+                client_name: item.client_name,
+                product_name: item.product_name || null,
+                size_name: item.size_name || null,
+                signer_name: signer_name || '',
+                certificate_number: responseObj.certificate_number,
+                verification_hash: verificationHash,
+                signature_path: signaturePath,
+                declaration_text: declarationText,
+                approved_at: new Date().toISOString(),
+                client_ip: clientIp,
+            };
+            // Non-blocking — errors are caught inside processApproval
+            processApproval(approvalData).catch(err => {
+                console.error('[PublicDesign] Background approval processing error:', err.message);
+            });
+        }
     } catch (err) {
         await client.query('ROLLBACK');
         console.error('[PublicDesign] Item respond error:', err.message);

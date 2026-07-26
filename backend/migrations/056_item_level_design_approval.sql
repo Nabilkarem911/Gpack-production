@@ -24,13 +24,18 @@ ALTER TABLE design_approvals
 ALTER TABLE design_approvals
     ADD COLUMN IF NOT EXISTS declaration_text TEXT;
 
--- Add signature format (png or svg)
+-- Add signature file path and hash (signature stored as file, not base64 in DB)
 ALTER TABLE design_approvals
-    ADD COLUMN IF NOT EXISTS signature_format VARCHAR(10) DEFAULT 'png';
+    ADD COLUMN IF NOT EXISTS signature_path VARCHAR(500),
+    ADD COLUMN IF NOT EXISTS signature_sha256 VARCHAR(64);
 
 -- Add approval image path (compact image with QR)
 ALTER TABLE design_approvals
     ADD COLUMN IF NOT EXISTS approval_image_path VARCHAR(500);
+
+-- Add approval PDF path
+ALTER TABLE design_approvals
+    ADD COLUMN IF NOT EXISTS approval_pdf_path VARCHAR(500);
 
 -- Create indexes
 CREATE INDEX IF NOT EXISTS idx_design_approvals_item ON design_approvals(item_id);
@@ -40,4 +45,5 @@ CREATE INDEX IF NOT EXISTS idx_design_approvals_certificate ON design_approvals(
 -- Add item-level audit columns to order_items
 ALTER TABLE order_items
     ADD COLUMN IF NOT EXISTS approval_certificate_number VARCHAR(30),
-    ADD COLUMN IF NOT EXISTS approval_verification_hash VARCHAR(64);
+    ADD COLUMN IF NOT EXISTS approval_verification_hash VARCHAR(64),
+    ADD COLUMN IF NOT EXISTS review_token_used BOOLEAN DEFAULT false;
