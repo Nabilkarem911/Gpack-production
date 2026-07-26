@@ -556,7 +556,67 @@
                     </div>
                 ` : ''}
             </div>
+
+            <!-- Timeline section -->
+            <div class="mt-3 border-t border-slate-100 pt-3">
+                <button class="item-timeline-btn text-xs text-slate-500 hover:text-brand-700 transition-colors" data-item-id="${item.id}" data-order-id="${orderId}">
+                    <i class="fa-solid fa-clock-rotate-left ml-1"></i>الجدول الزمني
+                </button>
+                <div class="item-timeline-container hidden mt-3" data-item-id="${item.id}"></div>
+            </div>
         `;
+    }
+
+    // ── Render timeline ──────────────────────────────────────────────────────
+    const TIMELINE_EVENTS = {
+        'link_opened':              { icon: 'fa-link', label: 'فتح العميل الرابط', color: 'text-sky-500' },
+        'design_viewed':            { icon: 'fa-eye', label: 'تم عرض التصميم', color: 'text-slate-500' },
+        'image_zoomed':             { icon: 'fa-magnifying-glass-plus', label: 'تكبير صورة', color: 'text-slate-500' },
+        'file_downloaded':          { icon: 'fa-download', label: 'تحميل ملف', color: 'text-slate-500' },
+        'approve_form_opened':      { icon: 'fa-form', label: 'فتح نموذج الاعتماد', color: 'text-emerald-500' },
+        'signature_captured':       { icon: 'fa-signature', label: 'تم التقاط التوقيع', color: 'text-emerald-500' },
+        'item_approved':            { icon: 'fa-circle-check', label: 'تم الاعتماد', color: 'text-emerald-600' },
+        'item_revision_requested':  { icon: 'fa-rotate-left', label: 'طلب تعديل', color: 'text-orange-500' },
+        'item_sent_to_client':      { icon: 'fa-paper-plane', label: 'إرسال للعميل', color: 'text-cyan-500' },
+        'sent_to_client':           { icon: 'fa-paper-plane', label: 'إرسال للعميل', color: 'text-cyan-500' },
+        'approval_package_generated': { icon: 'fa-box-archive', label: 'توليد حزمة الاعتماد', color: 'text-purple-500' },
+        'state_transition':         { icon: 'fa-arrow-left', label: 'تغيير الحالة', color: 'text-brand-600' },
+    };
+
+    function _renderTimeline(timeline) {
+        if (!timeline || timeline.length === 0) return '<p class="text-xs text-slate-400">لا توجد أحداث</p>';
+
+        return `<div class="relative pr-4">
+            ${timeline.map((entry, idx) => {
+                const ev = TIMELINE_EVENTS[entry.event] || { icon: 'fa-circle', label: entry.event, color: 'text-slate-400' };
+                const time = new Date(entry.timestamp).toLocaleString('ar-SA', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
+                const isLast = idx === timeline.length - 1;
+
+                let extra = '';
+                if (entry.type === 'workflow') {
+                    extra = `<span class="text-[10px] text-slate-400">${entry.from_state} ← ${entry.to_state}</span>`;
+                    if (entry.reason) extra += ` <span class="text-[10px] text-slate-400">(${entry.reason})</span>`;
+                }
+                if (entry.ip) {
+                    extra += ` <span class="text-[10px] text-slate-300">IP: ${entry.ip}</span>`;
+                }
+
+                return `
+                    <div class="flex gap-2 ${isLast ? '' : 'pb-3'}">
+                        <div class="flex flex-col items-center">
+                            <div class="w-6 h-6 rounded-full bg-slate-50 flex items-center justify-center flex-shrink-0">
+                                <i class="fa-solid ${ev.icon} text-[10px] ${ev.color}"></i>
+                            </div>
+                            ${!isLast ? '<div class="w-px flex-1 bg-slate-200 mt-1"></div>' : ''}
+                        </div>
+                        <div class="flex-1 pb-1">
+                            <p class="text-xs font-semibold text-slate-700">${ev.label}</p>
+                            <p class="text-[10px] text-slate-400">${time} ${extra}</p>
+                        </div>
+                    </div>
+                `;
+            }).join('')}
+        </div>`;
     }
 
     // ── Bind events ───────────────────────────────────────────────────────────
@@ -901,6 +961,37 @@
                 }
             };
         }
+
+        // Timeline buttons
+        document.querySelectorAll('.item-timeline-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const itemId = btn.getAttribute('data-item-id');
+                const oid = btn.getAttribute('data-order-id');
+                const container = document.querySelector(`.item-timeline-container[data-item-id="${itemId}"]`);
+
+                if (!container) return;
+
+                // Toggle visibility
+                if (!container.classList.contains('hidden')) {
+                    container.classList.add('hidden');
+                    return;
+                }
+
+                container.classList.remove('hidden');
+                container.innerHTML = '<div class="text-xs text-slate-400"><i class="fa-solid fa-spinner fa-spin ml-1"></i>جاري التحميل...</div>';
+
+                try {
+                    const res = await window.apiFetch(`/api/designer/item/${oid}/${itemId}/timeline`);
+                    if (res.timeline && res.timeline.length > 0) {
+                        container.innerHTML = _renderTimeline(res.timeline);
+                    } else {
+                        container.innerHTML = '<p class="text-xs text-slate-400">لا توجد أحداث مسجلة</p>';
+                    }
+                } catch (err) {
+                    container.innerHTML = `<p class="text-xs text-red-400">${err.message || 'فشل في تحميل الجدول الزمني'}</p>`;
+                }
+            });
+        });
     }
 
     // ── Export init for SPA router ─────────────────────────────────────────────

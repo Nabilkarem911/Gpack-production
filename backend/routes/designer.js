@@ -1452,4 +1452,64 @@ router.get('/activity-log/:orderId', authorize(['admin', 'manager', 'super_admin
     }
 });
 
+// ── GET /api/designer/item/:orderId/:itemId/timeline ────────────────────────
+// Returns unified timeline (activity log + workflow history) for a single item.
+router.get('/item/:orderId/:itemId/timeline', authorize(['admin', 'manager', 'super_admin', 'designer']), async (req, res) => {
+    const { orderId, itemId } = req.params;
+    try {
+        // Fetch activity log entries for this item
+        const activityRes = await db.query(
+            `SELECT event_type, event_details, actor, client_ip, user_agent, created_at
+             FROM design_activity_log
+             WHERE order_id = $1 AND (item_id = $2 OR item_id IS NULL)
+             ORDER BY created_at ASC`,
+            [orderId, itemId]
+        );
+
+        // Fetch workflow history for this item
+        const workflowRes = await db.query(
+            `SELECT from_state, to_state, actor_role, notes, transition_reason, created_at
+             FROM workflow_history
+             WHERE entity_type = 'order_item' AND entity_id = $1
+             ORDER BY created_at ASC`,
+            [itemId]
+        );
+
+        // Merge and sort by created_at
+        const timeline = [];
+
+        for (const a of activityRes.rows) {
+            timeline.push({
+                type: 'activity',
+                event: a.event_type,
+                actor: a.actor,
+                ip: a.client_ip,
+                user_agent: a.user_agent,
+                details: a.event_details ? (typeof a.event_details === 'string' ? JSON.parse(a.event_details) : a.event_details) : null,
+                timestamp: a.created_at,
+            });
+        }
+
+        for (const w of workflowRes.rows) {
+            timeline.push({
+                type: 'workflow',
+                event: 'state_transition',
+                from_state: w.from_state,
+                to_state: w.to_state,
+                actor: w.actor_role,
+                reason: w.transition_reason,
+                notes: w.notes,
+                timestamp: w.created_at,
+            });
+        }
+
+        timeline.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+        res.json({ success: true, timeline });
+    } catch (err) {
+        console.error('[Designer] Timeline fetch error:', err.message);
+        res.status(500).json({ error: 'فشل في جلب الجدول الزمني' });
+    }
+});
+
 module.exports = router;
