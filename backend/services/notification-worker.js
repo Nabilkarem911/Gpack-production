@@ -228,19 +228,35 @@ async function _processOutbox() {
                             // The approval is already committed in DB; notifications should still go out.
                         }
 
-                        // 2. Fetch generated file paths from DB (processApproval stored them)
+                        // 2. Fetch generated file paths + phone numbers from DB
                         const apprRes = await db.query(
-                            `SELECT approval_image_path, approval_pdf_path FROM design_approvals WHERE item_id = $1 ORDER BY id DESC LIMIT 1`,
+                            `SELECT da.approval_image_path, da.approval_pdf_path,
+                                    c.phone AS client_phone,
+                                    u.phone AS designer_phone,
+                                    u.name AS designer_name
+                             FROM design_approvals da
+                             JOIN order_items oi ON oi.id = da.item_id
+                             JOIN orders o ON o.id = oi.order_id
+                             JOIN clients c ON c.id = o.client_id
+                             LEFT JOIN users u ON u.id = oi.assigned_designer_id
+                             WHERE da.item_id = $1
+                             ORDER BY da.id DESC LIMIT 1`,
                             [payload.item_id]
                         );
                         const pdfPath = apprRes.rows[0]?.approval_pdf_path || null;
                         const certPath = apprRes.rows[0]?.approval_image_path || null;
+                        const clientPhone = apprRes.rows[0]?.client_phone || null;
+                        const designerPhone = apprRes.rows[0]?.designer_phone || null;
+                        const designerName = apprRes.rows[0]?.designer_name || null;
 
-                        // 3. Send notifications with file paths
+                        // 3. Send notifications with file paths + phone numbers
                         await NotificationService.notifyDesignApproved({
                             ...payload,
                             pdf_path: pdfPath,
                             cert_image_path: certPath,
+                            client_phone: clientPhone,
+                            designer_phone: designerPhone,
+                            designer_name: designerName,
                             correlation_id: evt.correlation_id,
                         });
                         break;
