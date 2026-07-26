@@ -3,19 +3,26 @@
 -- Append-only audit + Approval manifest + WAHA health + Metrics
 -- =============================================================================
 
--- ── 1. Append-only: workflow_history (no UPDATE, no DELETE) ────────────────
--- Revoke UPDATE and DELETE from all roles on workflow_history
--- Only super_admin can bypass via SECURITY DEFINER functions if needed
-REVOKE UPDATE, DELETE ON workflow_history FROM PUBLIC;
-REVOKE UPDATE, DELETE ON workflow_history FROM gpack_user;
+-- ── 1. Append-only audit tables (no UPDATE, no DELETE) ─────────────────────
+-- workflow_history and design_activity_log are true audit tables — INSERT only.
+-- NOTE: design_approvals is NOT append-only because we UPDATE it with file paths,
+-- hashes, package_state, etc. after generating the approval package.
+-- Use DO blocks to safely handle cases where the role name differs.
+DO $$
+BEGIN
+    -- Revoke from PUBLIC (always works)
+    REVOKE UPDATE, DELETE ON workflow_history FROM PUBLIC;
+    REVOKE UPDATE, DELETE ON design_activity_log FROM PUBLIC;
 
--- Same for design_approvals — once written, never modified
-REVOKE UPDATE, DELETE ON design_approvals FROM PUBLIC;
-REVOKE UPDATE, DELETE ON design_approvals FROM gpack_user;
-
--- Same for design_activity_log — immutable audit trail
-REVOKE UPDATE, DELETE ON design_activity_log FROM PUBLIC;
-REVOKE UPDATE, DELETE ON design_activity_log FROM gpack_user;
+    -- Revoke from gpack_user only if the role exists
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'gpack_user') THEN
+        REVOKE UPDATE, DELETE ON workflow_history FROM gpack_user;
+        REVOKE UPDATE, DELETE ON design_activity_log FROM gpack_user;
+    END IF;
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'REVOKE skipped: %', SQLERRM;
+END
+$$;
 
 -- ── 2. Approval Package Manifest ────────────────────────────────────────────
 -- Store manifest JSON (file hashes, sizes, mime types) per approval
