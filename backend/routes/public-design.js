@@ -647,6 +647,7 @@ router.get('/item/:token', async (req, res) => {
                 `SELECT oi.id, oi.variant_id, oi.quantity, oi.design_files, oi.designer_notes,
                         oi.design_status, oi.client_design_status, oi.client_revision_notes,
                         oi.client_revision_files, oi.review_token_expires_at,
+                        oi.approval_certificate_number, oi.client_approved_at,
                         o.id as order_id, o.order_number, o.client_id,
                         c.name as client_name,
                         p.name AS product_name, pv.size_name AS size
@@ -700,6 +701,8 @@ router.get('/item/:token', async (req, res) => {
                 client_design_status: item.client_design_status,
                 client_revision_notes: item.client_revision_notes,
                 client_revision_files: item.client_revision_files,
+                approval_certificate_number: item.approval_certificate_number || null,
+                client_approved_at: item.client_approved_at || null,
             },
         });
     } catch (err) {
@@ -728,9 +731,11 @@ router.post('/item/:token/respond', clientUpload.array('client_files', 10), asyn
         try {
             const tokenHash = hashToken(token);
             itemRes = await client.query(
-                `SELECT oi.id, oi.design_status, oi.order_id, o.order_number, o.client_id
+                `SELECT oi.id, oi.design_status, oi.order_id, o.order_number, o.client_id,
+                        c.name as client_name
                  FROM order_items oi
                  JOIN orders o ON o.id = oi.order_id
+                 JOIN clients c ON c.id = o.client_id
                  WHERE oi.review_token_hash = $1`,
                 [tokenHash]
             );
@@ -781,14 +786,54 @@ router.post('/item/:token/respond', clientUpload.array('client_files', 10), asyn
         });
 
         if (action === 'approve') {
+            // Generate certificate number: APP-YYYYMMDD-XXXX
+            const now = new Date();
+            const ymd = now.getFullYear().toString() +
+                String(now.getMonth() + 1).padStart(2, '0') +
+                String(now.getDate()).padStart(2, '0');
+            const rand = crypto.randomBytes(2).toString('hex').toUpperCase().padEnd(4, '0');
+            const certificateNumber = `APP-${ymd}-${rand}`;
+
+            // Generate verification hash (SHA256 of certificate number + item id + timestamp)
+            const verificationHash = crypto.createHash('sha256')
+                .update(`${certificateNumber}|${item.id}|${now.toISOString()}`)
+                .digest('hex');
+
+            // Declaration text
+            const declarationText = req.body.declaration ||
+                'أقر بأنني راجعت التصميم بالكامل من حيث النصوص والألوان والمقاسات والبيانات، وأوافق على طباعته كما هو. أتحمل مسؤولية أي أخطاء بعد اعتماد هذا التصميم.';
+
             await client.query(
                 `UPDATE order_items SET
                     client_design_status = 'approved',
                     client_approved_at = NOW(),
-                    design_status = 'approved'
+                    design_status = 'approved',
+                    approval_certificate_number = $2,
+                    approval_verification_hash = $3
                  WHERE id = $1`,
-                [item.id]
+                [item.id, certificateNumber, verificationHash]
             );
+
+            // Store approval record with signature
+            try {
+                await client.query(
+                    `INSERT INTO design_approvals
+                        (order_id, item_id, client_id, client_name, order_number,
+                         signature_image, signer_name, client_ip, user_agent, device_info,
+                         declaration_text, signature_format,
+                         certificate_number, verification_hash)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'png', $12, $13)`,
+                    [
+                        item.order_id, item.id, item.client_id, item.client_name, item.order_number,
+                        signature || null, signer_name || null,
+                        clientIp, userAgent, device_info || null,
+                        declarationText,
+                        certificateNumber, verificationHash,
+                    ]
+                );
+            } catch (e) {
+                console.error('[PublicDesign] design_approvals insert error:', e.message);
+            }
 
             // Log to workflow_history
             try {
@@ -887,17 +932,31 @@ router.post('/item/:token/respond', clientUpload.array('client_files', 10), asyn
         await client.query('COMMIT');
 
         const message = action === 'approve'
-            ? 'تم تسجيل موافقة العميل على التصميم'
+            ? 'تم اعتماد التصميم بنجاح — تم تسجيل توقيعك إلكترونياً'
             : 'تم تسجيل طلب التعديل. سيتم إرساله للمصمم.';
 
         const whatsappNumber = process.env.WHATSAPP_NUMBER || '';
 
-        res.json({
+        const responseObj = {
             success: true,
             message,
             action,
             whatsapp_number: whatsappNumber,
-        });
+        };
+
+        if (action === 'approve') {
+            const certNum = await client.query(
+                'SELECT approval_certificate_number FROM order_items WHERE id = $1',
+                [item.id]
+            );
+            if (certNum.rows.length > 0 && certNum.rows[0].approval_certificate_number) {
+                responseObj.certificate_number = certNum.rows[0].approval_certificate_number;
+                const baseUrl = `${req.protocol}://${req.get('host')}`;
+                responseObj.verification_url = `${baseUrl}/verify/${certNum.rows[0].approval_certificate_number}`;
+            }
+        }
+
+        res.json(responseObj);
     } catch (err) {
         await client.query('ROLLBACK');
         console.error('[PublicDesign] Item respond error:', err.message);
@@ -939,6 +998,47 @@ router.post('/item/:token/activity', async (req, res) => {
     } catch (err) {
         console.error('[PublicDesign] Item activity error:', err.message);
         res.status(500).json({ error: 'failed to log activity' });
+    }
+});
+
+// ── GET /api/public/design/verify/:certificateNumber ────────────────────────
+// Public: verify an approval by certificate number. Returns approval details.
+router.get('/verify/:certificateNumber', async (req, res) => {
+    try {
+        const { certificateNumber } = req.params;
+        const result = await db.query(
+            `SELECT da.certificate_number, da.client_name, da.order_number,
+                    da.signer_name, da.approved_at, da.client_ip,
+                    da.declaration_text, da.signature_format,
+                    da.verification_hash,
+                    p.name AS product_name, pv.size_name AS size_name
+             FROM design_approvals da
+             LEFT JOIN order_items oi ON oi.id = da.item_id
+             LEFT JOIN product_variants pv ON pv.id = oi.variant_id
+             LEFT JOIN products p ON p.id = pv.product_id
+             WHERE da.certificate_number = $1`,
+            [certificateNumber]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'رقم الاعتماد غير موجود' });
+        }
+
+        const row = result.rows[0];
+        res.json({
+            certificate_number: row.certificate_number,
+            client_name: row.client_name,
+            order_number: row.order_number,
+            product_name: row.product_name,
+            size_name: row.size_name,
+            signer_name: row.signer_name,
+            approved_at: row.approved_at,
+            declaration_text: row.declaration_text,
+            verified: true,
+        });
+    } catch (err) {
+        console.error('[PublicDesign] Verify error:', err.message);
+        res.status(500).json({ error: 'فشل في التحقق' });
     }
 });
 

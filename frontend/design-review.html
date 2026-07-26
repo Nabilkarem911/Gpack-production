@@ -3,20 +3,25 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>مراجعة التصميم — G.PACK</title>
+    <title>اعتماد تصميم — G.PACK</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.7/dist/signature_pad.umd.min.js"></script>
     <style>
         body { font-family: 'Segoe UI', Tahoma, sans-serif; }
         .spinner { animation: spin 1s linear infinite; }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .brand-gradient { background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%); }
+        .sig-canvas { touch-action: none; }
+        .image-zoom-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.85); z-index: 9999; display: flex; align-items: center; justify-content: center; cursor: zoom-out; }
+        .image-zoom-overlay img { max-width: 95vw; max-height: 95vh; object-fit: contain; }
     </style>
 </head>
-<body class="bg-slate-50 min-h-screen">
+<body class="bg-slate-100 min-h-screen">
 
     <!-- Loading state -->
     <div id="loading-state" class="flex flex-col items-center justify-center min-h-screen">
-        <i class="fa-solid fa-spinner spinner text-4xl text-brand-600 mb-4"></i>
+        <i class="fa-solid fa-spinner spinner text-4xl text-sky-600 mb-4"></i>
         <p class="text-slate-500">جاري تحميل التصميم...</p>
     </div>
 
@@ -32,17 +37,31 @@
     <!-- Main content -->
     <div id="main-content" class="hidden max-w-3xl mx-auto p-4 lg:p-6">
 
-        <!-- Header -->
-        <div class="bg-white rounded-2xl shadow-sm p-6 mb-4">
+        <!-- Professional Header -->
+        <div class="brand-gradient rounded-2xl shadow-lg p-6 mb-4 text-white">
             <div class="flex items-center justify-between">
-                <div>
-                    <h1 class="text-xl font-bold text-slate-800">مراجعة التصميم</h1>
-                    <p class="text-sm text-slate-500 mt-1">
-                        <span id="order-number"></span> — <span id="client-name"></span>
-                    </p>
+                <div class="flex items-center gap-3">
+                    <div class="w-12 h-12 bg-white/15 rounded-xl flex items-center justify-center">
+                        <i class="fa-solid fa-box-open text-2xl"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-xl font-bold">G.PACK</h1>
+                        <p class="text-xs text-white/70">نظام اعتماد التصاميم</p>
+                    </div>
                 </div>
-                <div class="flex items-center gap-2">
-                    <img src="/assets/logo.png" alt="G.PACK" class="h-10 w-auto" onerror="this.style.display='none'">
+                <div class="text-left">
+                    <p class="text-xs text-white/60">رقم العرض</p>
+                    <p id="order-number" class="text-lg font-bold"></p>
+                </div>
+            </div>
+            <div class="mt-4 pt-4 border-t border-white/15 flex items-center justify-between text-sm">
+                <div>
+                    <p class="text-xs text-white/60">العميل</p>
+                    <p id="client-name" class="font-semibold"></p>
+                </div>
+                <div class="text-left">
+                    <p class="text-xs text-white/60">التاريخ</p>
+                    <p id="review-date" class="font-semibold"></p>
                 </div>
             </div>
         </div>
@@ -71,11 +90,17 @@
 
             <!-- Already responded -->
             <div id="already-responded" class="hidden">
-                <div id="responded-approved" class="hidden bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center gap-3">
-                    <i class="fa-solid fa-circle-check text-emerald-500 text-xl"></i>
-                    <div>
-                        <p class="text-sm font-bold text-emerald-700">تمت موافقتك على هذا التصميم</p>
-                        <p class="text-xs text-emerald-600">شكراً لك — تم تسجيل موافقتك</p>
+                <div id="responded-approved" class="hidden bg-emerald-50 border border-emerald-200 rounded-xl p-4">
+                    <div class="flex items-center gap-3 mb-2">
+                        <i class="fa-solid fa-circle-check text-emerald-500 text-xl"></i>
+                        <div>
+                            <p class="text-sm font-bold text-emerald-700">تمت موافقتك على هذا التصميم</p>
+                            <p class="text-xs text-emerald-600">شكراً لك — تم تسجيل موافقتك إلكترونياً</p>
+                        </div>
+                    </div>
+                    <div id="approval-certificate-info" class="hidden mt-3 pt-3 border-t border-emerald-200">
+                        <p class="text-xs text-emerald-600">رقم شهادة الاعتماد: <span id="certificate-number" class="font-mono font-bold"></span></p>
+                        <p class="text-xs text-emerald-600">وقت الاعتماد: <span id="approved-at"></span></p>
                     </div>
                 </div>
                 <div id="responded-revision" class="hidden bg-orange-50 border border-orange-200 rounded-xl p-4 flex items-center gap-3">
@@ -119,13 +144,45 @@
                 </button>
             </div>
 
-            <!-- Approve confirmation -->
-            <div id="approve-confirm" class="hidden space-y-3">
-                <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
-                    <p class="text-sm text-emerald-700">سيتم تسجيل موافقتك على هذا التصميم. هل أنت متأكد؟</p>
+            <!-- Approve confirmation with declaration + signature -->
+            <div id="approve-confirm" class="hidden space-y-4">
+                <!-- Legal Declaration -->
+                <div class="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                    <p class="text-sm font-bold text-slate-700 mb-2"><i class="fa-solid fa-scale-balanced ml-1"></i>الإقرار القانوني</p>
+                    <p class="text-sm text-slate-600 leading-relaxed">
+                        أقر بأنني راجعت التصميم بالكامل من حيث النصوص والألوان والمقاسات والبيانات،
+                        وأوافق على طباعته كما هو. أتحمل مسؤولية أي أخطاء بعد اعتماد هذا التصميم.
+                    </p>
+                    <label class="flex items-center gap-2 mt-3 cursor-pointer">
+                        <input type="checkbox" id="agree-declaration" class="w-5 h-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500">
+                        <span class="text-sm font-semibold text-slate-700">أوافق على الإقرار أعلاه</span>
+                    </label>
                 </div>
+
+                <!-- Signature Pad -->
+                <div>
+                    <label class="text-sm font-semibold text-slate-700 block mb-2">
+                        <i class="fa-solid fa-signature ml-1"></i>التوقيع الإلكتروني <span class="text-red-500">*</span>
+                    </label>
+                    <div class="border-2 border-slate-300 rounded-xl overflow-hidden bg-white">
+                        <canvas id="signature-canvas" class="sig-canvas w-full" style="height: 180px;"></canvas>
+                    </div>
+                    <div class="flex items-center justify-between mt-2">
+                        <p class="text-xs text-slate-400">وقّع بإصبعك أو بالماوس في المربع أعلاه</p>
+                        <button id="clear-signature-btn" class="text-xs text-red-500 hover:text-red-700">
+                            <i class="fa-solid fa-eraser ml-1"></i>مسح التوقيع
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Signer name -->
+                <div>
+                    <label class="text-sm font-semibold text-slate-700 block mb-1">الاسم <span class="text-red-500">*</span></label>
+                    <input type="text" id="signer-name" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="اكتب اسمك الكامل">
+                </div>
+
                 <button id="confirm-approve-btn" class="w-full px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold transition-colors">
-                    نعم، أوافق على التصميم
+                    <i class="fa-solid fa-stamp ml-1"></i>اعتماد التصميم
                 </button>
             </div>
         </div>
@@ -168,7 +225,6 @@
         }
     }
 
-    // Fallback: check query param for backward compat
     if (!token) {
         const params = new URLSearchParams(window.location.search);
         token = params.get('token');
@@ -180,6 +236,18 @@
     }
 
     let designData = null;
+    let signaturePad = null;
+
+    // ── Activity logging (fire-and-forget) ──────────────────────────────────
+    async function _logActivity(eventType, details) {
+        try {
+            await fetch(`/api/public/design/item/${token}/activity`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ event_type: eventType, details: details || {} }),
+            });
+        } catch { }
+    }
 
     async function loadDesign() {
         try {
@@ -190,6 +258,7 @@
             }
             designData = await res.json();
             _renderDesign();
+            _logActivity('link_opened', { item_id: designData.item?.id });
         } catch (err) {
             _showError(err.message);
         }
@@ -201,6 +270,9 @@
 
         document.getElementById('order-number').textContent = `#${designData.order_number}`;
         document.getElementById('client-name').textContent = designData.client_name;
+
+        const now = new Date();
+        document.getElementById('review-date').textContent = now.toLocaleDateString('ar-SA');
 
         const item = designData.item;
         document.getElementById('item-name').textContent = item.product_name || 'صنف';
@@ -223,7 +295,7 @@
             document.getElementById('designer-notes').textContent = item.designer_notes;
         }
 
-        // Design files
+        // Design files with zoom support
         const filesContainer = document.getElementById('design-files');
         const files = Array.isArray(item.design_files) ? item.design_files : [];
         if (files.length === 0) {
@@ -234,21 +306,41 @@
                 const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'].includes(ext);
                 if (isImage) {
                     return `
-                        <a href="${f.path}" target="_blank" class="block border border-slate-200 rounded-xl overflow-hidden hover:shadow-md transition-shadow">
+                        <div class="border border-slate-200 rounded-xl overflow-hidden hover:shadow-md transition-shadow cursor-pointer" data-img-src="${f.path}">
                             <img src="${f.path}" alt="${_esc(f.original_name || '')}" class="w-full h-40 object-contain bg-slate-50">
-                            <p class="text-xs text-slate-500 p-2 truncate">${_esc(f.original_name || f.filename || '')}</p>
-                        </a>
+                            <div class="flex items-center justify-between p-2">
+                                <p class="text-xs text-slate-500 truncate flex-1">${_esc(f.original_name || f.filename || '')}</p>
+                                <i class="fa-solid fa-magnifying-glass-plus text-slate-400 text-xs"></i>
+                            </div>
+                        </div>
                     `;
                 } else {
                     return `
                         <a href="${f.path}" target="_blank" class="flex flex-col items-center justify-center border border-slate-200 rounded-xl p-4 hover:shadow-md transition-shadow h-40">
                             <i class="fa-solid fa-file text-3xl text-slate-300 mb-2"></i>
                             <p class="text-xs text-slate-500 text-center truncate w-full">${_esc(f.original_name || f.filename || '')}</p>
-                            <p class="text-xs text-brand-600 mt-1">تحميل</p>
+                            <p class="text-xs text-sky-600 mt-1"><i class="fa-solid fa-download ml-1"></i>تحميل</p>
                         </a>
                     `;
                 }
             }).join('');
+
+            // Bind zoom on image cards
+            filesContainer.querySelectorAll('[data-img-src]').forEach(card => {
+                card.addEventListener('click', (e) => {
+                    if (e.target.closest('a')) return;
+                    const src = card.getAttribute('data-img-src');
+                    _zoomImage(src);
+                    _logActivity('image_zoomed', { src });
+                });
+            });
+
+            // Bind download tracking
+            filesContainer.querySelectorAll('a[href]').forEach(link => {
+                link.addEventListener('click', () => {
+                    _logActivity('file_downloaded', { file: link.getAttribute('href') });
+                });
+            });
         }
 
         // Check if already responded
@@ -256,6 +348,15 @@
             document.getElementById('already-responded').classList.remove('hidden');
             document.getElementById('responded-approved').classList.remove('hidden');
             document.getElementById('response-section').classList.add('hidden');
+
+            // Show certificate info if available
+            if (item.approval_certificate_number) {
+                document.getElementById('approval-certificate-info').classList.remove('hidden');
+                document.getElementById('certificate-number').textContent = item.approval_certificate_number;
+                if (item.client_approved_at) {
+                    document.getElementById('approved-at').textContent = new Date(item.client_approved_at).toLocaleString('ar-SA');
+                }
+            }
         } else if (item.client_design_status === 'revision_requested') {
             document.getElementById('already-responded').classList.remove('hidden');
             document.getElementById('responded-revision').classList.remove('hidden');
@@ -268,12 +369,48 @@
         _bindEvents();
     }
 
+    function _initSignaturePad() {
+        const canvas = document.getElementById('signature-canvas');
+        if (!canvas) return;
+
+        // Set canvas size to match display size for crisp signature
+        const ratio = Math.max(window.devicePixelRatio || 1, 1);
+        canvas.width = canvas.offsetWidth * ratio;
+        canvas.height = canvas.offsetHeight * ratio;
+        canvas.getContext('2d').scale(ratio, ratio);
+
+        signaturePad = new SignaturePad(canvas, {
+            backgroundColor: 'rgba(255, 255, 255, 0)',
+            penColor: 'rgb(0, 0, 0)',
+            minWidth: 0.5,
+            maxWidth: 2.5,
+        });
+
+        // Clear button
+        document.getElementById('clear-signature-btn').addEventListener('click', (e) => {
+            e.preventDefault();
+            signaturePad.clear();
+        });
+
+        // Resize handling
+        window.addEventListener('resize', () => {
+            if (!signaturePad) return;
+            const data = signaturePad.toData();
+            canvas.width = canvas.offsetWidth * ratio;
+            canvas.height = canvas.offsetHeight * ratio;
+            canvas.getContext('2d').scale(ratio, ratio);
+            signaturePad.fromData(data);
+        });
+    }
+
     function _bindEvents() {
-        // Approve button
+        // Approve button → show approval form with signature
         document.getElementById('approve-btn').addEventListener('click', () => {
             document.getElementById('approve-btn').classList.add('hidden');
             document.getElementById('revision-btn').classList.add('hidden');
             document.getElementById('approve-confirm').classList.remove('hidden');
+            _initSignaturePad();
+            _logActivity('approve_form_opened', { item_id: designData.item?.id });
         });
 
         // Confirm approve
@@ -291,23 +428,63 @@
     }
 
     async function _submitApprove() {
+        // Validate declaration checkbox
+        const agreed = document.getElementById('agree-declaration').checked;
+        if (!agreed) {
+            alert('يجب الموافقة على الإقرار القانوني أولاً');
+            return;
+        }
+
+        // Validate signature
+        if (!signaturePad || signaturePad.isEmpty()) {
+            alert('يجب التوقيع في المربع المخصص');
+            return;
+        }
+
+        // Validate signer name
+        const signerName = document.getElementById('signer-name').value.trim();
+        if (!signerName) {
+            alert('يجب كتابة الاسم');
+            return;
+        }
+
         const btn = document.getElementById('confirm-approve-btn');
         btn.disabled = true;
-        btn.innerHTML = '<i class="fa-solid fa-spinner spinner ml-2"></i>جاري التسجيل...';
+        btn.innerHTML = '<i class="fa-solid fa-spinner spinner ml-2"></i>جاري الاعتماد...';
+
+        // Get signature as base64 PNG (trim to data after comma)
+        const signatureData = signaturePad.toDataURL('image/png');
+        const signatureBase64 = signatureData.split(',')[1];
+
+        // Device info
+        const deviceInfo = {
+            platform: navigator.platform || '',
+            language: navigator.language || '',
+            screen: `${window.screen.width}x${window.screen.height}`,
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || '',
+        };
 
         try {
+            _logActivity('signature_captured', { item_id: designData.item?.id });
+
             const res = await fetch(`/api/public/design/item/${token}/respond`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'approve' }),
+                body: JSON.stringify({
+                    action: 'approve',
+                    signature: signatureBase64,
+                    signer_name: signerName,
+                    device_info: JSON.stringify(deviceInfo),
+                    declaration: 'أقر بأنني راجعت التصميم بالكامل من حيث النصوص والألوان والمقاسات والبيانات، وأوافق على طباعته كما هو. أتحمل مسؤولية أي أخطاء بعد اعتماد هذا التصميم.',
+                }),
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'فشل في التسجيل');
 
-            _showSuccess('تمت الموافقة بنجاح!', data.message || 'تم تسجيل موافقتك على التصميم', true);
+            _showSuccess('تم اعتماد التصميم بنجاح!', data.message || 'تم تسجيل موافقتك على التصميم', true, data);
         } catch (err) {
             btn.disabled = false;
-            btn.innerHTML = 'نعم، أوافق على التصميم';
+            btn.innerHTML = '<i class="fa-solid fa-stamp ml-1"></i>اعتماد التصميم';
             alert(err.message || 'حدث خطأ');
         }
     }
@@ -350,7 +527,7 @@
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'فشل في التسجيل');
 
-            _showSuccess('تم تسجيل طلب التعديل', data.message || 'تم تسجيل طلبك. سيتم إرساله للمصمم.', false);
+            _showSuccess('تم تسجيل طلب التعديل', data.message || 'تم تسجيل طلبك. سيتم إرساله للمصمم.', false, data);
         } catch (err) {
             btn.disabled = false;
             btn.textContent = 'تأكيد طلب التعديل';
@@ -358,7 +535,7 @@
         }
     }
 
-    function _showSuccess(title, msg, isApprove) {
+    function _showSuccess(title, msg, isApprove, responseData) {
         document.getElementById('main-content').classList.add('hidden');
         document.getElementById('success-state').classList.remove('hidden');
 
@@ -369,14 +546,34 @@
         document.getElementById('success-title').textContent = title;
         document.getElementById('success-msg').textContent = msg;
 
+        // Certificate info on approval
+        if (isApprove && responseData && responseData.certificate_number) {
+            const certDiv = document.createElement('div');
+            certDiv.className = 'mt-4 bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-center';
+            certDiv.innerHTML = `
+                <p class="text-xs text-emerald-600 mb-1">رقم شهادة الاعتماد</p>
+                <p class="text-lg font-mono font-bold text-emerald-700">${responseData.certificate_number}</p>
+                ${responseData.verification_url ? `<a href="${responseData.verification_url}" target="_blank" class="text-xs text-sky-600 hover:underline mt-2 inline-block"><i class="fa-solid fa-qrcode ml-1"></i>صفحة التحقق</a>` : ''}
+            `;
+            document.getElementById('success-msg').after(certDiv);
+        }
+
         // WhatsApp
         const waSection = document.getElementById('whatsapp-section');
         const waLink = document.getElementById('whatsapp-link');
         const waMessage = isApprove
-            ? `*تم اعتماد التصميم*\n\nطلب رقم: #${designData.order_number}\nالعميل: ${designData.client_name}\nتم الاعتماد\n\nG.PACK — حلول التعبئة والتغليف`
+            ? `*تم اعتماد التصميم*\n\nطلب رقم: #${designData.order_number}\nالعميل: ${designData.client_name}\n${responseData?.certificate_number ? `رقم الاعتماد: ${responseData.certificate_number}\n` : ''}تم الاعتماد إلكترونياً\n\nG.PACK — حلول التعبئة والتغليف`
             : `*طلب تعديل التصميم*\n\nطلب رقم: #${designData.order_number}\nالعميل: ${designData.client_name}\nملاحظات: ${document.getElementById('revision-notes').value}\n\nG.PACK — حلول التعبئة والتغليف`;
         waLink.href = `https://wa.me/?text=${encodeURIComponent(waMessage)}`;
         waSection.classList.remove('hidden');
+    }
+
+    function _zoomImage(src) {
+        const overlay = document.createElement('div');
+        overlay.className = 'image-zoom-overlay';
+        overlay.innerHTML = `<img src="${src}" alt="معاينة">`;
+        overlay.addEventListener('click', () => overlay.remove());
+        document.body.appendChild(overlay);
     }
 
     function _showError(msg) {

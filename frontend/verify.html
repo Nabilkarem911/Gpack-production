@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>التحقق من اعتماد — G.PACK</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; }
+        .spinner { animation: spin 1s linear infinite; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .brand-gradient { background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%); }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen">
+
+    <!-- Loading state -->
+    <div id="loading-state" class="flex flex-col items-center justify-center min-h-screen">
+        <i class="fa-solid fa-spinner spinner text-4xl text-sky-600 mb-4"></i>
+        <p class="text-slate-500">جاري التحقق...</p>
+    </div>
+
+    <!-- Error state -->
+    <div id="error-state" class="hidden flex-col items-center justify-center min-h-screen">
+        <div class="bg-white rounded-2xl shadow-lg p-8 max-w-md text-center">
+            <i class="fa-solid fa-circle-xmark text-5xl text-red-400 mb-4"></i>
+            <h2 class="text-xl font-bold text-slate-800 mb-2">رقم الاعتماد غير موجود</h2>
+            <p class="text-sm text-slate-500">رقم الاعتماد الذي تبحث عنه غير مسجل في النظام</p>
+        </div>
+    </div>
+
+    <!-- Verified content -->
+    <div id="verified-content" class="hidden max-w-2xl mx-auto p-4 lg:p-6">
+        <!-- Header -->
+        <div class="brand-gradient rounded-2xl shadow-lg p-6 mb-4 text-white text-center">
+            <div class="w-16 h-16 bg-white/15 rounded-full flex items-center justify-center mx-auto mb-3">
+                <i class="fa-solid fa-shield-halved text-3xl"></i>
+            </div>
+            <h1 class="text-xl font-bold">شهادة اعتماد تصميم</h1>
+            <p class="text-xs text-white/70 mt-1">G.PACK — نظام التحقق من الاعتمادات</p>
+        </div>
+
+        <!-- Certificate details -->
+        <div class="bg-white rounded-2xl shadow-sm p-6 mb-4">
+            <div class="flex items-center gap-3 mb-4">
+                <div class="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center">
+                    <i class="fa-solid fa-circle-check text-xl text-emerald-600"></i>
+                </div>
+                <div>
+                    <p class="text-sm font-bold text-emerald-700">معتمد وموثق</p>
+                    <p class="text-xs text-slate-500">تم التحقق من صحة هذا الاعتماد</p>
+                </div>
+            </div>
+
+            <div class="space-y-3 border-t border-slate-100 pt-4">
+                <div class="flex justify-between">
+                    <span class="text-sm text-slate-500">رقم الاعتماد</span>
+                    <span id="cert-number" class="text-sm font-mono font-bold text-slate-800"></span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-sm text-slate-500">رقم العرض</span>
+                    <span id="cert-order" class="text-sm font-bold text-slate-800"></span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-sm text-slate-500">العميل</span>
+                    <span id="cert-client" class="text-sm font-bold text-slate-800"></span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-sm text-slate-500">المنتج</span>
+                    <span id="cert-product" class="text-sm font-bold text-slate-800"></span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-sm text-slate-500">الموقع</span>
+                    <span id="cert-signer" class="text-sm font-bold text-slate-800"></span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-sm text-slate-500">وقت الاعتماد</span>
+                    <span id="cert-date" class="text-sm font-bold text-slate-800"></span>
+                </div>
+            </div>
+
+            <!-- Declaration -->
+            <div class="mt-4 bg-slate-50 rounded-xl p-4">
+                <p class="text-xs font-semibold text-slate-600 mb-1"><i class="fa-solid fa-scale-balanced ml-1"></i>الإقرار</p>
+                <p id="cert-declaration" class="text-xs text-slate-600 leading-relaxed"></p>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="text-center">
+            <p class="text-xs text-slate-400">G.PACK — حلول التعبئة والتغليف | نظام التحقق الإلكتروني</p>
+        </div>
+    </div>
+
+<script>
+(function() {
+    'use strict';
+
+    const pathParts = window.location.pathname.split('/');
+    let certNumber = null;
+    for (let i = 0; i < pathParts.length; i++) {
+        if (pathParts[i] === 'verify' && i + 1 < pathParts.length) {
+            certNumber = pathParts[i + 1];
+            break;
+        }
+    }
+
+    if (!certNumber) {
+        _showError();
+        return;
+    }
+
+    async function verify() {
+        try {
+            const res = await fetch(`/api/public/design/verify/${certNumber}`);
+            if (!res.ok) {
+                _showError();
+                return;
+            }
+            const data = await res.json();
+            _renderVerified(data);
+        } catch (err) {
+            _showError();
+        }
+    }
+
+    function _renderVerified(data) {
+        document.getElementById('loading-state').classList.add('hidden');
+        document.getElementById('verified-content').classList.remove('hidden');
+
+        document.getElementById('cert-number').textContent = data.certificate_number;
+        document.getElementById('cert-order').textContent = `#${data.order_number}`;
+        document.getElementById('cert-client').textContent = data.client_name || '—';
+        document.getElementById('cert-product').textContent = data.product_name || '—';
+        document.getElementById('cert-signer').textContent = data.signer_name || '—';
+        if (data.approved_at) {
+            document.getElementById('cert-date').textContent = new Date(data.approved_at).toLocaleString('ar-SA');
+        }
+        if (data.declaration_text) {
+            document.getElementById('cert-declaration').textContent = data.declaration_text;
+        }
+    }
+
+    function _showError() {
+        document.getElementById('loading-state').classList.add('hidden');
+        document.getElementById('error-state').classList.remove('hidden');
+        document.getElementById('error-state').classList.add('flex');
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', verify);
+    } else {
+        verify();
+    }
+})();
+</script>
+</body>
+</html>
