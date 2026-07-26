@@ -327,7 +327,7 @@
             html += `<div class="space-y-3">`;
             if (res.items && res.items.length > 0) {
                 res.items.forEach(item => {
-                    html += _renderItemCard(item, res.order.id, isManagerView);
+                    html += _renderItemCard(item, res.order.id, isManagerRole);
                 });
             } else {
                 html += `<p class="text-sm text-slate-400 text-center py-4">لا توجد أصناف في هذه الحالة</p>`;
@@ -361,7 +361,7 @@
 
             _bindItemEvents(res.order.id, res.items);
 
-            if (isManagerView) {
+            if (isManagerRole) {
                 _bindManagerEvents(res.order.id, res.items);
             }
 
@@ -372,7 +372,7 @@
     }
 
     // ── Render item card ──────────────────────────────────────────────────────
-    function _renderItemCard(item, orderId, isManagerView) {
+    function _renderItemCard(item, orderId, isManagerRole) {
         const st = STATUS_DEFS[item.design_status] || STATUS_DEFS.waiting_design;
 
         let filesHtml = '';
@@ -451,11 +451,11 @@
             `;
         }
 
-        const canStart = !isManagerView && item.design_status === 'waiting_design';
-        const canSubmit = !isManagerView && (item.design_status === 'in_progress' || item.design_status === 'client_revision');
-        const canReview = isManagerView && item.design_status === 'manager_review';
-        const canSendToClient = isManagerView && item.design_status === 'manager_review' && item.design_files && item.design_files.length > 0;
-        const isInClientReview = isManagerView && item.design_status === 'client_review';
+        const canStart = item.design_status === 'waiting_design';
+        const canSubmit = item.design_status === 'in_progress' || item.design_status === 'client_revision';
+        const canReview = isManagerRole && item.design_status === 'manager_review';
+        const canSendToClient = isManagerRole && item.design_status === 'manager_review' && item.design_files && item.design_files.length > 0;
+        const isInClientReview = isManagerRole && item.design_status === 'client_review';
 
         return `
             <div class="bg-white border border-slate-200 rounded-xl p-4" data-item-id="${item.id}">
@@ -477,7 +477,7 @@
                 ${clientApprovedHtml}
                 ${filesHtml}
 
-                ${item.designer_notes ? `<p class="text-xs text-slate-500 mt-2">${isManagerView ? 'ملاحظات المصمم' : 'ملاحظاتك'}: ${_esc(item.designer_notes)}</p>` : ''}
+                ${item.designer_notes ? `<p class="text-xs text-slate-500 mt-2">${isManagerRole ? 'ملاحظات المصمم' : 'ملاحظاتك'}: ${_esc(item.designer_notes)}</p>` : ''}
 
                 ${canReview ? `
                     <div class="mt-3 space-y-2 border-t border-slate-100 pt-3">
