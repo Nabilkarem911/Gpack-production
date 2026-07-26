@@ -225,7 +225,7 @@
             _currentTask = res;
 
             const isManagerRole = _isManager();
-            const isManagerView = isManagerRole && (_currentTab === 'review' || _currentTab === 'manager_review');
+            const isManagerView = isManagerRole && (_currentTab === 'review' || _currentTab === 'manager_review' || _currentTab === 'client_review' || _currentTab === 'client_revision');
 
             const modal = document.getElementById('designer-task-modal');
             const title = document.getElementById('designer-modal-title');

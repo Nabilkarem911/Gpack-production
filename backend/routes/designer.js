@@ -630,7 +630,7 @@ router.get('/task/:orderId', async (req, res) => {
                     `SELECT wh.*, u.name as actor_name
                      FROM workflow_history wh
                      LEFT JOIN users u ON u.id = wh.actor_id
-                     WHERE wh.entity_type = 'order_item' AND wh.entity_id = ANY($1::bigint[])
+                     WHERE wh.entity_type = 'order_item' AND wh.entity_id = ANY($1::uuid[])
                      ORDER BY wh.changed_at ASC`,
                     [itemIds]
                 );
