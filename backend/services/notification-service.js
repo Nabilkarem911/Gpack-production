@@ -153,7 +153,7 @@ async function notifyDesignApproved(data) {
         item_id, order_id, order_number, client_name, client_phone,
         product_name, size_name, signer_name, certificate_number,
         approved_at, verify_url, pdf_path, cert_image_path,
-        designer_phone, designer_name,
+        design_image_path, designer_phone, designer_name,
     } = data;
 
     // Generate correlation ID for this approval event
@@ -166,16 +166,18 @@ async function notifyDesignApproved(data) {
     if (client_phone) {
         const chatId = WhatsApp.normalizePhone(client_phone);
         const tpl = await TemplateEngine.render('design_approved_client', 'ar', {
+            client_name: client_name || '',
             certificate_number,
             product_name: product_name || '—',
             approved_date: dateStr,
             verify_url: verify_url,
         });
         const clientBody = tpl ? tpl.body :
-            `شكراً لكم.\n\nتم تسجيل اعتماد التصميم بنجاح.\n\nرقم الاعتماد\n${certificate_number}\n\nالمنتج\n${product_name || '—'}\n\nتاريخ الاعتماد\n${dateStr}\n\nيمكنكم التحقق من الاعتماد عبر\n${verify_url}`;
+            `السلام عليكم ${client_name || ''}\n\nنعتز بثقتكم في G.PACK\n\nتم اعتماد تصميمكم بنجاح ✅\n\n📦 المنتج: ${product_name || '—'}\n📋 رقم الاعتماد: ${certificate_number}\n📅 تاريخ الاعتماد: ${dateStr}\n\n📎 مرفق لكم:\n• صورة التصميم المعتمد\n• شهادة الاعتماد\n• ملف PDF التفصيلي\n\nللتحقق من صحة الاعتماد:\n${verify_url}\n\nشكراً لتعاملكم معنا 🌹`;
         const clientSubject = tpl ? tpl.subject : `اعتماد تصميم — ${certificate_number}`;
 
         const clientAttachments = [];
+        if (design_image_path) clientAttachments.push({ type: 'image', path: design_image_path, caption: `صورة التصميم المعتمد — ${product_name || ''}` });
         if (cert_image_path) clientAttachments.push({ type: 'image', path: cert_image_path, caption: `شهادة الاعتماد — ${certificate_number}` });
         if (pdf_path) clientAttachments.push({ type: 'file', path: pdf_path, caption: `اعتماد التصميم — ${certificate_number}` });
 
@@ -211,10 +213,11 @@ async function notifyDesignApproved(data) {
             correlation_id: correlationId,
         });
         const adminBody = adminTpl ? adminTpl.body :
-            `تم اعتماد التصميم\n\nالعميل\n${client_name}\n\nالمنتج\n${product_name || '—'}\n\nالمعتمد\n${signer_name || '—'}\n\nوقت الاعتماد\n${timeStr}\n\nرقم الاعتماد\n${certificate_number}\n\nCorrelation ID\n${correlationId}`;
+            `📢 تم اعتماد تصميم جديد\n\n👤 العميل: ${client_name}\n📦 المنتج: ${product_name || '—'}\n✍️ المعتمد: ${signer_name || '—'}\n⏰ وقت الاعتماد: ${timeStr}\n📋 رقم الاعتماد: ${certificate_number}\n\n📎 مرفق: ملف PDF + شهادة الاعتماد`;
         const adminSubject = adminTpl ? adminTpl.subject : `اعتماد تصميم — ${certificate_number}`;
 
         const adminAttachments = [];
+        if (design_image_path) adminAttachments.push({ type: 'image', path: design_image_path, caption: `صورة التصميم — ${product_name || ''}` });
         if (pdf_path) adminAttachments.push({ type: 'file', path: pdf_path, caption: `اعتماد التصميم — ${certificate_number}` });
         if (cert_image_path) adminAttachments.push({ type: 'image', path: cert_image_path, caption: `شهادة الاعتماد — ${certificate_number}` });
 

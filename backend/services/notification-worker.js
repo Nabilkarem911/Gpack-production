@@ -228,10 +228,12 @@ async function _processOutbox() {
                             // The approval is already committed in DB; notifications should still go out.
                         }
 
-                        // 2. Fetch generated file paths + client phone from DB
+                        // 2. Fetch generated file paths + client phone + design files from DB
                         const apprRes = await db.query(
                             `SELECT da.approval_image_path, da.approval_pdf_path,
-                                    c.phone AS client_phone
+                                    c.phone AS client_phone,
+                                    c.name AS client_name,
+                                    oi.design_files
                              FROM design_approvals da
                              JOIN order_items oi ON oi.id = da.item_id
                              JOIN orders o ON o.id = oi.order_id
@@ -243,12 +245,31 @@ async function _processOutbox() {
                         const pdfPath = apprRes.rows[0]?.approval_pdf_path || null;
                         const certPath = apprRes.rows[0]?.approval_image_path || null;
                         const clientPhone = apprRes.rows[0]?.client_phone || null;
+                        const clientName = apprRes.rows[0]?.client_name || payload.client_name || null;
 
-                        // 3. Send notifications with file paths + client phone
+                        // Extract first design image path from design_files JSONB
+                        let designImagePath = null;
+                        if (apprRes.rows[0]?.design_files) {
+                            let files = apprRes.rows[0].design_files;
+                            if (typeof files === 'string') { try { files = JSON.parse(files); } catch { files = []; } }
+                            if (Array.isArray(files)) {
+                                const imgFile = files.find(f => {
+                                    const ext = (f.filename || f.original_name || f.path || '').split('.').pop().toLowerCase();
+                                    return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].includes(ext);
+                                });
+                                if (imgFile) {
+                                    designImagePath = imgFile.path || imgFile.url || null;
+                                }
+                            }
+                        }
+
+                        // 3. Send notifications with file paths + client phone + design image
                         await NotificationService.notifyDesignApproved({
                             ...payload,
+                            client_name: clientName,
                             pdf_path: pdfPath,
                             cert_image_path: certPath,
+                            design_image_path: designImagePath,
                             client_phone: clientPhone,
                             correlation_id: evt.correlation_id,
                         });
