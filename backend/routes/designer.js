@@ -946,6 +946,107 @@ router.post('/item/:orderId/:itemId/send-to-client', authorize(['admin', 'manage
     }
 });
 
+// ── GET /api/designer/item/:orderId/:itemId/review-link ─────────────────────
+// Returns the current review link status for an item (without exposing the raw token).
+router.get('/item/:orderId/:itemId/review-link', authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
+    try {
+        const { orderId, itemId } = req.params;
+        const result = await db.query(
+            `SELECT design_status, review_token_hash, review_token_expires_at, review_sent_at
+             FROM order_items WHERE id = $1 AND order_id = $2`,
+            [itemId, orderId]
+        );
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'الصنف غير موجود' });
+        }
+        const item = result.rows[0];
+        const hasToken = !!item.review_token_hash;
+        const isExpired = item.review_token_expires_at && new Date(item.review_token_expires_at) < new Date();
+        res.json({
+            has_token: hasToken,
+            is_expired: isExpired,
+            review_sent_at: item.review_sent_at,
+            expires_at: item.review_token_expires_at,
+            design_status: item.design_status,
+        });
+    } catch (err) {
+        console.error('[Designer] Review link info error:', err.message);
+        res.status(500).json({ error: 'فشل في جلب معلومات الرابط' });
+    }
+});
+
+// ── POST /api/designer/item/:orderId/:itemId/resend-review ──────────────────
+// Resend review link: if token still valid, regenerate URL from existing hash is impossible
+// (we only store hash, not plaintext). So we always generate a new token + hash.
+// Old token is invalidated by overwriting review_token_hash.
+router.post('/item/:orderId/:itemId/resend-review', authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
+    const client = await db.getClient();
+    try {
+        const { orderId, itemId } = req.params;
+
+        await client.query('BEGIN');
+
+        const itemRes = await client.query(
+            `SELECT id, design_status, review_token_expires_at
+             FROM order_items WHERE id = $1 AND order_id = $2`,
+            [itemId, orderId]
+        );
+        if (itemRes.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'الصنف غير موجود' });
+        }
+
+        const item = itemRes.rows[0];
+        if (!['client_review', 'manager_review'].includes(item.design_status)) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'لا يمكن إرسال رابط مراجعة في هذه الحالة' });
+        }
+
+        const rawToken = crypto.randomBytes(32).toString('hex');
+        let tokenHash;
+        try {
+            tokenHash = hashToken(rawToken);
+        } catch {
+            tokenHash = crypto.createHmac('sha256', rawToken).digest('hex');
+        }
+
+        const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+        await client.query(
+            `UPDATE order_items SET
+                review_token_hash = $1,
+                review_token_expires_at = $2,
+                review_sent_at = NOW(),
+                design_status = 'client_review',
+                client_design_status = 'sent'
+             WHERE id = $3 AND order_id = $4`,
+            [tokenHash, expiresAt, itemId, orderId]
+        );
+
+        await _logTransition(client, 'order_item', itemId, 'design', item.design_status, 'client_review',
+            req.user.id, req.user.role, 'Resent review link to client',
+            { expires_at: expiresAt, previous_status: item.design_status }, 'sent_to_client');
+
+        await _recalcOrderDesignStatus(client, orderId);
+        await client.query('COMMIT');
+
+        const shareUrl = `${req.protocol}://${req.get('host')}/design-review/${rawToken}`;
+
+        res.json({
+            success: true,
+            message: 'تم إعادة إرسال رابط المراجعة للعميل',
+            share_url: shareUrl,
+            expires_at: expiresAt,
+        });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('[Designer] Resend review error:', err.message);
+        res.status(500).json({ error: 'فشل في إعادة إرسال الرابط' });
+    } finally {
+        client.release();
+    }
+});
+
 // ── GET /api/designer/item-history/:itemId ──────────────────────────────────
 router.get('/item-history/:itemId', async (req, res) => {
     try {

@@ -455,6 +455,7 @@
         const canSubmit = !isManagerView && (item.design_status === 'in_progress' || item.design_status === 'client_revision');
         const canReview = isManagerView && item.design_status === 'manager_review';
         const canSendToClient = isManagerView && item.design_status === 'manager_review' && item.design_files && item.design_files.length > 0;
+        const isInClientReview = isManagerView && item.design_status === 'client_review';
 
         return `
             <div class="bg-white border border-slate-200 rounded-xl p-4" data-item-id="${item.id}">
@@ -507,6 +508,20 @@
                         <button class="item-send-client-btn px-3 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg text-xs transition-colors" data-item-id="${item.id}" data-order-id="${orderId}">
                             <i class="fa-solid fa-share ml-1"></i>إرسال للعميل (رابط مستقل)
                         </button>
+                    </div>
+                ` : ''}
+
+                ${isInClientReview ? `
+                    <div class="mt-2 border-t border-slate-100 pt-2">
+                        ${item.review_sent_at ? `<p class="text-[10px] text-slate-400 mb-2"><i class="fa-solid fa-clock ml-1"></i>آخر إرسال: ${new Date(item.review_sent_at).toLocaleString('ar-SA')}</p>` : ''}
+                        <div class="flex flex-wrap gap-2">
+                            <button class="item-copy-link-btn px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs transition-colors" data-item-id="${item.id}" data-order-id="${orderId}">
+                                <i class="fa-solid fa-copy ml-1"></i>نسخ الرابط
+                            </button>
+                            <button class="item-resend-btn px-3 py-1.5 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg text-xs transition-colors" data-item-id="${item.id}" data-order-id="${orderId}">
+                                <i class="fa-solid fa-paper-plane ml-1"></i>إعادة إرسال
+                            </button>
+                        </div>
                     </div>
                 ` : ''}
 
@@ -793,6 +808,66 @@
                 } finally {
                     btn.disabled = false;
                     btn.innerHTML = '<i class="fa-solid fa-share ml-1"></i>إرسال للعميل (رابط مستقل)';
+                }
+            });
+        });
+
+        // Copy review link buttons
+        document.querySelectorAll('.item-copy-link-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const itemId = btn.getAttribute('data-item-id');
+                const oid = btn.getAttribute('data-order-id');
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin ml-1"></i>جاري...';
+                try {
+                    const res = await window.apiFetch(`/api/designer/item/${oid}/${itemId}/resend-review`, {
+                        method: 'POST',
+                    });
+                    if (res.share_url) {
+                        try {
+                            await navigator.clipboard.writeText(res.share_url);
+                            window.showToast?.('تم نسخ رابط المراجعة للحافظة', 'success');
+                        } catch {
+                            window.showToast?.(`رابط المراجعة: ${res.share_url}`, 'info');
+                        }
+                    }
+                } catch (err) {
+                    window.showToast?.(err.message || 'فشل في جلب الرابط', 'error');
+                } finally {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fa-solid fa-copy ml-1"></i>نسخ الرابط';
+                }
+            });
+        });
+
+        // Resend review link buttons
+        document.querySelectorAll('.item-resend-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const itemId = btn.getAttribute('data-item-id');
+                const oid = btn.getAttribute('data-order-id');
+                if (!confirm('سيتم إنشاء رابط جديد وإلغاء الرابط القديم. متابعة؟')) return;
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin ml-1"></i>جاري الإرسال...';
+                try {
+                    const res = await window.apiFetch(`/api/designer/item/${oid}/${itemId}/resend-review`, {
+                        method: 'POST',
+                    });
+                    window.showToast?.(res.message || 'تم إعادة إرسال الرابط', 'success');
+                    if (res.share_url) {
+                        try {
+                            await navigator.clipboard.writeText(res.share_url);
+                            window.showToast?.('تم نسخ الرابط الجديد للحافظة', 'success');
+                        } catch {
+                            window.showToast?.(`الرابط الجديد: ${res.share_url}`, 'info');
+                        }
+                    }
+                    await _openTaskDetail(orderId);
+                    await _loadTasks();
+                } catch (err) {
+                    window.showToast?.(err.message || 'فشل في إعادة الإرسال', 'error');
+                } finally {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fa-solid fa-paper-plane ml-1"></i>إعادة إرسال';
                 }
             });
         });
