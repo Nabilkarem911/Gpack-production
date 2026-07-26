@@ -75,12 +75,12 @@ function canTransition(fromState, toState, userRole) {
 }
 
 // ── _logTransition: write to workflow_history ───────────────────────────────
-async function _logTransition(client, entityType, entityId, workflow, fromState, toState, actorId, actorRole, notes, metadata) {
+async function _logTransition(client, entityType, entityId, workflow, fromState, toState, actorId, actorRole, notes, metadata, transitionReason) {
     try {
         await client.query(
-            `INSERT INTO workflow_history (entity_type, entity_id, workflow, from_state, to_state, actor_id, actor_role, notes, metadata)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-            [entityType, entityId, workflow, fromState || null, toState, actorId || null, actorRole || null, notes || null, JSON.stringify(metadata || {})]
+            `INSERT INTO workflow_history (entity_type, entity_id, workflow, from_state, to_state, actor_id, actor_role, notes, metadata, transition_reason)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+            [entityType, entityId, workflow, fromState || null, toState, actorId || null, actorRole || null, notes || null, JSON.stringify(metadata || {}), transitionReason || null]
         );
     } catch (err) {
         console.error('[Designer] Log transition error:', err.message);
@@ -320,7 +320,7 @@ router.post('/assign', authorize(['admin', 'manager', 'super_admin']), upload.an
             }
 
             await _logTransition(client, 'order_item', ia.item_id, 'design', curStatus, 'waiting_design',
-                req.user.id, req.user.role, ia.notes || 'Assigned to designer', { designer_id: ia.designer_id });
+                req.user.id, req.user.role, ia.notes || 'Assigned to designer', { designer_id: ia.designer_id }, 'designer_assigned');
         }
 
         await _recalcOrderDesignStatus(client, order_id);
@@ -384,7 +384,7 @@ router.put('/review/:orderId/item/:itemId', authorize(['admin', 'manager', 'supe
                 [itemId]
             );
             await _logTransition(client, 'order_item', itemId, 'design', curStatus, 'client_review',
-                req.user.id, req.user.role, 'Manager approved — ready for client review');
+                req.user.id, req.user.role, 'Manager approved — ready for client review', null, 'manager_approved');
         } else {
             if (!revision_notes) {
                 await client.query('ROLLBACK');
@@ -395,7 +395,7 @@ router.put('/review/:orderId/item/:itemId', authorize(['admin', 'manager', 'supe
                 [revision_notes, itemId]
             );
             await _logTransition(client, 'order_item', itemId, 'design', curStatus, 'client_revision',
-                req.user.id, req.user.role, revision_notes, { action: 'revision' });
+                req.user.id, req.user.role, revision_notes, { action: 'revision' }, 'manager_rejected');
         }
 
         await _recalcOrderDesignStatus(client, orderId);
@@ -583,7 +583,7 @@ router.get('/task/:orderId', async (req, res) => {
                     oi.client_design_status, oi.client_revision_notes, oi.client_approved_at,
                     oi.client_revision_files, oi.design_brief_files, oi.assigned_designer_id,
                     oi.review_token_hash, oi.review_token_expires_at, oi.review_sent_at,
-                    oi.design_client_status
+                    oi.design_client_status, oi.design_version
              FROM order_items oi
              LEFT JOIN product_variants pv ON pv.id = oi.variant_id
              LEFT JOIN products p ON p.id = pv.product_id
@@ -684,8 +684,9 @@ router.put('/item/:orderId/:itemId/start', async (req, res) => {
             [itemId, orderId]
         );
 
+        const startReason = curStatus === 'client_revision' ? 'rework_started' : 'designer_started';
         await _logTransition(client, 'order_item', itemId, 'design', curStatus, 'in_progress',
-            req.user.id, req.user.role, 'Designer started work');
+            req.user.id, req.user.role, 'Designer started work', null, startReason);
 
         await _recalcOrderDesignStatus(client, orderId);
         await client.query('COMMIT');
@@ -713,7 +714,7 @@ router.put('/item/:orderId/:itemId/submit', upload.array('design_files', 10), as
         }
 
         const existingResult = await db.query(
-            'SELECT design_files, design_status FROM order_items WHERE id = $1 AND order_id = $2',
+            'SELECT design_files, design_status, design_version FROM order_items WHERE id = $1 AND order_id = $2',
             [itemId, orderId]
         );
         if (existingResult.rows.length === 0) {
@@ -734,6 +735,7 @@ router.put('/item/:orderId/:itemId/submit', upload.array('design_files', 10), as
         }));
 
         const isResubmit = curStatus === 'client_revision';
+        const designVersion = isResubmit ? (parseInt(existingResult.rows[0].design_version) || 0) + 1 : (parseInt(existingResult.rows[0].design_version) || 0);
         const allFiles = isResubmit ? newFiles : [
             ...(Array.isArray(existingResult.rows[0].design_files) ? existingResult.rows[0].design_files : []),
             ...newFiles
@@ -751,17 +753,19 @@ router.put('/item/:orderId/:itemId/submit', upload.array('design_files', 10), as
                 designer_notes = $1,
                 design_files = $2,
                 design_completed_at = NOW(),
+                design_version = $3,
                 client_design_status = NULL,
                 client_revision_notes = NULL,
                 client_revision_files = NULL,
                 client_approved_at = NULL
-             WHERE id = $3 AND order_id = $4`,
-            [designer_notes || null, JSON.stringify(allFiles), itemId, orderId]
+             WHERE id = $4 AND order_id = $5`,
+            [designer_notes || null, JSON.stringify(allFiles), designVersion, itemId, orderId]
         );
 
         await _logTransition(client, 'order_item', itemId, 'design', curStatus, 'manager_review',
             req.user.id, req.user.role, designer_notes || 'Designer submitted design',
-            { files_count: newFiles.length });
+            { files_count: newFiles.length, design_version: designVersion },
+            isResubmit ? 'designer_resubmitted' : 'designer_submitted');
 
         await _recalcOrderDesignStatus(client, orderId);
         await client.query('COMMIT');
@@ -911,7 +915,7 @@ router.post('/item/:orderId/:itemId/send-to-client', authorize(['admin', 'manage
 
         await _logTransition(client, 'order_item', itemId, 'design', curStatus, 'client_review',
             req.user.id, req.user.role, 'Sent to client for review',
-            { order_number: item.order_number, expires_at: expiresAt });
+            { order_number: item.order_number, expires_at: expiresAt }, 'sent_to_client');
 
         await _recalcOrderDesignStatus(client, orderId);
         await client.query('COMMIT');
@@ -1212,7 +1216,7 @@ router.post('/client-response/:token', async (req, res) => {
                     [item.item_id, order.id]
                 );
                 await _logTransition(client, 'order_item', item.item_id, 'design', curStatus, 'approved',
-                    null, 'client', 'Client approved design');
+                    null, 'client', 'Client approved design', null, 'client_approved');
                 approvedCount++;
             } else if (item.action === 'revision') {
                 const transition = canTransition(curStatus, 'client_revision', 'client');
@@ -1227,7 +1231,7 @@ router.post('/client-response/:token', async (req, res) => {
                     [item.notes || null, item.item_id, order.id]
                 );
                 await _logTransition(client, 'order_item', item.item_id, 'design', curStatus, 'client_revision',
-                    null, 'client', item.notes || 'Client requested revision');
+                    null, 'client', item.notes || 'Client requested revision', null, 'client_requested_change');
                 revisionCount++;
             }
         }

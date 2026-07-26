@@ -793,8 +793,8 @@ router.post('/item/:token/respond', clientUpload.array('client_files', 10), asyn
             // Log to workflow_history
             try {
                 await client.query(
-                    `INSERT INTO workflow_history (entity_type, entity_id, workflow, from_state, to_state, actor_role, notes)
-                     VALUES ('order_item', $1, 'design', $2, 'approved', 'client', $3)`,
+                    `INSERT INTO workflow_history (entity_type, entity_id, workflow, from_state, to_state, actor_role, notes, transition_reason)
+                     VALUES ('order_item', $1, 'design', $2, 'approved', 'client', $3, 'client_approved')`,
                     [item.id, curStatus, 'Client approved design']
                 );
             } catch { }
@@ -873,8 +873,8 @@ router.post('/item/:token/respond', clientUpload.array('client_files', 10), asyn
 
             try {
                 await client.query(
-                    `INSERT INTO workflow_history (entity_type, entity_id, workflow, from_state, to_state, actor_role, notes)
-                     VALUES ('order_item', $1, 'design', $2, 'client_revision', 'client', $3)`,
+                    `INSERT INTO workflow_history (entity_type, entity_id, workflow, from_state, to_state, actor_role, notes, transition_reason)
+                     VALUES ('order_item', $1, 'design', $2, 'client_revision', 'client', $3, 'client_requested_change')`,
                     [item.id, curStatus, notes]
                 );
             } catch { }

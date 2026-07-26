@@ -347,6 +347,7 @@
                                     <i class="fa-solid fa-arrow-left text-slate-300"></i>
                                     <span class="font-semibold text-slate-700">${_statusLabel(h.to_state)}</span>
                                     ${h.actor_name ? `<span class="text-slate-400">— ${_esc(h.actor_name)}</span>` : ''}
+                                    ${h.transition_reason ? `<span class="text-[10px] px-1 py-0.5 rounded bg-slate-200 text-slate-600">${_esc(h.transition_reason)}</span>` : ''}
                                     ${h.notes ? `<span class="text-slate-400">(${_esc(h.notes)})</span>` : ''}
                                 </div>
                             `).join('')}
@@ -461,7 +462,10 @@
                     <div>
                         <p class="font-semibold text-slate-800 text-sm">${_esc(item.product_name || 'صنف')} — ${_esc(item.size || '')}</p>
                     </div>
-                    <span class="text-xs px-2 py-1 rounded-full ${st.color}">${st.label}</span>
+                    <div class="flex flex-col gap-1 items-end">
+                        <span class="text-xs px-2 py-1 rounded-full ${st.color}">${st.label}</span>
+                        ${(parseInt(item.design_version) || 0) > 0 ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500">v${item.design_version}</span>` : ''}
+                    </div>
                 </div>
 
                 ${item.design_notes ? `<p class="text-xs text-slate-600 bg-slate-50 rounded-lg p-2 mt-2"><i class="fa-solid fa-comment-dots ml-1 text-slate-400"></i>${_esc(item.design_notes)}</p>` : ''}
