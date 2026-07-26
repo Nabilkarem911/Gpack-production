@@ -4382,7 +4382,7 @@
                                     <p class="text-xs text-slate-400">ملف PDF رسمي يحتوي على كل البيانات</p>
                                 </div>
                             </div>
-                            <a href="/api/designer/approval/${q.id}/pdf" target="_blank" download
+                            <a href="/api/designer/approval/${orderId}/pdf" target="_blank" download
                                 class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-bold transition-colors flex items-center gap-2">
                                 <i class="fa-solid fa-download"></i> تحميل
                             </a>
