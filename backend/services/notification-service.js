@@ -16,6 +16,7 @@
 const db = require('../db');
 const crypto = require('crypto');
 const WhatsApp = require('./whatsapp-service');
+const TemplateEngine = require('./template-engine');
 
 // ── Generate idempotency key ────────────────────────────────────────────────
 // SHA256 of (entity_type + entity_id + message_type + recipient)
@@ -164,13 +165,15 @@ async function notifyDesignApproved(data) {
     // 1. Message to Client (PDF + image, NO ZIP — WhatsApp compresses files)
     if (client_phone) {
         const chatId = WhatsApp.normalizePhone(client_phone);
-        const clientBody =
-            `شكراً لكم.\n\n` +
-            `تم تسجيل اعتماد التصميم بنجاح.\n\n` +
-            `رقم الاعتماد\n${certificate_number}\n\n` +
-            `المنتج\n${product_name || '—'}\n\n` +
-            `تاريخ الاعتماد\n${dateStr}\n\n` +
-            `يمكنكم التحقق من الاعتماد عبر\n${verify_url}`;
+        const tpl = await TemplateEngine.render('design_approved_client', 'ar', {
+            certificate_number,
+            product_name: product_name || '—',
+            approved_date: dateStr,
+            verify_url: verifyUrl,
+        });
+        const clientBody = tpl ? tpl.body :
+            `شكراً لكم.\n\nتم تسجيل اعتماد التصميم بنجاح.\n\nرقم الاعتماد\n${certificate_number}\n\nالمنتج\n${product_name || '—'}\n\nتاريخ الاعتماد\n${dateStr}\n\nيمكنكم التحقق من الاعتماد عبر\n${verify_url}`;
+        const clientSubject = tpl ? tpl.subject : `اعتماد تصميم — ${certificate_number}`;
 
         const clientAttachments = [];
         if (cert_image_path) clientAttachments.push({ type: 'image', path: cert_image_path, caption: `شهادة الاعتماد — ${certificate_number}` });
@@ -182,7 +185,7 @@ async function notifyDesignApproved(data) {
             recipient_name: client_name,
             recipient_role: 'client',
             message_type: 'design_approved_client',
-            subject: `اعتماد تصميم — ${certificate_number}`,
+            subject: clientSubject,
             body: clientBody,
             attachments: clientAttachments,
             entity_type: 'order_item',
@@ -199,14 +202,17 @@ async function notifyDesignApproved(data) {
         const adminPhone = admin.phone || admin.chat_id;
         if (!adminPhone) continue;
         const adminChatId = WhatsApp.normalizePhone(adminPhone);
-        const adminBody =
-            `تم اعتماد التصميم\n\n` +
-            `العميل\n${client_name}\n\n` +
-            `المنتج\n${product_name || '—'}\n\n` +
-            `المعتمد\n${signer_name || '—'}\n\n` +
-            `وقت الاعتماد\n${timeStr}\n\n` +
-            `رقم الاعتماد\n${certificate_number}\n\n` +
-            `Correlation ID\n${correlationId}`;
+        const adminTpl = await TemplateEngine.render('design_approved_admin', 'ar', {
+            certificate_number,
+            client_name,
+            product_name: product_name || '—',
+            signer_name: signer_name || '—',
+            approved_time: timeStr,
+            correlation_id: correlationId,
+        });
+        const adminBody = adminTpl ? adminTpl.body :
+            `تم اعتماد التصميم\n\nالعميل\n${client_name}\n\nالمنتج\n${product_name || '—'}\n\nالمعتمد\n${signer_name || '—'}\n\nوقت الاعتماد\n${timeStr}\n\nرقم الاعتماد\n${certificate_number}\n\nCorrelation ID\n${correlationId}`;
+        const adminSubject = adminTpl ? adminTpl.subject : `اعتماد تصميم — ${certificate_number}`;
 
         const adminAttachments = [];
         if (pdf_path) adminAttachments.push({ type: 'file', path: pdf_path, caption: `اعتماد التصميم — ${certificate_number}` });
@@ -218,7 +224,7 @@ async function notifyDesignApproved(data) {
             recipient_name: admin.name || 'الإدارة',
             recipient_role: 'admin',
             message_type: 'design_approved_admin',
-            subject: `اعتماد تصميم — ${certificate_number}`,
+            subject: adminSubject,
             body: adminBody,
             attachments: adminAttachments,
             entity_type: 'order_item',
@@ -232,12 +238,14 @@ async function notifyDesignApproved(data) {
     // 3. Message to Designer
     if (designer_phone) {
         const chatId = WhatsApp.normalizePhone(designer_phone);
-        const designerBody =
-            `🎉 تم اعتماد تصميمك\n\n` +
-            `Offer #${order_number}\n` +
-            `Item\n${product_name || '—'}\n\n` +
-            `العميل اعتمد التصميم.\n\n` +
-            `Correlation ID\n${correlationId}`;
+        const designerTpl = await TemplateEngine.render('design_approved_designer', 'ar', {
+            order_number,
+            product_name: product_name || '—',
+            correlation_id: correlationId,
+        });
+        const designerBody = designerTpl ? designerTpl.body :
+            `🎉 تم اعتماد تصميمك\n\nOffer #${order_number}\nItem\n${product_name || '—'}\n\nالعميل اعتمد التصميم.\n\nCorrelation ID\n${correlationId}`;
+        const designerSubject = designerTpl ? designerTpl.subject : `تصميم معتمد — Offer #${order_number}`;
 
         await enqueue({
             channel: 'whatsapp',
@@ -245,7 +253,7 @@ async function notifyDesignApproved(data) {
             recipient_name: designer_name || 'المصمم',
             recipient_role: 'designer',
             message_type: 'design_approved_designer',
-            subject: `تصميم معتمد — Offer #${order_number}`,
+            subject: designerSubject,
             body: designerBody,
             attachments: [],
             entity_type: 'order_item',

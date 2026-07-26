@@ -208,6 +208,21 @@ async function processApproval(approvalData) {
             );
         } catch { }
 
+        // 8b. Generate manifest.json (SHA-256 + size + mime for each file)
+        const manifest = await _generateManifest(pkgDir, certificate_number);
+        const manifestPath = path.join(pkgDir, 'manifest.json');
+        fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+
+        // Store manifest in DB
+        try {
+            await db.query(
+                `UPDATE design_approvals SET package_manifest = $1 WHERE item_id = $2`,
+                [JSON.stringify(manifest), item_id]
+            );
+        } catch (e) {
+            console.error('[ApprovalService] Manifest DB update error:', e.message);
+        }
+
         // 9. Create ZIP archive of the approval package
         const zipPath = path.join(pkgDir, '..', `item-${item_id}.zip`);
         try {
@@ -226,34 +241,11 @@ async function processApproval(approvalData) {
             console.error('[ApprovalService] ZIP creation skipped:', e.message);
         }
 
-        // 10. Write outbox event (Outbox Pattern — guarantees no message loss)
-        // The outbox event is picked up by the notification worker which calls
-        // notifyDesignApproved with the correlation_id.
-        const certAbsPath = path.join(UPLOAD_BASE, 'approvals', `${year}`, `${month}`, `${day}`, `item-${item_id}`, 'certificate.jpg');
-        const pdfAbsPath = path.join(UPLOAD_BASE, 'approvals', `${year}`, `${month}`, `${day}`, `item-${item_id}`, 'approval.pdf');
-
-        const correlationId = NotificationService.generateCorrelationId('APR');
-
-        await NotificationService.writeOutboxEvent({
-            event_type: 'design_approved',
-            entity_type: 'order_item',
-            entity_id: item_id,
-            correlation_id: correlationId,
-            payload: {
-                item_id, order_id, order_number,
-                client_name, client_phone,
-                product_name, size_name,
-                signer_name, certificate_number,
-                approved_at: approvedDate,
-                verify_url: verifyUrl,
-                pdf_path: pdfAbsPath,
-                cert_image_path: certAbsPath,
-                designer_phone, designer_name,
-                correlation_id: correlationId,
-            },
-        });
-
-        console.log(`[ApprovalService] Approval ${certificate_number} processed — outbox event written (correlation: ${correlationId})`);
+        // 10. Approval package complete — notifications are handled via outbox pattern.
+        // The outbox event was written INSIDE the DB transaction in public-design.js.
+        // The notification worker picks it up and calls NotificationService.notifyDesignApproved.
+        // This file (approval-service) only generates the physical package files.
+        console.log(`[ApprovalService] Approval ${certificate_number} package generated successfully`);
     } catch (err) {
         console.error('[ApprovalService] Processing error:', err.message);
     }
@@ -464,5 +456,46 @@ async function _generatePDF(data) {
 }
 
 // ── _sendWhatsAppNotification removed — now handled by NotificationService ──
+
+// ── Generate manifest.json for approval package ─────────────────────────────
+// Computes SHA-256 hash, file size, and MIME type for every file in the package.
+// This ensures integrity verification — if any file is tampered with later,
+// the hash won't match the manifest.
+async function _generateManifest(pkgDir, certificateNumber) {
+    const MIME_MAP = {
+        '.pdf': 'application/pdf',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.png': 'image/png',
+        '.json': 'application/json',
+        '.zip': 'application/zip',
+    };
+
+    const files = [];
+    const allFiles = fs.readdirSync(pkgDir).filter(f => !f.startsWith('.'));
+
+    for (const filename of allFiles) {
+        const filePath = path.join(pkgDir, filename);
+        if (!fs.statSync(filePath).isFile()) continue;
+
+        const buffer = fs.readFileSync(filePath);
+        const ext = path.extname(filename).toLowerCase();
+        const hash = crypto.createHash('sha256').update(buffer).digest('hex');
+
+        files.push({
+            name: filename,
+            sha256: hash,
+            size: buffer.length,
+            mime: MIME_MAP[ext] || 'application/octet-stream',
+        });
+    }
+
+    return {
+        version: 1,
+        certificate_number: certificateNumber,
+        generated_at: new Date().toISOString(),
+        files,
+    };
+}
 
 module.exports = { processApproval };

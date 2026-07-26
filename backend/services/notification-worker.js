@@ -17,12 +17,16 @@
 const db = require('../db');
 const WhatsApp = require('./whatsapp-service');
 const NotificationService = require('./notification-service');
+const { processApproval } = require('./approval-service');
 
 const POLL_INTERVAL_MS = 15000; // 15 seconds
+const HEALTH_CHECK_INTERVAL_MS = 60000; // 60 seconds
 const BACKOFF_MINUTES = [1, 5, 15, 60, 240]; // 1m, 5m, 15m, 1h, 4h
 
 let _polling = false;
 let _intervalId = null;
+let _healthIntervalId = null;
+let _lastHealthStatus = null;
 
 // ── Start the worker ────────────────────────────────────────────────────────
 function start() {
@@ -30,6 +34,10 @@ function start() {
     console.log('[NotificationWorker] Starting — polling every 15s (priority-based)');
     _intervalId = setInterval(_processQueue, POLL_INTERVAL_MS);
     _processQueue();
+
+    // Start WAHA health monitor
+    _healthIntervalId = setInterval(_wahaHealthCheck, HEALTH_CHECK_INTERVAL_MS);
+    _wahaHealthCheck();
 }
 
 // ── Stop the worker ─────────────────────────────────────────────────────────
@@ -37,8 +45,63 @@ function stop() {
     if (_intervalId) {
         clearInterval(_intervalId);
         _intervalId = null;
-        console.log('[NotificationWorker] Stopped');
     }
+    if (_healthIntervalId) {
+        clearInterval(_healthIntervalId);
+        _healthIntervalId = null;
+    }
+    console.log('[NotificationWorker] Stopped');
+}
+
+// ── WAHA Health Check (heartbeat every 60s) ─────────────────────────────────
+async function _wahaHealthCheck() {
+    if (!WhatsApp.isConfigured()) return;
+
+    const startTime = Date.now();
+    let status = 'disconnected';
+    let latencyMs = null;
+    let errorMsg = null;
+
+    try {
+        const result = await WhatsApp.getSessionStatus();
+        latencyMs = Date.now() - startTime;
+
+        if (result && result.connected) {
+            status = 'connected';
+        } else if (result && result.error) {
+            errorMsg = result.error;
+        }
+    } catch (err) {
+        latencyMs = Date.now() - startTime;
+        errorMsg = err.message;
+    }
+
+    // Log to waha_health_log
+    try {
+        await db.query(
+            `INSERT INTO waha_health_log (status, latency_ms, error) VALUES ($1, $2, $3)`,
+            [status, latencyMs, errorMsg]
+        );
+    } catch { }
+
+    // Fire in-app notification on status change
+    if (_lastHealthStatus !== null && _lastHealthStatus !== status) {
+        console.log(`[NotificationWorker] WAHA status changed: ${_lastHealthStatus} → ${status}`);
+        try {
+            await NotificationService.notifyInApp({
+                target_role: 'manager',
+                category: 'whatsapp',
+                icon: status === 'connected' ? 'fa-circle-check' : 'fa-triangle-exclamation',
+                title: status === 'connected' ? 'واتساب متصل' : 'واتساب غير متصل',
+                body: status === 'connected'
+                    ? `استعادة الاتصال بـ WAHA (latency: ${latencyMs}ms)`
+                    : `انقطاع اتصال WAHA: ${errorMsg || 'unknown error'}`,
+                link: '/whatsapp-center',
+                priority: status === 'connected' ? 'normal' : 'high',
+            });
+        } catch { }
+    }
+    _lastHealthStatus = status;
 }
 
 // ── Process pending queue items (priority-based) ────────────────────────────
@@ -142,12 +205,34 @@ async function _processOutbox() {
 
                 // Dispatch based on event_type
                 switch (evt.event_type) {
-                    case 'design_approved':
+                    case 'design_approved': {
+                        // 1. Generate approval package (PDF, certificate image, ZIP)
+                        //    This runs synchronously before notifications so file paths exist.
+                        try {
+                            await processApproval(payload);
+                        } catch (err) {
+                            console.error(`[NotificationWorker] processApproval failed for ${evt.correlation_id}:`, err.message);
+                            // Continue to notifications even if package generation fails
+                            // The approval is already committed in DB; notifications should still go out.
+                        }
+
+                        // 2. Fetch generated file paths from DB (processApproval stored them)
+                        const apprRes = await db.query(
+                            `SELECT approval_image_path, approval_pdf_path FROM design_approvals WHERE item_id = $1 ORDER BY id DESC LIMIT 1`,
+                            [payload.item_id]
+                        );
+                        const pdfPath = apprRes.rows[0]?.approval_pdf_path || null;
+                        const certPath = apprRes.rows[0]?.approval_image_path || null;
+
+                        // 3. Send notifications with file paths
                         await NotificationService.notifyDesignApproved({
                             ...payload,
+                            pdf_path: pdfPath,
+                            cert_image_path: certPath,
                             correlation_id: evt.correlation_id,
                         });
                         break;
+                    }
                     case 'design_sent_to_client':
                         await NotificationService.notifyDesignSentToClient({
                             ...payload,

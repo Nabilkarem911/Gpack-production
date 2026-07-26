@@ -220,12 +220,41 @@ router.post('/whatsapp/webhook', async (req, res) => {
     try {
         const webhookSecret = process.env.WAHA_WEBHOOK_SECRET || '';
 
-        // HMAC Signature verification: WAHA sends X-Webhook-Signature header
-        // which is HMAC-SHA256 of the raw body, using the shared secret.
+        // HMAC Signature verification + Replay Attack prevention
         if (webhookSecret) {
             const signature = req.headers['x-webhook-signature'] || '';
+            const timestamp = req.headers['x-webhook-timestamp'] || '';
+            const nonce = req.headers['x-webhook-nonce'] || '';
             const rawBody = JSON.stringify(req.body);
-            const expectedSig = crypto.createHmac('sha256', webhookSecret).update(rawBody).digest('hex');
+
+            // 1. Verify timestamp (reject if older than 5 minutes)
+            if (timestamp) {
+                const ageSeconds = Math.abs(Date.now() - parseInt(timestamp)) / 1000;
+                if (ageSeconds > 300) {
+                    console.warn('[WAHA Webhook] Rejected: timestamp too old (>5min)');
+                    return res.status(403).json({ error: 'Timestamp expired' });
+                }
+            }
+
+            // 2. Verify nonce (prevent replay — same nonce can't be used twice)
+            if (nonce) {
+                const nonceKey = `waha_webhook_nonce:${nonce}`;
+                const seen = await db.query(
+                    `INSERT INTO notification_settings (key, value, description)
+                     VALUES ($1, '{"used": true, "ts": "' || NOW() || '"}', 'webhook nonce')
+                     ON CONFLICT (key) DO NOTHING
+                     RETURNING key`,
+                    [nonceKey]
+                );
+                if (seen.rows.length === 0) {
+                    console.warn('[WAHA Webhook] Rejected: duplicate nonce (replay attack)');
+                    return res.status(403).json({ error: 'Duplicate nonce' });
+                }
+            }
+
+            // 3. Verify HMAC signature (includes timestamp + nonce in the signed payload)
+            const signedPayload = timestamp + nonce + rawBody;
+            const expectedSig = crypto.createHmac('sha256', webhookSecret).update(signedPayload).digest('hex');
 
             if (signature !== expectedSig) {
                 console.warn('[WAHA Webhook] Invalid signature — rejecting');
@@ -396,6 +425,144 @@ router.get('/queue', authenticate, authorize(['admin', 'manager', 'super_admin']
     } catch (err) {
         console.error('[Notifications] Queue fetch error:', err.message);
         res.status(500).json({ error: 'فشل في جلب القائمة' });
+    }
+});
+
+// ── GET /api/notifications/whatsapp/health ──────────────────────────────────
+// WAHA health monitor — shows current status, latency, last 20 checks.
+router.get('/whatsapp/health', authenticate, authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
+    try {
+        // Get current status
+        const current = await WhatsApp.getSessionStatus();
+
+        // Get last 20 health checks from DB
+        const history = await db.query(
+            `SELECT status, latency_ms, error, checked_at
+             FROM waha_health_log
+             ORDER BY checked_at DESC
+             LIMIT 20`
+        );
+
+        // Get last connected/disconnected timestamps
+        const lastConnected = await db.query(
+            `SELECT checked_at FROM waha_health_log WHERE status = 'connected' ORDER BY checked_at DESC LIMIT 1`
+        );
+        const lastDisconnected = await db.query(
+            `SELECT checked_at FROM waha_health_log WHERE status = 'disconnected' ORDER BY checked_at DESC LIMIT 1`
+        );
+
+        // Calculate uptime percentage (last 24h)
+        const uptimeRes = await db.query(
+            `SELECT
+                COUNT(*) FILTER (WHERE status = 'connected') as connected_count,
+                COUNT(*) as total_count
+             FROM waha_health_log
+             WHERE checked_at > NOW() - INTERVAL '24 hours'`
+        );
+        const uptimePct = uptimeRes.rows[0].total_count > 0
+            ? Math.round((uptimeRes.rows[0].connected_count / uptimeRes.rows[0].total_count) * 100)
+            : null;
+
+        res.json({
+            success: true,
+            current: {
+                connected: current?.connected || false,
+                error: current?.error || null,
+            },
+            history: history.rows,
+            last_connected_at: lastConnected.rows[0]?.checked_at || null,
+            last_disconnected_at: lastDisconnected.rows[0]?.checked_at || null,
+            uptime_24h_pct: uptimePct,
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── GET /api/notifications/metrics ──────────────────────────────────────────
+// Notification metrics dashboard — success rate, avg time, queue length, etc.
+router.get('/metrics', authenticate, authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
+    try {
+        // Overall stats
+        const overallRes = await db.query(
+            `SELECT
+                COUNT(*) FILTER (WHERE status = 'sent') as total_sent,
+                COUNT(*) FILTER (WHERE status = 'failed') as total_failed,
+                COUNT(*) FILTER (WHERE status = 'pending') as total_pending,
+                COUNT(*) FILTER (WHERE status = 'processing') as total_processing,
+                COUNT(*) FILTER (WHERE status = 'cancelled') as total_cancelled,
+                COUNT(*) as total_all
+             FROM notification_queue`
+        );
+
+        // Today's stats
+        const todayRes = await db.query(
+            `SELECT
+                COUNT(*) FILTER (WHERE status = 'sent' AND sent_at::date = CURRENT_DATE) as sent_today,
+                COUNT(*) FILTER (WHERE status = 'failed' AND last_attempt_at::date = CURRENT_DATE) as failed_today,
+                COUNT(*) FILTER (WHERE attempts > 1 AND last_attempt_at::date = CURRENT_DATE) as retried_today,
+                COUNT(*) FILTER (WHERE created_at::date = CURRENT_DATE) as created_today
+             FROM notification_queue`
+        );
+
+        // Dead letter queue count
+        const dlqRes = await db.query(
+            `SELECT COUNT(*) as dlq_count FROM notification_dead_queue`
+        );
+
+        // Average send time (from created_at to sent_at, for sent items in last 7 days)
+        const avgTimeRes = await db.query(
+            `SELECT AVG(EXTRACT(EPOCH FROM (sent_at - created_at)) * 1000)::INTEGER as avg_send_time_ms
+             FROM notification_queue
+             WHERE status = 'sent' AND sent_at > NOW() - INTERVAL '7 days'`
+        );
+
+        // Queue by priority
+        const priorityRes = await db.query(
+            `SELECT priority,
+                    COUNT(*) FILTER (WHERE status = 'pending') as pending,
+                    COUNT(*) FILTER (WHERE status = 'sent') as sent,
+                    COUNT(*) FILTER (WHERE status = 'failed') as failed
+             FROM notification_queue
+             GROUP BY priority`
+        );
+
+        // Success rate
+        const overall = overallRes.rows[0];
+        const totalAttempted = parseInt(overall.total_sent) + parseInt(overall.total_failed);
+        const successRate = totalAttempted > 0
+            ? Math.round((parseInt(overall.total_sent) / totalAttempted) * 100)
+            : 100;
+
+        // Last 7 days trend
+        const trendRes = await db.query(
+            `SELECT
+                created_at::date as date,
+                COUNT(*) FILTER (WHERE status = 'sent') as sent,
+                COUNT(*) FILTER (WHERE status = 'failed') as failed
+             FROM notification_queue
+             WHERE created_at > NOW() - INTERVAL '7 days'
+             GROUP BY created_at::date
+             ORDER BY date DESC`
+        );
+
+        res.json({
+            success: true,
+            metrics: {
+                overall: {
+                    ...overall,
+                    success_rate_pct: successRate,
+                    dlq_count: parseInt(dlqRes.rows[0].dlq_count),
+                    avg_send_time_ms: avgTimeRes.rows[0]?.avg_send_time_ms || null,
+                },
+                today: todayRes.rows[0],
+                by_priority: priorityRes.rows,
+                last_7_days: trendRes.rows,
+            },
+        });
+    } catch (err) {
+        console.error('[Notifications] Metrics error:', err.message);
+        res.status(500).json({ error: 'فشل في جلب المقاييس' });
     }
 });
 

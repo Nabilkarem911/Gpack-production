@@ -881,6 +881,36 @@ router.post('/item/:token/respond', clientUpload.array('client_files', 10), asyn
                 item_id: item.id, signer_name: signer_name || '',
             });
 
+            // ── Outbox Pattern: write event INSIDE the same transaction ──
+            // This guarantees: if COMMIT succeeds, the outbox event exists.
+            // If the server crashes before COMMIT, everything rolls back (no orphan event).
+            // The notification worker reads the outbox and dispatches WhatsApp/in-app.
+            const correlationId = NotificationService.generateCorrelationId('APR');
+            const baseUrl = process.env.BASE_URL || 'https://erp.gpacksa.com';
+            await NotificationService.writeOutboxEvent({
+                event_type: 'design_approved',
+                entity_type: 'order_item',
+                entity_id: item.id,
+                correlation_id: correlationId,
+                payload: {
+                    item_id: item.id,
+                    order_id: item.order_id,
+                    order_number: item.order_number,
+                    client_name: item.client_name,
+                    product_name: item.product_name || null,
+                    size_name: item.size_name || null,
+                    signer_name: signer_name || '',
+                    certificate_number: certificateNumber,
+                    verification_hash: verificationHash,
+                    signature_path: signaturePath,
+                    declaration_text: declarationText,
+                    approved_at: new Date().toISOString(),
+                    client_ip: clientIp,
+                    verify_url: `${baseUrl}/verify/${certificateNumber}`,
+                    correlation_id: correlationId,
+                },
+            }, client);
+
             // Check if all items in order are approved → save client designs
             const pendingRes = await client.query(
                 `SELECT COUNT(*) as count FROM order_items
@@ -990,29 +1020,11 @@ router.post('/item/:token/respond', clientUpload.array('client_files', 10), asyn
 
         res.json(responseObj);
 
-        // ── Background: generate approval package (PDF + image + WhatsApp) ──
-        // Fire-and-forget — does NOT block the response to the client.
-        if (action === 'approve') {
-            const approvalData = {
-                item_id: item.id,
-                order_id: item.order_id,
-                order_number: item.order_number,
-                client_name: item.client_name,
-                product_name: item.product_name || null,
-                size_name: item.size_name || null,
-                signer_name: signer_name || '',
-                certificate_number: responseObj.certificate_number,
-                verification_hash: verificationHash,
-                signature_path: signaturePath,
-                declaration_text: declarationText,
-                approved_at: new Date().toISOString(),
-                client_ip: clientIp,
-            };
-            // Non-blocking — errors are caught inside processApproval
-            processApproval(approvalData).catch(err => {
-                console.error('[PublicDesign] Background approval processing error:', err.message);
-            });
-        }
+        // ── Approval package generation is handled by the notification worker ──
+        // The outbox event (written inside the transaction above) is picked up
+        // by the worker, which calls processApproval() then notifyDesignApproved().
+        // This ensures proper ordering: files generated → then notifications sent.
+        // No fire-and-forget here — everything flows through the outbox.
     } catch (err) {
         await client.query('ROLLBACK');
         console.error('[PublicDesign] Item respond error:', err.message);
