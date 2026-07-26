@@ -8,7 +8,8 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
-const { authenticate, authorize } = require('../middleware/auth');
+const { authenticate } = require('../middleware/authMiddleware');
+const authorize = require('../middleware/authorize');
 const WhatsApp = require('../services/whatsapp-service');
 
 // ── GET /api/notifications ──────────────────────────────────────────────────
