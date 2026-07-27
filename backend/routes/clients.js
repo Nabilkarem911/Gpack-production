@@ -1,6 +1,8 @@
 'use strict';
 
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
 const db = require('../db');
 const { authenticate } = require('../middleware/authMiddleware');
 const authorize = require('../middleware/authorize');
@@ -220,6 +222,19 @@ router.get('/:id/profile', async (req, res) => {
             [id]
         );
 
+        // 6b. Check if design files actually exist on disk (detect broken designs)
+        const UPLOAD_BASE = path.join(__dirname, '../uploads');
+        const designs = designsRes.rows.map(d => {
+            let is_broken = false;
+            if (d.file_path) {
+                const absPath = path.join(UPLOAD_BASE, d.file_path.replace(/^\//, ''));
+                is_broken = !fs.existsSync(absPath);
+            } else {
+                is_broken = true; // No file_path at all = broken
+            }
+            return { ...d, is_broken };
+        });
+
         // 7. Financial stats
         const statsRes = await db.query(
             `SELECT
@@ -241,7 +256,7 @@ router.get('/:id/profile', async (req, res) => {
                 orders:    ordersRes.rows,
                 invoices:  invoicesRes.rows,
                 payments:  paymentsRes.rows,
-                designs:   designsRes.rows,
+                designs:   designs,
                 stats:     statsRes.rows[0],
             }
         });

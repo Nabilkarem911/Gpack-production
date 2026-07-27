@@ -334,11 +334,17 @@
         if (empty) empty.classList.add('hidden');
 
         grid.innerHTML = designs.map(d => {
+            const isBroken = !!d.is_broken;
             const ext   = (d.file_path || '').split('.').pop().toLowerCase();
             const isPdf = ext === 'pdf';
-            const hasFile = !!d.file_path;
+            const hasFile = !!d.file_path && !isBroken;
 
-            const preview = !hasFile
+            const preview = isBroken
+                ? `<div class="w-full aspect-square bg-red-50 flex flex-col items-center justify-center">
+                       <i class="fa-solid fa-triangle-exclamation text-3xl text-red-400 mb-1"></i>
+                       <span class="text-xs text-red-500">الملف غير موجود</span>
+                   </div>`
+                : !hasFile
                 ? `<div class="w-full aspect-square bg-slate-100 flex flex-col items-center justify-center">
                        <i class="fa-solid fa-image text-3xl text-slate-300 mb-1"></i>
                        <span class="text-xs text-slate-400">لا يوجد ملف</span>
@@ -352,7 +358,9 @@
                         class="w-full aspect-square object-cover bg-slate-100"
                         onerror="this.parentElement.innerHTML='<div class=\\'w-full aspect-square bg-slate-100 flex items-center justify-center\\'><i class=\\'fa-solid fa-image text-2xl text-slate-300\\'></i></div>'" />`;
 
-            const statusHtml = d.is_active
+            const statusHtml = isBroken
+                ? `<span class="text-xs font-bold text-red-500"><i class="fa-solid fa-triangle-exclamation ml-1"></i>باظ</span>`
+                : d.is_active
                 ? `<span class="text-xs font-bold text-emerald-600"><i class="fa-solid fa-circle-check ml-1"></i>نشط</span>`
                 : `<span class="text-xs font-bold text-slate-400"><i class="fa-solid fa-circle-xmark ml-1"></i>غير نشط</span>`;
 
@@ -360,13 +368,28 @@
                 ? `<a href="${d.file_path}" target="_blank" class="block overflow-hidden">${preview}</a>`
                 : `<div>${preview}</div>`;
 
+            const designId = d.id;
+            const designName = esc(d.design_name || 'تصميم #' + d.design_number);
+
             return `
-            <div class="bg-white rounded-xl border border-slate-200 overflow-hidden hover:shadow-md transition-shadow">
+            <div class="bg-white rounded-xl border border-slate-200 overflow-hidden hover:shadow-md transition-shadow relative group">
                 ${fileLink}
                 <div class="p-2.5">
-                    <p class="text-xs font-bold text-slate-700 truncate">${esc(d.design_name || 'تصميم #' + d.design_number)}</p>
+                    <p class="text-xs font-bold text-slate-700 truncate">${designName}</p>
                     <p class="text-xs text-slate-400 truncate">${esc(d.product_name)} — ${esc(d.size_name || '')}</p>
-                    <div class="mt-1">${statusHtml}</div>
+                    <div class="flex items-center justify-between mt-1">
+                        ${statusHtml}
+                        <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button onclick="window._cpReplaceDesign('${designId}')" title="استبدال الملفات"
+                                    class="w-7 h-7 flex items-center justify-center rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 transition-colors">
+                                <i class="fa-solid fa-arrows-rotate text-xs"></i>
+                            </button>
+                            <button onclick="window._cpDeleteDesign('${designId}', '${designName}')" title="حذف التصميم"
+                                    class="w-7 h-7 flex items-center justify-center rounded-lg bg-red-50 hover:bg-red-100 text-red-600 transition-colors">
+                                <i class="fa-solid fa-trash text-xs"></i>
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>`;
         }).join('');
@@ -1438,6 +1461,192 @@ ${paymentsInv.length ? `
             setTimeout(() => w.print(), 600);
         } catch(err) {
             alert('حدث خطأ أثناء تحميل الفاتورة: ' + err.message);
+        }
+    };
+
+    // ── Replace Design Files ──────────────────────────────────────────────────
+    window._cpReplaceDesign = function(designId) {
+        const modal = document.getElementById('cp-replace-design-modal');
+        if (!modal) return;
+
+        // Reset
+        const fileInput = document.getElementById('cp-replace-file-input');
+        const status = document.getElementById('cp-replace-status');
+        const btn = document.getElementById('cp-replace-submit-btn');
+        if (fileInput) fileInput.value = '';
+        if (status) { status.textContent = ''; status.classList.add('hidden'); }
+        if (btn) { btn.disabled = true; btn.classList.add('opacity-50'); }
+
+        modal.style.display = 'flex';
+        setTimeout(() => {
+            modal.classList.remove('opacity-0');
+            modal.querySelector('.modal-panel')?.classList.remove('scale-95');
+        }, 10);
+
+        // Store design ID
+        window._cpReplaceDesignId = designId;
+
+        // Enable submit when files are selected
+        if (fileInput) {
+            fileInput.onchange = function() {
+                if (fileInput.files.length > 0) {
+                    btn.disabled = false;
+                    btn.classList.remove('opacity-50');
+                    if (status) {
+                        status.textContent = `${fileInput.files.length} ملف محدد`;
+                        status.classList.remove('hidden');
+                        status.className = 'text-xs font-bold text-emerald-600 mt-2';
+                    }
+                } else {
+                    btn.disabled = true;
+                    btn.classList.add('opacity-50');
+                    if (status) status.classList.add('hidden');
+                }
+            };
+        }
+    };
+
+    window._cpCloseReplaceDesign = function() {
+        const modal = document.getElementById('cp-replace-design-modal');
+        if (!modal) return;
+        modal.classList.add('opacity-0');
+        modal.querySelector('.modal-panel')?.classList.add('scale-95');
+        setTimeout(() => { modal.style.display = 'none'; }, 200);
+        window._cpReplaceDesignId = null;
+    };
+
+    window._cpSubmitReplaceDesign = async function() {
+        const designId = window._cpReplaceDesignId;
+        const fileInput = document.getElementById('cp-replace-file-input');
+        const btn = document.getElementById('cp-replace-submit-btn');
+        const status = document.getElementById('cp-replace-status');
+
+        if (!designId || !fileInput || fileInput.files.length === 0) return;
+
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> جاري الرفع...';
+
+        try {
+            const formData = new FormData();
+            for (const file of fileInput.files) {
+                // Determine field name based on file type
+                const ext = file.name.split('.').pop().toLowerCase();
+                if (ext === 'pdf') {
+                    formData.append('pdf', file);
+                } else if (ext === 'ai') {
+                    formData.append('ai', file);
+                } else if (ext === 'psd') {
+                    formData.append('psd', file);
+                } else if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'tiff', 'tif', 'raw', 'heic', 'eps'].includes(ext)) {
+                    // First image goes as thumbnail, rest as source
+                    if (!formData.has('thumbnail')) {
+                        formData.append('thumbnail', file);
+                    } else {
+                        formData.append('source', file);
+                    }
+                } else {
+                    formData.append('source', file);
+                }
+            }
+
+            const res = await fetch(`/api/client-designs/${designId}/replace`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+                body: formData
+            });
+
+            const data = await res.json();
+
+            if (data.success) {
+                window._cpCloseReplaceDesign();
+                // Reload profile to refresh designs
+                if (window._cpClientId) {
+                    _init();
+                }
+            } else {
+                if (status) {
+                    status.textContent = data.error || 'حدث خطأ';
+                    status.classList.remove('hidden');
+                    status.className = 'text-xs font-bold text-red-500 mt-2';
+                }
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fa-solid fa-arrows-rotate"></i> استبدال';
+            }
+        } catch (err) {
+            console.error('[ClientProfile] Replace design error:', err);
+            if (status) {
+                status.textContent = 'حدث خطأ في الاتصال';
+                status.classList.remove('hidden');
+                status.className = 'text-xs font-bold text-red-500 mt-2';
+            }
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa-solid fa-arrows-rotate"></i> استبدال';
+        }
+    };
+
+    // ── Delete Design ─────────────────────────────────────────────────────────
+    window._cpDeleteDesign = function(designId, designName) {
+        const modal = document.getElementById('cp-delete-design-modal');
+        if (!modal) return;
+
+        const nameEl = document.getElementById('cp-delete-design-name');
+        if (nameEl) nameEl.textContent = designName;
+
+        window._cpDeleteDesignId = designId;
+
+        modal.style.display = 'flex';
+        setTimeout(() => {
+            modal.classList.remove('opacity-0');
+            modal.querySelector('.modal-panel')?.classList.remove('scale-95');
+        }, 10);
+    };
+
+    window._cpCloseDeleteDesign = function() {
+        const modal = document.getElementById('cp-delete-design-modal');
+        if (!modal) return;
+        modal.classList.add('opacity-0');
+        modal.querySelector('.modal-panel')?.classList.add('scale-95');
+        setTimeout(() => { modal.style.display = 'none'; }, 200);
+        window._cpDeleteDesignId = null;
+    };
+
+    window._cpConfirmDeleteDesign = async function() {
+        const designId = window._cpDeleteDesignId;
+        if (!designId) return;
+
+        const btn = document.getElementById('cp-delete-confirm-btn');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> جاري الحذف...';
+        }
+
+        try {
+            const res = await fetch(`/api/client-designs/${designId}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+            });
+
+            const data = await res.json();
+
+            if (data.success) {
+                window._cpCloseDeleteDesign();
+                if (window._cpClientId) {
+                    _init();
+                }
+            } else {
+                alert(data.error || 'حدث خطأ أثناء الحذف');
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = 'تأكيد الحذف';
+                }
+            }
+        } catch (err) {
+            console.error('[ClientProfile] Delete design error:', err);
+            alert('حدث خطأ في الاتصال');
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = 'تأكيد الحذف';
+            }
         }
     };
 

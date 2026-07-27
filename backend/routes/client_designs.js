@@ -392,6 +392,172 @@ router.get('/download/:file_id', authenticate, authorize(['admin', 'manager', 's
 });
 
 // ============================================================================
+// POST /api/client-designs/:design_id/replace
+// Replace all files of an existing design — keeps same design ID, design_number,
+// variant_id, client_id. Deletes old files from disk + DB, stores new ones.
+// Files: thumbnail (image), pdf, ai, psd, source (optional, multiple)
+// ============================================================================
+const replaceUpload = multer({
+    storage: multer.diskStorage({
+        destination: (req, file, cb) => {
+            const designId = req.params.design_id;
+            const designDir = path.join(UPLOAD_BASE, 'temp-replace', designId);
+            fs.mkdirSync(designDir, { recursive: true });
+            cb(null, designDir);
+        },
+        filename: (req, file, cb) => {
+            const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+            const ext = path.extname(file.originalname);
+            cb(null, file.fieldname + '-' + uniqueSuffix + ext);
+        }
+    }),
+    limits: { fileSize: 200 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+        const allowedTypes = /jpeg|jpg|png|gif|pdf|ai|psd|eps|svg|webp|tiff|tif|bmp|raw|heic/;
+        const ext = path.extname(file.originalname).toLowerCase();
+        if (allowedTypes.test(ext)) {
+            cb(null, true);
+        } else {
+            cb(new Error('نوع الملف غير مدعوم.'));
+        }
+    }
+}).fields([
+    { name: 'thumbnail', maxCount: 1 },
+    { name: 'pdf', maxCount: 1 },
+    { name: 'ai', maxCount: 1 },
+    { name: 'psd', maxCount: 1 },
+    { name: 'source', maxCount: 5 }
+]);
+
+router.post('/:design_id/replace', authenticate, authorize(['admin', 'manager', 'super_admin', 'sales_rep']), async (req, res) => {
+    const { design_id } = req.params;
+    try {
+        // 1. Verify design exists
+        const designResult = await db.query(
+            `SELECT cd.*, c.created_by FROM client_designs cd
+             JOIN clients c ON c.id = cd.client_id
+             WHERE cd.id = $1`,
+            [design_id]
+        );
+        if (designResult.rowCount === 0) {
+            // Clean temp files if any
+            const tempDir = path.join(UPLOAD_BASE, 'temp-replace', design_id);
+            if (fs.existsSync(tempDir)) fs.rmSync(tempDir, { recursive: true, force: true });
+            return res.status(404).json({ success: false, error: 'التصميم غير موجود' });
+        }
+
+        const design = designResult.rows[0];
+
+        // Ownership check for sales_rep
+        if (req.user.role === 'sales_rep' && design.created_by !== req.user.id) {
+            const tempDir = path.join(UPLOAD_BASE, 'temp-replace', design_id);
+            if (fs.existsSync(tempDir)) fs.rmSync(tempDir, { recursive: true, force: true });
+            return res.status(403).json({ success: false, error: 'غير مصرح لك بتعديل هذا التصميم.' });
+        }
+
+        // 2. Process file upload via multer
+        replaceUpload(req, res, async (multerErr) => {
+            if (multerErr) {
+                const tempDir = path.join(UPLOAD_BASE, 'temp-replace', design_id);
+                if (fs.existsSync(tempDir)) fs.rmSync(tempDir, { recursive: true, force: true });
+                return res.status(400).json({ success: false, error: multerErr.message || 'خطأ في رفع الملفات' });
+            }
+
+            const files = req.files;
+            if (!files || Object.keys(files).length === 0) {
+                const tempDir = path.join(UPLOAD_BASE, 'temp-replace', design_id);
+                if (fs.existsSync(tempDir)) fs.rmSync(tempDir, { recursive: true, force: true });
+                return res.status(400).json({ success: false, error: 'لم يتم رفع أي ملفات' });
+            }
+
+            try {
+                const fileRecords = await db.withTransaction(async (txClient) => {
+                    // 3. Delete old file records from DB
+                    await txClient.query(
+                        `DELETE FROM client_design_files WHERE design_id = $1`,
+                        [design_id]
+                    );
+
+                    // 4. Delete old files from disk (the design directory)
+                    const designDir = path.join(UPLOAD_BASE, design.client_id, design_id);
+                    if (fs.existsSync(designDir)) {
+                        // Remove all contents but keep the directory itself
+                        const entries = fs.readdirSync(designDir);
+                        for (const entry of entries) {
+                            const entryPath = path.join(designDir, entry);
+                            if (fs.lstatSync(entryPath).isDirectory()) {
+                                fs.rmSync(entryPath, { recursive: true, force: true });
+                            } else {
+                                fs.unlinkSync(entryPath);
+                            }
+                        }
+                    } else {
+                        fs.mkdirSync(designDir, { recursive: true });
+                    }
+
+                    // 5. Move new files from temp to design directory
+                    const tempDir = path.join(UPLOAD_BASE, 'temp-replace', design_id);
+                    const newFileRecords = [];
+
+                    for (const [fieldName, fileArray] of Object.entries(files)) {
+                        for (const file of fileArray) {
+                            const tempPath = file.path;
+                            const finalPath = path.join(designDir, file.filename);
+                            fs.renameSync(tempPath, finalPath);
+
+                            const fileType = fieldName === 'source'
+                                ? path.extname(file.originalname).slice(1)
+                                : fieldName;
+
+                            const relativeUrl = `/uploads/clients/${design.client_id}/${design_id}/${file.filename}`;
+
+                            const fileResult = await txClient.query(
+                                `INSERT INTO client_design_files
+                                 (design_id, file_type, file_path, original_name, file_size, mime_type, uploaded_by)
+                                 VALUES ($1, $2, $3, $4, $5, $6, $7)
+                                 RETURNING *`,
+                                [design_id, fileType, relativeUrl, file.originalname, file.size, file.mimetype, req.user.id]
+                            );
+                            newFileRecords.push(fileResult.rows[0]);
+                        }
+                    }
+
+                    // 6. Clean temp directory
+                    if (fs.existsSync(tempDir)) {
+                        fs.rmSync(tempDir, { recursive: true, force: true });
+                    }
+
+                    return newFileRecords;
+                });
+
+                return res.json({
+                    success: true,
+                    data: {
+                        design_id,
+                        files: fileRecords,
+                        thumbnail_url: fileRecords.find(f => f.file_type === 'thumbnail')?.file_path || null
+                    },
+                    message: 'تم استبدال ملفات التصميم بنجاح'
+                });
+
+            } catch (txErr) {
+                console.error('[ClientDesigns] Replace error:', txErr);
+                // Clean temp on failure
+                const tempDir = path.join(UPLOAD_BASE, 'temp-replace', design_id);
+                if (fs.existsSync(tempDir)) fs.rmSync(tempDir, { recursive: true, force: true });
+                return res.status(500).json({ success: false, error: 'Internal server error.' });
+            }
+        });
+
+    } catch (err) {
+        console.error('[ClientDesigns] Replace outer error:', err);
+        const tempDir = path.join(UPLOAD_BASE, 'temp-replace', design_id);
+        if (fs.existsSync(tempDir)) fs.rmSync(tempDir, { recursive: true, force: true });
+        return res.status(500).json({ success: false, error: 'Internal server error.' });
+    }
+});
+
+// ============================================================================
 // DELETE /api/client-designs/:design_id
 // Delete design and all its files
 // ============================================================================
