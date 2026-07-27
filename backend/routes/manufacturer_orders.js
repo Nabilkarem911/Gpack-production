@@ -1,6 +1,7 @@
 'use strict';
 
 const express = require('express');
+const QRCode = require('qrcode');
 const db = require('../db');
 const { success, error: errorResponse } = require('../utils/response');
 const authorize = require('../middleware/authorize');
@@ -367,9 +368,12 @@ router.get('/:id', async (req, res) => {
                 cd.design_name,
                 cd.design_number,
                 cdf.file_path AS design_thumbnail,
+                srcf.id AS design_file_id,
+                srcf.file_path AS design_file_path,
                 srcf.original_name AS design_file_name,
                 srcf.file_size AS design_file_size,
                 srcf.mime_type AS design_mime_type,
+                srcf.uploaded_at AS design_file_uploaded_at,
                 moi.created_at
              FROM manufacturer_order_items moi
              JOIN order_items oi ON oi.id = moi.order_item_id
@@ -385,6 +389,19 @@ router.get('/:id', async (req, res) => {
         );
 
         manufacturerOrder.items = itemsResult.rows;
+
+        // ── Generate QR Code data URI ──
+        const baseUrl = process.env.BASE_URL || 'https://erp.gpacksa.com';
+        const moUrl = `${baseUrl}/#/production_orders?mo=${id}`;
+        try {
+            manufacturerOrder.qrCodeDataUri = await QRCode.toDataURL(moUrl, {
+                width: 200,
+                margin: 1,
+                color: { dark: '#1e293b', light: '#ffffff' }
+            });
+        } catch (qrErr) {
+            console.error('[ManufacturerOrders] QR generation error:', qrErr.message);
+        }
 
         return res.status(200).json({ data: manufacturerOrder });
     } catch (err) {

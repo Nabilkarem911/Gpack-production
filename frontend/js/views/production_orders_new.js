@@ -1040,18 +1040,15 @@
         return map[e] || { label: e ? e.toUpperCase() : 'FILE', color: '#475569', bg: '#f1f5f9', full: 'ملف تصميم' };
     }
 
-    function _fakeBarcodeSvg(text) {
-        const str = String(text || '000000').replace(/[^A-Za-z0-9]/g, '') || '000000';
-        let bars = '';
-        let x = 0;
-        for (let i = 0; i < str.length; i++) {
-            const code = str.charCodeAt(i);
-            const w = 2 + (code % 3);
-            if (code % 2 === 0) bars += `<rect x="${x}" y="0" width="${w}" height="26" fill="#1e293b"/>`;
-            x += w + 1;
-        }
-        if (!bars) { bars = '<rect x="0" y="0" width="2" height="26" fill="#1e293b"/>'; x = 3; }
-        return `<svg width="${x}" height="26" viewBox="0 0 ${x} 26" xmlns="http://www.w3.org/2000/svg" style="display:block;">${bars}</svg>`;
+    function _fmtDateTimeShort(iso) {
+        if (!iso) return '—';
+        const d = new Date(iso);
+        const day = String(d.getDate()).padStart(2, '0');
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const year = d.getFullYear();
+        const hh = String(d.getHours()).padStart(2, '0');
+        const mm = String(d.getMinutes()).padStart(2, '0');
+        return `${day}/${month}/${year} ${hh}:${mm}`;
     }
 
     async function _printMO(moId) {
@@ -1063,8 +1060,15 @@
             const logoBase64 = await _loadLogoBase64();
             const statusCfg = PRINT_MO_STATUS_CFG[mo.status] || PRINT_MO_STATUS_CFG.pending;
 
+            // ── Deduplicate items by moi.id (multiple design files create duplicate rows) ──
+            const itemsById = new Map();
+            (mo.items || []).forEach(i => {
+                if (!itemsById.has(i.id)) itemsById.set(i.id, i);
+            });
+            const uniqueItems = Array.from(itemsById.values());
+
             // ── Build table rows ──
-            const items = (mo.items || []).map(i => {
+            const items = uniqueItems.map(i => {
                 const designStatus = i.design_status || 'new';
                 const isReprint    = designStatus === 'redesign' || designStatus === 'reprint';
                 const designLabel  = isReprint ? 'إعادة طباعة' : 'تصميم جديد';
@@ -1103,58 +1107,126 @@
                 </tr>`;
             }).join('');
 
-            // ── Build design full-page previews ──
-            const designPages = (mo.items || [])
-                .filter(i => i.design_thumbnail)
-                .map((i, idx) => {
-                    const normalizedUrl = _normalizeDesignUrl(i.design_thumbnail);
-                    const previewMarkup = _buildPrintPreviewMarkup(normalizedUrl, i.design_name || '', 'page');
-                    const fileExt   = _getFileExt(i.design_file_name || i.design_thumbnail || '');
+            // ── Group design files by item (moi.id) ──
+            const itemsWithFiles = {};
+            (mo.items || []).forEach(i => {
+                if (!i.design_file_path) return;
+                if (!itemsWithFiles[i.id]) {
+                    itemsWithFiles[i.id] = { item: i, files: [] };
+                }
+                itemsWithFiles[i.id].files.push({
+                    path:        i.design_file_path,
+                    name:        i.design_file_name,
+                    size:        i.design_file_size,
+                    mime_type:   i.design_mime_type,
+                    uploaded_at: i.design_file_uploaded_at,
+                    file_id:     i.design_file_id
+                });
+            });
+
+            // ── Build design full-page previews (one page per item, one card per file) ──
+            let designPageIdx = 0;
+            const designPages = Object.values(itemsWithFiles).map(({ item: i, files }) => {
+                designPageIdx++;
+                const pageIdx = designPageIdx;
+
+                const fileCards = files.map((f, fIdx) => {
+                    const normalizedUrl = _normalizeDesignUrl(f.path);
+                    const fileExt   = _getFileExt(f.name || f.path || '');
                     const fileMeta  = _fileTypeMeta(fileExt);
-                    const fileName  = i.design_file_name || i.design_name || `تصميم-${idx + 1}`;
-                    const fileSize  = _fmtFileSize(i.design_file_size);
-                    return `<div style="page-break-before:always;padding:30px 40px;">
-                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;padding-bottom:16px;border-bottom:2px solid #f1f5f9;">
-                            <div style="display:flex;align-items:center;gap:14px;">
-                                <div style="width:44px;height:44px;border-radius:12px;background:#5d198e;color:#fbbf24;display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:900;font-size:15px;line-height:1;">
-                                    <span>${idx + 1}</span>
-                                    <span style="font-size:8px;font-weight:700;color:#c4b5fd;">أمر</span>
-                                </div>
-                                <div>
-                                    <h2 style="margin:0;font-size:17px;font-weight:800;color:#1e293b;">ملحق التصميم ${idx + 1} — ${i.product_name || ''} ${i.size_name || ''}</h2>
-                                    <p style="margin:4px 0 0;font-size:12px;color:#64748b;">
-                                        ${i.design_name ? `اسم التصميم: <b>${i.design_name}</b> &nbsp;|&nbsp; ` : ''}
-                                        الكمية: <b>${parseInt(i.mo_quantity || i.po_quantity || 0)}</b> &nbsp;|&nbsp; أمر #${mo.mo_number}
-                                    </p>
-                                </div>
-                            </div>
-                            <span style="background:#5d198e;color:white;padding:8px 18px;border-radius:10px;font-size:13px;font-weight:900;">${mo.mo_number}</span>
-                        </div>
+                    const fileName  = f.name || i.design_name || `تصميم-${pageIdx}-${fIdx + 1}`;
+                    const fileSize  = _fmtFileSize(f.size);
+                    const lastUpdated = _fmtDateTimeShort(f.uploaded_at);
+                    const isPdf    = DESIGN_PDF_EXTENSIONS.has(fileExt);
+                    const isImage  = DESIGN_IMAGE_EXTENSIONS.has(fileExt);
+                    const cardId   = `design-card-${pageIdx}-${fIdx + 1}`;
 
-                        <div style="display:flex;gap:20px;margin-top:22px;align-items:flex-start;">
-                            <div style="flex:1;min-width:0;">
-                                <div style="display:flex;justify-content:space-between;align-items:center;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px 10px 0 0;padding:8px 14px;font-size:11px;color:#64748b;">
-                                    <span>معاينة ملف التصميم</span>
-                                    <span>1 / 1</span>
-                                </div>
-                                ${previewMarkup}
+                    let previewHtml = '';
+                    if (isPdf) {
+                        previewHtml = `<div class="pdf-preview-wrap" id="${cardId}" data-url="${normalizedUrl}">
+                            <div class="pdf-loading">
+                                <div class="pdf-spinner"></div>
+                                <p>جارٍ تحميل المعاينة...</p>
                             </div>
-                            <div style="width:230px;flex-shrink:0;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:16px;">
-                                <p style="margin:0 0 12px;font-size:12px;font-weight:800;color:#5d198e;">معلومات الملف</p>
-                                <div style="display:flex;flex-direction:column;gap:10px;font-size:11px;">
-                                    <div><span style="color:#94a3b8;display:block;margin-bottom:2px;">اسم الملف</span><span style="font-weight:700;color:#1e293b;word-break:break-word;">${_escapeHtml(fileName)}</span></div>
-                                    <div><span style="color:#94a3b8;display:block;margin-bottom:2px;">نوع الملف</span><span style="font-weight:700;color:${fileMeta.color};">${fileMeta.full}</span></div>
-                                    <div><span style="color:#94a3b8;display:block;margin-bottom:2px;">حجم الملف</span><span style="font-weight:700;color:#1e293b;">${fileSize}</span></div>
-                                </div>
+                            <canvas class="pdf-canvas" style="display:none;"></canvas>
+                            <div class="pdf-error" style="display:none;">
+                                <div class="pdf-error-icon">📄</div>
+                                <p>تعذّر عرض المعاينة</p>
+                                <a href="${normalizedUrl}" target="_blank" class="pdf-error-link">فتح الملف مباشرة</a>
                             </div>
-                        </div>
+                        </div>`;
+                    } else if (isImage) {
+                        previewHtml = `<div class="img-preview-wrap">
+                            <img src="${normalizedUrl}" alt="${_escapeHtml(fileName)}" class="design-img" onerror="this.onerror=null;this.parentElement.innerHTML='<div class=\\'pdf-error\\'><div class=\\'pdf-error-icon\\'>🖼️</div><p>تعذّر تحميل الصورة</p></div>';">
+                        </div>`;
+                    } else {
+                        previewHtml = `<div class="file-placeholder">
+                            <div class="file-placeholder-icon" style="color:${fileMeta.color};background:${fileMeta.bg};">${fileMeta.label}</div>
+                            <p>${fileMeta.full}</p>
+                        </div>`;
+                    }
 
-                        <div style="text-align:center;margin-top:16px;display:flex;justify-content:center;gap:10px;">
-                            <a href="${normalizedUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:8px;padding:10px 22px;background:#f1f5f9;color:#1e293b;text-decoration:none;border-radius:10px;font-size:13px;font-weight:700;border:1px solid #e2e8f0;">📄 فتح في تبويب جديد</a>
-                            <a href="${normalizedUrl}" download style="display:inline-flex;align-items:center;gap:8px;padding:10px 22px;background:#5d198e;color:white;text-decoration:none;border-radius:10px;font-size:13px;font-weight:700;">⬇️ تحميل ملف التصميم</a>
+                    const toolbarHtml = isPdf ? `
+                        <div class="preview-toolbar no-print">
+                            <button class="tb-btn" onclick="pdfZoom('${cardId}',-0.25)" title="تصغير">−</button>
+                            <span class="tb-zoom" id="${cardId}-zoom">100%</span>
+                            <button class="tb-btn" onclick="pdfZoom('${cardId}',0.25)" title="تكبير">+</button>
+                            <span class="tb-sep"></span>
+                            <button class="tb-btn" onclick="pdfFullscreen('${cardId}')" title="ملء الشاشة">⛶</button>
+                            <a href="${normalizedUrl}" target="_blank" class="tb-btn" title="فتح في تبويب">↗</a>
+                            <a href="${normalizedUrl}" download class="tb-btn tb-download" title="تحميل">⬇</a>
+                        </div>` : `
+                        <div class="preview-toolbar no-print">
+                            <button class="tb-btn" onclick="imgFullscreen(this)" title="ملء الشاشة">⛶</button>
+                            <a href="${normalizedUrl}" target="_blank" class="tb-btn" title="فتح في تبويب">↗</a>
+                            <a href="${normalizedUrl}" download class="tb-btn tb-download" title="تحميل">⬇</a>
+                        </div>`;
+
+                    return `<div class="design-file-card">
+                        <div class="card-header">
+                            <span class="card-file-num">${fIdx + 1}</span>
+                            <span class="card-file-name">${_escapeHtml(fileName)}</span>
+                            <span class="card-file-badge" style="background:${fileMeta.bg};color:${fileMeta.color};border:1px solid ${fileMeta.color}33;">${fileMeta.label}</span>
+                        </div>
+                        <div class="card-preview-area">
+                            ${previewHtml}
+                        </div>
+                        ${toolbarHtml}
+                        <div class="card-file-info">
+                            <div><span class="info-label">اسم الملف</span><span class="info-value">${_escapeHtml(fileName)}</span></div>
+                            <div><span class="info-label">نوع الملف</span><span class="info-value" style="color:${fileMeta.color};">${fileMeta.full}</span></div>
+                            <div><span class="info-label">حجم الملف</span><span class="info-value">${fileSize}</span></div>
+                            <div><span class="info-label">آخر تحديث</span><span class="info-value">${lastUpdated}</span></div>
+                        </div>
+                        <div class="card-actions">
+                            <a href="${normalizedUrl}" target="_blank" class="card-btn card-btn-open">↗ فتح في تبويب جديد</a>
+                            <a href="${normalizedUrl}" download class="card-btn card-btn-download">⬇ تحميل الملف</a>
                         </div>
                     </div>`;
                 }).join('');
+
+                return `<div style="page-break-before:always;padding:30px 40px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;padding-bottom:16px;border-bottom:2px solid #f1f5f9;">
+                        <div style="display:flex;align-items:center;gap:14px;">
+                            <div style="width:44px;height:44px;border-radius:12px;background:#5d198e;color:#fbbf24;display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:900;font-size:15px;line-height:1;">
+                                <span>${pageIdx}</span>
+                                <span style="font-size:8px;font-weight:700;color:#c4b5fd;">أمر</span>
+                            </div>
+                            <div>
+                                <h2 style="margin:0;font-size:17px;font-weight:800;color:#1e293b;">ملحق التصميم ${pageIdx} — ${i.product_name || ''} ${i.size_name || ''}</h2>
+                                <p style="margin:4px 0 0;font-size:12px;color:#64748b;">
+                                    ${i.design_name ? `اسم التصميم: <b>${i.design_name}</b> &nbsp;|&nbsp; ` : ''}
+                                    الكمية: <b>${parseInt(i.mo_quantity || i.po_quantity || 0)}</b> &nbsp;|&nbsp; أمر #${mo.mo_number}
+                                </p>
+                            </div>
+                        </div>
+                        <span style="background:#5d198e;color:white;padding:8px 18px;border-radius:10px;font-size:13px;font-weight:900;">${mo.mo_number}</span>
+                    </div>
+                    <div class="design-cards-container">
+                        ${fileCards}
+                    </div>
+                </div>`;
+            }).join('');
 
             const win = window.open('', '_blank', 'width=860,height=700');
             win.document.write(`<!DOCTYPE html>
@@ -1194,7 +1266,9 @@
     box-shadow: 0 4px 12px rgba(0,0,0,0.2);
     display: inline-block;
   }
-  .mo-barcode { background: #fff; border-radius: 8px; padding: 6px 10px; margin-top: 8px; display: inline-block; }
+  .mo-qr { background: #fff; border-radius: 8px; padding: 6px; margin-top: 8px; display: inline-block; }
+  .mo-qr img { width: 80px; height: 80px; display: block; }
+  .mo-qr-label { font-size: 8px; color: #c4b5fd; margin-top: 4px; text-align: center; font-weight: 600; }
 
   /* ── Body ── */
   .body-wrap { padding: 0 36px 36px; }
@@ -1285,6 +1359,90 @@
     .info-grid { grid-template-columns: repeat(2, 1fr); }
     .notes-grid { grid-template-columns: 1fr; }
   }
+
+  /* ── Design File Cards ── */
+  .design-cards-container { display: flex; flex-direction: column; gap: 20px; }
+  .design-file-card {
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 14px;
+    overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  }
+  .card-header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 16px; background: #f8fafc; border-bottom: 1px solid #e2e8f0;
+  }
+  .card-file-num {
+    width: 28px; height: 28px; border-radius: 8px; background: #5d198e; color: #fbbf24;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 900; font-size: 13px; flex-shrink: 0;
+  }
+  .card-file-name { flex: 1; font-weight: 700; font-size: 13px; color: #1e293b; word-break: break-word; }
+  .card-file-badge {
+    padding: 4px 10px; border-radius: 20px; font-size: 10px; font-weight: 800; flex-shrink: 0;
+  }
+  .card-preview-area {
+    background: #f1f5f9; display: flex; align-items: center; justify-content: center;
+    min-height: 400px; max-height: 600px; overflow: auto; padding: 16px; position: relative;
+  }
+
+  /* ── PDF Preview ── */
+  .pdf-preview-wrap { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; min-height: 400px; position: relative; }
+  .pdf-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px; }
+  .pdf-spinner { width: 36px; height: 36px; border: 3px solid #e2e8f0; border-top-color: #5d198e; border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 12px; }
+  .pdf-loading p { font-size: 12px; color: #64748b; }
+  .pdf-canvas { max-width: 100%; height: auto; display: block; box-shadow: 0 2px 12px rgba(0,0,0,0.1); border-radius: 4px; transform-origin: center center; transition: transform 0.2s; }
+  .pdf-error { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px; }
+  .pdf-error-icon { font-size: 48px; margin-bottom: 12px; }
+  .pdf-error p { font-size: 13px; color: #64748b; margin-bottom: 12px; }
+  .pdf-error-link { color: #5d198e; font-size: 12px; font-weight: 700; text-decoration: none; }
+  .pdf-error-link:hover { text-decoration: underline; }
+
+  /* ── Image Preview ── */
+  .img-preview-wrap { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 400px; }
+  .design-img { max-width: 100%; max-height: 560px; object-fit: contain; border-radius: 8px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
+
+  /* ── File Placeholder (AI, EPS, PSD, etc.) ── */
+  .file-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px 20px; }
+  .file-placeholder-icon { width: 64px; height: 64px; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 16px; margin-bottom: 12px; }
+  .file-placeholder p { font-size: 12px; color: #64748b; }
+
+  /* ── Preview Toolbar ── */
+  .preview-toolbar { display: flex; align-items: center; gap: 6px; padding: 8px 14px; background: #1e293b; border-radius: 0 0 14px 14px; }
+  .tb-btn { display: inline-flex; align-items: center; justify-content: center; min-width: 32px; height: 32px; padding: 0 8px; background: rgba(255,255,255,0.1); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; text-decoration: none; transition: background 0.15s; }
+  .tb-btn:hover { background: rgba(255,255,255,0.2); }
+  .tb-zoom { color: #cbd5e1; font-size: 11px; font-weight: 600; min-width: 42px; text-align: center; }
+  .tb-sep { width: 1px; height: 20px; background: rgba(255,255,255,0.15); margin: 0 4px; }
+  .tb-download { background: rgba(251,191,36,0.2); color: #fbbf24; }
+  .tb-download:hover { background: rgba(251,191,36,0.3); }
+
+  /* ── Card File Info ── */
+  .card-file-info { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; padding: 14px 16px; background: #f8fafc; border-top: 1px solid #e2e8f0; }
+  .card-file-info .info-label { display: block; font-size: 9px; color: #94a3b8; margin-bottom: 3px; font-weight: 600; }
+  .card-file-info .info-value { display: block; font-size: 11px; font-weight: 700; color: #1e293b; word-break: break-word; }
+
+  /* ── Card Actions ── */
+  .card-actions { display: flex; gap: 10px; padding: 12px 16px; background: #f8fafc; border-top: 1px solid #e2e8f0; }
+  .card-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 8px; font-size: 12px; font-weight: 700; text-decoration: none; transition: opacity 0.15s; }
+  .card-btn:hover { opacity: 0.88; }
+  .card-btn-open { background: #f1f5f9; color: #1e293b; border: 1px solid #e2e8f0; }
+  .card-btn-download { background: #5d198e; color: #fff; }
+
+  /* ── Fullscreen overlay ── */
+  .fs-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.92); z-index: 10000; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; }
+  .fs-overlay canvas, .fs-overlay img { max-width: 90vw; max-height: 85vh; box-shadow: 0 4px 30px rgba(0,0,0,0.5); border-radius: 4px; }
+  .fs-close { position: fixed; top: 16px; left: 16px; width: 40px; height: 40px; border-radius: 10px; background: rgba(255,255,255,0.15); color: #fff; border: none; font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .fs-close:hover { background: rgba(255,255,255,0.25); }
+  .fs-controls { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; padding: 8px 16px; background: rgba(30,41,59,0.9); border-radius: 12px; }
+
+  @media (max-width: 700px) {
+    .card-file-info { grid-template-columns: repeat(2, 1fr); }
+    .card-actions { flex-direction: column; }
+  }
+  @media print {
+    .preview-toolbar, .card-actions, .card-btn { display: none !important; }
+    .card-preview-area { max-height: none; overflow: visible; }
+    .pdf-canvas { max-height: 80vh; }
+    .design-img { max-height: 80vh; }
+  }
 </style>
 </head>
 <body>
@@ -1301,7 +1459,7 @@
   <div class="mo-badge-wrap">
     <label>رقم الأمر</label>
     <div class="mo-badge">#${mo.mo_number}</div>
-    <div class="mo-barcode">${_fakeBarcodeSvg(mo.mo_number)}</div>
+    ${mo.qrCodeDataUri ? `<div class="mo-qr"><img src="${mo.qrCodeDataUri}" alt="QR Code"></div><div class="mo-qr-label">امسح للفتح</div>` : ''}
   </div>
 </div>
 
@@ -1379,50 +1537,182 @@ ${designPages}
   <div class="spinner"></div>
   <p>جارٍ تحميل التصاميم للطباعة...</p>
 </div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
-  (function() {
-    var overlay = document.getElementById('print-loading-overlay');
-    var btn = document.getElementById('print-trigger-btn');
-    var status = document.getElementById('print-status');
-    var imgs = Array.prototype.slice.call(document.images);
-    var iframes = Array.prototype.slice.call(document.querySelectorAll('iframe'));
-    var total = imgs.length + iframes.length;
-    var loaded = 0;
+  // ── PDF.js worker setup ──
+  if (window.pdfjsLib) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  }
 
-    function checkDone() {
-      loaded++;
-      if (loaded >= total) finishLoad();
+  // ── State: track all async loads ──
+  var _loadCount = 0;
+  var _loadTotal = 0;
+  var _overlay = document.getElementById('print-loading-overlay');
+  var _btn = document.getElementById('print-trigger-btn');
+  var _status = document.getElementById('print-status');
+
+  function _markLoaded() {
+    _loadCount++;
+    if (_loadCount >= _loadTotal) _finishLoad();
+  }
+
+  function _finishLoad() {
+    if (_overlay) { _overlay.style.opacity = '0'; setTimeout(function(){ _overlay.style.display = 'none'; }, 300); }
+    if (_btn) _btn.disabled = false;
+    if (_status) _status.textContent = 'جاهز للطباعة — اضغط الزر بالأعلى أو Ctrl+P';
+    window.focus();
+  }
+
+  // ── Count images ──
+  var _imgs = Array.prototype.slice.call(document.images);
+  // Exclude QR code and logo from load tracking (they're data URIs, already loaded)
+  var _designImgs = _imgs.filter(function(img) {
+    return img.classList.contains('design-img');
+  });
+
+  _loadTotal = _designImgs.length;
+
+  // ── Track design images ──
+  _designImgs.forEach(function(img) {
+    if (img.complete && img.naturalWidth > 0) { _markLoaded(); }
+    else {
+      img.addEventListener('load', _markLoaded);
+      img.addEventListener('error', _markLoaded);
+    }
+  });
+
+  // ── Render PDFs with PDF.js ──
+  var _pdfWraps = Array.prototype.slice.call(document.querySelectorAll('.pdf-preview-wrap'));
+  var _pdfRenderTasks = [];
+
+  _pdfWraps.forEach(function(wrap) {
+    _loadTotal++;
+    var url = wrap.getAttribute('data-url');
+    var canvas = wrap.querySelector('.pdf-canvas');
+    var loadingEl = wrap.querySelector('.pdf-loading');
+    var errorEl = wrap.querySelector('.pdf-error');
+
+    if (!window.pdfjsLib) {
+      if (loadingEl) loadingEl.style.display = 'none';
+      if (errorEl) errorEl.style.display = 'flex';
+      _markLoaded();
+      return;
     }
 
-    function finishLoad() {
-      if (overlay) { overlay.style.opacity = '0'; setTimeout(function(){ overlay.style.display = 'none'; }, 300); }
-      if (btn) btn.disabled = false;
-      if (status) status.textContent = 'جاهز للطباعة — اضغط الزر بالأعلى أو Ctrl+P';
-      window.focus();
-    }
+    var renderTask = pdfjsLib.getDocument(url).promise.then(function(pdf) {
+      return pdf.getPage(1).then(function(page) {
+        var containerWidth = wrap.parentElement.offsetWidth - 32;
+        var unscaledViewport = page.getViewport({ scale: 1 });
+        var baseScale = Math.min(containerWidth / unscaledViewport.width, 1.5);
+        var viewport = page.getViewport({ scale: baseScale });
 
-    if (total === 0) { finishLoad(); return; }
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        canvas.dataset.baseScale = baseScale;
+        canvas.dataset.currentScale = baseScale;
 
-    imgs.forEach(function(img) {
-      if (img.complete && img.naturalWidth > 0) { checkDone(); }
-      else {
-        img.addEventListener('load', checkDone);
-        img.addEventListener('error', checkDone);
-      }
+        var renderContext = { canvasContext: canvas.getContext('2d'), viewport: viewport };
+        return page.render(renderContext).promise.then(function() {
+          if (loadingEl) loadingEl.style.display = 'none';
+          canvas.style.display = 'block';
+          _markLoaded();
+        });
+      });
+    }).catch(function(err) {
+      console.error('[PDF.js] Render error:', err);
+      if (loadingEl) loadingEl.style.display = 'none';
+      if (errorEl) errorEl.style.display = 'flex';
+      _markLoaded();
     });
 
-    // For iframes (PDF embeds), use a shorter timeout since iframe load events are unreliable for PDFs
-    iframes.forEach(function(iframe) {
-      iframe.addEventListener('load', checkDone);
-    });
-    // If there are iframes, finish after 5s regardless (PDFs in iframes may not fire load reliably)
-    if (iframes.length > 0) {
-      setTimeout(function() { if (btn && btn.disabled) finishLoad(); }, 5000);
-    }
+    _pdfRenderTasks.push(renderTask);
+  });
 
-    // Safety timeout: 15s max
-    setTimeout(function() { if (btn && btn.disabled) finishLoad(); }, 15000);
-  })();
+  if (_loadTotal === 0) { _finishLoad(); }
+
+  // Safety timeout: 20s max
+  setTimeout(function() { if (_btn && _btn.disabled) _finishLoad(); }, 20000);
+
+  // ── PDF Zoom function ──
+  window.pdfZoom = function(cardId, delta) {
+    var wrap = document.getElementById(cardId);
+    if (!wrap) return;
+    var canvas = wrap.querySelector('.pdf-canvas');
+    if (!canvas || canvas.style.display === 'none') return;
+    var base = parseFloat(canvas.dataset.baseScale || '1');
+    var current = parseFloat(canvas.dataset.currentScale || base);
+    var next = Math.max(0.25, Math.min(4, current + delta * base));
+    canvas.dataset.currentScale = next;
+    canvas.style.transform = 'scale(' + (next / base) + ')';
+    var zoomEl = document.getElementById(cardId + '-zoom');
+    if (zoomEl) zoomEl.textContent = Math.round((next / base) * 100) + '%';
+  };
+
+  // ── PDF Fullscreen function ──
+  window.pdfFullscreen = function(cardId) {
+    var wrap = document.getElementById(cardId);
+    if (!wrap) return;
+    var canvas = wrap.querySelector('.pdf-canvas');
+    if (!canvas || canvas.style.display === 'none') return;
+    var base = parseFloat(canvas.dataset.baseScale || '1');
+    var current = parseFloat(canvas.dataset.currentScale || base);
+    var scaleRatio = current / base;
+
+    var overlay = document.createElement('div');
+    overlay.className = 'fs-overlay';
+    var clone = document.createElement('canvas');
+    clone.width = canvas.width;
+    clone.height = canvas.height;
+    clone.getContext('2d').drawImage(canvas, 0, 0);
+    clone.style.transform = 'scale(' + scaleRatio + ')';
+    overlay.appendChild(clone);
+
+    var closeBtn = document.createElement('button');
+    closeBtn.className = 'fs-close';
+    closeBtn.innerHTML = '×';
+    closeBtn.onclick = function() { document.body.removeChild(overlay); };
+    overlay.appendChild(closeBtn);
+
+    var controls = document.createElement('div');
+    controls.className = 'fs-controls';
+    var zoomOut = document.createElement('button');
+    zoomOut.className = 'tb-btn'; zoomOut.textContent = '−';
+    var zoomLabel = document.createElement('span');
+    zoomLabel.className = 'tb-zoom'; zoomLabel.textContent = Math.round(scaleRatio * 100) + '%';
+    var zoomIn = document.createElement('button');
+    zoomIn.className = 'tb-btn'; zoomIn.textContent = '+';
+    zoomOut.onclick = function() { scaleRatio = Math.max(0.25, scaleRatio - 0.25); clone.style.transform = 'scale(' + scaleRatio + ')'; zoomLabel.textContent = Math.round(scaleRatio * 100) + '%'; };
+    zoomIn.onclick = function() { scaleRatio = Math.min(4, scaleRatio + 0.25); clone.style.transform = 'scale(' + scaleRatio + ')'; zoomLabel.textContent = Math.round(scaleRatio * 100) + '%'; };
+    controls.appendChild(zoomOut);
+    controls.appendChild(zoomLabel);
+    controls.appendChild(zoomIn);
+    overlay.appendChild(controls);
+
+    document.body.appendChild(overlay);
+  };
+
+  // ── Image Fullscreen function ──
+  window.imgFullscreen = function(btn) {
+    var card = btn.closest('.design-file-card');
+    if (!card) return;
+    var img = card.querySelector('.design-img');
+    if (!img) return;
+
+    var overlay = document.createElement('div');
+    overlay.className = 'fs-overlay';
+    var clone = document.createElement('img');
+    clone.src = img.src;
+    overlay.appendChild(clone);
+
+    var closeBtn = document.createElement('button');
+    closeBtn.className = 'fs-close';
+    closeBtn.innerHTML = '×';
+    closeBtn.onclick = function() { document.body.removeChild(overlay); };
+    overlay.appendChild(closeBtn);
+
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) document.body.removeChild(overlay); });
+    document.body.appendChild(overlay);
+  };
 </script>
 </body>
 </html>`);
