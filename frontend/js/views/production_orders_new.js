@@ -1102,12 +1102,20 @@
                 </tr>`;
             }).join('');
 
-            // ── Group design files by item (each item carries its own design_files array) ──
+            // ── Group design files by item — include items that have thumbnail OR design files ──
             const itemsWithFiles = {};
             (mo.items || []).forEach(i => {
                 const itemFiles = Array.isArray(i.design_files) ? i.design_files : [];
-                if (itemFiles.length === 0) return;
-                itemsWithFiles[i.id] = { item: i, files: itemFiles };
+                const hasThumb = !!i.design_thumbnail;
+                if (itemFiles.length === 0 && !hasThumb) return;
+                // If no files but has thumbnail, create a synthetic file entry from the thumbnail
+                const files = itemFiles.length > 0 ? itemFiles : [{
+                    path: i.design_thumbnail,
+                    name: i.design_name || 'تصميم',
+                    size: null,
+                    uploaded_at: null
+                }];
+                itemsWithFiles[i.id] = { item: i, files };
             });
 
             // ── Build design full-page previews (original side-by-side layout) ──
@@ -1137,9 +1145,9 @@
 
                     let previewMarkup = '';
                     if (imgUrl) {
-                        previewMarkup = `<div class="pdf-preview-wrap" id="preview-wrap-${pageIdx}-${fIdx}">
-                            <img src="${imgUrl}" alt="${_escapeHtml(fileName)}" class="design-img" onload="var w=document.getElementById('preview-wrap-${pageIdx}-${fIdx}');if(w)w.querySelector('.preview-icon-fallback')?.remove();" onerror="this.style.display='none';var fb=this.parentElement.querySelector('.preview-icon-fallback');if(fb)fb.style.display='flex';">
-                            <div class="preview-icon-fallback" style="display:none;">${iconBox}</div>
+                        previewMarkup = `<div class="pdf-preview-wrap">
+                            <img src="${imgUrl}" alt="${_escapeHtml(fileName)}" class="design-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
+                            <div style="display:none;">${iconBox}</div>
                         </div>`;
                     } else {
                         previewMarkup = `<div class="pdf-preview-wrap">${iconBox}</div>`;
