@@ -6,6 +6,7 @@ const db = require('../db');
 const { success, error: errorResponse } = require('../utils/response');
 const authorize = require('../middleware/authorize');
 const { validateBody, manufacturerOrderCreate, manufacturerOrderStatusUpdate, manufacturerOrderUpdate, manufacturerOrderReceive, manufacturerOrderPricing, moFinalize } = require('../utils/validators');
+const { ensurePdfThumbnail } = require('../utils/pdf-thumbnail');
 
 const router = express.Router();
 
@@ -401,6 +402,24 @@ router.get('/:id', async (req, res) => {
         );
 
         manufacturerOrder.items = itemsResult.rows;
+
+        // ── Generate real image thumbnails for PDF design files (first page render) ──
+        // design_thumbnail / design_files entries often point to a PDF (the master file),
+        // which cannot be rendered inside an <img> tag. We generate a cached PNG preview
+        // of page 1 so the supplier sees an actual picture of the design.
+        await Promise.all(manufacturerOrder.items.map(async (item) => {
+            if (item.design_thumbnail) {
+                const generated = await ensurePdfThumbnail(item.design_thumbnail);
+                if (generated) item.design_thumbnail_image = generated;
+            }
+            const files = Array.isArray(item.design_files) ? item.design_files : [];
+            await Promise.all(files.map(async (f) => {
+                if (f.path) {
+                    const generated = await ensurePdfThumbnail(f.path);
+                    if (generated) f.preview_image = generated;
+                }
+            }));
+        }));
 
         // ── Generate QR Code data URI ──
         const baseUrl = process.env.BASE_URL || 'https://erp.gpacksa.com';
