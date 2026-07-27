@@ -1143,7 +1143,17 @@
 
                     let previewMarkup = '';
                     if (isPdf) {
-                        previewMarkup = `<div class="pdf-preview-wrap" id="${previewId}" data-url="${normalizedUrl}">
+                        previewMarkup = `<div class="preview-toolbar">
+                            <div class="preview-toolbar-left">
+                                <button type="button" class="pv-icon-btn" onclick="pdfZoom('${previewId}',-0.25)" title="تصغير">−</button>
+                                <button type="button" class="pv-icon-btn" onclick="pdfZoom('${previewId}',0.25)" title="تكبير">+</button>
+                                <button type="button" class="pv-icon-btn" onclick="pdfFullscreen('${previewId}')" title="ملء الشاشة">⛶</button>
+                            </div>
+                            <div class="preview-toolbar-right">
+                                <span class="pv-page-indicator">1 / 1</span>
+                            </div>
+                        </div>
+                        <div class="pdf-preview-wrap" id="${previewId}" data-url="${normalizedUrl}">
                             <div class="pdf-loading">
                                 <div class="pdf-spinner"></div>
                                 <p>جارٍ تحميل المعاينة...</p>
@@ -1156,25 +1166,22 @@
                             </div>
                         </div>`;
                     } else if (isImage) {
-                        const imgStyle = 'width:100%;height:auto;max-height:700px;object-fit:contain;display:block;margin:0 auto;border-radius:8px;box-shadow:0 2px 12px rgba(0,0,0,0.08);';
-                        previewMarkup = `<div style="border-radius:18px;border:2px solid #e2e8f0;background:#f8fafc;overflow:hidden;min-height:420px;padding:10px;display:flex;align-items:center;justify-content:center;">
-                            <img src="${normalizedUrl}" alt="${_escapeHtml(fileName)}" class="design-img" style="${imgStyle}" onerror="this.onerror=null;this.parentElement.innerHTML='<span style=\\'font-size:14px;color:#94a3b8\\'>تعذّر تحميل الصورة</span>';">
+                        previewMarkup = `<div class="pdf-preview-wrap">
+                            <img src="${normalizedUrl}" alt="${_escapeHtml(fileName)}" class="design-img" onerror="this.onerror=null;this.parentElement.innerHTML='<span style=\\'font-size:14px;color:#94a3b8\\'>تعذّر تحميل الصورة</span>';">
                         </div>`;
                     } else {
-                        previewMarkup = `<div style="border-radius:18px;border:2px solid #e2e8f0;background:#f8fafc;overflow:hidden;min-height:420px;padding:10px;display:flex;align-items:center;justify-content:center;flex-direction:column;">
-                            <div style="width:64px;height:64px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:16px;margin-bottom:12px;color:${fileMeta.color};background:${fileMeta.bg};">${fileMeta.label}</div>
-                            <p style="font-size:12px;color:#64748b;">${fileMeta.full}</p>
+                        previewMarkup = `<div class="pdf-preview-wrap">
+                            <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;">
+                                <div style="width:64px;height:64px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:16px;margin-bottom:12px;color:${fileMeta.color};background:${fileMeta.bg};">${fileMeta.label}</div>
+                                <p style="font-size:12px;color:#cbd5e1;">${fileMeta.full}</p>
+                            </div>
                         </div>`;
                     }
 
                     return `
                         <div style="margin-top:22px;">
                             <div style="display:flex;gap:20px;align-items:flex-start;">
-                                <div style="flex:1;min-width:0;">
-                                    <div style="display:flex;justify-content:space-between;align-items:center;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px 10px 0 0;padding:8px 14px;font-size:11px;color:#64748b;">
-                                        <span>معاينة ملف التصميم${files.length > 1 ? ` (${fIdx + 1} / ${files.length})` : ''}</span>
-                                        <span>${fileMeta.label}</span>
-                                    </div>
+                                <div class="preview-shell" style="flex:1;min-width:0;">
                                     ${previewMarkup}
                                 </div>
                                 <div style="width:230px;flex-shrink:0;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:16px;">
@@ -1345,20 +1352,42 @@
     .notes-grid { grid-template-columns: 1fr; }
   }
 
+  /* ── Preview Shell (Google-Drive style) ── */
+  .preview-shell { border-radius: 14px; overflow: hidden; border: 1px solid #1e293b; }
+  .preview-toolbar {
+    display: flex; align-items: center; justify-content: space-between;
+    background: #1e293b; padding: 8px 14px;
+  }
+  .preview-toolbar-left, .preview-toolbar-right { display: flex; align-items: center; gap: 6px; }
+  .pv-icon-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 30px; height: 30px; background: rgba(255,255,255,0.08); color: #fff;
+    border: none; border-radius: 7px; font-size: 15px; font-weight: 700; cursor: pointer;
+  }
+  .pv-icon-btn:hover { background: rgba(255,255,255,0.18); }
+  .pv-page-indicator { color: #cbd5e1; font-size: 11px; font-weight: 600; padding: 0 4px; }
+
   /* ── PDF Preview (PDF.js canvas) ── */
-  .pdf-preview-wrap { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; min-height: 420px; position: relative; border-radius: 18px; border: 2px solid #e2e8f0; background: #f8fafc; overflow: hidden; padding: 10px; }
+  .pdf-preview-wrap {
+    display: flex; align-items: center; justify-content: center;
+    width: 100%; min-height: 480px; max-height: 640px; overflow: auto;
+    position: relative; background: #0f172a; padding: 24px;
+  }
   .pdf-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px; }
-  .pdf-spinner { width: 36px; height: 36px; border: 3px solid #e2e8f0; border-top-color: #5d198e; border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 12px; }
-  .pdf-loading p { font-size: 12px; color: #64748b; }
-  .pdf-canvas { max-width: 100%; height: auto; display: block; box-shadow: 0 2px 12px rgba(0,0,0,0.1); border-radius: 4px; }
+  .pdf-spinner { width: 36px; height: 36px; border: 3px solid #334155; border-top-color: #fbbf24; border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 12px; }
+  .pdf-loading p { font-size: 12px; color: #94a3b8; }
+  .pdf-canvas { max-width: 100%; max-height: 100%; height: auto; width: auto; display: block; box-shadow: 0 4px 20px rgba(0,0,0,0.4); border-radius: 4px; transform-origin: center center; transition: transform 0.2s; }
   .pdf-error { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px; }
   .pdf-error-icon { font-size: 48px; margin-bottom: 12px; }
-  .pdf-error p { font-size: 13px; color: #64748b; margin-bottom: 12px; }
-  .pdf-error-link { color: #5d198e; font-size: 12px; font-weight: 700; text-decoration: none; }
+  .pdf-error p { font-size: 13px; color: #94a3b8; margin-bottom: 12px; }
+  .pdf-error-link { color: #fbbf24; font-size: 12px; font-weight: 700; text-decoration: none; }
   .pdf-error-link:hover { text-decoration: underline; }
+  .design-img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; margin: 0 auto; border-radius: 4px; }
 
   @media print {
-    .pdf-canvas { max-height: 80vh; }
+    .preview-toolbar { display: none !important; }
+    .pdf-preview-wrap { background: #fff; max-height: none; overflow: visible; }
+    .pdf-canvas { max-height: 80vh; box-shadow: none; }
     .design-img { max-height: 80vh; }
   }
 </style>
@@ -1517,13 +1546,17 @@ ${designPages}
 
     pdfjsLib.getDocument(url).promise.then(function(pdf) {
       return pdf.getPage(1).then(function(page) {
-        var containerWidth = wrap.parentElement.offsetWidth - 32;
+        // "contain" fit: scale to fit both available width and height, never crop
+        var availWidth = wrap.clientWidth - 48;
+        var availHeight = wrap.clientHeight - 48;
         var unscaledViewport = page.getViewport({ scale: 1 });
-        var baseScale = Math.min(containerWidth / unscaledViewport.width, 1.5);
+        var baseScale = Math.min(availWidth / unscaledViewport.width, availHeight / unscaledViewport.height, 2);
         var viewport = page.getViewport({ scale: baseScale });
 
         canvas.width = viewport.width;
         canvas.height = viewport.height;
+        canvas.dataset.baseScale = baseScale;
+        canvas.dataset.currentScale = baseScale;
 
         var renderContext = { canvasContext: canvas.getContext('2d'), viewport: viewport };
         return page.render(renderContext).promise.then(function() {
@@ -1544,6 +1577,44 @@ ${designPages}
 
   // Safety timeout: 20s max
   setTimeout(function() { if (_btn && _btn.disabled) _finishLoad(); }, 20000);
+
+  // ── Zoom control ──
+  window.pdfZoom = function(wrapId, delta) {
+    var wrap = document.getElementById(wrapId);
+    if (!wrap) return;
+    var canvas = wrap.querySelector('.pdf-canvas');
+    if (!canvas || canvas.style.display === 'none') return;
+    var base = parseFloat(canvas.dataset.baseScale || '1');
+    var current = parseFloat(canvas.dataset.currentScale || base);
+    var next = Math.max(base * 0.5, Math.min(base * 4, current + delta * base));
+    canvas.dataset.currentScale = next;
+    canvas.style.transform = 'scale(' + (next / base) + ')';
+  };
+
+  // ── Fullscreen preview ──
+  window.pdfFullscreen = function(wrapId) {
+    var wrap = document.getElementById(wrapId);
+    if (!wrap) return;
+    var canvas = wrap.querySelector('.pdf-canvas');
+    if (!canvas || canvas.style.display === 'none') return;
+
+    var overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.97);z-index:10000;display:flex;align-items:center;justify-content:center;padding:24px;';
+
+    var img = document.createElement('img');
+    img.src = canvas.toDataURL();
+    img.style.cssText = 'max-width:92vw;max-height:88vh;object-fit:contain;box-shadow:0 4px 30px rgba(0,0,0,0.5);border-radius:4px;';
+    overlay.appendChild(img);
+
+    var closeBtn = document.createElement('button');
+    closeBtn.innerHTML = '×';
+    closeBtn.style.cssText = 'position:fixed;top:16px;left:16px;width:40px;height:40px;border-radius:10px;background:rgba(255,255,255,0.15);color:#fff;border:none;font-size:22px;cursor:pointer;';
+    closeBtn.onclick = function() { document.body.removeChild(overlay); };
+    overlay.appendChild(closeBtn);
+
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) document.body.removeChild(overlay); });
+    document.body.appendChild(overlay);
+  };
 </script>
 </body>
 </html>`);
