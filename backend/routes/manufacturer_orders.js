@@ -368,12 +368,7 @@ router.get('/:id', async (req, res) => {
                 cd.design_name,
                 cd.design_number,
                 cdf.file_path AS design_thumbnail,
-                srcf.id AS design_file_id,
-                srcf.file_path AS design_file_path,
-                srcf.original_name AS design_file_name,
-                srcf.file_size AS design_file_size,
-                srcf.mime_type AS design_mime_type,
-                srcf.uploaded_at AS design_file_uploaded_at,
+                COALESCE(df.files, '[]'::json) AS design_files,
                 moi.created_at
              FROM manufacturer_order_items moi
              JOIN order_items oi ON oi.id = moi.order_item_id
@@ -381,8 +376,25 @@ router.get('/:id', async (req, res) => {
              LEFT JOIN products p ON p.id = pv.product_id
              LEFT JOIN units u ON u.id = pv.unit_id
              LEFT JOIN client_designs cd ON cd.id = moi.design_id
-             LEFT JOIN client_design_files cdf ON cdf.design_id = moi.design_id AND cdf.file_type = 'thumbnail'
-             LEFT JOIN client_design_files srcf ON srcf.design_id = moi.design_id AND srcf.file_type != 'thumbnail'
+             LEFT JOIN LATERAL (
+                SELECT file_path FROM client_design_files
+                WHERE design_id = moi.design_id AND file_type = 'thumbnail'
+                ORDER BY uploaded_at DESC LIMIT 1
+             ) cdf ON true
+             LEFT JOIN LATERAL (
+                SELECT json_agg(
+                    json_build_object(
+                        'id', cdfx.id,
+                        'path', cdfx.file_path,
+                        'name', cdfx.original_name,
+                        'size', cdfx.file_size,
+                        'mime_type', cdfx.mime_type,
+                        'uploaded_at', cdfx.uploaded_at
+                    ) ORDER BY cdfx.uploaded_at ASC
+                ) AS files
+                FROM client_design_files cdfx
+                WHERE cdfx.design_id = moi.design_id
+             ) df ON true
              WHERE moi.manufacturer_order_id = $1
              ORDER BY moi.id ASC`,
             [id]

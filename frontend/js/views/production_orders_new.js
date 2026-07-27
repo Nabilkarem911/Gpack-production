@@ -1060,15 +1060,8 @@
             const logoBase64 = await _loadLogoBase64();
             const statusCfg = PRINT_MO_STATUS_CFG[mo.status] || PRINT_MO_STATUS_CFG.pending;
 
-            // ── Deduplicate items by moi.id (multiple design files create duplicate rows) ──
-            const itemsById = new Map();
-            (mo.items || []).forEach(i => {
-                if (!itemsById.has(i.id)) itemsById.set(i.id, i);
-            });
-            const uniqueItems = Array.from(itemsById.values());
-
-            // ── Build table rows ──
-            const items = uniqueItems.map(i => {
+            // ── Build table rows (one row per manufacturer order item) ──
+            const items = (mo.items || []).map(i => {
                 const designStatus = i.design_status || 'new';
                 const isReprint    = designStatus === 'redesign' || designStatus === 'reprint';
                 const designLabel  = isReprint ? 'إعادة طباعة' : 'تصميم جديد';
@@ -1082,7 +1075,9 @@
                 const qty      = parseInt(i.mo_quantity || i.po_quantity || 0);
                 const unitName = i.unit_name || 'قطعة';
 
-                const fileExt  = _getFileExt(i.design_file_name || i.design_thumbnail || '');
+                const itemFiles = Array.isArray(i.design_files) ? i.design_files : [];
+                const firstFile = itemFiles[0];
+                const fileExt  = _getFileExt((firstFile && firstFile.name) || i.design_thumbnail || '');
                 const fileMeta = _fileTypeMeta(fileExt);
 
                 return `<tr>
@@ -1107,21 +1102,12 @@
                 </tr>`;
             }).join('');
 
-            // ── Group design files by item (moi.id) ──
+            // ── Group design files by item (each item carries its own design_files array) ──
             const itemsWithFiles = {};
             (mo.items || []).forEach(i => {
-                if (!i.design_file_path) return;
-                if (!itemsWithFiles[i.id]) {
-                    itemsWithFiles[i.id] = { item: i, files: [] };
-                }
-                itemsWithFiles[i.id].files.push({
-                    path:        i.design_file_path,
-                    name:        i.design_file_name,
-                    size:        i.design_file_size,
-                    mime_type:   i.design_mime_type,
-                    uploaded_at: i.design_file_uploaded_at,
-                    file_id:     i.design_file_id
-                });
+                const itemFiles = Array.isArray(i.design_files) ? i.design_files : [];
+                if (itemFiles.length === 0) return;
+                itemsWithFiles[i.id] = { item: i, files: itemFiles };
             });
 
             // ── Build design full-page previews (original side-by-side layout) ──
