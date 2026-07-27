@@ -227,7 +227,8 @@ router.get('/:id/profile', async (req, res) => {
         const designs = designsRes.rows.map(d => {
             let is_broken = false;
             if (d.file_path) {
-                const absPath = path.join(UPLOAD_BASE, d.file_path.replace(/^\//, ''));
+                const relPath = d.file_path.replace(/^\/uploads\//, '');
+                const absPath = path.join(UPLOAD_BASE, relPath);
                 is_broken = !fs.existsSync(absPath);
             } else {
                 is_broken = true; // No file_path at all = broken

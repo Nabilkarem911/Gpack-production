@@ -12,6 +12,7 @@ const db = require('../db');
 const { authenticate } = require('../middleware/authMiddleware');
 const authorize = require('../middleware/authorize');
 const { success, error } = require('../utils/response');
+const { ensurePdfThumbnail } = require('../utils/pdf-thumbnail');
 
 // ============================================================================
 // File Upload Configuration
@@ -525,6 +526,29 @@ router.post('/:design_id/replace', authenticate, authorize(['admin', 'manager', 
                     // 6. Clean temp directory
                     if (fs.existsSync(tempDir)) {
                         fs.rmSync(tempDir, { recursive: true, force: true });
+                    }
+
+                    // 7. Auto-generate thumbnail from PDF if no image thumbnail was uploaded
+                    const hasThumbnail = newFileRecords.some(f => f.file_type === 'thumbnail');
+                    if (!hasThumbnail) {
+                        const pdfFile = newFileRecords.find(f => f.file_type === 'pdf');
+                        if (pdfFile) {
+                            const generatedThumb = await ensurePdfThumbnail(pdfFile.file_path);
+                            if (generatedThumb) {
+                                // Check if the generated thumbnail already exists as a record
+                                const existingThumb = newFileRecords.find(f => f.file_path === generatedThumb);
+                                if (!existingThumb) {
+                                    const thumbResult = await txClient.query(
+                                        `INSERT INTO client_design_files
+                                         (design_id, file_type, file_path, original_name, file_size, mime_type, uploaded_by)
+                                         VALUES ($1, 'thumbnail', $2, $3, 0, 'image/png', $4)
+                                         RETURNING *`,
+                                        [design_id, generatedThumb, 'auto-thumbnail.png', req.user.id]
+                                    );
+                                    newFileRecords.push(thumbResult.rows[0]);
+                                }
+                            }
+                        }
                     }
 
                     return newFileRecords;
