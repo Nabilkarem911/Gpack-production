@@ -297,11 +297,11 @@ _mountRoute('/public',              publicLimiter, require('./routes/public-stat
 _mountRoute('/public/invoice',      publicLimiter, require('./routes/public-invoice'));   // No auth required
 _mountRoute('/public/design',       publicLimiter, require('./routes/public-design'));    // No auth required
 
-// Static files for uploads — serve with proper headers and no fallthrough to 404 JSON
+// Static files for uploads — serve with proper headers
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 app.use('/uploads', express.static(uploadsDir, {
-    fallthrough: false,
+    fallthrough: true,
     maxAge: '7d',
     setHeaders: (res, filePath) => {
         if (filePath.match(/\.(jpg|jpeg|png|gif|webp|pdf)$/i)) {
@@ -310,7 +310,7 @@ app.use('/uploads', express.static(uploadsDir, {
     }
 }));
 
-// Fallback for /uploads — return 404 with plain text instead of JSON for missing files
+// Fallback for /uploads — return 404 with plain text instead of 500 error for missing files
 app.use('/uploads', (req, res) => {
     res.status(404).send('File not found');
 });

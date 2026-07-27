@@ -1554,7 +1554,11 @@ ${designPages}
     }).catch(function(err) {
       console.error('[PDF.js] Render error:', err);
       if (loadingEl) loadingEl.style.display = 'none';
-      if (errorEl) errorEl.style.display = 'flex';
+      if (errorEl) {
+        errorEl.style.display = 'flex';
+        var errP = errorEl.querySelector('p');
+        if (errP) errP.textContent = 'الملف غير موجود على السيرفر — يرجى إعادة رفع التصميم';
+      }
       _markLoaded();
     });
   });
