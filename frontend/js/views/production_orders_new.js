@@ -1214,6 +1214,7 @@
 <html dir="rtl" lang="ar">
 <head>
 <meta charset="UTF-8">
+<base href="${window.location.origin}">
 <title>أمر تشغيل مورد #${mo.mo_number}</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
