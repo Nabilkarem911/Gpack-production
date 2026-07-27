@@ -1126,7 +1126,6 @@
                     const lastUpdated = _fmtDateTimeShort(f.uploaded_at);
                     const isPdf    = DESIGN_PDF_EXTENSIONS.has(fileExt);
                     const isImage  = DESIGN_IMAGE_EXTENSIONS.has(fileExt);
-                    const previewId = `pdf-preview-${pageIdx}-${fIdx + 1}`;
 
                     const thumbRawUrl = i.design_thumbnail || '';
                     const thumbNorm = thumbRawUrl ? _normalizeDesignUrl(thumbRawUrl) : '';
@@ -1134,33 +1133,16 @@
 
                     let previewMarkup = '';
                     if (isPdf) {
-                        const printPlaceholder = thumbAbsUrl
-                            ? `<img src="${thumbAbsUrl}" alt="${_escapeHtml(fileName)}" class="design-img" onerror="this.onerror=null;this.parentElement.innerHTML='<span style=\\'font-size:14px;color:#94a3b8\\'>تعذّر تحميل المعاينة</span>';">`
-                            : `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;"><div style="width:64px;height:64px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:16px;margin-bottom:12px;color:${fileMeta.color};background:${fileMeta.bg};">${fileMeta.label}</div><p style="font-size:12px;color:#94a3b8;">${fileMeta.full}</p></div>`;
-
-                        previewMarkup = `<div class="preview-toolbar no-print">
-                            <div class="preview-toolbar-left">
-                                <button type="button" class="pv-icon-btn" onclick="pdfZoom('${previewId}',-0.25)" title="تصغير">−</button>
-                                <button type="button" class="pv-icon-btn" onclick="pdfZoom('${previewId}',0.25)" title="تكبير">+</button>
-                                <button type="button" class="pv-icon-btn" onclick="pdfFullscreen('${previewId}')" title="ملء الشاشة">⛶</button>
-                            </div>
-                            <div class="preview-toolbar-right">
-                                <span class="pv-page-indicator">1 / 1</span>
-                            </div>
-                        </div>
-                        <div class="pdf-preview-wrap" id="${previewId}" data-url="${absoluteUrl}">
-                            <div class="pdf-loading no-print">
-                                <div class="pdf-spinner"></div>
-                                <p>جارٍ تحميل المعاينة...</p>
-                            </div>
-                            <canvas class="pdf-canvas no-print" style="display:none;"></canvas>
-                            <div class="pdf-print-placeholder">${printPlaceholder}</div>
-                            <div class="pdf-error no-print" style="display:none;">
-                                <div class="pdf-error-icon">📄</div>
-                                <p>تعذّر عرض المعاينة</p>
-                                <a href="${absoluteUrl}" target="_blank" class="pdf-error-link">فتح الملف مباشرة</a>
-                            </div>
-                        </div>`;
+                        previewMarkup = thumbAbsUrl
+                            ? `<div class="pdf-preview-wrap">
+                                <img src="${thumbAbsUrl}" alt="${_escapeHtml(fileName)}" class="design-img" onerror="this.onerror=null;this.parentElement.innerHTML='<span style=\\'font-size:14px;color:#94a3b8\\'>تعذّر تحميل المعاينة</span>';">
+                            </div>`
+                            : `<div class="pdf-preview-wrap">
+                                <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;">
+                                    <div style="width:64px;height:64px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:16px;margin-bottom:12px;color:${fileMeta.color};background:${fileMeta.bg};">${fileMeta.label}</div>
+                                    <p style="font-size:12px;color:#94a3b8;">${fileMeta.full}</p>
+                                </div>
+                            </div>`;
                     } else if (isImage) {
                         previewMarkup = `<div class="pdf-preview-wrap">
                             <img src="${absoluteUrl}" alt="${_escapeHtml(fileName)}" class="design-img" onerror="this.onerror=null;this.parentElement.innerHTML='<span style=\\'font-size:14px;color:#94a3b8\\'>تعذّر تحميل الصورة</span>';">
@@ -1351,46 +1333,17 @@
     .notes-grid { grid-template-columns: 1fr; }
   }
 
-  /* ── Preview Shell (Google-Drive style) ── */
-  .preview-shell { border-radius: 14px; overflow: hidden; border: 1px solid #1e293b; }
-  .preview-toolbar {
-    display: flex; align-items: center; justify-content: space-between;
-    background: #1e293b; padding: 8px 14px;
-  }
-  .preview-toolbar-left, .preview-toolbar-right { display: flex; align-items: center; gap: 6px; }
-  .pv-icon-btn {
-    display: inline-flex; align-items: center; justify-content: center;
-    width: 30px; height: 30px; background: rgba(255,255,255,0.08); color: #fff;
-    border: none; border-radius: 7px; font-size: 15px; font-weight: 700; cursor: pointer;
-  }
-  .pv-icon-btn:hover { background: rgba(255,255,255,0.18); }
-  .pv-page-indicator { color: #cbd5e1; font-size: 11px; font-weight: 600; padding: 0 4px; }
-
-  /* ── PDF Preview (PDF.js canvas) ── */
+  /* ── Preview Shell ── */
+  .preview-shell { border-radius: 14px; overflow: hidden; border: 1px solid #e2e8f0; }
   .pdf-preview-wrap {
     display: flex; align-items: center; justify-content: center;
-    width: 100%; min-height: 480px; max-height: 640px; overflow: auto;
-    position: relative; background: #0f172a; padding: 24px;
+    width: 100%; min-height: 300px; overflow: auto; position: relative; background: #f8fafc; padding: 16px;
   }
-  .pdf-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px; }
-  .pdf-spinner { width: 36px; height: 36px; border: 3px solid #334155; border-top-color: #fbbf24; border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 12px; }
-  .pdf-loading p { font-size: 12px; color: #94a3b8; }
-  .pdf-canvas { max-width: 100%; max-height: 100%; height: auto; width: auto; display: block; box-shadow: 0 4px 20px rgba(0,0,0,0.4); border-radius: 4px; transform-origin: center center; transition: transform 0.2s; }
-  .pdf-spinner { animation: none; }
-  .pdf-error { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px; }
-  .pdf-error-icon { font-size: 48px; margin-bottom: 12px; }
-  .pdf-error p { font-size: 13px; color: #94a3b8; margin-bottom: 12px; }
-  .pdf-error-link { color: #fbbf24; font-size: 12px; font-weight: 700; text-decoration: none; }
-  .pdf-error-link:hover { text-decoration: underline; }
   .design-img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; margin: 0 auto; border-radius: 4px; }
-  .pdf-print-placeholder { display: none; }
 
   @media print {
     .no-print { display: none !important; }
-    .preview-toolbar { display: none !important; }
     .pdf-preview-wrap { background: #fff; max-height: none; overflow: visible; }
-    .pdf-canvas { display: none !important; }
-    .pdf-print-placeholder { display: flex !important; align-items: center; justify-content: center; width: 100%; min-height: 300px; }
     .design-img { max-height: 80vh; }
   }
 </style>
@@ -1486,142 +1439,40 @@ ${designPages}
   <div class="spinner"></div>
   <p>جارٍ تحميل التصاميم للطباعة...</p>
 </div>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
-  // ── PDF.js worker setup ──
-  if (window.pdfjsLib) {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-  }
+  (function() {
+    var overlay = document.getElementById('print-loading-overlay');
+    var btn = document.getElementById('print-trigger-btn');
+    var status = document.getElementById('print-status');
+    var imgs = Array.prototype.slice.call(document.images);
+    var designImgs = imgs.filter(function(img) { return img.classList.contains('design-img'); });
+    var total = designImgs.length;
+    var loaded = 0;
 
-  // ── State: track all async loads ──
-  var _loadCount = 0;
-  var _loadTotal = 0;
-  var _overlay = document.getElementById('print-loading-overlay');
-  var _btn = document.getElementById('print-trigger-btn');
-  var _status = document.getElementById('print-status');
-
-  function _markLoaded() {
-    _loadCount++;
-    if (_loadCount >= _loadTotal) _finishLoad();
-  }
-
-  function _finishLoad() {
-    if (_overlay) { _overlay.style.opacity = '0'; setTimeout(function(){ _overlay.style.display = 'none'; }, 300); }
-    if (_btn) _btn.disabled = false;
-    if (_status) _status.textContent = 'جاهز للطباعة — اضغط الزر بالأعلى أو Ctrl+P';
-    window.focus();
-  }
-
-  // ── Count images ──
-  var _imgs = Array.prototype.slice.call(document.images);
-  // Exclude QR code and logo from load tracking (they're data URIs, already loaded)
-  var _designImgs = _imgs.filter(function(img) {
-    return img.classList.contains('design-img');
-  });
-
-  _loadTotal = _designImgs.length;
-
-  // ── Track design images ──
-  _designImgs.forEach(function(img) {
-    if (img.complete && img.naturalWidth > 0) { _markLoaded(); }
-    else {
-      img.addEventListener('load', _markLoaded);
-      img.addEventListener('error', _markLoaded);
-    }
-  });
-
-  // ── Render PDFs with PDF.js ──
-  var _pdfWraps = Array.prototype.slice.call(document.querySelectorAll('.pdf-preview-wrap'));
-
-  _pdfWraps.forEach(function(wrap) {
-    _loadTotal++;
-    var url = wrap.getAttribute('data-url');
-    var canvas = wrap.querySelector('.pdf-canvas');
-    var loadingEl = wrap.querySelector('.pdf-loading');
-    var errorEl = wrap.querySelector('.pdf-error');
-
-    if (!window.pdfjsLib) {
-      if (loadingEl) loadingEl.style.display = 'none';
-      if (errorEl) errorEl.style.display = 'flex';
-      _markLoaded();
-      return;
+    function checkDone() {
+      loaded++;
+      if (loaded >= total) finishLoad();
     }
 
-    pdfjsLib.getDocument(url).promise.then(function(pdf) {
-      return pdf.getPage(1).then(function(page) {
-        // "contain" fit: scale to fit both available width and height, never crop
-        var availWidth = wrap.clientWidth - 48;
-        var availHeight = wrap.clientHeight - 48;
-        var unscaledViewport = page.getViewport({ scale: 1 });
-        var baseScale = Math.min(availWidth / unscaledViewport.width, availHeight / unscaledViewport.height, 2);
-        var viewport = page.getViewport({ scale: baseScale });
+    function finishLoad() {
+      if (overlay) { overlay.style.opacity = '0'; setTimeout(function(){ overlay.style.display = 'none'; }, 300); }
+      if (btn) btn.disabled = false;
+      if (status) status.textContent = 'جاهز للطباعة — اضغط الزر بالأعلى أو Ctrl+P';
+      window.focus();
+    }
 
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        canvas.dataset.baseScale = baseScale;
-        canvas.dataset.currentScale = baseScale;
+    if (total === 0) { finishLoad(); return; }
 
-        var renderContext = { canvasContext: canvas.getContext('2d'), viewport: viewport };
-        return page.render(renderContext).promise.then(function() {
-          if (loadingEl) loadingEl.style.display = 'none';
-          canvas.style.display = 'block';
-          _markLoaded();
-        });
-      });
-    }).catch(function(err) {
-      console.error('[PDF.js] Render error:', err);
-      if (loadingEl) loadingEl.style.display = 'none';
-      if (errorEl) {
-        errorEl.style.display = 'flex';
-        var errP = errorEl.querySelector('p');
-        if (errP) errP.textContent = 'الملف غير موجود على السيرفر — يرجى إعادة رفع التصميم';
+    designImgs.forEach(function(img) {
+      if (img.complete && img.naturalWidth > 0) { checkDone(); }
+      else {
+        img.addEventListener('load', checkDone);
+        img.addEventListener('error', checkDone);
       }
-      _markLoaded();
     });
-  });
 
-  if (_loadTotal === 0) { _finishLoad(); }
-
-  // Safety timeout: 20s max
-  setTimeout(function() { if (_btn && _btn.disabled) _finishLoad(); }, 20000);
-
-  // ── Zoom control ──
-  window.pdfZoom = function(wrapId, delta) {
-    var wrap = document.getElementById(wrapId);
-    if (!wrap) return;
-    var canvas = wrap.querySelector('.pdf-canvas');
-    if (!canvas || canvas.style.display === 'none') return;
-    var base = parseFloat(canvas.dataset.baseScale || '1');
-    var current = parseFloat(canvas.dataset.currentScale || base);
-    var next = Math.max(base * 0.5, Math.min(base * 4, current + delta * base));
-    canvas.dataset.currentScale = next;
-    canvas.style.transform = 'scale(' + (next / base) + ')';
-  };
-
-  // ── Fullscreen preview ──
-  window.pdfFullscreen = function(wrapId) {
-    var wrap = document.getElementById(wrapId);
-    if (!wrap) return;
-    var canvas = wrap.querySelector('.pdf-canvas');
-    if (!canvas || canvas.style.display === 'none') return;
-
-    var overlay = document.createElement('div');
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.97);z-index:10000;display:flex;align-items:center;justify-content:center;padding:24px;';
-
-    var img = document.createElement('img');
-    img.src = canvas.toDataURL();
-    img.style.cssText = 'max-width:92vw;max-height:88vh;object-fit:contain;box-shadow:0 4px 30px rgba(0,0,0,0.5);border-radius:4px;';
-    overlay.appendChild(img);
-
-    var closeBtn = document.createElement('button');
-    closeBtn.innerHTML = '×';
-    closeBtn.style.cssText = 'position:fixed;top:16px;left:16px;width:40px;height:40px;border-radius:10px;background:rgba(255,255,255,0.15);color:#fff;border:none;font-size:22px;cursor:pointer;';
-    closeBtn.onclick = function() { document.body.removeChild(overlay); };
-    overlay.appendChild(closeBtn);
-
-    overlay.addEventListener('click', function(e) { if (e.target === overlay) document.body.removeChild(overlay); });
-    document.body.appendChild(overlay);
-  };
+    setTimeout(function() { if (btn && btn.disabled) finishLoad(); }, 15000);
+  })();
 </script>
 </body>
 </html>`);
