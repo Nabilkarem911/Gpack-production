@@ -1183,8 +1183,8 @@
                             </div>
 
                             <div style="text-align:center;margin-top:16px;display:flex;justify-content:center;gap:10px;">
-                                <a href="${absoluteUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:8px;padding:10px 22px;background:#f1f5f9;color:#1e293b;text-decoration:none;border-radius:10px;font-size:13px;font-weight:700;border:1px solid #e2e8f0;">📄 فتح في تبويب جديد</a>
-                                <a href="${absoluteUrl}" download style="display:inline-flex;align-items:center;gap:8px;padding:10px 22px;background:#5d198e;color:white;text-decoration:none;border-radius:10px;font-size:13px;font-weight:700;">⬇️ تحميل ملف التصميم</a>
+                                <a href="${absoluteUrl}" class="design-dl-btn" style="display:inline-flex;align-items:center;gap:8px;padding:10px 22px;background:#f1f5f9;color:#1e293b;text-decoration:none;border-radius:10px;font-size:13px;font-weight:700;border:1px solid #e2e8f0;">📄 فتح في تبويب جديد</a>
+                                <a href="${absoluteUrl}" class="design-dl-btn" style="display:inline-flex;align-items:center;gap:8px;padding:10px 22px;background:#5d198e;color:white;text-decoration:none;border-radius:10px;font-size:13px;font-weight:700;">⬇️ تحميل ملف التصميم</a>
                             </div>
                         </div>`;
                 }).join('');
@@ -1376,6 +1376,7 @@
     .pdf-preview-wrap { background: #fff; max-height: none; overflow: visible; }
     .pdf-canvas { max-height: 80vh; box-shadow: none; }
     .design-img { max-height: 80vh; }
+    .design-dl-btn { pointer-events: auto !important; }
   }
 </style>
 </head>
