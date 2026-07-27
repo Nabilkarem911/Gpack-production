@@ -1131,11 +1131,13 @@
                     const thumbNorm = thumbRawUrl ? _normalizeDesignUrl(thumbRawUrl) : '';
                     const thumbAbsUrl = thumbNorm ? (thumbNorm.startsWith('http') ? thumbNorm : window.location.origin + thumbNorm) : '';
 
+                    const iconFallbackHtml = `<div style=\\'display:flex;flex-direction:column;align-items:center;justify-content:center;\\'><div style=\\'width:64px;height:64px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:16px;margin-bottom:12px;color:${fileMeta.color};background:${fileMeta.bg};\\'>${fileMeta.label}</div><p style=\\'font-size:12px;color:#94a3b8;\\'>${fileMeta.full}</p></div>`;
+
                     let previewMarkup = '';
                     if (isPdf) {
                         previewMarkup = thumbAbsUrl
                             ? `<div class="pdf-preview-wrap">
-                                <img src="${thumbAbsUrl}" alt="${_escapeHtml(fileName)}" class="design-img" onerror="this.onerror=null;this.parentElement.innerHTML='<span style=\\'font-size:14px;color:#94a3b8\\'>تعذّر تحميل المعاينة</span>';">
+                                <img src="${thumbAbsUrl}" alt="${_escapeHtml(fileName)}" class="design-img" onerror="this.onerror=null;this.parentElement.innerHTML='${iconFallbackHtml}';">
                             </div>`
                             : `<div class="pdf-preview-wrap">
                                 <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;">
