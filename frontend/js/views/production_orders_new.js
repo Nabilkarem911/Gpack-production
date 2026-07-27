@@ -1130,27 +1130,8 @@
 
                     let previewMarkup = '';
                     if (isPdf) {
-                        previewMarkup = `<div class="preview-toolbar">
-                            <div class="preview-toolbar-left">
-                                <button type="button" class="pv-icon-btn" onclick="pdfZoom('${previewId}',-0.25)" title="تصغير">−</button>
-                                <button type="button" class="pv-icon-btn" onclick="pdfZoom('${previewId}',0.25)" title="تكبير">+</button>
-                                <button type="button" class="pv-icon-btn" onclick="pdfFullscreen('${previewId}')" title="ملء الشاشة">⛶</button>
-                            </div>
-                            <div class="preview-toolbar-right">
-                                <span class="pv-page-indicator">1 / 1</span>
-                            </div>
-                        </div>
-                        <div class="pdf-preview-wrap" id="${previewId}" data-url="${absoluteUrl}">
-                            <div class="pdf-loading">
-                                <div class="pdf-spinner"></div>
-                                <p>جارٍ تحميل المعاينة...</p>
-                            </div>
-                            <canvas class="pdf-canvas" style="display:none;"></canvas>
-                            <div class="pdf-error" style="display:none;">
-                                <div class="pdf-error-icon">📄</div>
-                                <p>تعذّر عرض المعاينة</p>
-                                <a href="${absoluteUrl}" target="_blank" class="pdf-error-link">فتح الملف مباشرة</a>
-                            </div>
+                        previewMarkup = `<div class="pdf-preview-wrap" style="background:#f8fafc;min-height:auto;padding:0;">
+                            <iframe src="${absoluteUrl}#toolbar=1" style="width:100%;height:600px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;" aria-label="${_escapeHtml(fileName)}"></iframe>
                         </div>`;
                     } else if (isImage) {
                         previewMarkup = `<div class="pdf-preview-wrap">
@@ -1480,142 +1461,47 @@ ${designPages}
   <div class="spinner"></div>
   <p>جارٍ تحميل التصاميم للطباعة...</p>
 </div>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
-  // ── PDF.js worker setup ──
-  if (window.pdfjsLib) {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-  }
+  (function() {
+    var overlay = document.getElementById('print-loading-overlay');
+    var btn = document.getElementById('print-trigger-btn');
+    var status = document.getElementById('print-status');
+    var imgs = Array.prototype.slice.call(document.images);
+    var iframes = Array.prototype.slice.call(document.querySelectorAll('iframe'));
+    var total = imgs.length + iframes.length;
+    var loaded = 0;
 
-  // ── State: track all async loads ──
-  var _loadCount = 0;
-  var _loadTotal = 0;
-  var _overlay = document.getElementById('print-loading-overlay');
-  var _btn = document.getElementById('print-trigger-btn');
-  var _status = document.getElementById('print-status');
-
-  function _markLoaded() {
-    _loadCount++;
-    if (_loadCount >= _loadTotal) _finishLoad();
-  }
-
-  function _finishLoad() {
-    if (_overlay) { _overlay.style.opacity = '0'; setTimeout(function(){ _overlay.style.display = 'none'; }, 300); }
-    if (_btn) _btn.disabled = false;
-    if (_status) _status.textContent = 'جاهز للطباعة — اضغط الزر بالأعلى أو Ctrl+P';
-    window.focus();
-  }
-
-  // ── Count images ──
-  var _imgs = Array.prototype.slice.call(document.images);
-  // Exclude QR code and logo from load tracking (they're data URIs, already loaded)
-  var _designImgs = _imgs.filter(function(img) {
-    return img.classList.contains('design-img');
-  });
-
-  _loadTotal = _designImgs.length;
-
-  // ── Track design images ──
-  _designImgs.forEach(function(img) {
-    if (img.complete && img.naturalWidth > 0) { _markLoaded(); }
-    else {
-      img.addEventListener('load', _markLoaded);
-      img.addEventListener('error', _markLoaded);
-    }
-  });
-
-  // ── Render PDFs with PDF.js ──
-  var _pdfWraps = Array.prototype.slice.call(document.querySelectorAll('.pdf-preview-wrap'));
-
-  _pdfWraps.forEach(function(wrap) {
-    _loadTotal++;
-    var url = wrap.getAttribute('data-url');
-    var canvas = wrap.querySelector('.pdf-canvas');
-    var loadingEl = wrap.querySelector('.pdf-loading');
-    var errorEl = wrap.querySelector('.pdf-error');
-
-    if (!window.pdfjsLib) {
-      if (loadingEl) loadingEl.style.display = 'none';
-      if (errorEl) errorEl.style.display = 'flex';
-      _markLoaded();
-      return;
+    function checkDone() {
+      loaded++;
+      if (loaded >= total) finishLoad();
     }
 
-    pdfjsLib.getDocument(url).promise.then(function(pdf) {
-      return pdf.getPage(1).then(function(page) {
-        // "contain" fit: scale to fit both available width and height, never crop
-        var availWidth = wrap.clientWidth - 48;
-        var availHeight = wrap.clientHeight - 48;
-        var unscaledViewport = page.getViewport({ scale: 1 });
-        var baseScale = Math.min(availWidth / unscaledViewport.width, availHeight / unscaledViewport.height, 2);
-        var viewport = page.getViewport({ scale: baseScale });
+    function finishLoad() {
+      if (overlay) { overlay.style.opacity = '0'; setTimeout(function(){ overlay.style.display = 'none'; }, 300); }
+      if (btn) btn.disabled = false;
+      if (status) status.textContent = 'جاهز للطباعة — اضغط الزر بالأعلى أو Ctrl+P';
+      window.focus();
+    }
 
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        canvas.dataset.baseScale = baseScale;
-        canvas.dataset.currentScale = baseScale;
+    if (total === 0) { finishLoad(); return; }
 
-        var renderContext = { canvasContext: canvas.getContext('2d'), viewport: viewport };
-        return page.render(renderContext).promise.then(function() {
-          if (loadingEl) loadingEl.style.display = 'none';
-          canvas.style.display = 'block';
-          _markLoaded();
-        });
-      });
-    }).catch(function(err) {
-      console.error('[PDF.js] Render error:', err);
-      if (loadingEl) loadingEl.style.display = 'none';
-      if (errorEl) {
-        errorEl.style.display = 'flex';
-        var errP = errorEl.querySelector('p');
-        if (errP) errP.textContent = 'الملف غير موجود على السيرفر — يرجى إعادة رفع التصميم';
+    imgs.forEach(function(img) {
+      if (img.complete && img.naturalWidth > 0) { checkDone(); }
+      else {
+        img.addEventListener('load', checkDone);
+        img.addEventListener('error', checkDone);
       }
-      _markLoaded();
     });
-  });
 
-  if (_loadTotal === 0) { _finishLoad(); }
+    iframes.forEach(function(iframe) {
+      iframe.addEventListener('load', checkDone);
+    });
+    if (iframes.length > 0) {
+      setTimeout(function() { if (btn && btn.disabled) finishLoad(); }, 5000);
+    }
 
-  // Safety timeout: 20s max
-  setTimeout(function() { if (_btn && _btn.disabled) _finishLoad(); }, 20000);
-
-  // ── Zoom control ──
-  window.pdfZoom = function(wrapId, delta) {
-    var wrap = document.getElementById(wrapId);
-    if (!wrap) return;
-    var canvas = wrap.querySelector('.pdf-canvas');
-    if (!canvas || canvas.style.display === 'none') return;
-    var base = parseFloat(canvas.dataset.baseScale || '1');
-    var current = parseFloat(canvas.dataset.currentScale || base);
-    var next = Math.max(base * 0.5, Math.min(base * 4, current + delta * base));
-    canvas.dataset.currentScale = next;
-    canvas.style.transform = 'scale(' + (next / base) + ')';
-  };
-
-  // ── Fullscreen preview ──
-  window.pdfFullscreen = function(wrapId) {
-    var wrap = document.getElementById(wrapId);
-    if (!wrap) return;
-    var canvas = wrap.querySelector('.pdf-canvas');
-    if (!canvas || canvas.style.display === 'none') return;
-
-    var overlay = document.createElement('div');
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.97);z-index:10000;display:flex;align-items:center;justify-content:center;padding:24px;';
-
-    var img = document.createElement('img');
-    img.src = canvas.toDataURL();
-    img.style.cssText = 'max-width:92vw;max-height:88vh;object-fit:contain;box-shadow:0 4px 30px rgba(0,0,0,0.5);border-radius:4px;';
-    overlay.appendChild(img);
-
-    var closeBtn = document.createElement('button');
-    closeBtn.innerHTML = '×';
-    closeBtn.style.cssText = 'position:fixed;top:16px;left:16px;width:40px;height:40px;border-radius:10px;background:rgba(255,255,255,0.15);color:#fff;border:none;font-size:22px;cursor:pointer;';
-    closeBtn.onclick = function() { document.body.removeChild(overlay); };
-    overlay.appendChild(closeBtn);
-
-    overlay.addEventListener('click', function(e) { if (e.target === overlay) document.body.removeChild(overlay); });
-    document.body.appendChild(overlay);
-  };
+    setTimeout(function() { if (btn && btn.disabled) finishLoad(); }, 15000);
+  })();
 </script>
 </body>
 </html>`);
