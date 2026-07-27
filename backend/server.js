@@ -296,6 +296,7 @@ _mountRoute('/notifications',       authenticate, require('./routes/notification
 _mountRoute('/public',              publicLimiter, require('./routes/public-statement')); // No auth required
 _mountRoute('/public/invoice',      publicLimiter, require('./routes/public-invoice'));   // No auth required
 _mountRoute('/public/design',       publicLimiter, require('./routes/public-design'));    // No auth required
+_mountRoute('/public',              publicLimiter, require('./routes/public_manufacturer_order')); // No auth required — supplier share
 
 // Static files for uploads — serve with proper headers
 const uploadsDir = path.join(__dirname, 'uploads');

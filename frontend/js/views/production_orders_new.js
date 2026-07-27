@@ -636,6 +636,10 @@
                                 class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold rounded-lg transition-all flex items-center gap-1">
                             <i class="fa-solid fa-print"></i> طباعة أمر المورد
                         </button>
+                        <button onclick="window.shareMO('${mo.id}')"
+                                class="px-3 py-1.5 bg-purple-100 hover:bg-purple-200 text-purple-700 text-xs font-bold rounded-lg transition-all flex items-center gap-1">
+                            <i class="fa-solid fa-share-nodes"></i> مشاركة مع المورد
+                        </button>
                         ${canEditMO
                             ? `<button onclick="window.poView.editMO('${mo.id}')"
                                        class="px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-700 text-xs font-bold rounded-lg transition-all flex items-center gap-1" title="تعديل الكمية والتصميم والمورد">
@@ -3308,6 +3312,88 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         openQuickSupplierModal:  _openQuickSupplierModal,
         closeQuickSupplierModal: () => _hideModal('po-quick-supplier-modal'),
         saveQuickSupplier:       _saveQuickSupplier,
+    };
+
+    // ── Share MO with supplier (global functions) ─────────────────────────────
+    let _currentMOShareData = null;
+
+    window.shareMO = async function(moId) {
+        const modal    = document.getElementById('share-mo-modal');
+        const linkEl   = document.getElementById('share-mo-link');
+        const statusEl = document.getElementById('share-mo-status');
+        if (!modal) return;
+
+        linkEl.value = 'جاري التحميل...';
+        if (statusEl) statusEl.innerHTML = '';
+        modal.style.display = 'flex';
+        setTimeout(() => { modal.style.opacity = '1'; }, 10);
+
+        try {
+            const res = await window.apiFetch(`/api/public/manufacturer-orders/${moId}/share`, {
+                method: 'POST',
+                body: { expires_days: 90 }
+            });
+            const data = res?.data;
+            if (!data) throw new Error('فشل إنشاء الرابط.');
+
+            _currentMOShareData = { moId, ...data };
+            linkEl.value = data.share_url;
+
+            if (statusEl && data.expires_at) {
+                const d = new Date(data.expires_at).toLocaleDateString('en-GB');
+                statusEl.innerHTML = `<span class="text-xs text-slate-400"><i class="fa-regular fa-clock ml-1"></i>صالح حتى: ${d}</span>`;
+            }
+        } catch (err) {
+            linkEl.value = 'حدث خطأ: ' + (err.message || 'غير معروف');
+        }
+    };
+
+    window.copyMOLink = function() {
+        const linkEl = document.getElementById('share-mo-link');
+        if (!linkEl || !linkEl.value || linkEl.value.startsWith('جاري') || linkEl.value.startsWith('حدث')) return;
+        navigator.clipboard.writeText(linkEl.value).then(() => {
+            const btn = document.getElementById('copy-mo-link-btn');
+            if (btn) {
+                btn.innerHTML = '<i class="fa-solid fa-check"></i> تم النسخ!';
+                btn.classList.add('bg-emerald-600');
+                btn.classList.remove('bg-purple-600');
+                setTimeout(() => {
+                    btn.innerHTML = '<i class="fa-solid fa-copy"></i> نسخ';
+                    btn.classList.remove('bg-emerald-600');
+                    btn.classList.add('bg-purple-600');
+                }, 2000);
+            }
+        });
+    };
+
+    window.shareMOWhatsApp = function() {
+        if (!_currentMOShareData || !_currentMOShareData.whatsapp_url) return;
+        // Copy link to clipboard as backup
+        const linkEl = document.getElementById('share-mo-link');
+        if (linkEl && linkEl.value) {
+            navigator.clipboard.writeText(linkEl.value).catch(() => {});
+        }
+        // Open WhatsApp with pre-filled message
+        window.open(_currentMOShareData.whatsapp_url, '_blank');
+    };
+
+    window.revokeMOLink = async function() {
+        if (!_currentMOShareData || !_currentMOShareData.moId) return;
+        if (!confirm('هل أنت متأكد من إلغاء رابط المشاركة؟ لن يتمكن المورد من الوصول للرابط بعد الآن.')) return;
+        try {
+            await window.apiFetch(`/api/public/manufacturer-orders/${_currentMOShareData.moId}/share/revoke`, {
+                method: 'POST'
+            });
+            _toast('تم إلغاء الرابط', 'success');
+            window.closeShareMO();
+        } catch (err) {
+            _toast('فشل إلغاء الرابط', 'error');
+        }
+    };
+
+    window.closeShareMO = function() {
+        const modal = document.getElementById('share-mo-modal');
+        if (modal) { modal.style.opacity = '0'; setTimeout(() => { modal.style.display = 'none'; }, 200); }
     };
 
     _init();

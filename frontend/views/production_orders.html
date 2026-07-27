@@ -1031,4 +1031,66 @@
     </div>
 </div>
 
-<script src="/js/views/production_orders_new.js?v=20260727g"></script>
+<!-- ============================================================
+     SHARE MO MODAL — Share manufacturer order with supplier
+============================================================ -->
+<div id="share-mo-modal"
+     style="display:none; opacity:0; z-index:9999; transition: opacity 0.2s;"
+     class="fixed inset-0 items-center justify-center p-4 bg-black/60"
+     onclick="if(event.target===this) window.closeShareMO()">
+    <div class="bg-white w-full max-w-md rounded-2xl shadow-2xl p-6">
+        <div class="flex items-center justify-between mb-5">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center">
+                    <i class="fa-solid fa-share-nodes text-purple-600"></i>
+                </div>
+                <div>
+                    <h3 class="text-base font-bold text-slate-800">مشاركة أمر التشغيل</h3>
+                    <p class="text-xs text-slate-400">أرسل الرابط للمورد ليرى التصاميم ويحمل الملفات</p>
+                </div>
+            </div>
+            <button onclick="window.closeShareMO()" class="text-slate-400 hover:text-slate-600 text-xl">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <div class="space-y-3">
+            <label class="block text-xs font-bold text-slate-600 mb-1">رابط المورد (صالح 90 يوم)</label>
+            <div class="flex gap-2">
+                <input id="share-mo-link" type="text" readonly
+                       class="flex-1 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 outline-none select-all"
+                       onclick="this.select()" />
+                <button id="copy-mo-link-btn" onclick="window.copyMOLink()"
+                        class="bg-purple-600 text-white px-4 py-2.5 rounded-xl text-xs font-bold hover:bg-purple-700 transition-colors whitespace-nowrap">
+                    <i class="fa-solid fa-copy"></i> نسخ
+                </button>
+            </div>
+            <div id="share-mo-status"></div>
+        </div>
+
+        <!-- WhatsApp Button -->
+        <button id="share-mo-whatsapp-btn" onclick="window.shareMOWhatsApp()"
+                class="w-full mt-4 py-3 bg-green-500 hover:bg-green-600 text-white rounded-xl text-sm font-bold transition-colors flex items-center justify-center gap-2">
+            <i class="fa-brands fa-whatsapp text-lg"></i> إرسال عبر واتساب
+        </button>
+
+        <!-- Revoke Button -->
+        <button id="share-mo-revoke-btn" onclick="window.revokeMOLink()"
+                class="w-full mt-2 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-xs font-bold transition-colors">
+            <i class="fa-solid fa-ban ml-1"></i> إلغاء الرابط
+        </button>
+
+        <div class="mt-4 p-3 bg-purple-50 border border-purple-100 rounded-xl">
+            <p class="text-xs text-purple-700">
+                <i class="fa-solid fa-circle-info ml-1"></i>
+                سيرى المورد تفاصيل الأمر والتصاميم ويمكنه تحميل الملفات مباشرة دون تسجيل دخول.
+            </p>
+        </div>
+
+        <button onclick="window.closeShareMO()" class="w-full mt-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-sm font-bold transition-colors">
+            إغلاق
+        </button>
+    </div>
+</div>
+
+<script src="/js/views/production_orders_new.js?v=20260727h"></script>
