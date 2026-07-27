@@ -1138,15 +1138,24 @@
                     const thumbRawUrl = i.design_thumbnail || '';
                     const thumbNorm = thumbRawUrl ? _normalizeDesignUrl(thumbRawUrl) : '';
                     const thumbAbsUrl = thumbNorm ? (thumbNorm.startsWith('http') ? thumbNorm : window.location.origin + thumbNorm) : '';
+                    const thumbIsImage = thumbAbsUrl && DESIGN_IMAGE_EXTENSIONS.has(_getFileExt(thumbAbsUrl));
 
                     const iconBox = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;"><div style="width:72px;height:72px;border-radius:16px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:20px;margin-bottom:14px;color:${fileMeta.color};background:${fileMeta.bg};">${fileMeta.label}</div><p style="font-size:13px;color:#94a3b8;">${fileMeta.full}</p></div>`;
 
-                    const imgUrl = isImage ? absoluteUrl : thumbAbsUrl;
-
                     let previewMarkup = '';
-                    if (imgUrl) {
+                    if (isPdf) {
+                        // Native browser PDF viewer — real vector rendering, selectable text, no rasterization on screen.
+                        previewMarkup = `<div class="pdf-preview-wrap" style="padding:0;min-height:600px;">
+                            <iframe src="${absoluteUrl}#toolbar=1" class="design-pdf-frame" style="width:100%;height:600px;border:0;background:#fff;" title="${_escapeHtml(fileName)}"></iframe>
+                        </div>`;
+                    } else if (isImage) {
                         previewMarkup = `<div class="pdf-preview-wrap">
-                            <img src="${imgUrl}" alt="${_escapeHtml(fileName)}" class="design-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
+                            <img src="${absoluteUrl}" alt="${_escapeHtml(fileName)}" class="design-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
+                            <div style="display:none;">${iconBox}</div>
+                        </div>`;
+                    } else if (thumbIsImage) {
+                        previewMarkup = `<div class="pdf-preview-wrap">
+                            <img src="${thumbAbsUrl}" alt="${_escapeHtml(fileName)}" class="design-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
                             <div style="display:none;">${iconBox}</div>
                         </div>`;
                     } else {
@@ -1342,6 +1351,7 @@
     .no-print { display: none !important; }
     .pdf-preview-wrap { background: #fff; max-height: none; overflow: visible; }
     .design-img { max-height: 80vh; }
+    .design-pdf-frame { display: none !important; }
   }
 </style>
 </head>
