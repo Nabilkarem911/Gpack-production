@@ -202,7 +202,7 @@ function renderMO({ order, items }) {
         const isReprint = i.design_status === 'redesign' || i.design_status === 'reprint';
         const statusLabel = isReprint ? 'إعادة طباعة' : 'تصميم جديد';
         const statusColor = isReprint ? 'text-amber-700 bg-amber-100' : 'text-emerald-700 bg-emerald-100';
-        const qty = parseInt(i.mo_quantity || i.po_quantity || 0);
+        const qty = parseInt(i.mo_quantity || 0);
         return `<tr class="border-b border-slate-50">
             <td class="py-3 px-4">
                 <p class="font-semibold text-slate-800 text-sm">${i.product_name || '—'}</p>

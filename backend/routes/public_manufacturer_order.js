@@ -34,7 +34,7 @@ function _buildWhatsAppMessage(mo, items, shareUrl) {
     lines.push('━━━━━━━━━━━━━━━');
     lines.push('📦 الأصناف:');
     for (const i of items) {
-        const qty = parseInt(i.mo_quantity || i.po_quantity || 0);
+        const qty = parseInt(i.mo_quantity || 0);
         lines.push(`• ${i.product_name || '—'} ${i.size_name || ''} — ${qty.toLocaleString('en-US')} ${i.unit_name || 'قطعة'}`);
     }
     lines.push('━━━━━━━━━━━━━━━');
@@ -252,7 +252,6 @@ router.get('/manufacturer-order/:token', async (req, res) => {
             `SELECT
                 moi.id,
                 moi.mo_quantity,
-                moi.po_quantity,
                 moi.design_status,
                 moi.design_id,
                 pv.size_name,
