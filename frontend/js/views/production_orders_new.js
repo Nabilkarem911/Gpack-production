@@ -1118,6 +1118,7 @@
 
                 const fileSections = files.map((f, fIdx) => {
                     const normalizedUrl = _normalizeDesignUrl(f.path);
+                    const absoluteUrl = normalizedUrl.startsWith('http') ? normalizedUrl : window.location.origin + normalizedUrl;
                     const fileExt   = _getFileExt(f.name || f.path || '');
                     const fileMeta  = _fileTypeMeta(fileExt);
                     const fileName  = f.name || i.design_name || `تصميم-${pageIdx}-${fIdx + 1}`;
@@ -1139,7 +1140,7 @@
                                 <span class="pv-page-indicator">1 / 1</span>
                             </div>
                         </div>
-                        <div class="pdf-preview-wrap" id="${previewId}" data-url="${normalizedUrl}">
+                        <div class="pdf-preview-wrap" id="${previewId}" data-url="${absoluteUrl}">
                             <div class="pdf-loading">
                                 <div class="pdf-spinner"></div>
                                 <p>جارٍ تحميل المعاينة...</p>
@@ -1148,12 +1149,12 @@
                             <div class="pdf-error" style="display:none;">
                                 <div class="pdf-error-icon">📄</div>
                                 <p>تعذّر عرض المعاينة</p>
-                                <a href="${normalizedUrl}" target="_blank" class="pdf-error-link">فتح الملف مباشرة</a>
+                                <a href="${absoluteUrl}" target="_blank" class="pdf-error-link">فتح الملف مباشرة</a>
                             </div>
                         </div>`;
                     } else if (isImage) {
                         previewMarkup = `<div class="pdf-preview-wrap">
-                            <img src="${normalizedUrl}" alt="${_escapeHtml(fileName)}" class="design-img" onerror="this.onerror=null;this.parentElement.innerHTML='<span style=\\'font-size:14px;color:#94a3b8\\'>تعذّر تحميل الصورة</span>';">
+                            <img src="${absoluteUrl}" alt="${_escapeHtml(fileName)}" class="design-img" onerror="this.onerror=null;this.parentElement.innerHTML='<span style=\\'font-size:14px;color:#94a3b8\\'>تعذّر تحميل الصورة</span>';">
                         </div>`;
                     } else {
                         previewMarkup = `<div class="pdf-preview-wrap">
@@ -1182,8 +1183,8 @@
                             </div>
 
                             <div style="text-align:center;margin-top:16px;display:flex;justify-content:center;gap:10px;">
-                                <a href="${normalizedUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:8px;padding:10px 22px;background:#f1f5f9;color:#1e293b;text-decoration:none;border-radius:10px;font-size:13px;font-weight:700;border:1px solid #e2e8f0;">📄 فتح في تبويب جديد</a>
-                                <a href="${normalizedUrl}" download style="display:inline-flex;align-items:center;gap:8px;padding:10px 22px;background:#5d198e;color:white;text-decoration:none;border-radius:10px;font-size:13px;font-weight:700;">⬇️ تحميل ملف التصميم</a>
+                                <a href="${absoluteUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:8px;padding:10px 22px;background:#f1f5f9;color:#1e293b;text-decoration:none;border-radius:10px;font-size:13px;font-weight:700;border:1px solid #e2e8f0;">📄 فتح في تبويب جديد</a>
+                                <a href="${absoluteUrl}" download style="display:inline-flex;align-items:center;gap:8px;padding:10px 22px;background:#5d198e;color:white;text-decoration:none;border-radius:10px;font-size:13px;font-weight:700;">⬇️ تحميل ملف التصميم</a>
                             </div>
                         </div>`;
                 }).join('');
@@ -1214,7 +1215,6 @@
 <html dir="rtl" lang="ar">
 <head>
 <meta charset="UTF-8">
-<base href="${window.location.origin}">
 <title>أمر تشغيل مورد #${mo.mo_number}</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
