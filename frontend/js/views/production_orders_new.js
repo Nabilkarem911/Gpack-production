@@ -1225,7 +1225,10 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: 'Segoe UI', Tahoma, Arial, sans-serif; color: #1e293b; direction: rtl; background: #fff; }
   @page { margin: 12mm 15mm; }
-  @media print { .no-print { display: none !important; } body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
+  @media print {
+    .no-print { display: none !important; }
+    .page-header, .mo-badge, .status-pill, .info-box, .print-btn { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  }
 
   /* ── Header Banner ── */
   .page-header {
@@ -1369,6 +1372,7 @@
   .pdf-spinner { width: 36px; height: 36px; border: 3px solid #334155; border-top-color: #fbbf24; border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 12px; }
   .pdf-loading p { font-size: 12px; color: #94a3b8; }
   .pdf-canvas { max-width: 100%; max-height: 100%; height: auto; width: auto; display: block; box-shadow: 0 4px 20px rgba(0,0,0,0.4); border-radius: 4px; transform-origin: center center; transition: transform 0.2s; }
+  .pdf-spinner { animation: none; }
   .pdf-error { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px; }
   .pdf-error-icon { font-size: 48px; margin-bottom: 12px; }
   .pdf-error p { font-size: 13px; color: #94a3b8; margin-bottom: 12px; }
@@ -1379,7 +1383,7 @@
   @media print {
     .preview-toolbar { display: none !important; }
     .pdf-preview-wrap { background: #fff; max-height: none; overflow: visible; }
-    .pdf-canvas { max-height: 80vh; box-shadow: none; }
+    .pdf-canvas { max-height: 80vh; box-shadow: none; transform: none !important; transition: none !important; }
     .design-img { max-height: 80vh; }
     .design-dl-btn { pointer-events: auto !important; }
   }
