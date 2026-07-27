@@ -1124,13 +1124,13 @@
                 });
             });
 
-            // ── Build design full-page previews (one page per item, one card per file) ──
+            // ── Build design full-page previews (original side-by-side layout) ──
             let designPageIdx = 0;
             const designPages = Object.values(itemsWithFiles).map(({ item: i, files }) => {
                 designPageIdx++;
                 const pageIdx = designPageIdx;
 
-                const fileCards = files.map((f, fIdx) => {
+                const fileSections = files.map((f, fIdx) => {
                     const normalizedUrl = _normalizeDesignUrl(f.path);
                     const fileExt   = _getFileExt(f.name || f.path || '');
                     const fileMeta  = _fileTypeMeta(fileExt);
@@ -1139,11 +1139,11 @@
                     const lastUpdated = _fmtDateTimeShort(f.uploaded_at);
                     const isPdf    = DESIGN_PDF_EXTENSIONS.has(fileExt);
                     const isImage  = DESIGN_IMAGE_EXTENSIONS.has(fileExt);
-                    const cardId   = `design-card-${pageIdx}-${fIdx + 1}`;
+                    const previewId = `pdf-preview-${pageIdx}-${fIdx + 1}`;
 
-                    let previewHtml = '';
+                    let previewMarkup = '';
                     if (isPdf) {
-                        previewHtml = `<div class="pdf-preview-wrap" id="${cardId}" data-url="${normalizedUrl}">
+                        previewMarkup = `<div class="pdf-preview-wrap" id="${previewId}" data-url="${normalizedUrl}">
                             <div class="pdf-loading">
                                 <div class="pdf-spinner"></div>
                                 <p>جارٍ تحميل المعاينة...</p>
@@ -1156,53 +1156,43 @@
                             </div>
                         </div>`;
                     } else if (isImage) {
-                        previewHtml = `<div class="img-preview-wrap">
-                            <img src="${normalizedUrl}" alt="${_escapeHtml(fileName)}" class="design-img" onerror="this.onerror=null;this.parentElement.innerHTML='<div class=\\'pdf-error\\'><div class=\\'pdf-error-icon\\'>🖼️</div><p>تعذّر تحميل الصورة</p></div>';">
+                        const imgStyle = 'width:100%;height:auto;max-height:700px;object-fit:contain;display:block;margin:0 auto;border-radius:8px;box-shadow:0 2px 12px rgba(0,0,0,0.08);';
+                        previewMarkup = `<div style="border-radius:18px;border:2px solid #e2e8f0;background:#f8fafc;overflow:hidden;min-height:420px;padding:10px;display:flex;align-items:center;justify-content:center;">
+                            <img src="${normalizedUrl}" alt="${_escapeHtml(fileName)}" class="design-img" style="${imgStyle}" onerror="this.onerror=null;this.parentElement.innerHTML='<span style=\\'font-size:14px;color:#94a3b8\\'>تعذّر تحميل الصورة</span>';">
                         </div>`;
                     } else {
-                        previewHtml = `<div class="file-placeholder">
-                            <div class="file-placeholder-icon" style="color:${fileMeta.color};background:${fileMeta.bg};">${fileMeta.label}</div>
-                            <p>${fileMeta.full}</p>
+                        previewMarkup = `<div style="border-radius:18px;border:2px solid #e2e8f0;background:#f8fafc;overflow:hidden;min-height:420px;padding:10px;display:flex;align-items:center;justify-content:center;flex-direction:column;">
+                            <div style="width:64px;height:64px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:16px;margin-bottom:12px;color:${fileMeta.color};background:${fileMeta.bg};">${fileMeta.label}</div>
+                            <p style="font-size:12px;color:#64748b;">${fileMeta.full}</p>
                         </div>`;
                     }
 
-                    const toolbarHtml = isPdf ? `
-                        <div class="preview-toolbar no-print">
-                            <button class="tb-btn" onclick="pdfZoom('${cardId}',-0.25)" title="تصغير">−</button>
-                            <span class="tb-zoom" id="${cardId}-zoom">100%</span>
-                            <button class="tb-btn" onclick="pdfZoom('${cardId}',0.25)" title="تكبير">+</button>
-                            <span class="tb-sep"></span>
-                            <button class="tb-btn" onclick="pdfFullscreen('${cardId}')" title="ملء الشاشة">⛶</button>
-                            <a href="${normalizedUrl}" target="_blank" class="tb-btn" title="فتح في تبويب">↗</a>
-                            <a href="${normalizedUrl}" download class="tb-btn tb-download" title="تحميل">⬇</a>
-                        </div>` : `
-                        <div class="preview-toolbar no-print">
-                            <button class="tb-btn" onclick="imgFullscreen(this)" title="ملء الشاشة">⛶</button>
-                            <a href="${normalizedUrl}" target="_blank" class="tb-btn" title="فتح في تبويب">↗</a>
-                            <a href="${normalizedUrl}" download class="tb-btn tb-download" title="تحميل">⬇</a>
-                        </div>`;
+                    return `
+                        <div style="margin-top:22px;">
+                            <div style="display:flex;gap:20px;align-items:flex-start;">
+                                <div style="flex:1;min-width:0;">
+                                    <div style="display:flex;justify-content:space-between;align-items:center;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px 10px 0 0;padding:8px 14px;font-size:11px;color:#64748b;">
+                                        <span>معاينة ملف التصميم${files.length > 1 ? ` (${fIdx + 1} / ${files.length})` : ''}</span>
+                                        <span>${fileMeta.label}</span>
+                                    </div>
+                                    ${previewMarkup}
+                                </div>
+                                <div style="width:230px;flex-shrink:0;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:16px;">
+                                    <p style="margin:0 0 12px;font-size:12px;font-weight:800;color:#5d198e;">معلومات الملف</p>
+                                    <div style="display:flex;flex-direction:column;gap:10px;font-size:11px;">
+                                        <div><span style="color:#94a3b8;display:block;margin-bottom:2px;">اسم الملف</span><span style="font-weight:700;color:#1e293b;word-break:break-word;">${_escapeHtml(fileName)}</span></div>
+                                        <div><span style="color:#94a3b8;display:block;margin-bottom:2px;">نوع الملف</span><span style="font-weight:700;color:${fileMeta.color};">${fileMeta.full}</span></div>
+                                        <div><span style="color:#94a3b8;display:block;margin-bottom:2px;">حجم الملف</span><span style="font-weight:700;color:#1e293b;">${fileSize}</span></div>
+                                        <div><span style="color:#94a3b8;display:block;margin-bottom:2px;">آخر تحديث</span><span style="font-weight:700;color:#1e293b;">${lastUpdated}</span></div>
+                                    </div>
+                                </div>
+                            </div>
 
-                    return `<div class="design-file-card">
-                        <div class="card-header">
-                            <span class="card-file-num">${fIdx + 1}</span>
-                            <span class="card-file-name">${_escapeHtml(fileName)}</span>
-                            <span class="card-file-badge" style="background:${fileMeta.bg};color:${fileMeta.color};border:1px solid ${fileMeta.color}33;">${fileMeta.label}</span>
-                        </div>
-                        <div class="card-preview-area">
-                            ${previewHtml}
-                        </div>
-                        ${toolbarHtml}
-                        <div class="card-file-info">
-                            <div><span class="info-label">اسم الملف</span><span class="info-value">${_escapeHtml(fileName)}</span></div>
-                            <div><span class="info-label">نوع الملف</span><span class="info-value" style="color:${fileMeta.color};">${fileMeta.full}</span></div>
-                            <div><span class="info-label">حجم الملف</span><span class="info-value">${fileSize}</span></div>
-                            <div><span class="info-label">آخر تحديث</span><span class="info-value">${lastUpdated}</span></div>
-                        </div>
-                        <div class="card-actions">
-                            <a href="${normalizedUrl}" target="_blank" class="card-btn card-btn-open">↗ فتح في تبويب جديد</a>
-                            <a href="${normalizedUrl}" download class="card-btn card-btn-download">⬇ تحميل الملف</a>
-                        </div>
-                    </div>`;
+                            <div style="text-align:center;margin-top:16px;display:flex;justify-content:center;gap:10px;">
+                                <a href="${normalizedUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:8px;padding:10px 22px;background:#f1f5f9;color:#1e293b;text-decoration:none;border-radius:10px;font-size:13px;font-weight:700;border:1px solid #e2e8f0;">📄 فتح في تبويب جديد</a>
+                                <a href="${normalizedUrl}" download style="display:inline-flex;align-items:center;gap:8px;padding:10px 22px;background:#5d198e;color:white;text-decoration:none;border-radius:10px;font-size:13px;font-weight:700;">⬇️ تحميل ملف التصميم</a>
+                            </div>
+                        </div>`;
                 }).join('');
 
                 return `<div style="page-break-before:always;padding:30px 40px;">
@@ -1222,9 +1212,7 @@
                         </div>
                         <span style="background:#5d198e;color:white;padding:8px 18px;border-radius:10px;font-size:13px;font-weight:900;">${mo.mo_number}</span>
                     </div>
-                    <div class="design-cards-container">
-                        ${fileCards}
-                    </div>
+                    ${fileSections}
                 </div>`;
             }).join('');
 
@@ -1266,9 +1254,6 @@
     box-shadow: 0 4px 12px rgba(0,0,0,0.2);
     display: inline-block;
   }
-  .mo-qr { background: #fff; border-radius: 8px; padding: 6px; margin-top: 8px; display: inline-block; }
-  .mo-qr img { width: 80px; height: 80px; display: block; }
-  .mo-qr-label { font-size: 8px; color: #c4b5fd; margin-top: 4px; text-align: center; font-weight: 600; }
 
   /* ── Body ── */
   .body-wrap { padding: 0 36px 36px; }
@@ -1360,86 +1345,19 @@
     .notes-grid { grid-template-columns: 1fr; }
   }
 
-  /* ── Design File Cards ── */
-  .design-cards-container { display: flex; flex-direction: column; gap: 20px; }
-  .design-file-card {
-    background: #fff; border: 1px solid #e2e8f0; border-radius: 14px;
-    overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-  }
-  .card-header {
-    display: flex; align-items: center; gap: 10px;
-    padding: 12px 16px; background: #f8fafc; border-bottom: 1px solid #e2e8f0;
-  }
-  .card-file-num {
-    width: 28px; height: 28px; border-radius: 8px; background: #5d198e; color: #fbbf24;
-    display: flex; align-items: center; justify-content: center;
-    font-weight: 900; font-size: 13px; flex-shrink: 0;
-  }
-  .card-file-name { flex: 1; font-weight: 700; font-size: 13px; color: #1e293b; word-break: break-word; }
-  .card-file-badge {
-    padding: 4px 10px; border-radius: 20px; font-size: 10px; font-weight: 800; flex-shrink: 0;
-  }
-  .card-preview-area {
-    background: #f1f5f9; display: flex; align-items: center; justify-content: center;
-    min-height: 400px; max-height: 600px; overflow: auto; padding: 16px; position: relative;
-  }
-
-  /* ── PDF Preview ── */
-  .pdf-preview-wrap { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; min-height: 400px; position: relative; }
+  /* ── PDF Preview (PDF.js canvas) ── */
+  .pdf-preview-wrap { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; min-height: 420px; position: relative; border-radius: 18px; border: 2px solid #e2e8f0; background: #f8fafc; overflow: hidden; padding: 10px; }
   .pdf-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px; }
   .pdf-spinner { width: 36px; height: 36px; border: 3px solid #e2e8f0; border-top-color: #5d198e; border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 12px; }
   .pdf-loading p { font-size: 12px; color: #64748b; }
-  .pdf-canvas { max-width: 100%; height: auto; display: block; box-shadow: 0 2px 12px rgba(0,0,0,0.1); border-radius: 4px; transform-origin: center center; transition: transform 0.2s; }
+  .pdf-canvas { max-width: 100%; height: auto; display: block; box-shadow: 0 2px 12px rgba(0,0,0,0.1); border-radius: 4px; }
   .pdf-error { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px; }
   .pdf-error-icon { font-size: 48px; margin-bottom: 12px; }
   .pdf-error p { font-size: 13px; color: #64748b; margin-bottom: 12px; }
   .pdf-error-link { color: #5d198e; font-size: 12px; font-weight: 700; text-decoration: none; }
   .pdf-error-link:hover { text-decoration: underline; }
 
-  /* ── Image Preview ── */
-  .img-preview-wrap { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 400px; }
-  .design-img { max-width: 100%; max-height: 560px; object-fit: contain; border-radius: 8px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
-
-  /* ── File Placeholder (AI, EPS, PSD, etc.) ── */
-  .file-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px 20px; }
-  .file-placeholder-icon { width: 64px; height: 64px; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 16px; margin-bottom: 12px; }
-  .file-placeholder p { font-size: 12px; color: #64748b; }
-
-  /* ── Preview Toolbar ── */
-  .preview-toolbar { display: flex; align-items: center; gap: 6px; padding: 8px 14px; background: #1e293b; border-radius: 0 0 14px 14px; }
-  .tb-btn { display: inline-flex; align-items: center; justify-content: center; min-width: 32px; height: 32px; padding: 0 8px; background: rgba(255,255,255,0.1); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; text-decoration: none; transition: background 0.15s; }
-  .tb-btn:hover { background: rgba(255,255,255,0.2); }
-  .tb-zoom { color: #cbd5e1; font-size: 11px; font-weight: 600; min-width: 42px; text-align: center; }
-  .tb-sep { width: 1px; height: 20px; background: rgba(255,255,255,0.15); margin: 0 4px; }
-  .tb-download { background: rgba(251,191,36,0.2); color: #fbbf24; }
-  .tb-download:hover { background: rgba(251,191,36,0.3); }
-
-  /* ── Card File Info ── */
-  .card-file-info { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; padding: 14px 16px; background: #f8fafc; border-top: 1px solid #e2e8f0; }
-  .card-file-info .info-label { display: block; font-size: 9px; color: #94a3b8; margin-bottom: 3px; font-weight: 600; }
-  .card-file-info .info-value { display: block; font-size: 11px; font-weight: 700; color: #1e293b; word-break: break-word; }
-
-  /* ── Card Actions ── */
-  .card-actions { display: flex; gap: 10px; padding: 12px 16px; background: #f8fafc; border-top: 1px solid #e2e8f0; }
-  .card-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 8px; font-size: 12px; font-weight: 700; text-decoration: none; transition: opacity 0.15s; }
-  .card-btn:hover { opacity: 0.88; }
-  .card-btn-open { background: #f1f5f9; color: #1e293b; border: 1px solid #e2e8f0; }
-  .card-btn-download { background: #5d198e; color: #fff; }
-
-  /* ── Fullscreen overlay ── */
-  .fs-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.92); z-index: 10000; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; }
-  .fs-overlay canvas, .fs-overlay img { max-width: 90vw; max-height: 85vh; box-shadow: 0 4px 30px rgba(0,0,0,0.5); border-radius: 4px; }
-  .fs-close { position: fixed; top: 16px; left: 16px; width: 40px; height: 40px; border-radius: 10px; background: rgba(255,255,255,0.15); color: #fff; border: none; font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
-  .fs-close:hover { background: rgba(255,255,255,0.25); }
-  .fs-controls { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; padding: 8px 16px; background: rgba(30,41,59,0.9); border-radius: 12px; }
-
-  @media (max-width: 700px) {
-    .card-file-info { grid-template-columns: repeat(2, 1fr); }
-    .card-actions { flex-direction: column; }
-  }
   @media print {
-    .preview-toolbar, .card-actions, .card-btn { display: none !important; }
-    .card-preview-area { max-height: none; overflow: visible; }
     .pdf-canvas { max-height: 80vh; }
     .design-img { max-height: 80vh; }
   }
@@ -1459,7 +1377,6 @@
   <div class="mo-badge-wrap">
     <label>رقم الأمر</label>
     <div class="mo-badge">#${mo.mo_number}</div>
-    ${mo.qrCodeDataUri ? `<div class="mo-qr"><img src="${mo.qrCodeDataUri}" alt="QR Code"></div><div class="mo-qr-label">امسح للفتح</div>` : ''}
   </div>
 </div>
 
@@ -1583,7 +1500,6 @@ ${designPages}
 
   // ── Render PDFs with PDF.js ──
   var _pdfWraps = Array.prototype.slice.call(document.querySelectorAll('.pdf-preview-wrap'));
-  var _pdfRenderTasks = [];
 
   _pdfWraps.forEach(function(wrap) {
     _loadTotal++;
@@ -1599,7 +1515,7 @@ ${designPages}
       return;
     }
 
-    var renderTask = pdfjsLib.getDocument(url).promise.then(function(pdf) {
+    pdfjsLib.getDocument(url).promise.then(function(pdf) {
       return pdf.getPage(1).then(function(page) {
         var containerWidth = wrap.parentElement.offsetWidth - 32;
         var unscaledViewport = page.getViewport({ scale: 1 });
@@ -1608,8 +1524,6 @@ ${designPages}
 
         canvas.width = viewport.width;
         canvas.height = viewport.height;
-        canvas.dataset.baseScale = baseScale;
-        canvas.dataset.currentScale = baseScale;
 
         var renderContext = { canvasContext: canvas.getContext('2d'), viewport: viewport };
         return page.render(renderContext).promise.then(function() {
@@ -1624,95 +1538,12 @@ ${designPages}
       if (errorEl) errorEl.style.display = 'flex';
       _markLoaded();
     });
-
-    _pdfRenderTasks.push(renderTask);
   });
 
   if (_loadTotal === 0) { _finishLoad(); }
 
   // Safety timeout: 20s max
   setTimeout(function() { if (_btn && _btn.disabled) _finishLoad(); }, 20000);
-
-  // ── PDF Zoom function ──
-  window.pdfZoom = function(cardId, delta) {
-    var wrap = document.getElementById(cardId);
-    if (!wrap) return;
-    var canvas = wrap.querySelector('.pdf-canvas');
-    if (!canvas || canvas.style.display === 'none') return;
-    var base = parseFloat(canvas.dataset.baseScale || '1');
-    var current = parseFloat(canvas.dataset.currentScale || base);
-    var next = Math.max(0.25, Math.min(4, current + delta * base));
-    canvas.dataset.currentScale = next;
-    canvas.style.transform = 'scale(' + (next / base) + ')';
-    var zoomEl = document.getElementById(cardId + '-zoom');
-    if (zoomEl) zoomEl.textContent = Math.round((next / base) * 100) + '%';
-  };
-
-  // ── PDF Fullscreen function ──
-  window.pdfFullscreen = function(cardId) {
-    var wrap = document.getElementById(cardId);
-    if (!wrap) return;
-    var canvas = wrap.querySelector('.pdf-canvas');
-    if (!canvas || canvas.style.display === 'none') return;
-    var base = parseFloat(canvas.dataset.baseScale || '1');
-    var current = parseFloat(canvas.dataset.currentScale || base);
-    var scaleRatio = current / base;
-
-    var overlay = document.createElement('div');
-    overlay.className = 'fs-overlay';
-    var clone = document.createElement('canvas');
-    clone.width = canvas.width;
-    clone.height = canvas.height;
-    clone.getContext('2d').drawImage(canvas, 0, 0);
-    clone.style.transform = 'scale(' + scaleRatio + ')';
-    overlay.appendChild(clone);
-
-    var closeBtn = document.createElement('button');
-    closeBtn.className = 'fs-close';
-    closeBtn.innerHTML = '×';
-    closeBtn.onclick = function() { document.body.removeChild(overlay); };
-    overlay.appendChild(closeBtn);
-
-    var controls = document.createElement('div');
-    controls.className = 'fs-controls';
-    var zoomOut = document.createElement('button');
-    zoomOut.className = 'tb-btn'; zoomOut.textContent = '−';
-    var zoomLabel = document.createElement('span');
-    zoomLabel.className = 'tb-zoom'; zoomLabel.textContent = Math.round(scaleRatio * 100) + '%';
-    var zoomIn = document.createElement('button');
-    zoomIn.className = 'tb-btn'; zoomIn.textContent = '+';
-    zoomOut.onclick = function() { scaleRatio = Math.max(0.25, scaleRatio - 0.25); clone.style.transform = 'scale(' + scaleRatio + ')'; zoomLabel.textContent = Math.round(scaleRatio * 100) + '%'; };
-    zoomIn.onclick = function() { scaleRatio = Math.min(4, scaleRatio + 0.25); clone.style.transform = 'scale(' + scaleRatio + ')'; zoomLabel.textContent = Math.round(scaleRatio * 100) + '%'; };
-    controls.appendChild(zoomOut);
-    controls.appendChild(zoomLabel);
-    controls.appendChild(zoomIn);
-    overlay.appendChild(controls);
-
-    document.body.appendChild(overlay);
-  };
-
-  // ── Image Fullscreen function ──
-  window.imgFullscreen = function(btn) {
-    var card = btn.closest('.design-file-card');
-    if (!card) return;
-    var img = card.querySelector('.design-img');
-    if (!img) return;
-
-    var overlay = document.createElement('div');
-    overlay.className = 'fs-overlay';
-    var clone = document.createElement('img');
-    clone.src = img.src;
-    overlay.appendChild(clone);
-
-    var closeBtn = document.createElement('button');
-    closeBtn.className = 'fs-close';
-    closeBtn.innerHTML = '×';
-    closeBtn.onclick = function() { document.body.removeChild(overlay); };
-    overlay.appendChild(closeBtn);
-
-    overlay.addEventListener('click', function(e) { if (e.target === overlay) document.body.removeChild(overlay); });
-    document.body.appendChild(overlay);
-  };
 </script>
 </body>
 </html>`);
