@@ -1182,14 +1182,9 @@
                                 </div>
                             </div>
 
-                            <div style="text-align:center;margin-top:16px;display:flex;flex-direction:column;align-items:center;gap:8px;">
-                                <div style="display:flex;justify-content:center;gap:10px;">
-                                    <a href="${absoluteUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:8px;padding:10px 22px;background:#f1f5f9;color:#1e293b;text-decoration:none;border-radius:10px;font-size:13px;font-weight:700;border:1px solid #e2e8f0;">📄 فتح في تبويب جديد</a>
-                                    <a href="${absoluteUrl}" style="display:inline-flex;align-items:center;gap:8px;padding:10px 22px;background:#5d198e;color:white;text-decoration:none;border-radius:10px;font-size:13px;font-weight:700;">⬇️ تحميل ملف التصميم</a>
-                                </div>
-                                <p style="font-size:11px;color:#64748b;word-break:break-all;direction:ltr;text-align:center;max-width:100%;">
-                                    <a href="${absoluteUrl}" style="color:#5d198e;text-decoration:underline;">${absoluteUrl}</a>
-                                </p>
+                            <div style="text-align:center;margin-top:16px;display:flex;justify-content:center;gap:10px;">
+                                <a href="${absoluteUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:8px;padding:10px 22px;background:#f1f5f9;color:#1e293b;text-decoration:none;border-radius:10px;font-size:13px;font-weight:700;border:1px solid #e2e8f0;">📄 فتح في تبويب جديد</a>
+                                <a href="${absoluteUrl}" style="display:inline-flex;align-items:center;gap:8px;padding:10px 22px;background:#5d198e;color:white;text-decoration:none;border-radius:10px;font-size:13px;font-weight:700;">⬇️ تحميل ملف التصميم</a>
                             </div>
                         </div>`;
                 }).join('');
