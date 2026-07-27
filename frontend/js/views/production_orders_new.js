@@ -1131,31 +1131,18 @@
                     const thumbNorm = thumbRawUrl ? _normalizeDesignUrl(thumbRawUrl) : '';
                     const thumbAbsUrl = thumbNorm ? (thumbNorm.startsWith('http') ? thumbNorm : window.location.origin + thumbNorm) : '';
 
-                    const iconFallbackHtml = `<div style=\\'display:flex;flex-direction:column;align-items:center;justify-content:center;\\'><div style=\\'width:64px;height:64px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:16px;margin-bottom:12px;color:${fileMeta.color};background:${fileMeta.bg};\\'>${fileMeta.label}</div><p style=\\'font-size:12px;color:#94a3b8;\\'>${fileMeta.full}</p></div>`;
+                    const iconBox = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;"><div style="width:72px;height:72px;border-radius:16px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:20px;margin-bottom:14px;color:${fileMeta.color};background:${fileMeta.bg};">${fileMeta.label}</div><p style="font-size:13px;color:#94a3b8;">${fileMeta.full}</p></div>`;
+
+                    const imgUrl = isImage ? absoluteUrl : thumbAbsUrl;
 
                     let previewMarkup = '';
-                    if (isPdf) {
-                        previewMarkup = thumbAbsUrl
-                            ? `<div class="pdf-preview-wrap">
-                                <img src="${thumbAbsUrl}" alt="${_escapeHtml(fileName)}" class="design-img" onerror="this.onerror=null;this.parentElement.innerHTML='${iconFallbackHtml}';">
-                            </div>`
-                            : `<div class="pdf-preview-wrap">
-                                <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;">
-                                    <div style="width:64px;height:64px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:16px;margin-bottom:12px;color:${fileMeta.color};background:${fileMeta.bg};">${fileMeta.label}</div>
-                                    <p style="font-size:12px;color:#94a3b8;">${fileMeta.full}</p>
-                                </div>
-                            </div>`;
-                    } else if (isImage) {
-                        previewMarkup = `<div class="pdf-preview-wrap">
-                            <img src="${absoluteUrl}" alt="${_escapeHtml(fileName)}" class="design-img" onerror="this.onerror=null;this.parentElement.innerHTML='<span style=\\'font-size:14px;color:#94a3b8\\'>تعذّر تحميل الصورة</span>';">
+                    if (imgUrl) {
+                        previewMarkup = `<div class="pdf-preview-wrap" id="preview-wrap-${pageIdx}-${fIdx}">
+                            <img src="${imgUrl}" alt="${_escapeHtml(fileName)}" class="design-img" onload="var w=document.getElementById('preview-wrap-${pageIdx}-${fIdx}');if(w)w.querySelector('.preview-icon-fallback')?.remove();" onerror="this.style.display='none';var fb=this.parentElement.querySelector('.preview-icon-fallback');if(fb)fb.style.display='flex';">
+                            <div class="preview-icon-fallback" style="display:none;">${iconBox}</div>
                         </div>`;
                     } else {
-                        previewMarkup = `<div class="pdf-preview-wrap">
-                            <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;">
-                                <div style="width:64px;height:64px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:16px;margin-bottom:12px;color:${fileMeta.color};background:${fileMeta.bg};">${fileMeta.label}</div>
-                                <p style="font-size:12px;color:#cbd5e1;">${fileMeta.full}</p>
-                            </div>
-                        </div>`;
+                        previewMarkup = `<div class="pdf-preview-wrap">${iconBox}</div>`;
                     }
 
                     return `
