@@ -1128,9 +1128,17 @@
                     const isImage  = DESIGN_IMAGE_EXTENSIONS.has(fileExt);
                     const previewId = `pdf-preview-${pageIdx}-${fIdx + 1}`;
 
+                    const thumbRawUrl = i.design_thumbnail || '';
+                    const thumbNorm = thumbRawUrl ? _normalizeDesignUrl(thumbRawUrl) : '';
+                    const thumbAbsUrl = thumbNorm ? (thumbNorm.startsWith('http') ? thumbNorm : window.location.origin + thumbNorm) : '';
+
                     let previewMarkup = '';
                     if (isPdf) {
-                        previewMarkup = `<div class="preview-toolbar">
+                        const printPlaceholder = thumbAbsUrl
+                            ? `<img src="${thumbAbsUrl}" alt="${_escapeHtml(fileName)}" class="design-img" onerror="this.onerror=null;this.parentElement.innerHTML='<span style=\\'font-size:14px;color:#94a3b8\\'>تعذّر تحميل المعاينة</span>';">`
+                            : `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;"><div style="width:64px;height:64px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:16px;margin-bottom:12px;color:${fileMeta.color};background:${fileMeta.bg};">${fileMeta.label}</div><p style="font-size:12px;color:#94a3b8;">${fileMeta.full}</p></div>`;
+
+                        previewMarkup = `<div class="preview-toolbar no-print">
                             <div class="preview-toolbar-left">
                                 <button type="button" class="pv-icon-btn" onclick="pdfZoom('${previewId}',-0.25)" title="تصغير">−</button>
                                 <button type="button" class="pv-icon-btn" onclick="pdfZoom('${previewId}',0.25)" title="تكبير">+</button>
@@ -1141,12 +1149,13 @@
                             </div>
                         </div>
                         <div class="pdf-preview-wrap" id="${previewId}" data-url="${absoluteUrl}">
-                            <div class="pdf-loading">
+                            <div class="pdf-loading no-print">
                                 <div class="pdf-spinner"></div>
                                 <p>جارٍ تحميل المعاينة...</p>
                             </div>
-                            <canvas class="pdf-canvas" style="display:none;"></canvas>
-                            <div class="pdf-error" style="display:none;">
+                            <canvas class="pdf-canvas no-print" style="display:none;"></canvas>
+                            <div class="pdf-print-placeholder">${printPlaceholder}</div>
+                            <div class="pdf-error no-print" style="display:none;">
                                 <div class="pdf-error-icon">📄</div>
                                 <p>تعذّر عرض المعاينة</p>
                                 <a href="${absoluteUrl}" target="_blank" class="pdf-error-link">فتح الملف مباشرة</a>
@@ -1222,7 +1231,7 @@
   @page { margin: 12mm 15mm; }
   @media print {
     .no-print { display: none !important; }
-    .page-header, .mo-badge, .status-pill, .info-box, .print-btn { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+    .page-header, .mo-badge { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   }
 
   /* ── Header Banner ── */
@@ -1374,13 +1383,15 @@
   .pdf-error-link { color: #fbbf24; font-size: 12px; font-weight: 700; text-decoration: none; }
   .pdf-error-link:hover { text-decoration: underline; }
   .design-img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; margin: 0 auto; border-radius: 4px; }
+  .pdf-print-placeholder { display: none; }
 
   @media print {
+    .no-print { display: none !important; }
     .preview-toolbar { display: none !important; }
     .pdf-preview-wrap { background: #fff; max-height: none; overflow: visible; }
-    .pdf-canvas { max-height: 80vh; box-shadow: none; transform: none !important; transition: none !important; }
+    .pdf-canvas { display: none !important; }
+    .pdf-print-placeholder { display: flex !important; align-items: center; justify-content: center; width: 100%; min-height: 300px; }
     .design-img { max-height: 80vh; }
-    .design-dl-btn { pointer-events: auto !important; }
   }
 </style>
 </head>
