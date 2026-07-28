@@ -28,6 +28,7 @@ var NAV_ITEMS = [ // var allows re-declaration if script loads more than once in
     // ─────────────────────────────────────────────────────────────────────────────
     { section: 'الرئيسية' },
     { view: 'dashboard',     label: 'لوحة التحكم',     icon: 'fa-gauge-high',    permission: 'dashboard' }, // ✅ dashboard.html
+    { view: 'employee-dashboard', label: 'لوحتي',      icon: 'fa-gauge-high',    permission: null, hidden: true }, // ✅ employee-dashboard.html (for employees without dashboard perm)
 
     // ─────────────────────────────────────────────────────────────────────────────
     // 2. المبيعات
@@ -325,14 +326,17 @@ window.navigateTo = async function (viewName) {
 
     // Permission gate: block view if user lacks permission
     if (navItem && navItem.permission && !_hasPermission(navItem.permission)) {
+        const hasDash = _hasPermission('dashboard');
+        const backView = hasDash ? 'dashboard' : 'employee-dashboard';
+        const backLabel = hasDash ? 'العودة للوحة التحكم' : 'العودة للوحتي';
         mainContent.innerHTML = `
             <div class="flex flex-col items-center justify-center h-64 text-slate-400">
                 <i class="fa-solid fa-lock text-5xl mb-4 text-slate-300"></i>
                 <p class="text-lg font-semibold text-slate-500">غير مصرح</p>
                 <p class="text-sm mt-1">ليس لديك صلاحية الوصول إلى هذه الصفحة</p>
-                <button onclick="window.navigateTo('dashboard')"
+                <button onclick="window.navigateTo('${backView}')"
                     class="mt-5 px-5 py-2 bg-brand-700 text-white rounded-lg text-sm hover:bg-brand-800 transition-colors">
-                    العودة للوحة التحكم
+                    ${backLabel}
                 </button>
             </div>`;
         return;

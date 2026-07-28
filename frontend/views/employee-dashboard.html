@@ -1,0 +1,104 @@
+<!-- =============================================================================
+     G.PACK 2.0 — Employee Dashboard (داش بورد الموظفين)
+     Simple dashboard for employees without dashboard permission.
+     Shows: personal tasks, notifications, quick shortcuts.
+============================================================================= -->
+
+<!-- Page Header -->
+<div class="px-6 pt-6 pb-2">
+    <h1 class="text-2xl font-bold text-slate-800" id="ed-greeting">مرحباً بك</h1>
+    <p class="text-sm text-slate-500 mt-1" id="ed-subtitle">هذه لوحة التحكم الخاصة بك — مهامك وإشعاراتك</p>
+</div>
+
+<!-- Quick Shortcuts -->
+<div class="px-6 py-4">
+    <h2 class="text-sm font-bold text-slate-600 mb-3 flex items-center gap-2">
+        <i class="fa-solid fa-bolt text-amber-500"></i>
+        اختصارات سريعة
+    </h2>
+    <div id="ed-shortcuts" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+        <!-- Injected by JS -->
+    </div>
+</div>
+
+<!-- Main Grid: Tasks + Notifications -->
+<div class="px-6 pb-6 grid grid-cols-1 lg:grid-cols-3 gap-4">
+
+    <!-- Tasks Column (spans 2) -->
+    <div class="lg:col-span-2 space-y-4">
+
+        <!-- Task Summary Cards -->
+        <div class="grid grid-cols-3 gap-3">
+            <div class="bg-white rounded-xl border border-slate-200 p-4 text-center">
+                <p class="text-3xl font-bold text-blue-600" id="ed-tasks-pending">0</p>
+                <p class="text-xs text-slate-500 mt-1">مهام قيد التنفيذ</p>
+            </div>
+            <div class="bg-white rounded-xl border border-slate-200 p-4 text-center">
+                <p class="text-3xl font-bold text-red-500" id="ed-tasks-overdue">0</p>
+                <p class="text-xs text-slate-500 mt-1">مهام متأخرة</p>
+            </div>
+            <div class="bg-white rounded-xl border border-slate-200 p-4 text-center">
+                <p class="text-3xl font-bold text-emerald-600" id="ed-tasks-today">0</p>
+                <p class="text-xs text-slate-500 mt-1">مهام اليوم</p>
+            </div>
+        </div>
+
+        <!-- Tasks List -->
+        <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+            <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+                <h2 class="text-sm font-bold text-slate-700 flex items-center gap-2">
+                    <i class="fa-solid fa-list-check text-indigo-500"></i>
+                    مهامي
+                </h2>
+                <div class="flex items-center gap-2">
+                    <button onclick="window.edView._filterTasks('all')" id="ed-filter-all"
+                        class="px-3 py-1 text-xs font-bold rounded-lg bg-indigo-600 text-white">الكل</button>
+                    <button onclick="window.edView._filterTasks('pending')" id="ed-filter-pending"
+                        class="px-3 py-1 text-xs font-bold rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200">قيد التنفيذ</button>
+                    <button onclick="window.edView._filterTasks('overdue')" id="ed-filter-overdue"
+                        class="px-3 py-1 text-xs font-bold rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200">متأخرة</button>
+                </div>
+            </div>
+            <div id="ed-tasks-list" class="divide-y divide-slate-50 max-h-96 overflow-y-auto">
+                <div class="py-12 text-center text-slate-400">
+                    <i class="fa-solid fa-circle-notch fa-spin text-2xl"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notifications Column -->
+    <div class="space-y-4">
+        <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+            <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+                <h2 class="text-sm font-bold text-slate-700 flex items-center gap-2">
+                    <i class="fa-solid fa-bell text-amber-500"></i>
+                    الإشعارات
+                </h2>
+                <span id="ed-notif-badge" class="hidden px-2 py-0.5 text-xs font-bold rounded-full bg-red-500 text-white">0</span>
+            </div>
+            <div id="ed-notifications-list" class="divide-y divide-slate-50 max-h-96 overflow-y-auto">
+                <div class="py-12 text-center text-slate-400">
+                    <i class="fa-solid fa-circle-notch fa-spin text-2xl"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Task Detail Modal -->
+<div id="ed-task-modal" class="fixed inset-0 z-50 hidden">
+    <div class="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onclick="window.edView._closeTaskModal()"></div>
+    <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg bg-white rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+            <h3 class="font-bold text-slate-800" id="ed-modal-title">تفاصيل المهمة</h3>
+            <button onclick="window.edView._closeTaskModal()" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        <div id="ed-modal-body" class="p-5 space-y-4"></div>
+    </div>
+</div>
+
+<!-- Load the view controller -->
+<script src="/js/views/employee-dashboard.js"></script>

@@ -107,9 +107,10 @@ async function _handleLoginSubmit(event) {
             window.initLayout();
         }
 
-        // Navigate to dashboard
+        // Navigate to dashboard (or employee-dashboard if no dashboard permission)
         if (typeof window.navigateTo === 'function') {
-            window.navigateTo('dashboard');
+            const hasDash = window.hasPermission && window.hasPermission('dashboard');
+            window.navigateTo(hasDash ? 'dashboard' : 'employee-dashboard');
         }
 
         window.showToast(`مرحباً، ${data.user.name} 👋`, 'success');
@@ -180,7 +181,8 @@ window.initAuth = async function () {
             window.initLayout();
         }
         if (typeof window.navigateTo === 'function') {
-            window.navigateTo('dashboard');
+            const hasDash = window.hasPermission && window.hasPermission('dashboard');
+            window.navigateTo(hasDash ? 'dashboard' : 'employee-dashboard');
         }
     } catch (err) {
         // Cookie missing / invalid / expired — clear stale state and show login
