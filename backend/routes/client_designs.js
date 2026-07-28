@@ -281,7 +281,9 @@ router.post('/', authenticate, authorize(['admin', 'manager', 'super_admin', 'sa
         if (!thumbnailUrl) {
             const pdfFile = fileRecords.find(f => f.file_type === 'pdf');
             if (pdfFile) {
+                console.log('[ClientDesigns] No thumbnail, generating from PDF:', pdfFile.file_path);
                 const generatedThumb = await ensurePdfThumbnail(pdfFile.file_path);
+                console.log('[ClientDesigns] Generated thumbnail:', generatedThumb);
                 if (generatedThumb) {
                     await db.query(
                         `INSERT INTO client_design_files
@@ -291,6 +293,8 @@ router.post('/', authenticate, authorize(['admin', 'manager', 'super_admin', 'sa
                     );
                     thumbnailUrl = generatedThumb;
                 }
+            } else {
+                console.log('[ClientDesigns] No thumbnail and no PDF found in files:', fileRecords.map(f => f.file_type));
             }
         }
         
