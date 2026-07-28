@@ -276,12 +276,30 @@ router.post('/', authenticate, authorize(['admin', 'manager', 'super_admin', 'sa
             return { design, fileRecords };
         });
         
+        // Auto-generate thumbnail from PDF if no image thumbnail was uploaded
+        let thumbnailUrl = fileRecords.find(f => f.file_type === 'thumbnail')?.file_path || null;
+        if (!thumbnailUrl) {
+            const pdfFile = fileRecords.find(f => f.file_type === 'pdf');
+            if (pdfFile) {
+                const generatedThumb = await ensurePdfThumbnail(pdfFile.file_path);
+                if (generatedThumb) {
+                    await db.query(
+                        `INSERT INTO client_design_files
+                         (design_id, file_type, file_path, original_name, file_size, mime_type, uploaded_by)
+                         VALUES ($1, 'thumbnail', $2, $3, 0, 'image/png', $4)`,
+                        [design.id, generatedThumb, 'auto-thumbnail.png', req.user.id]
+                    );
+                    thumbnailUrl = generatedThumb;
+                }
+            }
+        }
+        
         return res.json({
             success: true,
             data: {
                 ...design,
                 files: fileRecords,
-                thumbnail_url: fileRecords.find(f => f.file_type === 'thumbnail')?.file_path || null
+                thumbnail_url: thumbnailUrl
             },
             message: 'تم إنشاء التصميم بنجاح'
         });
