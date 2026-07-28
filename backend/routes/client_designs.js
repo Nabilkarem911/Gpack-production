@@ -17,7 +17,7 @@ const { ensurePdfThumbnail } = require('../utils/pdf-thumbnail');
 // ============================================================================
 // File Upload Configuration
 // ============================================================================
-const UPLOAD_BASE = path.join(__dirname, '../uploads/clients');
+const UPLOAD_BASE = path.join(__dirname, '../../uploads/clients');
 
 // Ensure upload directory exists
 if (!fs.existsSync(UPLOAD_BASE)) {

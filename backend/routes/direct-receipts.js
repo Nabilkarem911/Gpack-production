@@ -17,7 +17,7 @@ const authorize = require('../middleware/authorize');
 const { getVatRate } = require('../utils/settings');
 
 // ── Upload config ────────────────────────────────────────────────────────────
-const UPLOAD_BASE = path.join(__dirname, '../uploads/direct-receipts');
+const UPLOAD_BASE = path.join(__dirname, '../../uploads/direct-receipts');
 if (!fs.existsSync(UPLOAD_BASE)) fs.mkdirSync(UPLOAD_BASE, { recursive: true });
 
 const storage = multer.diskStorage({

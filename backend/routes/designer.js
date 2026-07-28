@@ -91,7 +91,7 @@ async function _logTransition(client, entityType, entityId, workflow, fromState,
 // =============================================================================
 // File Upload Configuration
 // =============================================================================
-const UPLOAD_BASE = path.join(__dirname, '../uploads/designs');
+const UPLOAD_BASE = path.join(__dirname, '../../uploads/designs');
 if (!fs.existsSync(UPLOAD_BASE)) fs.mkdirSync(UPLOAD_BASE, { recursive: true });
 
 const storage = multer.diskStorage({
@@ -1438,7 +1438,7 @@ router.get('/approval/:orderId/pdf', authorize(['admin', 'manager', 'super_admin
         }
 
         const pdfPath = result.rows[0].approval_pdf_path;
-        const fullPath = path.join(__dirname, '..', pdfPath);
+        const fullPath = path.join(__dirname, '../..', pdfPath);
 
         if (!fs.existsSync(fullPath)) {
             return res.status(404).json({ error: 'الملف غير موجود على الخادم' });

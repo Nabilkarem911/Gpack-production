@@ -16,7 +16,7 @@ const fs = require('fs');
 const db = require('../db');
 const { authenticate } = require('../middleware/authMiddleware');
 
-const UPLOADS_DIR = path.join(__dirname, '../uploads');
+const UPLOADS_DIR = path.join(__dirname, '../../uploads');
 
 // =============================================================================
 // GET /api/manufacturer-orders/:id/print-pdf

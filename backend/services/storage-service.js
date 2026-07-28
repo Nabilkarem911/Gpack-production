@@ -17,7 +17,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const UPLOADS_DIR = path.join(__dirname, '..', 'uploads');
+const UPLOADS_DIR = path.join(__dirname, '..', '..', 'uploads');
 
 // ── Provider: Local filesystem ──────────────────────────────────────────────
 const LocalProvider = {

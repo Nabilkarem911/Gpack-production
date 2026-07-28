@@ -223,7 +223,7 @@ router.get('/:id/profile', async (req, res) => {
         );
 
         // 6b. Check if design files actually exist on disk (detect broken designs)
-        const UPLOAD_BASE = path.join(__dirname, '../uploads');
+        const UPLOAD_BASE = path.join(__dirname, '../../uploads');
         const designs = designsRes.rows.map(d => {
             let is_broken = false;
             if (d.file_path) {

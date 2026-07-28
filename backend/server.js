@@ -299,7 +299,7 @@ _mountRoute('/public/design',       publicLimiter, require('./routes/public-desi
 _mountRoute('/public',              publicLimiter, require('./routes/public_manufacturer_order')); // No auth required — supplier share
 
 // Static files for uploads — serve with proper headers
-const uploadsDir = path.join(__dirname, 'uploads');
+const uploadsDir = path.join(__dirname, '..', 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 app.use('/uploads', express.static(uploadsDir, {
     fallthrough: true,
