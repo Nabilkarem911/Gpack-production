@@ -4422,10 +4422,10 @@
                                     <p class="text-xs text-slate-400">ملف PDF رسمي يحتوي على كل البيانات</p>
                                 </div>
                             </div>
-                            <a href="/api/designer/approval/${orderId}/pdf" target="_blank" download
+                            <button onclick="window._downloadApprovalPdf('${orderId}')"
                                 class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-bold transition-colors flex items-center gap-2">
                                 <i class="fa-solid fa-download"></i> تحميل
-                            </a>
+                            </button>
                         </div>` : ''}
 
                         <!-- Activity Timeline -->
@@ -4448,6 +4448,33 @@
 
         } catch (err) {
             window.showToast(err.message || 'فشل في جلب بيانات الاعتماد', 'error');
+        }
+    };
+
+    // ── Download Approval PDF (fetch-based for proper auth) ───────────────────
+    window._downloadApprovalPdf = async function(orderId) {
+        try {
+            const res = await fetch(`/api/designer/approval/${orderId}/pdf`, {
+                credentials: 'include',
+            });
+
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                throw new Error(errData.error || `فشل التحميل (${res.status})`);
+            }
+
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `approval-${orderId}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            console.error('[Approval PDF] Download error:', err);
+            window.showToast(err.message || 'فشل تحميل ملف الاعتماد', 'error');
         }
     };
 
