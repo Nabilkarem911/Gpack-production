@@ -3015,9 +3015,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
                 const hasDesign = !!i.designId;
                 const thumbUrl = i.designThumb || '';
                 const isImage = thumbUrl && _isDesignImage(thumbUrl);
-                const designBadge = hasDesign
-                    ? `<span class="text-xs font-bold px-2 py-0.5 rounded-full ${i.designStatus === 'new' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}">${i.designStatus === 'new' ? 'تصميم جديد' : 'إعادة طباعة'}</span>`
-                    : '<span class="text-xs font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">لا يوجد تصميم</span>';
+                const statusVal = i.designStatus || 'new';
 
                 const thumbMarkup = hasDesign && isImage
                     ? `<img src="${thumbUrl}" alt="design" class="w-10 h-10 rounded-lg object-cover border border-slate-200">`
@@ -3034,7 +3032,6 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
                                 <span class="text-xs text-purple-600 font-bold bg-purple-50 px-2 py-0.5 rounded-full shrink-0">${available} وحدة</span>
                             </div>
                             <div class="flex items-center gap-2 mt-1">
-                                ${designBadge}
                                 ${hasDesign && i.designName ? `<span class="text-xs text-slate-500 truncate">${i.designName}</span>` : ''}
                             </div>
                         </div>
@@ -3048,6 +3045,20 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
                                 title="رفع تصميم جديد">
                             <i class="fa-solid fa-upload"></i>
                         </button>
+                    </div>
+                    <div class="flex gap-2 mt-2">
+                        <label class="flex-1 cursor-pointer">
+                            <input type="radio" name="bulk-design-status-${i.id}" value="new" class="peer hidden" ${statusVal === 'new' ? 'checked' : ''} onchange="window.poView._bulkSetDesignStatus('${i.id}', 'new')">
+                            <div class="px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-center peer-checked:border-emerald-500 peer-checked:bg-emerald-50 peer-checked:text-emerald-700 transition-all">
+                                <i class="fa-solid fa-pen-nib ml-1"></i> تصميم جديد
+                            </div>
+                        </label>
+                        <label class="flex-1 cursor-pointer">
+                            <input type="radio" name="bulk-design-status-${i.id}" value="reprint" class="peer hidden" ${statusVal === 'reprint' ? 'checked' : ''} onchange="window.poView._bulkSetDesignStatus('${i.id}', 'reprint')">
+                            <div class="px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-center peer-checked:border-amber-500 peer-checked:bg-amber-50 peer-checked:text-amber-700 transition-all">
+                                <i class="fa-solid fa-rotate ml-1"></i> إعادة طباعة
+                            </div>
+                        </label>
                     </div>
                 </div>`;
             }).join('');
@@ -3065,6 +3076,12 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         if (notesEl)    notesEl.value    = '';
 
         _showModal('po-bulk-assign-modal');
+    }
+
+    function _bulkSetDesignStatus(itemId, status) {
+        if (_bulkSelected[itemId]) {
+            _bulkSelected[itemId].designStatus = status;
+        }
     }
 
     async function _bulkSelectDesign(itemId) {
@@ -3280,6 +3297,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         saveBulkAssignment:   _saveBulkAssignment,
         bulkSelectDesign:     _bulkSelectDesign,
         bulkUploadDesign:     _bulkUploadDesign,
+        _bulkSetDesignStatus: _bulkSetDesignStatus,
         openInvoiceModal:   _openInvoiceModal,
         closeInvoiceModal:  () => { _resetInvoiceModal(); _hideModal('po-invoice-modal'); },
         onInvoiceTypeChange: _renderInvoiceItems,
