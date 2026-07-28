@@ -20,7 +20,7 @@ const router   = express.Router();
 // =============================================================================
 
 // ── Upload config for deposit receipts ──────────────────────────────────────
-const UPLOADS_DIR = path.join(__dirname, '..', '..', 'uploads', 'receipts');
+const UPLOADS_DIR = path.join(__dirname, '..', 'uploads', 'receipts');
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
 const storage = multer.diskStorage({

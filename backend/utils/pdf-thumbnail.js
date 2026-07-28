@@ -10,7 +10,7 @@ const path = require('path');
 const fs = require('fs');
 const { execFile } = require('child_process');
 
-const BACKEND_ROOT = path.join(__dirname, '..', '..');
+const BACKEND_ROOT = path.join(__dirname, '..');
 
 /**
  * Convert a `/uploads/...` relative URL into an absolute filesystem path.

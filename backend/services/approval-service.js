@@ -21,7 +21,7 @@ const NotificationService = require('./notification-service');
 const WhatsApp = require('./whatsapp-service');
 const log = require('../utils/logger');
 
-const UPLOAD_BASE = path.join(__dirname, '../../uploads/designs');
+const UPLOAD_BASE = path.join(__dirname, '../uploads/designs');
 const db = require('../db');
 
 // ── Main: process approval in background ────────────────────────────────────
@@ -86,7 +86,7 @@ async function processApproval(approvalData) {
             if (Array.isArray(files)) {
                 for (const f of files) {
                     const srcPath = f.path || f.url || f;
-                    const fullSrc = srcPath.startsWith('/') ? path.join(__dirname, '../..', srcPath) : path.join(UPLOAD_BASE, srcPath);
+                    const fullSrc = srcPath.startsWith('/') ? path.join(__dirname, '..', srcPath) : path.join(UPLOAD_BASE, srcPath);
                     try {
                         if (fs.existsSync(fullSrc)) {
                             const filename = f.filename || f.original_name || path.basename(fullSrc);
@@ -665,7 +665,7 @@ async function verifyPackageIntegrity(itemId) {
 
         // Verify certificate image hash
         if (appr.approval_image_path && appr.certificate_sha256) {
-            const certFile = path.join(__dirname, '../..', appr.approval_image_path);
+            const certFile = path.join(__dirname, '..', appr.approval_image_path);
             if (fs.existsSync(certFile)) {
                 const currentHash = crypto.createHash('sha256').update(fs.readFileSync(certFile)).digest('hex');
                 if (currentHash !== appr.certificate_sha256) {
@@ -678,7 +678,7 @@ async function verifyPackageIntegrity(itemId) {
 
         // Verify PDF hash
         if (appr.approval_pdf_path && appr.pdf_sha256) {
-            const pdfFile = path.join(__dirname, '../..', appr.approval_pdf_path);
+            const pdfFile = path.join(__dirname, '..', appr.approval_pdf_path);
             if (fs.existsSync(pdfFile)) {
                 const currentHash = crypto.createHash('sha256').update(fs.readFileSync(pdfFile)).digest('hex');
                 if (currentHash !== appr.pdf_sha256) {
@@ -691,7 +691,7 @@ async function verifyPackageIntegrity(itemId) {
 
         // Verify signature hash
         if (appr.signature_sha256) {
-            const pkgDir = path.dirname(path.join(__dirname, '../..', appr.approval_pdf_path));
+            const pkgDir = path.dirname(path.join(__dirname, '..', appr.approval_pdf_path));
             const sigFile = path.join(pkgDir, 'signature.png');
             if (fs.existsSync(sigFile)) {
                 const currentHash = crypto.createHash('sha256').update(fs.readFileSync(sigFile)).digest('hex');
@@ -704,7 +704,7 @@ async function verifyPackageIntegrity(itemId) {
         // Verify manifest hash — read from disk, not from DB JSONB
         // (JSONB reorders keys, so re-serializing produces a different string/hash)
         if (appr.manifest_sha256 && appr.approval_pdf_path) {
-            const pkgDir = path.dirname(path.join(__dirname, '../..', appr.approval_pdf_path));
+            const pkgDir = path.dirname(path.join(__dirname, '..', appr.approval_pdf_path));
             const manifestFile = path.join(pkgDir, 'manifest.json');
             if (fs.existsSync(manifestFile)) {
                 const fileBuffer = fs.readFileSync(manifestFile);

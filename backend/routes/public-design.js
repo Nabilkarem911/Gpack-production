@@ -21,7 +21,7 @@ const NotificationService = require('../services/notification-service');
 // =============================================================================
 // File Upload Configuration (client revision files)
 // =============================================================================
-const UPLOAD_BASE = path.join(__dirname, '../../uploads/designs');
+const UPLOAD_BASE = path.join(__dirname, '../uploads/designs');
 if (!fs.existsSync(UPLOAD_BASE)) fs.mkdirSync(UPLOAD_BASE, { recursive: true });
 
 const clientUploadStorage = multer.diskStorage({
@@ -508,7 +508,7 @@ router.post('/respond/:token', clientUpload.array('client_files', 10), async (re
                 // Generate approval PDF
                 let pdfPath = null;
                 try {
-                    const uploadDir = path.join(__dirname, '../../uploads/designs', order.id, 'approval');
+                    const uploadDir = path.join(__dirname, '../uploads/designs', order.id, 'approval');
                     if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
                     const pdfFileName = `approval_${Date.now()}.pdf`;
                     const fullPath = path.join(uploadDir, pdfFileName);
