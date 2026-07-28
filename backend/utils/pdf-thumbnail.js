@@ -32,10 +32,18 @@ function _resolveAbsolutePath(relativeUrl) {
 async function ensurePdfThumbnail(pdfRelativeUrl) {
     try {
         const ext = path.extname(pdfRelativeUrl.split('?')[0]).toLowerCase();
-        if (ext !== '.pdf') return null;
+        if (ext !== '.pdf') {
+            console.log('[PdfThumbnail] Not a PDF, skipping:', pdfRelativeUrl);
+            return null;
+        }
 
         const absPdfPath = _resolveAbsolutePath(pdfRelativeUrl);
-        if (!absPdfPath || !fs.existsSync(absPdfPath)) return null;
+        console.log('[PdfThumbnail] Resolved path:', absPdfPath, 'from URL:', pdfRelativeUrl);
+        if (!absPdfPath || !fs.existsSync(absPdfPath)) {
+            console.error('[PdfThumbnail] PDF file not found at:', absPdfPath);
+            return null;
+        }
+        console.log('[PdfThumbnail] PDF file exists, size:', fs.statSync(absPdfPath).size);
 
         const dir = path.dirname(absPdfPath);
         const base = path.basename(absPdfPath, '.pdf');
@@ -44,25 +52,34 @@ async function ensurePdfThumbnail(pdfRelativeUrl) {
 
         // Already generated — reuse cached thumbnail.
         if (fs.existsSync(thumbAbsPath) && fs.statSync(thumbAbsPath).size > 0) {
+            console.log('[PdfThumbnail] Cached thumbnail exists:', thumbAbsPath);
             return thumbRelativeUrl;
         }
 
         const outputPrefix = path.join(dir, base + '.thumb');
+        console.log('[PdfThumbnail] Running pdftoppm:', absPdfPath, '→', outputPrefix);
         await new Promise((resolve, reject) => {
             execFile(
                 'pdftoppm',
                 ['-png', '-f', '1', '-l', '1', '-singlefile', '-scale-to', '900', absPdfPath, outputPrefix],
                 { timeout: 20000 },
-                (err) => {
-                    if (err) return reject(err);
+                (err, stdout, stderr) => {
+                    if (err) {
+                        console.error('[PdfThumbnail] pdftoppm error:', err.message);
+                        if (stderr) console.error('[PdfThumbnail] pdftoppm stderr:', stderr);
+                        return reject(err);
+                    }
+                    console.log('[PdfThumbnail] pdftoppm success');
                     resolve();
                 }
             );
         });
 
         if (fs.existsSync(thumbAbsPath) && fs.statSync(thumbAbsPath).size > 0) {
+            console.log('[PdfThumbnail] Thumbnail generated:', thumbAbsPath, 'size:', fs.statSync(thumbAbsPath).size);
             return thumbRelativeUrl;
         }
+        console.error('[PdfThumbnail] Thumbnail file not created:', thumbAbsPath);
         return null;
     } catch (err) {
         console.error('[PdfThumbnail] generation failed for', pdfRelativeUrl, '-', err.message);
