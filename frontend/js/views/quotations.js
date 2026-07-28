@@ -3234,25 +3234,51 @@
     window.previewDesignFile = function(input) {
         if (input.files && input.files[0]) {
             const file = input.files[0];
-            const reader = new FileReader();
+            const previewImg = document.getElementById('design-modal-preview-img');
+            const previewIcon = document.getElementById('design-modal-preview-icon');
+            const previewFname = document.getElementById('design-modal-preview-fname');
+            const previewDiv = document.getElementById('design-modal-preview');
+            const fileLabel = document.getElementById('design-file-label');
             
-            reader.onload = function(e) {
-                const previewImg = document.getElementById('design-modal-preview-img');
-                const previewDiv = document.getElementById('design-modal-preview');
-                const fileLabel = document.getElementById('design-file-label');
+            if (previewDiv) {
+                previewDiv.classList.remove('hidden');
+            }
+            if (fileLabel) {
+                fileLabel.classList.add('hidden');
+            }
+
+            if (file.type.startsWith('image/')) {
+                // Image: show image preview
+                if (previewImg) previewImg.classList.remove('hidden');
+                if (previewIcon) previewIcon.classList.add('hidden');
                 
-                if (previewImg && previewDiv) {
-                    previewImg.src = e.target.result;
-                    previewDiv.classList.remove('hidden');
-                    
-                    // Hide file label
-                    if (fileLabel) {
-                        fileLabel.classList.add('hidden');
-                    }
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    if (previewImg) previewImg.src = e.target.result;
+                };
+                reader.readAsDataURL(file);
+            } else {
+                // Non-image (PDF, AI, PSD, etc.): show file icon
+                if (previewImg) {
+                    previewImg.src = '';
+                    previewImg.classList.add('hidden');
                 }
-            };
-            
-            reader.readAsDataURL(file);
+                if (previewIcon) {
+                    previewIcon.classList.remove('hidden');
+                    const ext = file.name.split('.').pop().toUpperCase();
+                    const iconEl = previewIcon.querySelector('i');
+                    if (iconEl) {
+                        if (ext === 'PDF') {
+                            iconEl.className = 'fa-solid fa-file-pdf text-4xl text-red-400';
+                        } else if (['AI', 'EPS', 'PS', 'PSD'].includes(ext)) {
+                            iconEl.className = 'fa-solid fa-bezier-curve text-4xl text-orange-400';
+                        } else {
+                            iconEl.className = 'fa-solid fa-file text-4xl text-slate-400';
+                        }
+                    }
+                    if (previewFname) previewFname.textContent = `${file.name} (${(file.size/1024/1024).toFixed(2)} MB)`;
+                }
+            }
         }
     };
     
@@ -3260,11 +3286,13 @@
     window.clearDesignFile = function() {
         const fileInput = document.getElementById('design-file-input');
         const previewImg = document.getElementById('design-modal-preview-img');
+        const previewIcon = document.getElementById('design-modal-preview-icon');
         const previewDiv = document.getElementById('design-modal-preview');
         const fileLabel = document.getElementById('design-file-label');
         
         if (fileInput) fileInput.value = '';
-        if (previewImg) previewImg.src = '';
+        if (previewImg) { previewImg.src = ''; previewImg.classList.add('hidden'); }
+        if (previewIcon) previewIcon.classList.add('hidden');
         if (previewDiv) previewDiv.classList.add('hidden');
         if (fileLabel) fileLabel.classList.remove('hidden');
     };
@@ -3299,8 +3327,20 @@
         const formData = new FormData();
         formData.append('client_id', clientId);
         formData.append('variant_id', variantId);
-        formData.append('thumbnail', fileInput.files[0]);
         formData.append('design_name', nameInput?.value || '');
+        
+        // Categorize file by extension — images as 'thumbnail', PDFs as 'pdf', vectors as 'source'
+        const file = fileInput.files[0];
+        const ext = file.name.split('.').pop().toLowerCase();
+        if (file.type.startsWith('image/') || ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'tif', 'tiff'].includes(ext)) {
+            formData.append('thumbnail', file);
+        } else if (ext === 'pdf') {
+            formData.append('pdf', file);
+        } else if (['ai', 'psd', 'eps', 'ps'].includes(ext)) {
+            formData.append('source', file);
+        } else {
+            formData.append('source', file);
+        }
         
         try {
             const res = await fetch('/api/client-designs', {

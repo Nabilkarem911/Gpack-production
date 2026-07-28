@@ -1305,7 +1305,7 @@
                 <div>
                     <label class="block text-xs font-semibold text-slate-600 mb-1.5">ملف التصميم</label>
                     <div class="relative">
-                        <input type="file" id="design-file-input" accept="image/*"
+                        <input type="file" id="design-file-input" accept="image/*,.pdf,.ai,.psd,.eps,.svg"
                                onchange="window.previewDesignFile(this)"
                                class="hidden">
                         <label for="design-file-input" id="design-file-label"
@@ -1314,17 +1314,21 @@
                                       cursor-pointer hover:bg-slate-100 hover:border-brand-300 transition-all">
                             <i class="fa-solid fa-cloud-arrow-up text-2xl text-slate-400"></i>
                             <span class="text-sm font-semibold text-slate-600">اختر ملف أو اسحب هنا</span>
-                            <span class="text-xs text-slate-400">PNG, JPG, JPEG</span>
+                            <span class="text-xs text-slate-400">PNG, JPG, PDF, AI, PSD, EPS, SVG</span>
                         </label>
                     </div>
                 </div>
 
-                <!-- Image Preview (shows after file selection) -->
+                <!-- File Preview (shows after file selection) -->
                 <div id="design-modal-preview" class="hidden">
                     <label class="block text-xs font-semibold text-slate-600 mb-1.5">معاينة التصميم</label>
                     <div class="relative w-full h-48 bg-slate-100 rounded-xl overflow-hidden border border-slate-200">
                         <img id="design-modal-preview-img" src="" alt="معاينة التصميم"
                              class="w-full h-full object-contain">
+                        <div id="design-modal-preview-icon" class="hidden w-full h-full flex flex-col items-center justify-center gap-2">
+                            <i class="fa-solid fa-file-pdf text-4xl text-red-400"></i>
+                            <span class="text-xs text-slate-500" id="design-modal-preview-fname"></span>
+                        </div>
                         <button type="button" onclick="window.clearDesignFile()"
                                 class="absolute top-2 right-2 w-8 h-8 bg-red-500 hover:bg-red-600 text-white rounded-full
                                        flex items-center justify-center shadow-lg transition-colors">
@@ -1472,4 +1476,4 @@
 </div>
 
 <!-- Load the view controller -->
-<script src="/js/views/quotations.js?v=20260719e"></script>
+<script src="/js/views/quotations.js?v=20260728b"></script>
