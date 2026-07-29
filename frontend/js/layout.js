@@ -118,16 +118,36 @@ function _buildSidebar() {
     nav.innerHTML = '';
     let html = '';
 
-    NAV_ITEMS.forEach(item => {
+    // Pre-compute: for each section, check if user has permission to at least one visible item
+    let i = 0;
+    while (i < NAV_ITEMS.length) {
+        const item = NAV_ITEMS[i];
+
         if (item.section) {
-            html += `
-                <p class="sidebar-section-title px-3 pt-4 pb-1 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                    ${item.section}
-                </p>`;
-            return;
+            // Look ahead: collect all items until the next section (or end)
+            let hasVisibleItem = false;
+            let j = i + 1;
+            while (j < NAV_ITEMS.length && !NAV_ITEMS[j].section) {
+                const sub = NAV_ITEMS[j];
+                if (!sub.hidden && _hasPermission(sub.permission)) {
+                    hasVisibleItem = true;
+                    break;
+                }
+                j++;
+            }
+
+            if (hasVisibleItem) {
+                html += `
+                    <p class="sidebar-section-title px-3 pt-4 pb-1 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                        ${item.section}
+                    </p>`;
+            }
+            i++;
+            continue;
         }
-        if (!_hasPermission(item.permission)) return;
-        if (item.hidden) return;
+
+        if (!_hasPermission(item.permission)) { i++; continue; }
+        if (item.hidden) { i++; continue; }
 
         html += `
             <a href="#"
@@ -138,7 +158,8 @@ function _buildSidebar() {
                 <i class="fa-solid ${item.icon} w-5 text-center text-base flex-shrink-0 text-slate-400 group-hover:text-brand-400 transition-colors"></i>
                 <span class="nav-label text-sm font-medium">${item.label}</span>
             </a>`;
-    });
+        i++;
+    }
 
     nav.innerHTML = html;
 
