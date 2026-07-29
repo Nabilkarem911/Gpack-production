@@ -21,11 +21,23 @@
         if (!selectEl || selectEl.dataset.searchable === '1') return null;
         if (selectEl.disabled || selectEl.hidden || selectEl.style.display === 'none') return null;
 
+        // Support both makeSelectSearchable(el, 'placeholder') and makeSelectSearchable(el, {placeholder: '...'})
+        if (typeof opts === 'string') { opts = { placeholder: opts }; }
         opts = opts || {};
         selectEl.dataset.searchable = '1';
 
-        var placeholder = opts.placeholder || '🔍 بحث...';
+        var placeholder = opts.placeholder || '';
         var zClass = opts.zIndex || 'z-[100]';
+
+        // If no explicit placeholder, use the first <option> text (the empty-value one)
+        if (!placeholder) {
+            var firstOpt = selectEl.options[0];
+            if (firstOpt && !firstOpt.value) {
+                placeholder = firstOpt.textContent;
+            } else {
+                placeholder = '🔍 بحث...';
+            }
+        }
 
         var parent = selectEl.parentElement;
         var wrap = document.createElement('div');
@@ -35,6 +47,16 @@
         input.type = 'text';
         input.placeholder = placeholder;
         input.autocomplete = 'off';
+
+        // Give input an id so <label for="..."> can be retargeted
+        if (selectEl.id) {
+            input.id = selectEl.id + '_search';
+            // Find and retarget associated labels
+            var labels = document.querySelectorAll('label[for="' + selectEl.id + '"]');
+            for (var li = 0; li < labels.length; li++) {
+                labels[li].setAttribute('for', input.id);
+            }
+        }
         input.className = selectEl.className
             .replace('appearance-none', '')
             .replace(/\brow-product\b/g, '')
@@ -52,6 +74,10 @@
         wrap.appendChild(input);
         wrap.appendChild(dd);
         wrap.appendChild(selectEl);
+
+        // Also hide the first empty-value <option> from the dropdown since its text
+        // is now used as the input placeholder (avoids duplicate entry in the list)
+        // — handled in _buildList by skipping empty-value options when no filter
 
         var _picking = false;
         var _activeIdx = -1;

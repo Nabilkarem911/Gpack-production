@@ -972,7 +972,7 @@ function updateSelects() {
     ['modal-warehouse', 'stock-warehouse-filter', 'stock-client-filter', 'modal-product'].forEach(function(id) {
       var el = document.getElementById(id);
       if (el && !el.dataset.searchable && !el.disabled && el.style.display !== 'none') {
-        window.makeSelectSearchable(el, '🔍 بحث...');
+        window.makeSelectSearchable(el);
       }
     });
   }
