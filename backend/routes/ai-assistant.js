@@ -28,7 +28,15 @@ const SYSTEM_PROMPT = `أنت مساعد ذكي لنظام G.PACK 2.0 لإدار
 كن مختصراً ودقيقاً. استخدم الجداول Markdown عند عرض بيانات متعددة.
 استخدم الريال السعودي للقيم المالية.
 إذا كانت النتيجة فارغة، قل أنه لا توجد بيانات.
-عند اقتراح أسعار، اراعِ التكلفة وهامش الربح المعقول (15-30%).`;
+عند اقتراح أسعار، اراعِ التكلفة وهامش الربح المعقول (15-30%).
+
+--- اقتراح إجراءات ---
+عندما يكون ردك يحتوي على بيانات يمكن للمستخدم التصرف عليها، أضف اقتراح إجراء في نهاية الرد بصيغة:
+[[action:navigate|page_key|تسمية الزر]] — للتنقل لصفحة
+[[action:filter|page_key:filter_value|تسمية الزر]] — لتصفية صفحة بقيمة
+مثال: [[action:navigate|warehouses|فتح صفحة المخازن]]
+مثال: [[action:filter|inventory:warehouse_id=5|فلترة المخزون بالمستودع]]
+اكتب الإجراءات في سطر منفصل بعد الرد. максимум 3 إجراءات لكل رد.`;
 
 // =============================================================================
 // GET /api/ai-assistant/health
@@ -64,11 +72,179 @@ router.get('/history', async (req, res) => {
 });
 
 // =============================================================================
+// GET /api/ai-assistant/briefing
+// Returns a structured daily briefing (pure SQL, no AI call).
+// Role-scoped: sales_rep sees only their data.
+// =============================================================================
+router.get('/briefing', async (req, res) => {
+    try {
+        const user = req.user;
+        const isSalesRep = user.role === 'sales_rep';
+        const scopeClause = isSalesRep ? `AND created_by = $1` : '';
+        const scopeParams = isSalesRep ? [user.id] : [];
+
+        // 1. Today's sales
+        const salesRes = await db.query(
+            `SELECT COALESCE(SUM(grand_total), 0)::numeric as today_sales,
+                    COUNT(*) as today_invoice_count
+             FROM invoices
+             WHERE DATE(invoice_date) = CURRENT_DATE AND status != 'cancelled'`
+        );
+
+        // 2. Pending quotes (sales-rep scoped)
+        const quotesRes = await db.query(
+            `SELECT COUNT(*) as pending_quotes
+             FROM orders
+             WHERE status = 'quote' ${scopeClause}`,
+            scopeParams
+        );
+
+        // 3. Low stock items (threshold 100)
+        const stockRes = await db.query(
+            `SELECT COUNT(*) as low_stock_count
+             FROM (
+                 SELECT pv.id
+                 FROM product_variants pv
+                 LEFT JOIN (
+                     SELECT variant_id, SUM(quantity) as qty
+                     FROM warehouse_stock GROUP BY variant_id
+                 ) ws ON ws.variant_id = pv.id
+                 WHERE COALESCE(ws.qty, 0) < 100 AND pv.status = 'active'
+             ) sub`
+        );
+
+        // 4. Outstanding payments total
+        const outstandingRes = await db.query(
+            `SELECT COALESCE(SUM(grand_total - paid_amount), 0)::numeric as total_outstanding,
+                    COUNT(*) as outstanding_count
+             FROM invoices
+             WHERE (grand_total - paid_amount) > 0 AND status != 'cancelled'`
+        );
+
+        // 5. Overdue tasks
+        const tasksRes = await db.query(
+            `SELECT COUNT(*) as overdue_tasks
+             FROM tasks
+             WHERE status NOT IN ('completed', 'cancelled')
+               AND due_date < CURRENT_DATE`
+        );
+
+        // 6. In-progress production orders
+        const productionRes = await db.query(
+            `SELECT COUNT(*) as active_production
+             FROM manufacturer_orders
+             WHERE status IN ('pending', 'in_progress')`
+        );
+
+        // 7. Pending delivery notes
+        const deliveryRes = await db.query(
+            `SELECT COUNT(*) as pending_deliveries
+             FROM delivery_notes
+             WHERE status IN ('pending', 'in_transit')`
+        );
+
+        const briefing = {
+            date: new Date().toISOString().split('T')[0],
+            today_sales: parseFloat(salesRes.rows[0].today_sales || 0),
+            today_invoice_count: parseInt(salesRes.rows[0].today_invoice_count || 0),
+            pending_quotes: parseInt(quotesRes.rows[0].pending_quotes || 0),
+            low_stock_count: parseInt(stockRes.rows[0].low_stock_count || 0),
+            total_outstanding: parseFloat(outstandingRes.rows[0].total_outstanding || 0),
+            outstanding_count: parseInt(outstandingRes.rows[0].outstanding_count || 0),
+            overdue_tasks: parseInt(tasksRes.rows[0].overdue_tasks || 0),
+            active_production: parseInt(productionRes.rows[0].active_production || 0),
+            pending_deliveries: parseInt(deliveryRes.rows[0].pending_deliveries || 0),
+        };
+
+        // Compute alert count for badge
+        briefing.alert_count =
+            (briefing.low_stock_count > 0 ? 1 : 0) +
+            (briefing.overdue_tasks > 0 ? 1 : 0) +
+            (briefing.pending_quotes > 5 ? 1 : 0) +
+            (briefing.outstanding_count > 10 ? 1 : 0);
+
+        res.json(briefing);
+    } catch (err) {
+        console.error('[AI Assistant] Briefing error:', err.message);
+        res.status(500).json({ error: 'فشل في تحميل الملخص اليومي' });
+    }
+});
+
+// =============================================================================
+// GET /api/ai-assistant/suggest-price
+// Query: ?product_name=X&target_margin=Y (default 20)
+// Returns pricing suggestions without AI call (pure SQL).
+// =============================================================================
+router.get('/suggest-price', async (req, res) => {
+    try {
+        const productName = req.query.product_name;
+        const targetMargin = parseFloat(req.query.target_margin) || 20;
+
+        if (!productName) {
+            return res.status(400).json({ error: 'اسم المنتج مطلوب' });
+        }
+
+        const variantsRes = await db.query(
+            `SELECT p.name as product_name, pv.id as variant_id, pv.size_name,
+                    pv.selling_price, pv.cost_price, pv.sku
+             FROM products p
+             JOIN product_variants pv ON pv.product_id = p.id
+             WHERE p.name ILIKE $1 AND pv.status = 'active'
+             LIMIT 10`,
+            [`%${productName}%`]
+        );
+
+        if (variantsRes.rows.length === 0) {
+            return res.json({ suggestions: [], message: 'لم يتم العثور على المنتج' });
+        }
+
+        const suggestions = [];
+        for (const v of variantsRes.rows) {
+            const histRes = await db.query(
+                `SELECT AVG(oi.unit_price)::numeric as avg_selling_price,
+                        MAX(oi.unit_price)::numeric as max_price,
+                        MIN(oi.unit_price)::numeric as min_price,
+                        COUNT(*) as times_sold
+                 FROM order_items oi
+                 JOIN orders o ON o.id = oi.order_id
+                 WHERE oi.variant_id = $1 AND o.status NOT IN ('cancelled', 'draft', 'quote')`,
+                [v.variant_id]
+            );
+            const cost = parseFloat(v.cost_price || 0);
+            const currentPrice = parseFloat(v.selling_price || 0);
+            const avgHist = parseFloat(histRes.rows[0].avg_selling_price || 0);
+            const margin = cost > 0 ? ((currentPrice - cost) / cost * 100) : 0;
+            const suggestedPrice = cost > 0 ? (cost * (1 + targetMargin / 100)) : currentPrice;
+
+            suggestions.push({
+                product_name: v.product_name,
+                size_name: v.size_name,
+                sku: v.sku,
+                cost_price: cost,
+                current_selling_price: currentPrice,
+                current_margin_percent: Math.round(margin * 100) / 100,
+                avg_historical_price: avgHist,
+                min_historical_price: parseFloat(histRes.rows[0].min_price || 0),
+                max_historical_price: parseFloat(histRes.rows[0].max_price || 0),
+                times_sold: parseInt(histRes.rows[0].times_sold || 0),
+                suggested_price: Math.round(suggestedPrice * 100) / 100,
+                target_margin_percent: targetMargin,
+            });
+        }
+
+        res.json({ suggestions });
+    } catch (err) {
+        console.error('[AI Assistant] Suggest-price error:', err.message);
+        res.status(500).json({ error: 'فشل في حساب اقتراح الأسعار' });
+    }
+});
+
+// =============================================================================
 // POST /api/ai-assistant/chat
-// Body: { message: string }
+// Body: { message: string, context?: { page, entity_type, entity_id } }
 // =============================================================================
 router.post('/chat', async (req, res) => {
-    const { message } = req.body;
+    const { message, context } = req.body;
 
     if (!message || !message.trim()) {
         return res.status(400).json({ error: 'الرسالة فارغة' });
@@ -101,9 +277,21 @@ router.post('/chat', async (req, res) => {
             [req.user.id, message.trim()]
         );
 
-        // ── 3. Build OpenAI request ──────────────────────────────────────────
+        // ── 3. Build system prompt (with optional page context) ─────────────
+        let systemPrompt = SYSTEM_PROMPT;
+        if (context && context.page) {
+            const ctxParts = [`المستخدم حالياً في صفحة: ${context.page}`];
+            if (context.entity_type && context.entity_id) {
+                ctxParts.push(`ينظر على: ${context.entity_type} رقم ${context.entity_id}`);
+            }
+            if (context.entity_name) {
+                ctxParts.push(`الاسم: ${context.entity_name}`);
+            }
+            systemPrompt = systemPrompt + '\n\n--- سياق إضافي ---\n' + ctxParts.join('. ') + '.\nاستخدم هذا السياق لتخصيص ردك إذا كان السؤال عاماً.';
+        }
+
         const messages = [
-            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'system', content: systemPrompt },
             ...recentMessages,
             { role: 'user', content: message.trim() },
         ];
@@ -160,12 +348,26 @@ router.post('/chat', async (req, res) => {
             assistantMessage = await _callOpenAI(messages, tools);
         }
 
-        // ── 6. Extract final reply ───────────────────────────────────────────
+        // ── 6. Extract final reply + parse action suggestions ─────────────
         let reply = assistantMessage.content;
         if (!reply && assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0) {
             reply = 'وصلت لحد أقصى عدد استدعاءات الدوال. حاول إعادة صياغة السؤال بشكل أبسط.';
         }
         reply = reply || 'عذراً، لم أتمكن من توليد رد. حاول مرة أخرى.';
+
+        // Parse action suggestions from reply ([[action:type|params|label]])
+        const actions = [];
+        const actionRegex = /\[\[action:(navigate|filter)\|([^|]+)\|([^\]]+)\]\]/g;
+        let actionMatch;
+        while ((actionMatch = actionRegex.exec(reply)) !== null) {
+            actions.push({
+                type: actionMatch[1],
+                params: actionMatch[2].trim(),
+                label: actionMatch[3].trim(),
+            });
+        }
+        // Remove action tags from reply text
+        reply = reply.replace(actionRegex, '').trim();
 
         // ── 7. Save assistant reply ──────────────────────────────────────────
         await db.query(
@@ -173,7 +375,7 @@ router.post('/chat', async (req, res) => {
             [req.user.id, reply]
         );
 
-        res.json({ reply, enabled: true });
+        res.json({ reply, actions: actions.length > 0 ? actions : undefined, enabled: true });
 
     } catch (err) {
         console.error('[AI Assistant] Chat error:', err.message);

@@ -1007,6 +1007,259 @@ const AI_FUNCTIONS = [
         }
     },
 
+    // ── 27. getStockoutForecast ───────────────────────────────────────────────
+    {
+        type: 'function',
+        function: {
+            name: 'getStockoutForecast',
+            description: 'يتوقع متى سينفد المخزون لكل صنف بناءً على معدل البيع في آخر 90 يوم.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    product_name: { type: 'string', description: 'اسم المنتج أو جزء منه. اختياري — بدون اسم يرجع كل الأصناف.' },
+                    limit: { type: 'integer', description: 'عدد النتائج (افتراضي 20)' }
+                }
+            }
+        },
+        async execute(args, user) {
+            const { product_name, limit = 20 } = args;
+            let query, params;
+            if (product_name) {
+                query = `WITH sales_velocity AS (
+                             SELECT oi.variant_id,
+                                    SUM(oi.quantity) as total_sold,
+                                    COUNT(DISTINCT DATE(o.created_at)) as selling_days
+                             FROM order_items oi
+                             JOIN orders o ON o.id = oi.order_id
+                             WHERE o.status NOT IN ('cancelled', 'draft', 'quote')
+                               AND o.created_at >= NOW() - INTERVAL '90 days'
+                             GROUP BY oi.variant_id
+                         )
+                         SELECT p.name as product_name, pv.size_name, pv.sku,
+                                COALESCE(ws.qty, 0) as current_stock,
+                                COALESCE(sv.total_sold, 0) as total_sold_90d,
+                                COALESCE(sv.selling_days, 0) as selling_days,
+                                CASE WHEN COALESCE(sv.total_sold, 0) > 0 AND COALESCE(sv.selling_days, 0) > 0
+                                     THEN ROUND((COALESCE(ws.qty, 0)::numeric / (sv.total_sold / sv.selling_days))::numeric, 1)
+                                     ELSE NULL END as days_until_stockout,
+                                CASE WHEN COALESCE(sv.total_sold, 0) > 0 AND COALESCE(sv.selling_days, 0) > 0
+                                     THEN (NOW() + (COALESCE(ws.qty, 0)::numeric / (sv.total_sold / sv.selling_days)) * INTERVAL '1 day')::date
+                                     ELSE NULL END as estimated_stockout_date
+                         FROM product_variants pv
+                         JOIN products p ON p.id = pv.product_id
+                         LEFT JOIN (SELECT variant_id, SUM(quantity) as qty FROM warehouse_stock GROUP BY variant_id) ws ON ws.variant_id = pv.id
+                         LEFT JOIN sales_velocity sv ON sv.variant_id = pv.id
+                         WHERE pv.status = 'active' AND p.name ILIKE $1
+                           AND COALESCE(ws.qty, 0) > 0
+                         ORDER BY days_until_stockout ASC NULLS LAST
+                         LIMIT $2`;
+                params = [`%${product_name}%`, parseInt(limit) || 20];
+            } else {
+                query = `WITH sales_velocity AS (
+                             SELECT oi.variant_id,
+                                    SUM(oi.quantity) as total_sold,
+                                    COUNT(DISTINCT DATE(o.created_at)) as selling_days
+                             FROM order_items oi
+                             JOIN orders o ON o.id = oi.order_id
+                             WHERE o.status NOT IN ('cancelled', 'draft', 'quote')
+                               AND o.created_at >= NOW() - INTERVAL '90 days'
+                             GROUP BY oi.variant_id
+                         )
+                         SELECT p.name as product_name, pv.size_name, pv.sku,
+                                COALESCE(ws.qty, 0) as current_stock,
+                                COALESCE(sv.total_sold, 0) as total_sold_90d,
+                                COALESCE(sv.selling_days, 0) as selling_days,
+                                CASE WHEN COALESCE(sv.total_sold, 0) > 0 AND COALESCE(sv.selling_days, 0) > 0
+                                     THEN ROUND((COALESCE(ws.qty, 0)::numeric / (sv.total_sold / sv.selling_days))::numeric, 1)
+                                     ELSE NULL END as days_until_stockout,
+                                CASE WHEN COALESCE(sv.total_sold, 0) > 0 AND COALESCE(sv.selling_days, 0) > 0
+                                     THEN (NOW() + (COALESCE(ws.qty, 0)::numeric / (sv.total_sold / sv.selling_days)) * INTERVAL '1 day')::date
+                                     ELSE NULL END as estimated_stockout_date
+                         FROM product_variants pv
+                         JOIN products p ON p.id = pv.product_id
+                         LEFT JOIN (SELECT variant_id, SUM(quantity) as qty FROM warehouse_stock GROUP BY variant_id) ws ON ws.variant_id = pv.id
+                         LEFT JOIN sales_velocity sv ON sv.variant_id = pv.id
+                         WHERE pv.status = 'active' AND COALESCE(ws.qty, 0) > 0
+                         ORDER BY days_until_stockout ASC NULLS LAST
+                         LIMIT $1`;
+                params = [parseInt(limit) || 20];
+            }
+            const result = await db.query(query, params);
+            return _sanitize(result.rows);
+        }
+    },
+
+    // ── 28. getSalesForecast ──────────────────────────────────────────────────
+    {
+        type: 'function',
+        function: {
+            name: 'getSalesForecast',
+            description: 'يتوقع مبيعات الشهر القادم بناءً على اتجاه البيع في آخر 6 أشهر.',
+            parameters: {
+                type: 'object',
+                properties: {}
+            }
+        },
+        async execute(args, user) {
+            // Get monthly sales for last 6 months
+            const monthlyRes = await db.query(
+                `SELECT DATE_TRUNC('month', o.created_at) as month,
+                        COALESCE(SUM(o.grand_total), 0)::numeric as total,
+                        COUNT(DISTINCT o.id) as order_count
+                 FROM orders o
+                 WHERE o.status NOT IN ('cancelled', 'draft', 'quote')
+                   AND o.created_at >= NOW() - INTERVAL '6 months'
+                 GROUP BY DATE_TRUNC('month', o.created_at)
+                 ORDER BY month ASC`
+            );
+
+            if (monthlyRes.rows.length < 2) {
+                return _sanitize([{ message: 'لا توجد بيانات كافية للتوقع (مطلوب شهرين على الأقل)' }]);
+            }
+
+            // Simple linear regression: y = a + b*x
+            const n = monthlyRes.rows.length;
+            const xs = monthlyRes.rows.map((_, i) => i);
+            const ys = monthlyRes.rows.map(r => parseFloat(r.total || 0));
+            const sumX = xs.reduce((a, b) => a + b, 0);
+            const sumY = ys.reduce((a, b) => a + b, 0);
+            const sumXY = xs.reduce((acc, x, i) => acc + x * ys[i], 0);
+            const sumX2 = xs.reduce((acc, x) => acc + x * x, 0);
+            const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+            const intercept = (sumY - slope * sumX) / n;
+            const forecast = intercept + slope * n; // Next month (index n)
+            const avgOrders = monthlyRes.rows.reduce((acc, r) => acc + parseInt(r.order_count), 0) / n;
+
+            return _sanitize([{
+                forecast_month: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1).toISOString().split('T')[0],
+                forecasted_sales: Math.round(forecast * 100) / 100,
+                forecasted_order_count: Math.round(avgOrders),
+                trend: slope > 0 ? 'تصاعدي' : slope < 0 ? 'تنازلي' : 'مستقر',
+                trend_slope: Math.round(slope * 100) / 100,
+                historical_months: monthlyRes.rows.map(r => ({
+                    month: r.month.toISOString().split('T')[0],
+                    total: parseFloat(r.total),
+                    order_count: parseInt(r.order_count),
+                })),
+            }]);
+        }
+    },
+
+    // ── 29. getChurnRiskClients ───────────────────────────────────────────────
+    {
+        type: 'function',
+        function: {
+            name: 'getChurnRiskClients',
+            description: 'يحدد العملاء المعرضين لخطر التوقف عن التعامل بناءً على انخفاض معدل الطلبات.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    limit: { type: 'integer', description: 'عدد النتائج (افتراضي 15)' }
+                }
+            }
+        },
+        async execute(args, user) {
+            const { limit = 15 } = args;
+            const result = await db.query(
+                `WITH client_activity AS (
+                     SELECT c.id, c.name,
+                            COUNT(DISTINCT o.id) as total_orders,
+                            MAX(o.created_at) as last_order_date,
+                            COUNT(DISTINCT CASE WHEN o.created_at >= NOW() - INTERVAL '30 days' THEN o.id END) as orders_last_30d,
+                            COUNT(DISTINCT CASE WHEN o.created_at >= NOW() - INTERVAL '60 days' AND o.created_at < NOW() - INTERVAL '30 days' THEN o.id END) as orders_prev_30d,
+                            COALESCE(SUM(o.grand_total), 0)::numeric as total_revenue
+                     FROM clients c
+                     LEFT JOIN orders o ON o.client_id = c.id AND o.status NOT IN ('cancelled', 'draft')
+                     WHERE c.status = 'active'
+                     GROUP BY c.id, c.name
+                 )
+                 SELECT name,
+                        total_orders,
+                        total_revenue,
+                        last_order_date,
+                        orders_last_30d,
+                        orders_prev_30d,
+                        CASE
+                            WHEN last_order_date IS NULL THEN 'خطر عالي - لا توجد طلبات'
+                            WHEN last_order_date < NOW() - INTERVAL '90 days' THEN 'خطر عالي - آخر طلب قبل 90 يوم'
+                            WHEN last_order_date < NOW() - INTERVAL '60 days' THEN 'خطر متوسط - آخر طلب قبل 60 يوم'
+                            WHEN orders_last_30d = 0 AND orders_prev_30d > 0 THEN 'خطر متوسط - توقف مفاجئ'
+                            WHEN orders_last_30d < orders_prev_30d THEN 'خطر منخفض - انخفاض في الطلبات'
+                            ELSE 'طبيعي'
+                        END as risk_level,
+                        EXTRACT(DAY FROM NOW() - last_order_date)::int as days_since_last_order
+                 FROM client_activity
+                 WHERE total_orders > 0
+                 ORDER BY
+                     CASE
+                         WHEN last_order_date IS NULL THEN 1
+                         WHEN last_order_date < NOW() - INTERVAL '90 days' THEN 2
+                         WHEN last_order_date < NOW() - INTERVAL '60 days' THEN 3
+                         WHEN orders_last_30d = 0 AND orders_prev_30d > 0 THEN 4
+                         ELSE 5
+                     END,
+                     days_since_last_order DESC NULLS FIRST
+                 LIMIT $1`,
+                [parseInt(limit) || 15]
+            );
+            return _sanitize(result.rows);
+        }
+    },
+
+    // ── 30. getReorderSuggestions ─────────────────────────────────────────────
+    {
+        type: 'function',
+        function: {
+            name: 'getReorderSuggestions',
+            description: 'يقترح أصناف تحتاج إعادة طلب بناءً على المخزون الحالي ومعدل البيع، مع اقتراح المورد الأرخص.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    limit: { type: 'integer', description: 'عدد النتائج (افتراضي 20)' }
+                }
+            }
+        },
+        async execute(args, user) {
+            const { limit = 20 } = args;
+            const result = await db.query(
+                `WITH sales_velocity AS (
+                     SELECT oi.variant_id,
+                            SUM(oi.quantity) as total_sold_90d
+                     FROM order_items oi
+                     JOIN orders o ON o.id = oi.order_id
+                     WHERE o.status NOT IN ('cancelled', 'draft', 'quote')
+                       AND o.created_at >= NOW() - INTERVAL '90 days'
+                     GROUP BY oi.variant_id
+                 )
+                 SELECT p.name as product_name, pv.size_name, pv.sku,
+                        COALESCE(ws.qty, 0) as current_stock,
+                        COALESCE(sv.total_sold_90d, 0) as monthly_demand_estimate,
+                        CASE WHEN COALESCE(sv.total_sold_90d, 0) > 0
+                             THEN CEIL(COALESCE(sv.total_sold_90d, 0) / 3.0)
+                             ELSE 0 END as suggested_reorder_qty,
+                        CASE WHEN COALESCE(ws.qty, 0) < 100 THEN true ELSE false END as needs_reorder,
+                        (SELECT s.name FROM suppliers s
+                         JOIN purchase_invoice_items pii ON pii.supplier_id = s.id
+                         JOIN product_variants pv2 ON pv2.sku = pii.sku
+                         WHERE pv2.id = pv.id
+                         ORDER BY pii.unit_price ASC LIMIT 1) as cheapest_supplier,
+                        (SELECT pii.unit_price FROM purchase_invoice_items pii
+                         JOIN product_variants pv2 ON pv2.sku = pii.sku
+                         WHERE pv2.id = pv.id
+                         ORDER BY pii.unit_price ASC LIMIT 1) as cheapest_supplier_price
+                 FROM product_variants pv
+                 JOIN products p ON p.id = pv.product_id
+                 LEFT JOIN (SELECT variant_id, SUM(quantity) as qty FROM warehouse_stock GROUP BY variant_id) ws ON ws.variant_id = pv.id
+                 LEFT JOIN sales_velocity sv ON sv.variant_id = pv.id
+                 WHERE pv.status = 'active' AND COALESCE(ws.qty, 0) < 200
+                 ORDER BY needs_reorder DESC, current_stock ASC
+                 LIMIT $1`,
+                [parseInt(limit) || 20]
+            );
+            return _sanitize(result.rows);
+        }
+    },
+
 ];
 
 // =============================================================================

@@ -13,6 +13,67 @@
     let _isLoading = false;
     let _messages = [];
     let _aiEnabled = null;
+    let _briefingShown = false;
+
+    // ── Page name mapping (hash → human-readable Arabic) ─────────────────────
+    const PAGE_NAMES = {
+        'dashboard': 'لوحة التحكم',
+        'warehouses': 'المخازن',
+        'inventory': 'المخزون',
+        'products': 'المنتجات',
+        'clients': 'العملاء',
+        'client-profile': 'ملف العميل',
+        'suppliers': 'الموردون',
+        'sales-invoices': 'فواتير المبيعات',
+        'purchase-invoices': 'فواتير المشتريات',
+        'quotations': 'عروض الأسعار',
+        'production-orders': 'أوامر التشغيل',
+        'receiving-vouchers': 'سندات الاستلام',
+        'direct-receipts': 'الاستلام المباشر',
+        'delivery-notes': 'سندات التسليم',
+        'purchase-returns': 'مرتجعات المشتريات',
+        'payment-voucher': 'سندات الصرف',
+        'receipt-voucher': 'سندات القبض',
+        'chart-of-accounts': 'دليل الحسابات',
+        'accounting': 'القيد المحاسبي',
+        'forecast': 'التوقعات',
+        'vmi-dispatch': 'صرف VMI',
+        'whatsapp-center': 'مركز الواتساب',
+        'designer': 'مصمم المنتجات',
+        'users': 'المستخدمون',
+        'settings': 'الإعدادات',
+    };
+
+    // ── Extract current page context from SPA hash ──────────────────────────
+    function _getCurrentContext() {
+        try {
+            const hash = window.location.hash || '';
+            const raw = hash.replace('#/', '').split('?')[0];
+            const params = new URLSearchParams(hash.split('?')[1] || '');
+
+            const ctx = {
+                page: PAGE_NAMES[raw] || raw || 'غير محدد',
+                page_key: raw || '',
+            };
+
+            // Extract entity IDs from query params
+            const clientId = params.get('client_id') || params.get('id');
+            if (clientId && (raw === 'client-profile' || raw === 'clients')) {
+                ctx.entity_type = 'عميل';
+                ctx.entity_id = clientId;
+            }
+
+            const orderId = params.get('order_id') || params.get('id');
+            if (orderId && raw === 'quotations') {
+                ctx.entity_type = 'عرض سعر / طلب';
+                ctx.entity_id = orderId;
+            }
+
+            return ctx;
+        } catch {
+            return null;
+        }
+    }
 
     // ── Suggested questions ───────────────────────────────────────────────────
     const SUGGESTIONS = [
@@ -22,6 +83,10 @@
         { text: 'مين أرخص مورد للأكواب؟', icon: 'fa-tags' },
         { text: 'إيه المستحقات المعلقة على العملاء؟', icon: 'fa-hand-holding-dollar' },
         { text: 'كم عرض سعر معلق حالياً؟', icon: 'fa-file-lines' },
+        { text: 'إمتى هينفد مخزون الأصناف؟', icon: 'fa-hourglass-half' },
+        { text: 'كم نتوقع نبيع الشهر الجاي؟', icon: 'fa-lightbulb' },
+        { text: 'أي عملاء ممكن يسيبونا؟', icon: 'fa-user-slash' },
+        { text: 'إيه الأصناف اللي محتاجة إعادة طلب؟', icon: 'fa-truck-ramp-box' },
     ];
 
     // =============================================================================
@@ -53,6 +118,9 @@
 
         // Check if AI is enabled
         _checkHealth();
+
+        // Try to fetch daily briefing (silently fails if not available)
+        _maybeFetchBriefing();
     }
 
     // =============================================================================
@@ -72,6 +140,140 @@
         } else {
             panel.style.display = 'none';
         }
+    }
+
+    // =============================================================================
+    // Daily Briefing — auto-fetch on first open each day
+    // =============================================================================
+    let _briefingData = null;
+
+    async function _maybeFetchBriefing() {
+        try {
+            // Check if already shown today (localStorage)
+            const today = new Date().toISOString().split('T')[0];
+            const lastShown = localStorage.getItem('ai_briefing_date');
+            const dismissed = localStorage.getItem('ai_briefing_dismissed') === today;
+
+            if (dismissed) return;
+            if (lastShown === today && _briefingData) {
+                _updateBadge();
+                return;
+            }
+
+            const res = await window.apiFetch('/api/ai-assistant/briefing');
+            _briefingData = res;
+            localStorage.setItem('ai_briefing_date', today);
+            _updateBadge();
+        } catch {
+            // Silently fail — briefing is optional
+        }
+    }
+
+    function _updateBadge() {
+        if (!_briefingData || !_briefingData.alert_count) return;
+        const btn = document.getElementById('ai-chat-btn');
+        if (!btn) return;
+
+        // Add orange alert dot if not already present
+        if (!btn.querySelector('.ai-briefing-dot')) {
+            const dot = document.createElement('span');
+            dot.className = 'ai-briefing-dot absolute -top-1 -right-1 w-4 h-4 bg-amber-500 rounded-full border-2 border-white flex items-center justify-center';
+            dot.innerHTML = '<span class="text-[8px] text-white font-bold">!</span>';
+            btn.appendChild(dot);
+        }
+    }
+
+    function _removeBadge() {
+        const btn = document.getElementById('ai-chat-btn');
+        if (btn) {
+            const dot = btn.querySelector('.ai-briefing-dot');
+            if (dot) dot.remove();
+        }
+    }
+
+    function _renderBriefingCard() {
+        if (!_briefingData) return '';
+        const b = _briefingData;
+        const fmt = (n) => parseFloat(n).toLocaleString('ar-SA', { maximumFractionDigits: 2 });
+
+        const items = [];
+
+        if (b.today_invoice_count > 0) {
+            items.push(`<div class="flex items-center justify-between text-xs py-1.5 px-2 rounded-lg bg-emerald-50">
+                <span class="text-slate-600"><i class="fa-solid fa-chart-line ml-1 text-emerald-600"></i> مبيعات اليوم</span>
+                <span class="font-bold text-emerald-700">${fmt(b.today_sales)} ر.س</span>
+            </div>`);
+        }
+
+        if (b.pending_quotes > 0) {
+            items.push(`<div class="flex items-center justify-between text-xs py-1.5 px-2 rounded-lg bg-blue-50">
+                <span class="text-slate-600"><i class="fa-solid fa-file-lines ml-1 text-blue-600"></i> عروض أسعار معلقة</span>
+                <span class="font-bold text-blue-700">${b.pending_quotes}</span>
+            </div>`);
+        }
+
+        if (b.low_stock_count > 0) {
+            items.push(`<div class="flex items-center justify-between text-xs py-1.5 px-2 rounded-lg bg-amber-50">
+                <span class="text-slate-600"><i class="fa-solid fa-boxes-stacked ml-1 text-amber-600"></i> أصناف قاربت على النفاد</span>
+                <span class="font-bold text-amber-700">${b.low_stock_count}</span>
+            </div>`);
+        }
+
+        if (b.outstanding_count > 0) {
+            items.push(`<div class="flex items-center justify-between text-xs py-1.5 px-2 rounded-lg bg-rose-50">
+                <span class="text-slate-600"><i class="fa-solid fa-hand-holding-dollar ml-1 text-rose-600"></i> مستحقات معلقة</span>
+                <span class="font-bold text-rose-700">${fmt(b.total_outstanding)} ر.س</span>
+            </div>`);
+        }
+
+        if (b.overdue_tasks > 0) {
+            items.push(`<div class="flex items-center justify-between text-xs py-1.5 px-2 rounded-lg bg-red-50">
+                <span class="text-slate-600"><i class="fa-solid fa-clock ml-1 text-red-600"></i> مهام متأخرة</span>
+                <span class="font-bold text-red-700">${b.overdue_tasks}</span>
+            </div>`);
+        }
+
+        if (b.active_production > 0) {
+            items.push(`<div class="flex items-center justify-between text-xs py-1.5 px-2 rounded-lg bg-violet-50">
+                <span class="text-slate-600"><i class="fa-solid fa-industry ml-1 text-violet-600"></i> أوامر تشغيل جارية</span>
+                <span class="font-bold text-violet-700">${b.active_production}</span>
+            </div>`);
+        }
+
+        if (b.pending_deliveries > 0) {
+            items.push(`<div class="flex items-center justify-between text-xs py-1.5 px-2 rounded-lg bg-cyan-50">
+                <span class="text-slate-600"><i class="fa-solid fa-truck ml-1 text-cyan-600"></i> سندات تسليم معلقة</span>
+                <span class="font-bold text-cyan-700">${b.pending_deliveries}</span>
+            </div>`);
+        }
+
+        if (items.length === 0) {
+            items.push(`<div class="text-xs text-center py-3 text-slate-400">لا توجد تنبيهات اليوم. كل شيء على ما يرام! ✅</div>`);
+        }
+
+        return `
+            <div class="bg-gradient-to-br from-brand-50 to-slate-50 border border-brand-200 rounded-xl p-3 mb-2">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="flex items-center gap-1.5">
+                        <i class="fa-solid fa-sun text-amber-500 text-sm"></i>
+                        <span class="text-xs font-bold text-slate-700">ملخص اليوم</span>
+                        <span class="text-[10px] text-slate-400">${b.date}</span>
+                    </div>
+                    <button id="ai-briefing-dismiss" class="text-[10px] text-slate-400 hover:text-slate-600 transition-colors">لا تظهر اليوم</button>
+                </div>
+                <div class="space-y-1.5">
+                    ${items.join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    function _dismissBriefing() {
+        const today = new Date().toISOString().split('T')[0];
+        localStorage.setItem('ai_briefing_dismissed', today);
+        _briefingData = null;
+        _removeBadge();
+        _renderPanel();
     }
 
     // =============================================================================
@@ -107,7 +309,7 @@
 
             <!-- Messages area -->
             <div id="ai-chat-messages" class="flex-1 overflow-y-auto px-4 py-3 space-y-3 bg-slate-50">
-                ${_messages.length === 0 ? _renderWelcome() : _messages.map(m => _renderMessage(m)).join('')}
+                ${_messages.length === 0 ? _renderBriefingCard() + _renderWelcome() : _messages.map(m => _renderMessage(m)).join('')}
             </div>
 
             <!-- Suggestions (shown only when no messages) -->
@@ -164,6 +366,24 @@
             });
         });
 
+        // Briefing dismiss button
+        const dismissBtn = document.getElementById('ai-briefing-dismiss');
+        if (dismissBtn) dismissBtn.addEventListener('click', _dismissBriefing);
+
+        // Action buttons
+        document.querySelectorAll('.ai-action-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                var msgEl = this.closest('[data-msg-actions]');
+                if (!msgEl) return;
+                try {
+                    var actions = JSON.parse(msgEl.getAttribute('data-msg-actions') || '[]');
+                    var idx = parseInt(this.getAttribute('data-action-idx') || '0');
+                    var action = actions[idx];
+                    if (action) _handleAction(action);
+                } catch(e) { /* ignore */ }
+            });
+        });
+
         // Scroll to bottom
         _scrollToBottom();
     }
@@ -197,10 +417,19 @@
             `;
         }
         // Assistant
+        let actionsHtml = '';
+        if (msg.actions && msg.actions.length > 0) {
+            actionsHtml = '<div class="flex flex-wrap gap-1.5 mt-2">' +
+                msg.actions.map((a, i) => {
+                    return `<button class="ai-action-btn text-[11px] px-2.5 py-1 rounded-lg bg-brand-50 text-brand-700 hover:bg-brand-100 transition-colors border border-brand-200 font-medium" data-action-idx="${i}"><i class="fa-solid fa-arrow-left ml-1 text-[9px]"></i>${_esc(a.label)}</button>`;
+                }).join('') +
+                '</div>';
+        }
         return `
-            <div class="flex justify-start">
+            <div class="flex justify-start" data-msg-actions='${msg.actions ? _esc(JSON.stringify(msg.actions)) : ""}'>
                 <div class="bg-white border border-slate-200 rounded-2xl rounded-tl-sm px-3 py-2 max-w-[80%] text-sm text-slate-700 shadow-sm">
                     ${_esc(msg.content).replace(/\n/g, '<br>')}
+                    ${actionsHtml}
                 </div>
             </div>
         `;
@@ -224,12 +453,13 @@
         _renderPanelWithLoading();
 
         try {
+            const ctx = _getCurrentContext();
             const res = await window.apiFetch('/api/ai-assistant/chat', {
                 method: 'POST',
-                body: { message: text },
+                body: { message: text, context: ctx },
             });
 
-            _messages.push({ role: 'assistant', content: res.reply || 'عذراً، لم أتمكن من الرد.' });
+            _messages.push({ role: 'assistant', content: res.reply || 'عذراً، لم أتمكن من الرد.', actions: res.actions });
         } catch (err) {
             let msg = 'حدث خطأ: ' + (err.message || 'تعذّر الاتصال بالمساعد');
             if (err.message && (err.message.includes('504') || err.message.includes('مهلة') || err.message.includes('timeout'))) {
@@ -239,6 +469,51 @@
         } finally {
             _isLoading = false;
             _renderPanel();
+        }
+    }
+
+    // =============================================================================
+    // Handle action button click (navigate / filter)
+    // =============================================================================
+    function _handleAction(action) {
+        try {
+            if (action.type === 'navigate') {
+                // action.params = page_key (e.g. "warehouses")
+                if (window.navigateTo) {
+                    window.navigateTo(action.params);
+                    // Close chat panel
+                    _isOpen = false;
+                    const panel = document.getElementById('ai-chat-panel');
+                    if (panel) panel.style.display = 'none';
+                }
+            } else if (action.type === 'filter') {
+                // action.params = "page_key:filter_key=filter_value"
+                var parts = action.params.split(':');
+                var pageKey = parts[0];
+                var filterStr = parts[1] || '';
+                if (window.navigateTo) {
+                    window.navigateTo(pageKey);
+                    // Close chat panel
+                    _isOpen = false;
+                    var panel = document.getElementById('ai-chat-panel');
+                    if (panel) panel.style.display = 'none';
+                    // Apply filter after page loads
+                    if (filterStr) {
+                        setTimeout(function() {
+                            var kv = filterStr.split('=');
+                            var filterEl = document.getElementById(kv[0]);
+                            if (filterEl) {
+                                filterEl.value = kv[1] || '';
+                                if (filterEl.onchange) filterEl.onchange();
+                                else filterEl.dispatchEvent(new Event('change'));
+                            }
+                        }, 800);
+                    }
+                }
+            }
+        } catch(e) {
+            // Silently fail — don't break chat
+            if (window.showToast) window.showToast('تعذّر تنفيذ الإجراء', 'error');
         }
     }
 

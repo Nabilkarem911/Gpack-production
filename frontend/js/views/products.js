@@ -1375,6 +1375,72 @@
         window.navigateTo('product-movements');
     };
 
+    // ── Smart Pricing Suggestion (Phase 4) ─────────────────────────────────────
+    function _suggestPrice() {
+        var nameEl = document.getElementById('product-name');
+        var priceEl = document.getElementById('variant-selling-price');
+        var boxEl = document.getElementById('ai-price-suggestion-box');
+        var btnEl = document.getElementById('ai-priceuggest-btn');
+        if (!nameEl || !priceEl || !boxEl) return;
+
+        var productName = nameEl.value.trim();
+        if (!productName) {
+            if (window.showToast) window.showToast('اكتب اسم المنتج أولاً', 'warning');
+            nameEl.focus();
+            return;
+        }
+
+        // Show loading state
+        boxEl.classList.remove('hidden');
+        boxEl.innerHTML = '<div class="flex items-center gap-2 text-violet-600"><i class="fa-solid fa-spinner fa-spin"></i> جاري تحليل الأسعار...</div>';
+        if (btnEl) btnEl.disabled = true;
+
+        window.apiFetch('/api/ai-assistant/suggest-price?product_name=' + encodeURIComponent(productName) + '&target_margin=20')
+            .then(function(res) {
+                if (!res.suggestions || res.suggestions.length === 0) {
+                    boxEl.innerHTML = '<div class="text-slate-500">' + (res.message || 'لا توجد بيانات كافية للاقتراح') + '</div>';
+                    return;
+                }
+
+                var s = res.suggestions[0]; // Show first (most relevant) suggestion
+                var html = '<div class="space-y-2">';
+                html += '<div class="flex items-center justify-between"><span class="text-slate-500">السعر المقترح (هامش 20%)</span><span class="font-bold text-violet-700 text-base">' + parseFloat(s.suggested_price).toLocaleString('ar-SA', {maximumFractionDigits: 2}) + ' ر.س</span></div>';
+                html += '<div class="flex items-center justify-between"><span class="text-slate-400">التكلفة</span><span class="text-slate-600">' + parseFloat(s.cost_price).toLocaleString('ar-SA', {maximumFractionDigits: 2}) + ' ر.س</span></div>';
+                html += '<div class="flex items-center justify-between"><span class="text-slate-400">السعر الحالي</span><span class="text-slate-600">' + parseFloat(s.current_selling_price).toLocaleString('ar-SA', {maximumFractionDigits: 2}) + ' ر.س</span></div>';
+                html += '<div class="flex items-center justify-between"><span class="text-slate-400">هامش الربح الحالي</span><span class="' + (s.current_margin_percent >= 20 ? 'text-emerald-600' : 'text-amber-600') + ' font-semibold">' + s.current_margin_percent + '%</span></div>';
+                if (s.times_sold > 0) {
+                    html += '<div class="flex items-center justify-between"><span class="text-slate-400">متوسط سعر البيع السابق</span><span class="text-slate-600">' + parseFloat(s.avg_historical_price).toLocaleString('ar-SA', {maximumFractionDigits: 2}) + ' ر.س (' + s.times_sold + ' مرة)</span></div>';
+                }
+                html += '<div class="flex gap-2 pt-1">';
+                html += '<button type="button" id="ai-price-accept" class="flex-1 px-3 py-1.5 bg-violet-600 text-white rounded-lg text-xs font-semibold hover:bg-violet-700 transition-colors">استخدام السعر المقترح</button>';
+                html += '<button type="button" id="ai-price-dismiss" class="px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-xs hover:bg-slate-200 transition-colors">إغلاق</button>';
+                html += '</div>';
+                html += '</div>';
+                boxEl.innerHTML = html;
+
+                var acceptBtn = document.getElementById('ai-price-accept');
+                var dismissBtn = document.getElementById('ai-price-dismiss');
+                if (acceptBtn) acceptBtn.addEventListener('click', function() {
+                    priceEl.value = s.suggested_price;
+                    boxEl.classList.add('hidden');
+                    if (window.showToast) window.showToast('تم تحديث سعر البيع', 'success');
+                });
+                if (dismissBtn) dismissBtn.addEventListener('click', function() {
+                    boxEl.classList.add('hidden');
+                });
+            })
+            .catch(function(err) {
+                boxEl.innerHTML = '<div class="text-rose-500">تعذّر جلب الاقتراح: ' + (err.message || 'خطأ غير معروف') + '</div>';
+            })
+            .finally(function() {
+                if (btnEl) btnEl.disabled = false;
+            });
+    }
+
+    // Wire the button after DOM is ready (called from initProductsView)
+    var _priceBtn = document.getElementById('ai-priceuggest-btn');
+    if (_priceBtn) _priceBtn.addEventListener('click', _suggestPrice);
+
     // ── Auto-execute ──────────────────────────────────────────────────────────
     initProductsView();
 
