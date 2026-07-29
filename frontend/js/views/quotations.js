@@ -2087,11 +2087,15 @@
         // Reset fields
         const nameInput  = document.getElementById('qc-name');
         const phoneInput = document.getElementById('qc-phone');
+        const contactInput = document.getElementById('qc-contact');
+        const cityInput  = document.getElementById('qc-city');
         const parentSel  = document.getElementById('qc-parent');
         const errBox     = document.getElementById('quick-client-error');
 
         if (nameInput)  nameInput.value  = '';
         if (phoneInput) phoneInput.value = '';
+        if (contactInput) contactInput.value = '';
+        if (cityInput)  cityInput.value  = '';
         if (errBox)     errBox.classList.add('hidden');
 
         // Populate parent select from cached clients
@@ -2205,6 +2209,8 @@
         const submitBtn  = document.getElementById('quick-client-submit-btn');
         const nameVal    = (document.getElementById('qc-name')?.value || '').trim();
         const phoneVal   = (document.getElementById('qc-phone')?.value || '').trim();
+        const contactVal = (document.getElementById('qc-contact')?.value || '').trim();
+        const cityVal    = (document.getElementById('qc-city')?.value || '').trim();
         const parentVal  = document.getElementById('qc-parent')?.value || '';
 
         // Clear error
@@ -2225,9 +2231,11 @@
             const res = await window.apiFetch('/api/clients', {
                 method: 'POST',
                 body: {
-                    name:      nameVal,
-                    phone:     phoneVal || null,
-                    parent_id: parentVal || null,
+                    name:           nameVal,
+                    phone:          phoneVal || null,
+                    contact_person: contactVal || null,
+                    city:           cityVal || null,
+                    parent_id:      parentVal || null,
                 },
             });
 
