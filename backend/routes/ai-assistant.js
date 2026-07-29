@@ -11,6 +11,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const { AI_FUNCTIONS, FUNCTION_MAP } = require('../utils/ai-functions');
+const { AI_ACTIONS, ACTION_MAP } = require('../utils/ai-actions');
 
 // ── Config ───────────────────────────────────────────────────────────────────
 // Supports ANY OpenAI-compatible provider: OpenAI, Azure OpenAI, OpenRouter,
@@ -36,7 +37,15 @@ const SYSTEM_PROMPT = `أنت مساعد ذكي لنظام G.PACK 2.0 لإدار
 [[action:filter|page_key:filter_value|تسمية الزر]] — لتصفية صفحة بقيمة
 مثال: [[action:navigate|warehouses|فتح صفحة المخازن]]
 مثال: [[action:filter|inventory:warehouse_id=5|فلترة المخزون بالمستودع]]
-اكتب الإجراءات في سطر منفصل بعد الرد. максимум 3 إجراءات لكل رد.`;
+اكتب الإجراءات في سطر منفصل بعد الرد. максимум 3 إجراءات لكل رد.
+
+--- اقتراح إجراءات تنفيذية ---
+عندما يطلب المستخدم إنشاء عرض سعر أو تسجيل دفعة أو تحويل عرض لفاتورة أو إنشاء أمر تشغيل، اقترح إجراء تنفيذي بصيغة:
+[[propose_action:create_quote|{"client_name":"اسم العميل","items":[{"product_name":"اسم المنتج","quantity":100}]}|إنشاء عرض سعر]]
+[[propose_action:add_payment|{"order_number":123,"amount":500,"payment_method":"cash"}|تسجيل دفعة]]
+[[propose_action:convert_quote_to_invoice|{"order_number":123}|تحويل لفاتورة]]
+[[propose_action:create_production_order|{"client_name":"اسم العميل","items":[{"product_name":"اسم المنتج","quantity":100}],"internal_notes":"ملاحظات"}|إنشاء أمر تشغيل]]
+اكتب الإجراء في سطر منفصل. الإجراء سيتم تنفيذه فقط بعد تأكيد المستخدم.`;
 
 // =============================================================================
 // GET /api/ai-assistant/health
@@ -240,6 +249,151 @@ router.get('/suggest-price', async (req, res) => {
 });
 
 // =============================================================================
+// POST /api/ai-assistant/propose-action
+// Phase 6: AI proposes a write action (create quote, add payment, etc).
+// Validates inputs and returns a summary — NO DB writes yet.
+// Body: { action_type: string, args: object }
+// =============================================================================
+router.post('/propose-action', async (req, res) => {
+    try {
+        const { action_type, args } = req.body;
+
+        if (!action_type) {
+            return res.status(400).json({ error: 'نوع الإجراء مطلوب' });
+        }
+
+        const action = ACTION_MAP[action_type];
+        if (!action) {
+            return res.status(400).json({ error: 'نوع إجراء غير معروف: ' + action_type });
+        }
+
+        // Role check: only managers/admins can propose write actions
+        const userRole = req.user.role;
+        if (userRole === 'sales_rep' || userRole === 'designer') {
+            return res.status(403).json({ error: 'غير مصرح لك بتنفيذ إجراءات. هذه الميزة للمديرين فقط.' });
+        }
+
+        const proposal = await action.propose(args || {}, req.user);
+
+        if (!proposal.valid) {
+            return res.json({ valid: false, error: proposal.error });
+        }
+
+        // Log the proposal in ai_action_log
+        const logRes = await db.query(
+            `INSERT INTO ai_action_log (user_id, action_type, proposal, status)
+             VALUES ($1, $2, $3::jsonb, 'proposed')
+             RETURNING id`,
+            [req.user.id, action_type, JSON.stringify(proposal.summary)]
+        );
+
+        res.json({
+            valid: true,
+            action_id: logRes.rows[0].id,
+            summary: proposal.summary,
+        });
+    } catch (err) {
+        console.error('[AI Assistant] Propose-action error:', err.message);
+        res.status(500).json({ error: 'فشل في تجهيز الإجراء: ' + err.message });
+    }
+});
+
+// =============================================================================
+// POST /api/ai-assistant/execute-action
+// Phase 6: Execute a previously proposed action after user confirmation.
+// Body: { action_id: uuid }
+// =============================================================================
+router.post('/execute-action', async (req, res) => {
+    try {
+        const { action_id } = req.body;
+
+        if (!action_id) {
+            return res.status(400).json({ error: 'معرف الإجراء مطلوب' });
+        }
+
+        // Fetch the action log entry
+        const logRes = await db.query(
+            `SELECT id, user_id, action_type, proposal, status
+             FROM ai_action_log
+             WHERE id = $1 AND user_id = $2
+             LIMIT 1`,
+            [action_id, req.user.id]
+        );
+
+        if (logRes.rows.length === 0) {
+            return res.status(404).json({ error: 'الإجراء غير موجود أو لا يخصك' });
+        }
+
+        const logEntry = logRes.rows[0];
+
+        if (logEntry.status !== 'proposed') {
+            return res.status(400).json({ error: `الإجراء уже تم تنفيذه أو رفضه (حالته: ${logEntry.status})` });
+        }
+
+        // Role check again (may have changed)
+        const userRole = req.user.role;
+        if (userRole === 'sales_rep' || userRole === 'designer') {
+            return res.status(403).json({ error: 'غير مصرح لك بتنفيذ إجراءات.' });
+        }
+
+        const action = ACTION_MAP[logEntry.action_type];
+        if (!action) {
+            return res.status(400).json({ error: 'نوع إجراء غير معروف' });
+        }
+
+        // Execute in transaction
+        const result = await action.execute(logEntry.proposal, req.user);
+
+        // Update action log
+        await db.query(
+            `UPDATE ai_action_log
+             SET status = 'executed', result = $1::jsonb, executed_at = NOW()
+             WHERE id = $2`,
+            [JSON.stringify(result), action_id]
+        );
+
+        res.json({ success: true, result });
+    } catch (err) {
+        console.error('[AI Assistant] Execute-action error:', err.message);
+
+        // Update action log with error
+        if (req.body.action_id) {
+            await db.query(
+                `UPDATE ai_action_log
+                 SET status = 'failed', error_message = $1
+                 WHERE id = $2 AND status = 'proposed'`,
+                [err.message, req.body.action_id]
+            ).catch(() => {});
+        }
+
+        res.status(500).json({ error: 'فشل في تنفيذ الإجراء: ' + err.message });
+    }
+});
+
+// =============================================================================
+// POST /api/ai-assistant/reject-action
+// Phase 6: User rejects a proposed action.
+// Body: { action_id: uuid }
+// =============================================================================
+router.post('/reject-action', async (req, res) => {
+    try {
+        const { action_id } = req.body;
+        if (!action_id) return res.status(400).json({ error: 'معرف الإجراء مطلوب' });
+
+        await db.query(
+            `UPDATE ai_action_log
+             SET status = 'rejected'
+             WHERE id = $1 AND user_id = $2 AND status = 'proposed'`,
+            [action_id, req.user.id]
+        );
+
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: 'فشل في رفض الإجراء' });
+    }
+});
+
+// =============================================================================
 // POST /api/ai-assistant/chat
 // Body: { message: string, context?: { page, entity_type, entity_id } }
 // =============================================================================
@@ -369,13 +523,36 @@ router.post('/chat', async (req, res) => {
         // Remove action tags from reply text
         reply = reply.replace(actionRegex, '').trim();
 
+        // Parse propose_action tags ([[propose_action:type|json_args|label]])
+        const proposedActions = [];
+        const proposeRegex = /\[\[propose_action:(\w+)\|(\{[^}]*\})\|([^\]]+)\]\]/g;
+        let proposeMatch;
+        while ((proposeMatch = proposeRegex.exec(reply)) !== null) {
+            try {
+                proposedActions.push({
+                    action_type: proposeMatch[1],
+                    args: JSON.parse(proposeMatch[2]),
+                    label: proposeMatch[3].trim(),
+                });
+            } catch {
+                // Skip malformed JSON
+            }
+        }
+        // Remove propose_action tags from reply text
+        reply = reply.replace(proposeRegex, '').trim();
+
         // ── 7. Save assistant reply ──────────────────────────────────────────
         await db.query(
             `INSERT INTO ai_chat_history (user_id, role, content) VALUES ($1, 'assistant', $2)`,
             [req.user.id, reply]
         );
 
-        res.json({ reply, actions: actions.length > 0 ? actions : undefined, enabled: true });
+        res.json({
+            reply,
+            actions: actions.length > 0 ? actions : undefined,
+            proposed_actions: proposedActions.length > 0 ? proposedActions : undefined,
+            enabled: true,
+        });
 
     } catch (err) {
         console.error('[AI Assistant] Chat error:', err.message);

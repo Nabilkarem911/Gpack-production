@@ -384,6 +384,26 @@
             });
         });
 
+        // Proposed action confirm/reject buttons (Phase 6)
+        document.querySelectorAll('.ai-propose-confirm').forEach(btn => {
+            btn.addEventListener('click', function() {
+                var msgEl = this.closest('[data-msg-proposed]');
+                if (!msgEl) return;
+                try {
+                    var proposed = JSON.parse(msgEl.getAttribute('data-msg-proposed') || '[]');
+                    var idx = parseInt(this.getAttribute('data-propose-idx') || '0');
+                    var pa = proposed[idx];
+                    if (pa) _handleProposeAction(pa, this);
+                } catch(e) { /* ignore */ }
+            });
+        });
+        document.querySelectorAll('.ai-propose-reject').forEach(btn => {
+            btn.addEventListener('click', function() {
+                var card = this.closest('.ai-propose-card');
+                if (card) card.remove();
+            });
+        });
+
         // Scroll to bottom
         _scrollToBottom();
     }
@@ -425,11 +445,33 @@
                 }).join('') +
                 '</div>';
         }
+        // Proposed write actions (Phase 6)
+        let proposeHtml = '';
+        if (msg.proposed_actions && msg.proposed_actions.length > 0) {
+            proposeHtml = msg.proposed_actions.map((pa, i) => {
+                return `<div class="ai-propose-card mt-2 p-3 bg-amber-50 border border-amber-300 rounded-xl" data-propose-idx="${i}">
+                    <div class="flex items-center gap-1.5 mb-1.5">
+                        <i class="fa-solid fa-wand-magic-sparkles text-amber-600 text-xs"></i>
+                        <span class="text-xs font-bold text-amber-800">${_esc(pa.label)}</span>
+                    </div>
+                    <div class="ai-propose-details text-[11px] text-slate-600 mb-2"></div>
+                    <div class="flex gap-2">
+                        <button class="ai-propose-confirm flex-1 px-3 py-1.5 bg-amber-600 text-white rounded-lg text-xs font-semibold hover:bg-amber-700 transition-colors" data-propose-idx="${i}">
+                            <i class="fa-solid fa-check ml-1 text-[10px]"></i>تأكيد وتنفيذ
+                        </button>
+                        <button class="ai-propose-reject px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-xs hover:bg-slate-200 transition-colors" data-propose-idx="${i}">
+                            <i class="fa-solid fa-xmark ml-1 text-[10px]"></i>إلغاء
+                        </button>
+                    </div>
+                </div>`;
+            }).join('');
+        }
         return `
-            <div class="flex justify-start" data-msg-actions='${msg.actions ? _esc(JSON.stringify(msg.actions)) : ""}'>
+            <div class="flex justify-start" data-msg-actions='${msg.actions ? _esc(JSON.stringify(msg.actions)) : ""}' data-msg-proposed='${msg.proposed_actions ? _esc(JSON.stringify(msg.proposed_actions)) : ""}'>
                 <div class="bg-white border border-slate-200 rounded-2xl rounded-tl-sm px-3 py-2 max-w-[80%] text-sm text-slate-700 shadow-sm">
                     ${_esc(msg.content).replace(/\n/g, '<br>')}
                     ${actionsHtml}
+                    ${proposeHtml}
                 </div>
             </div>
         `;
@@ -459,7 +501,7 @@
                 body: { message: text, context: ctx },
             });
 
-            _messages.push({ role: 'assistant', content: res.reply || 'عذراً، لم أتمكن من الرد.', actions: res.actions });
+            _messages.push({ role: 'assistant', content: res.reply || 'عذراً، لم أتمكن من الرد.', actions: res.actions, proposed_actions: res.proposed_actions });
         } catch (err) {
             let msg = 'حدث خطأ: ' + (err.message || 'تعذّر الاتصال بالمساعد');
             if (err.message && (err.message.includes('504') || err.message.includes('مهلة') || err.message.includes('timeout'))) {
@@ -469,6 +511,103 @@
         } finally {
             _isLoading = false;
             _renderPanel();
+        }
+    }
+
+    // =============================================================================
+    // Handle proposed action (Phase 6: two-step propose → confirm → execute)
+    // =============================================================================
+    async function _handleProposeAction(pa, btnEl) {
+        var card = btnEl.closest('.ai-propose-card');
+        var detailsEl = card ? card.querySelector('.ai-propose-details') : null;
+
+        // Step 1: Show loading
+        if (detailsEl) {
+            detailsEl.innerHTML = '<div class="flex items-center gap-1.5 text-amber-600"><i class="fa-solid fa-spinner fa-spin text-[10px]"></i> جاري التحقق...</div>';
+        }
+        if (btnEl) btnEl.disabled = true;
+
+        try {
+            // Step 2: Call propose-action API
+            var proposeRes = await window.apiFetch('/api/ai-assistant/propose-action', {
+                method: 'POST',
+                body: { action_type: pa.action_type, args: pa.args },
+            });
+
+            if (!proposeRes.valid) {
+                if (detailsEl) detailsEl.innerHTML = '<div class="text-rose-600"><i class="fa-solid fa-circle-exclamation ml-1"></i>' + _esc(proposeRes.error || 'فشل في التحقق') + '</div>';
+                if (btnEl) btnEl.disabled = false;
+                return;
+            }
+
+            // Step 3: Show summary for confirmation
+            var s = proposeRes.summary;
+            var summaryHtml = '';
+
+            if (s.action_type === 'create_quote' || s.action_type === 'create_production_order') {
+                summaryHtml = '<div class="space-y-1">';
+                summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">العميل:</span><span class="font-semibold text-slate-700">' + _esc(s.client_name) + '</span></div>';
+                s.items.forEach(function(item) {
+                    summaryHtml += '<div class="flex justify-between"><span class="text-slate-400">' + _esc(item.product_name) + (item.size_name ? ' (' + _esc(item.size_name) + ')' : '') + '</span><span class="text-slate-600">' + item.quantity + ' ' + (item.sku || '') + '</span></div>';
+                });
+                if (s.subtotal !== undefined) {
+                    summaryHtml += '<div class="flex justify-between pt-1 border-t border-amber-200"><span class="text-slate-500">الإجمالي:</span><span class="font-bold text-amber-700">' + parseFloat(s.grand_total).toLocaleString('ar-SA', {maximumFractionDigits: 2}) + ' ر.س</span></div>';
+                }
+                summaryHtml += '</div>';
+            } else if (s.action_type === 'add_payment') {
+                summaryHtml = '<div class="space-y-1">';
+                summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">طلب رقم:</span><span class="font-semibold text-slate-700">' + s.order_number + '</span></div>';
+                summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">العميل:</span><span class="text-slate-600">' + _esc(s.client_name) + '</span></div>';
+                summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">المبلغ:</span><span class="font-bold text-amber-700">' + parseFloat(s.amount).toLocaleString('ar-SA', {maximumFractionDigits: 2}) + ' ر.س</span></div>';
+                summaryHtml += '<div class="flex justify-between"><span class="text-slate-400">المتبقي بعد الدفعة:</span><span class="text-slate-600">' + parseFloat(s.remaining_after).toLocaleString('ar-SA', {maximumFractionDigits: 2}) + ' ر.س</span></div>';
+                summaryHtml += '</div>';
+            } else if (s.action_type === 'convert_quote_to_invoice') {
+                summaryHtml = '<div class="space-y-1">';
+                summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">طلب رقم:</span><span class="font-semibold text-slate-700">' + s.order_number + '</span></div>';
+                summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">العميل:</span><span class="text-slate-600">' + _esc(s.client_name) + '</span></div>';
+                summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">الإجمالي:</span><span class="font-bold text-amber-700">' + parseFloat(s.grand_total).toLocaleString('ar-SA', {maximumFractionDigits: 2}) + ' ر.س</span></div>';
+                summaryHtml += '</div>';
+            }
+
+            if (detailsEl) detailsEl.innerHTML = summaryHtml;
+
+            // Step 4: Change button to "confirm execute"
+            if (btnEl) {
+                btnEl.innerHTML = '<i class="fa-solid fa-check ml-1 text-[10px]"></i>تأكيد التنفيذ';
+                btnEl.disabled = false;
+                btnEl.classList.remove('bg-amber-600', 'hover:bg-amber-700');
+                btnEl.classList.add('bg-emerald-600', 'hover:bg-emerald-700');
+
+                // Replace click handler — now executes
+                btnEl.removeEventListener('click', arguments.callee);
+                btnEl.onclick = async function() {
+                    btnEl.disabled = true;
+                    btnEl.innerHTML = '<i class="fa-solid fa-spinner fa-spin ml-1 text-[10px]"></i>جاري التنفيذ...';
+                    try {
+                        var execRes = await window.apiFetch('/api/ai-assistant/execute-action', {
+                            method: 'POST',
+                            body: { action_id: proposeRes.action_id },
+                        });
+                        if (execRes.success) {
+                            // Show success
+                            if (detailsEl) detailsEl.innerHTML = '<div class="text-emerald-600 font-semibold"><i class="fa-solid fa-circle-check ml-1"></i>تم التنفيذ بنجاح!</div>';
+                            btnEl.remove();
+                            var rejectBtn = card ? card.querySelector('.ai-propose-reject') : null;
+                            if (rejectBtn) rejectBtn.remove();
+                            if (window.showToast) window.showToast('تم تنفيذ الإجراء بنجاح', 'success');
+                        } else {
+                            throw new Error(execRes.error || 'فشل غير معروف');
+                        }
+                    } catch (execErr) {
+                        if (detailsEl) detailsEl.innerHTML = '<div class="text-rose-600"><i class="fa-solid fa-circle-exclamation ml-1"></i>' + _esc(execErr.message || 'فشل في التنفيذ') + '</div>';
+                        btnEl.disabled = false;
+                        btnEl.innerHTML = '<i class="fa-solid fa-check ml-1 text-[10px]"></i>إعادة المحاولة';
+                    }
+                };
+            }
+        } catch (err) {
+            if (detailsEl) detailsEl.innerHTML = '<div class="text-rose-600"><i class="fa-solid fa-circle-exclamation ml-1"></i>' + _esc(err.message || 'فشل في التحقق') + '</div>';
+            if (btnEl) btnEl.disabled = false;
         }
     }
 
