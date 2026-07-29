@@ -204,6 +204,9 @@
         const whSel = _el('rv-receive-warehouse');
         whSel.innerHTML = '<option value="">— اختر المستودع —</option>' +
             _warehouses.map(w => `<option value="${w.id}">${esc(w.name)}</option>`).join('');
+        if (window.makeSelectSearchable && !whSel.dataset.searchable) {
+            window.makeSelectSearchable(whSel, '🔍 ابحث عن مستودع...');
+        }
 
         // Build items table
         let html = '';
@@ -450,6 +453,9 @@
                     opt.textContent = num + ' — ' + client;
                     moSel.appendChild(opt);
                 });
+                if (window.makeSelectSearchable && !moSel.dataset.searchable) {
+                    window.makeSelectSearchable(moSel, '🔍 ابحث عن أمر تشغيل...');
+                }
             }
 
             const targetMOs = filterMO ? allMOs.filter(m => m.id === filterMO) : allMOs;

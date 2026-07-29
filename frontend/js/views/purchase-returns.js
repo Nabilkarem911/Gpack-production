@@ -40,6 +40,9 @@
         if (!sel) return;
         sel.innerHTML = '<option value="">كل الموردين</option>' +
             _suppliers.map(s => `<option value="${s.id}">${esc(s.name || s.company_name)}</option>`).join('');
+        if (window.makeSelectSearchable && !sel.dataset.searchable) {
+            window.makeSelectSearchable(sel, '🔍 ابحث عن مورد...');
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -149,6 +152,10 @@
         _el('pr-modal-date').value = new Date().toISOString().slice(0, 10);
         _el('pr-modal-supplier').innerHTML = '<option value="">— اختر المورد —</option>' +
             _suppliers.map(s => `<option value="${s.id}">${esc(s.name || s.company_name)}</option>`).join('');
+        if (window.makeSelectSearchable) {
+            const supSel = _el('pr-modal-supplier');
+            if (!supSel.dataset.searchable) window.makeSelectSearchable(supSel, '🔍 ابحث عن مورد...');
+        }
         _el('pr-modal-invoice').innerHTML = '<option value="">— اختر الفاتورة —</option>';
         _el('pr-modal-invoice').disabled = true;
         _el('pr-modal-notes').value = '';

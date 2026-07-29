@@ -969,7 +969,7 @@ function updateSelects() {
 
   // Apply searchable to data-heavy selects
   if (window.makeSelectSearchable) {
-    ['modal-warehouse', 'stock-warehouse-filter', 'stock-client-filter', 'wh-client', 'modal-product'].forEach(function(id) {
+    ['modal-warehouse', 'stock-warehouse-filter', 'stock-client-filter', 'modal-product'].forEach(function(id) {
       var el = document.getElementById(id);
       if (el && !el.dataset.searchable && !el.disabled && el.style.display !== 'none') {
         window.makeSelectSearchable(el, '🔍 بحث...');
@@ -1165,7 +1165,18 @@ function closeWarehouseModal() { document.getElementById('warehouse-modal').clas
 
 function toggleClient() {
   const isDedicated = document.getElementById('wh-type').value === 'dedicated';
-  document.getElementById('wh-client').classList.toggle('hidden', !isDedicated);
+  const whClient = document.getElementById('wh-client');
+  if (whClient) {
+    whClient.classList.toggle('hidden', !isDedicated);
+    // Also toggle the searchable wrapper if it exists
+    const wrap = whClient.closest('.searchable-wrap');
+    if (wrap) {
+      wrap.classList.toggle('hidden', !isDedicated);
+    } else if (isDedicated && window.makeSelectSearchable && !whClient.dataset.searchable) {
+      // First time showing — initialize searchable
+      window.makeSelectSearchable(whClient, '🔍 ابحث عن عميل...');
+    }
+  }
 }
 
 async function saveWarehouse() {

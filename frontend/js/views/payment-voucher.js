@@ -123,6 +123,9 @@
                 `<option value="${a.id}">${a.code} — ${a.name}</option>`
             ).join('');
         }
+        if (window.makeSelectSearchable && !select.dataset.searchable) {
+            window.makeSelectSearchable(select, '🔍 ابحث عن حساب...');
+        }
     }
 
     // ── Load Vouchers ─────────────────────────────────────────────────────────

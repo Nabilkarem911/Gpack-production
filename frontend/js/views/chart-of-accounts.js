@@ -142,6 +142,9 @@
             .map(a => `<option value="${a.id}">${a.code} — ${esc(a.name)}</option>`)
             .join('');
         sel.innerHTML = '<option value="">— بدون حساب أب —</option>' + opts;
+        if (window.makeSelectSearchable && !sel.dataset.searchable) {
+            window.makeSelectSearchable(sel, '🔍 ابحث عن حساب...');
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
