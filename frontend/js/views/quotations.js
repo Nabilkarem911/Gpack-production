@@ -92,115 +92,8 @@
     // ==========================================================================
     function _makeSearchable(selectEl, placeholder) {
         if (!selectEl || selectEl.dataset.searchable) return null;
-        selectEl.dataset.searchable = '1';
-
-        const parent = selectEl.parentElement;
-        const wrap = document.createElement('div');
-        wrap.className = 'searchable-wrap relative w-full';
-
-        const input = document.createElement('input');
-        input.type = 'text';
-        input.placeholder = placeholder || '— بحث —';
-        input.autocomplete = 'off';
-        input.className = selectEl.className
-            .replace('appearance-none', '')
-            .replace(/\brow-product\b/g, '')
-            .replace(/\brow-variant\b/g, '')
-            .trim() + ' cursor-text';
-
-        const dd = document.createElement('div');
-        dd.className = 'searchable-dd absolute z-[100] left-0 right-0 top-full mt-1 max-h-48 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-lg hidden';
-        dd.style.direction = 'rtl';
-
-        selectEl.style.display = 'none';
-        parent.insertBefore(wrap, selectEl);
-        wrap.appendChild(input);
-        wrap.appendChild(dd);
-        wrap.appendChild(selectEl);
-
-        let _picking = false; // prevents blur from closing dropdown during selection
-
-        function _selectOption(value, label) {
-            _picking = true;
-            selectEl.value = value;
-            input.value = label;
-            dd.classList.add('hidden');
-            selectEl.dispatchEvent(new Event('change', { bubbles: true }));
-            setTimeout(() => { _picking = false; }, 0);
-        }
-
-        function buildList(filter) {
-            dd.innerHTML = '';
-            const q = (filter || '').trim().toLowerCase();
-            const opts = Array.from(selectEl.options);
-            let hasMatch = false;
-            opts.forEach(opt => {
-                if (!opt.value && !q) {
-                    const div = document.createElement('div');
-                    div.textContent = opt.textContent;
-                    div.className = 'px-3 py-2 text-sm text-slate-400 cursor-pointer hover:bg-slate-50';
-                    div.addEventListener('mousedown', (e) => { e.preventDefault(); });
-                    div.addEventListener('click', () => _selectOption('', ''));
-                    dd.appendChild(div);
-                    hasMatch = true;
-                    return;
-                }
-                if (!opt.value) return;
-                const text = opt.textContent;
-                if (q && !text.toLowerCase().includes(q)) return;
-                hasMatch = true;
-                const div = document.createElement('div');
-                div.textContent = text;
-                div.className = 'px-3 py-2 text-sm text-slate-800 cursor-pointer hover:bg-brand-50 hover:text-brand-700 transition-colors';
-                if (opt.value === selectEl.value) {
-                    div.classList.add('bg-brand-50', 'font-bold', 'text-brand-700');
-                }
-                div.addEventListener('mousedown', (e) => { e.preventDefault(); });
-                div.addEventListener('click', () => _selectOption(opt.value, text));
-                dd.appendChild(div);
-            });
-            if (!hasMatch) {
-                const div = document.createElement('div');
-                div.textContent = 'لا توجد نتائج';
-                div.className = 'px-3 py-2 text-sm text-slate-400 text-center';
-                dd.appendChild(div);
-            }
-        }
-
-        function syncDisplay() {
-            const opt = selectEl.options[selectEl.selectedIndex];
-            input.value = (opt && opt.value) ? opt.textContent : '';
-        }
-
-        input.addEventListener('focus', () => {
-            input.select();
-            buildList('');
-            dd.classList.remove('hidden');
-        });
-        input.addEventListener('input', () => {
-            buildList(input.value);
-            dd.classList.remove('hidden');
-        });
-        input.addEventListener('blur', () => {
-            setTimeout(() => {
-                if (!_picking) {
-                    dd.classList.add('hidden');
-                    syncDisplay();
-                }
-            }, 200);
-        });
-
-        syncDisplay();
-
-        const obs = new MutationObserver(() => {
-            setTimeout(syncDisplay, 0);
-        });
-        obs.observe(selectEl, { childList: true, subtree: true });
-
-        return {
-            refresh: () => syncDisplay(),
-            input: input,
-        };
+        if (!window.makeSelectSearchable) return null;
+        return window.makeSelectSearchable(selectEl, { placeholder: placeholder || '— بحث —' });
     }
 
     // ==========================================================================
@@ -705,6 +598,7 @@
     // ==========================================================================
     // _populateClientFilter() — fills client filter dropdown from loaded quotes
     // ==========================================================================
+    let _clientFilterSearchable = null;
     function _populateClientFilter() {
         const sel = document.getElementById('quotes-client-filter');
         if (!sel) return;
@@ -721,6 +615,10 @@
             }
         });
         if (currentVal) sel.value = currentVal;
+        if (!_clientFilterSearchable && window.makeSelectSearchable) {
+            _clientFilterSearchable = window.makeSelectSearchable(sel, '🔍 ابحث عن العميل...');
+        }
+        if (_clientFilterSearchable) _clientFilterSearchable.refresh();
     }
 
     // ==========================================================================
@@ -2107,6 +2005,9 @@
                 opt.textContent = c.name;
                 parentSel.appendChild(opt);
             });
+            if (!parentSel.dataset.searchable && window.makeSelectSearchable) {
+                window.makeSelectSearchable(parentSel, '🔍 ابحث عن العميل...');
+            }
         }
 
         modal.style.display = 'flex';

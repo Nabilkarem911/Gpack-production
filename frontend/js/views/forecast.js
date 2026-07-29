@@ -47,6 +47,9 @@ var forecastView = {
             }
             select.innerHTML = '<option value="">اختر عميل...</option>' +
                 clients.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+            if (window.makeSelectSearchable && !select.dataset.searchable) {
+                window.makeSelectSearchable(select, '🔍 ابحث عن عميل...');
+            }
         } catch (err) {
             console.error('[Forecast] loadClients error:', err);
             select.innerHTML = '<option value="">خطأ في تحميل العملاء</option>';

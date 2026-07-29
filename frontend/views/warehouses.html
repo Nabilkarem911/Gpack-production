@@ -966,6 +966,16 @@ function updateSelects() {
 
   const mp = document.getElementById('modal-product');
   if (mp) mp.innerHTML = '<option value="">اختر الصنف *</option>' + prOpts;
+
+  // Apply searchable to data-heavy selects
+  if (window.makeSelectSearchable) {
+    ['modal-warehouse', 'stock-warehouse-filter', 'stock-client-filter', 'wh-client', 'modal-product'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el && !el.dataset.searchable && !el.disabled && el.style.display !== 'none') {
+        window.makeSelectSearchable(el, '🔍 بحث...');
+      }
+    });
+  }
 }
 
 // ── Variant Loading ───────────────────────────────────────────────────────
@@ -1333,6 +1343,9 @@ function openItemMovements(variantId, productName, sizeName) {
   var clOpts = clients.map(function(c) { return '<option value="' + c.id + '">' + c.name + '</option>'; }).join('');
   var clSel = document.getElementById('wh-mv-client');
   if (clSel) clSel.innerHTML = '<option value="">كل العملاء</option>' + clOpts;
+  if (clSel && window.makeSelectSearchable && !clSel.dataset.searchable) {
+    window.makeSelectSearchable(clSel, '🔍 ابحث عن عميل...');
+  }
 
   loadItemMovements();
 }

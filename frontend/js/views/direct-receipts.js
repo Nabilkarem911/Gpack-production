@@ -84,7 +84,12 @@
 
     function _populateQuickProductDropdowns() {
         const catSel = _el('dr-qp-category');
-        if (catSel) catSel.innerHTML = _buildCategoryOptions();
+        if (catSel) {
+            catSel.innerHTML = _buildCategoryOptions();
+            if (window.makeSelectSearchable && !catSel.dataset.searchable) {
+                window.makeSelectSearchable(catSel, '🔍 ابحث عن فئة...');
+            }
+        }
         const unitSel = _el('dr-qp-unit');
         if (unitSel) unitSel.innerHTML = '<option value="">— بدون وحدة —</option>' + _units.map(u => `<option value="${u.id}">${_esc(u.name)}${u.abbreviation ? ' (' + _esc(u.abbreviation) + ')' : ''}</option>`).join('');
     }
@@ -342,6 +347,9 @@
             if (sel) {
                 sel.innerHTML = '<option value="">— اختر —</option>' +
                     _suppliers.map(s => `<option value="${s.id}" ${_currentReceipt.supplier_id === s.id ? 'selected' : ''}>${_esc(s.company_name || s.name)}</option>`).join('');
+                if (window.makeSelectSearchable && !sel.dataset.searchable) {
+                    window.makeSelectSearchable(sel, '🔍 ابحث عن مورد...');
+                }
             }
 
             // Populate warehouses

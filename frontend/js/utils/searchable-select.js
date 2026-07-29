@@ -28,6 +28,8 @@
             this._value      = '';
             this._label      = '';
             this.isOpen      = false;
+            this._activeIdx  = -1;
+            this._filtered   = [];
             this.opts = {
                 placeholder:      opts.placeholder      || '— اختر —',
                 searchPlaceholder: opts.searchPlaceholder || 'بحث...',
@@ -129,11 +131,35 @@
                 }
             });
 
-            // Keyboard: Escape closes
+            // Keyboard: Arrow Up/Down, Enter, Escape
             this.searchInput.addEventListener('keydown', (e) => {
                 if (e.key === 'Escape') {
                     this.close();
                     this.trigger.focus();
+                    return;
+                }
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    if (!this.isOpen) { this.open(); return; }
+                    this._activeIdx = Math.min(this._activeIdx + 1, this._filtered.length - 1);
+                    this._highlightActive();
+                    return;
+                }
+                if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    if (this._activeIdx > 0) {
+                        this._activeIdx--;
+                        this._highlightActive();
+                    }
+                    return;
+                }
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (this.isOpen && this._activeIdx >= 0 && this._filtered[this._activeIdx]) {
+                        this.select(this._filtered[this._activeIdx].value);
+                        this.close();
+                    }
+                    return;
                 }
             });
         }
@@ -148,6 +174,8 @@
                     item.label.toLowerCase().includes(query)
                 );
             }
+            this._filtered = filtered;
+            this._activeIdx = -1;
 
             if (filtered.length === 0) {
                 const empty = document.createElement('div');
@@ -183,8 +211,28 @@
                     this.close();
                 });
 
+                opt.addEventListener('mouseenter', () => {
+                    const idx = Array.from(this.listContainer.children).indexOf(opt);
+                    if (idx >= 0) {
+                        this._activeIdx = idx;
+                        this._highlightActive();
+                    }
+                });
+
                 this.listContainer.appendChild(opt);
             });
+        }
+
+        _highlightActive() {
+            const children = this.listContainer.children;
+            for (let i = 0; i < children.length; i++) {
+                if (i === this._activeIdx) {
+                    children[i].classList.add('bg-brand-100');
+                    children[i].scrollIntoView({ block: 'nearest' });
+                } else {
+                    children[i].classList.remove('bg-brand-100');
+                }
+            }
         }
 
         // ── Public API ─────────────────────────────────────────────────────────

@@ -217,6 +217,9 @@
             sel.appendChild(opt);
         });
         if (selectId) sel.value = selectId;
+        if (!sel.dataset.searchable && window.makeSelectSearchable) {
+            window.makeSelectSearchable(sel, '🔍 ابحث عن الفئة...');
+        }
     }
 
     // selectId: optional UUID to auto-select after refresh (used by Quick Add)

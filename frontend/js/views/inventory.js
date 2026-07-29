@@ -44,6 +44,9 @@ window.inventoryView = {
                 this.warehouses.forEach(w => {
                     sel.innerHTML += `<option value="${w.id}">${w.name}</option>`;
                 });
+                if (!sel.dataset.searchable && window.makeSelectSearchable) {
+                    window.makeSelectSearchable(sel, '🔍 ابحث عن مستودع...');
+                }
             });
         } catch (e) {
             console.error('[Inventory] Failed to load warehouses:', e);
@@ -61,6 +64,9 @@ window.inventoryView = {
                 this.categories.forEach(c => {
                     sel.innerHTML += `<option value="${c.id}">${c.name}</option>`;
                 });
+                if (!sel.dataset.searchable && window.makeSelectSearchable) {
+                    window.makeSelectSearchable(sel, '🔍 ابحث عن فئة...');
+                }
             }
         } catch (e) {
             console.error('[Inventory] Failed to load categories:', e);
@@ -174,6 +180,9 @@ window.inventoryView = {
             clients.forEach(c => {
                 sel.innerHTML += `<option value="${c.id}">${c.name}</option>`;
             });
+            if (window.makeSelectSearchable) {
+                window.makeSelectSearchable(sel, '🔍 ابحث عن عميل...');
+            }
         } catch(e) {
             console.error('[CA] Failed to load clients:', e);
         }
@@ -988,6 +997,10 @@ window.inventoryView = {
                 selA.innerHTML += `<option value="${o.value}">${o.text}</option>`;
                 selB.innerHTML += `<option value="${o.value}">${o.text}</option>`;
             });
+        }
+        if (window.makeSelectSearchable) {
+            if (!selA.dataset.searchable) window.makeSelectSearchable(selA, '🔍 ابحث عن عميل...');
+            if (!selB.dataset.searchable) window.makeSelectSearchable(selB, '🔍 ابحث عن عميل...');
         }
         this._caSetRangeCmp(90);
     },

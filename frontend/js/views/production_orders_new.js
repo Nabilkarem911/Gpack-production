@@ -904,6 +904,9 @@
             if (sel) {
                 sel.innerHTML = '<option value="">— اختر المورد —</option>' +
                     suppliers.map(s => `<option value="${s.id}">${s.company_name || s.name}</option>`).join('');
+                if (window.makeSelectSearchable && !sel.dataset.searchable) {
+                    window.makeSelectSearchable(sel, '🔍 ابحث عن مورد...');
+                }
             }
 
             // Open assign modal with existing data for editing
@@ -1807,6 +1810,9 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         if (sel) {
             sel.innerHTML = '<option value="">— اختر المورد —</option>' +
                 _suppliers.map(s => `<option value="${s.id}">${s.company_name || s.name}</option>`).join('');
+            if (window.makeSelectSearchable && !sel.dataset.searchable) {
+                window.makeSelectSearchable(sel, '🔍 ابحث عن مورد...');
+            }
         }
         _showModal('po-assign-modal');
     }
@@ -3068,6 +3074,9 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         if (sel) {
             sel.innerHTML = '<option value="">— اختر المورد —</option>' +
                 _suppliers.map(s => `<option value="${s.id}">${s.company_name || s.name}</option>`).join('');
+            if (window.makeSelectSearchable && !sel.dataset.searchable) {
+                window.makeSelectSearchable(sel, '🔍 ابحث عن مورد...');
+            }
         }
 
         const deliveryEl = _el('bulk-expected-delivery');

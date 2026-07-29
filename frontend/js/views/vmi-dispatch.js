@@ -275,6 +275,9 @@
                 mains.forEach(m => {
                     clientSel.innerHTML += `<option value="${esc(m.id)}">${esc(m.name)}</option>`;
                 });
+                if (window.makeSelectSearchable && !clientSel.dataset.searchable) {
+                    window.makeSelectSearchable(clientSel, '🔍 ابحث عن عميل...');
+                }
             }
         } catch (e) { window.showToast('فشل تحميل العملاء', 'error'); }
 

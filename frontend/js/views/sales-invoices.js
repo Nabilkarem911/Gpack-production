@@ -34,6 +34,9 @@
                     opt.textContent = c.name;
                     sel.appendChild(opt);
                 });
+                if (window.makeSelectSearchable) {
+                    window.makeSelectSearchable(sel, '🔍 ابحث عن العميل...');
+                }
             }
         } catch (_) {}
     }
