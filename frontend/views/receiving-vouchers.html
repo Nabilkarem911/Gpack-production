@@ -201,5 +201,36 @@
     </div>
 </div>
 
+<!-- ══════════════════════════════════════════════════════════════════════════
+     Modal: عرض جلسة استلام (أرشيف)
+══════════════════════════════════════════════════════════════════════════ -->
+<div id="rv-session-modal"
+     style="display:none"
+     class="fixed inset-0 z-50 flex items-start justify-center p-4 pt-6 bg-black/50 opacity-0 transition-opacity duration-200 overflow-y-auto">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mb-8">
+        <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+            <div>
+                <h3 class="text-base font-bold text-slate-800">تفاصيل سند الاستلام</h3>
+                <p id="rv-session-subtitle" class="text-xs text-slate-400 mt-0.5"></p>
+            </div>
+            <button onclick="window.rvCloseSessionModal()"
+                    class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        <div id="rv-session-body" class="p-6 space-y-4 max-h-[70vh] overflow-y-auto"></div>
+        <div class="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
+            <button onclick="window.rvPrintSession()"
+                    class="flex items-center gap-2 px-5 py-2.5 border border-slate-200 text-slate-600 text-sm font-bold rounded-xl hover:bg-slate-50 transition-colors">
+                <i class="fa-solid fa-print"></i> طباعة
+            </button>
+            <button onclick="window.rvCloseSessionModal()"
+                    class="px-5 py-2.5 bg-slate-700 text-white text-sm font-bold rounded-xl hover:bg-slate-800 transition-colors">
+                إغلاق
+            </button>
+        </div>
+    </div>
+</div>
 
-<script src="/js/views/receiving-vouchers.js?v=20260713b"></script>
+
+<script src="/js/views/receiving-vouchers.js?v=20260729b"></script>

@@ -516,28 +516,41 @@
                 return `
                 <div class="bg-white border border-slate-200 rounded-2xl p-5 ${isReversed ? 'opacity-60' : ''} shadow-sm">
                     <div class="flex flex-wrap justify-between items-start gap-2 mb-3">
-                        <div>
-                            <div class="flex items-center gap-2 flex-wrap">
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2 flex-wrap mb-2">
                                 ${statusBadge}
                                 <span class="text-sm font-black text-slate-800">جلسة #${s.session_number}</span>
                                 ${invoiceBadge}
                             </div>
-                            <p class="text-xs text-slate-400 mt-1">
-                                طلب #${esc(String(s.order_number))} • ${esc(s.mo_number)} — ${esc(s.client_name)}
+                            <div class="flex items-center gap-2 mb-1">
+                                <div class="w-8 h-8 rounded-lg bg-brand-100 flex items-center justify-center flex-shrink-0">
+                                    <i class="fa-solid fa-user text-brand-600 text-xs"></i>
+                                </div>
+                                <p class="text-sm font-bold text-slate-800 truncate">${esc(s.client_name)}</p>
+                            </div>
+                            <p class="text-xs text-slate-500 mt-1">
+                                <i class="fa-solid fa-hashtag ml-0.5"></i> طلب #${esc(String(s.order_number))} • ${esc(s.mo_number)}
                             </p>
                             <p class="text-xs text-slate-400">
-                                ${fmtD(s.received_date)} • ${esc(s.warehouse_name || '—')}
-                                ${s.created_by_name ? '• ' + esc(s.created_by_name) : ''}
+                                <i class="fa-solid fa-calendar-day ml-0.5"></i> ${fmtD(s.received_date)} • 
+                                <i class="fa-solid fa-warehouse ml-0.5"></i> ${esc(s.warehouse_name || '—')}
+                                ${s.created_by_name ? ' • <i class="fa-solid fa-user-pen ml-0.5"></i> ' + esc(s.created_by_name) : ''}
                             </p>
                         </div>
-                        ${canReverse
-                            ? `<button onclick="window.rvReverseSession('${s._moId}','${s.id}','${s.session_number}')"
-                                       class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-red-600 border border-red-200 rounded-xl hover:bg-red-50 transition-colors">
-                                   <i class="fa-solid fa-rotate-left"></i>تراجع عن الاستلام
+                        <div class="flex flex-col gap-2 flex-shrink-0">
+                            <button onclick="window.rvOpenSessionModal('${s._moId}','${s.id}')"
+                                    class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-brand-600 border border-brand-200 rounded-xl hover:bg-brand-50 transition-colors">
+                                <i class="fa-solid fa-eye"></i>عرض
+                            </button>
+                            ${canReverse
+                                ? `<button onclick="window.rvReverseSession('${s._moId}','${s.id}','${s.session_number}')"
+                                           class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-red-600 border border-red-200 rounded-xl hover:bg-red-50 transition-colors">
+                                   <i class="fa-solid fa-rotate-left"></i>تراجع
                                </button>`
-                            : isLocked
-                                ? `<span class="text-xs text-slate-500">ممنوع — الطلب بحالة <strong>${esc(s.order_status)}</strong></span>`
-                                : ''}
+                                : isLocked
+                                    ? `<span class="text-xs text-slate-500 text-center">ممنوع — <strong>${esc(s.order_status)}</strong></span>`
+                                    : ''}
+                        </div>
                     </div>
                     ${itemsHtml
                         ? `<div class="bg-slate-50 rounded-xl px-3 py-1">${itemsHtml}</div>`
@@ -552,6 +565,150 @@
             hideEl('rv-archive-loading');
             listEl.innerHTML = `<p class="text-center text-red-500 text-sm py-8">فشل تحميل الأرشيف: ${esc(e.message)}</p>`;
         }
+    };
+
+    let _currentSession = null;
+
+    window.rvOpenSessionModal = async function (moId, sessionId) {
+        const modal = _el('rv-session-modal');
+        const body  = _el('rv-session-body');
+        const sub   = _el('rv-session-subtitle');
+        if (!modal || !body) return;
+
+        body.innerHTML = '<div class="py-12 text-center"><i class="fa-solid fa-circle-notch fa-spin text-brand-500 text-xl mb-2"></i><p class="text-slate-400 text-sm">جاري التحميل...</p></div>';
+        openModal('rv-session-modal');
+
+        try {
+            const res = await window.apiFetch('/api/manufacturer-orders/' + moId + '/receipts');
+            const session = (res.data || []).find(s => s.id === sessionId);
+            if (!session) {
+                body.innerHTML = '<p class="text-center text-red-500 text-sm py-8">لم يتم العثور على الجلسة</p>';
+                return;
+            }
+            _currentSession = { ...session, _moId: moId };
+
+            sub.textContent = 'جلسة #' + (session.session_number || '—') + ' — ' + (session.warehouse_name || '—');
+
+            const isReversed = session.status === 'reversed';
+            const itemsHtml = (session.items || []).map(i =>
+                `<tr class="border-b border-slate-100">
+                    <td class="py-2.5 px-3 text-xs font-medium text-slate-700">${esc(i.product_name || '—')} ${esc(i.size_name || '')}</td>
+                    <td class="py-2.5 px-3 text-center text-xs font-bold text-slate-800">${i.quantity}</td>
+                    <td class="py-2.5 px-3 text-center text-xs ${i.has_supplier_invoice ? 'text-blue-600 font-bold' : 'text-slate-400'}">
+                        ${i.has_supplier_invoice ? '<i class="fa-solid fa-file-invoice"></i> نعم' : '—'}
+                    </td>
+                </tr>`
+            ).join('');
+
+            body.innerHTML = `
+                <div class="grid grid-cols-2 gap-3 bg-slate-50 rounded-xl p-4">
+                    <div>
+                        <span class="text-xs text-slate-400 block mb-0.5"><i class="fa-solid fa-user ml-1"></i>العميل</span>
+                        <p class="text-sm font-bold text-slate-800">${esc(session.client_name || '—')}</p>
+                    </div>
+                    <div>
+                        <span class="text-xs text-slate-400 block mb-0.5"><i class="fa-solid fa-warehouse ml-1"></i>المستودع</span>
+                        <p class="text-sm font-bold text-slate-800">${esc(session.warehouse_name || '—')}</p>
+                    </div>
+                    <div>
+                        <span class="text-xs text-slate-400 block mb-0.5"><i class="fa-solid fa-calendar-day ml-1"></i>تاريخ الاستلام</span>
+                        <p class="text-sm font-bold text-slate-800">${fmtD(session.received_date)}</p>
+                    </div>
+                    <div>
+                        <span class="text-xs text-slate-400 block mb-0.5"><i class="fa-solid fa-circle-info ml-1"></i>الحالة</span>
+                        ${isReversed
+                            ? '<span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-red-100 text-red-600">تم التراجع</span>'
+                            : '<span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-600">فعّال</span>'}
+                    </div>
+                    <div>
+                        <span class="text-xs text-slate-400 block mb-0.5"><i class="fa-solid fa-hashtag ml-1"></i>أمر التشغيل</span>
+                        <p class="text-sm font-bold text-slate-800 font-mono">${esc(session.mo_number || '—')}</p>
+                    </div>
+                    <div>
+                        <span class="text-xs text-slate-400 block mb-0.5"><i class="fa-solid fa-file-invoice ml-1"></i>فاتورة المورد</span>
+                        <p class="text-sm font-bold text-slate-800">${session.has_supplier_invoice ? (esc(session.supplier_invoice_ref) || 'نعم') : 'بدون'}</p>
+                    </div>
+                    ${session.notes ? `<div class="col-span-2"><span class="text-xs text-slate-400 block mb-0.5"><i class="fa-solid fa-sticky-note ml-1"></i>ملاحظات</span><p class="text-sm text-slate-700">${esc(session.notes)}</p></div>` : ''}
+                    ${session.created_by_name ? `<div><span class="text-xs text-slate-400 block mb-0.5"><i class="fa-solid fa-user-pen ml-1"></i>استلم بواسطة</span><p class="text-sm font-bold text-slate-800">${esc(session.created_by_name)}</p></div>` : ''}
+                </div>
+
+                <div>
+                    <h4 class="text-sm font-bold text-slate-700 mb-2"><i class="fa-solid fa-boxes-stacked ml-1"></i>الأصناف المستلمة</h4>
+                    <div class="border border-slate-200 rounded-xl overflow-hidden">
+                        <table class="w-full text-sm">
+                            <thead class="bg-slate-50 text-xs text-slate-500">
+                                <tr>
+                                    <th class="py-2 px-3 text-right">المنتج</th>
+                                    <th class="py-2 px-3 text-center">الكمية</th>
+                                    <th class="py-2 px-3 text-center">فاتورة</th>
+                                </tr>
+                            </thead>
+                            <tbody>${itemsHtml || '<tr><td colspan="3" class="py-6 text-center text-slate-400 text-xs">لا توجد أصناف</td></tr>'}</tbody>
+                        </table>
+                    </div>
+                </div>
+
+                ${isReversed && session.reversed_at ? `
+                    <div class="bg-red-50 border border-red-200 rounded-xl p-3 flex items-center gap-2">
+                        <i class="fa-solid fa-rotate-left text-red-500"></i>
+                        <div>
+                            <p class="text-xs font-bold text-red-600">تم التراجع عن هذه الجلسة</p>
+                            <p class="text-xs text-red-400">${fmtD(session.reversed_at)}${session.reversed_by_name ? ' — ' + esc(session.reversed_by_name) : ''}</p>
+                        </div>
+                    </div>
+                ` : ''}
+            `;
+        } catch (e) {
+            body.innerHTML = '<p class="text-center text-red-500 text-sm py-8">فشل تحميل التفاصيل: ' + esc(e.message) + '</p>';
+        }
+    };
+
+    window.rvCloseSessionModal = function () {
+        closeModal('rv-session-modal');
+        _currentSession = null;
+    };
+
+    window.rvPrintSession = function () {
+        if (!_currentSession) return;
+        const s = _currentSession;
+        const items = (s.items || []).map(i =>
+            `<tr>
+                <td style="padding:8px;border:1px solid #ddd;font-size:12px;">${esc(i.product_name || '—')} ${esc(i.size_name || '')}</td>
+                <td style="padding:8px;border:1px solid #ddd;text-align:center;font-size:12px;font-weight:bold;">${i.quantity}</td>
+                <td style="padding:8px;border:1px solid #ddd;text-align:center;font-size:12px;">${i.has_supplier_invoice ? 'نعم' : '—'}</td>
+            </tr>`
+        ).join('');
+
+        const w = window.open('', '_blank', 'width=800,height=600');
+        w.document.write(`
+            <html dir="rtl"><head><title>سند استلام #${s.session_number || ''}</title>
+            <style>body{font-family:Arial,sans-serif;padding:30px;color:#1e293b;}h1{font-size:20px;margin:0 0 5px;}table{width:100%;border-collapse:collapse;margin-top:15px;}.info{display:flex;gap:30px;margin:15px 0;flex-wrap:wrap;}.info div{font-size:13px;}.info b{display:block;color:#64748b;font-size:11px;margin-bottom:2px;}</style>
+            </head><body>
+                <h1>سند استلام #${s.session_number || ''}</h1>
+                <p style="color:#64748b;font-size:13px;">G.PACK 2.0 — سند استلام بضاعة</p>
+                <hr style="margin:15px 0;">
+                <div class="info">
+                    <div><b>العميل</b>${esc(s.client_name || '—')}</div>
+                    <div><b>المستودع</b>${esc(s.warehouse_name || '—')}</div>
+                    <div><b>التاريخ</b>${fmtD(s.received_date)}</div>
+                    <div><b>أمر التشغيل</b>${esc(s.mo_number || '—')}</div>
+                    <div><b>فاتورة المورد</b>${s.has_supplier_invoice ? (esc(s.supplier_invoice_ref) || 'نعم') : 'بدون'}</div>
+                    <div><b>استلم بواسطة</b>${esc(s.created_by_name || '—')}</div>
+                </div>
+                ${s.notes ? `<p style="font-size:13px;margin:10px 0;"><b>ملاحظات:</b> ${esc(s.notes)}</p>` : ''}
+                <table>
+                    <thead><tr style="background:#f1f5f9;">
+                        <th style="padding:8px;border:1px solid #ddd;font-size:12px;text-align:right;">المنتج</th>
+                        <th style="padding:8px;border:1px solid #ddd;font-size:12px;text-align:center;">الكمية</th>
+                        <th style="padding:8px;border:1px solid #ddd;font-size:12px;text-align:center;">فاتورة</th>
+                    </tr></thead>
+                    <tbody>${items || '<tr><td colspan=\"3\" style=\"padding:15px;text-align:center;color:#999;\">لا توجد أصناف</td></tr>'}</tbody>
+                </table>
+                <p style="margin-top:30px;font-size:11px;color:#94a3b8;text-align:center;">تم إنشاء هذا السند بواسطة نظام G.PACK 2.0</p>
+            </body></html>`
+        );
+        w.document.close();
+        w.print();
     };
 
     window.rvReverseSession = async function (moId, sessionId, sessionNum) {
