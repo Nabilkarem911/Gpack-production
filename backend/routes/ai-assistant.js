@@ -12,6 +12,7 @@ const router = express.Router();
 const db = require('../db');
 const { AI_FUNCTIONS, FUNCTION_MAP } = require('../utils/ai-functions');
 const { AI_ACTIONS, ACTION_MAP } = require('../utils/ai-actions');
+const { checkPolicies } = require('../utils/ai-policies');
 
 // ── Config ───────────────────────────────────────────────────────────────────
 // Supports ANY OpenAI-compatible provider: OpenAI, Azure OpenAI, OpenRouter,
@@ -438,6 +439,22 @@ router.post('/execute-action', async (req, res) => {
             return res.status(400).json({ error: 'نوع إجراء غير معروف' });
         }
 
+        // ── Action Policies check ─────────────────────────────────────────
+        const policyResult = await checkPolicies(logEntry.action_type, logEntry.proposal, req.user, logEntry.proposal?.args || logEntry.proposal || {});
+        if (!policyResult.passed) {
+            const blockMsgs = policyResult.blocks.map(b => b.message).join(' • ');
+            // Update action log as blocked
+            await db.query(
+                `UPDATE ai_action_log SET status = 'blocked', error_message = $1 WHERE id = $2 AND status = 'proposed'`,
+                [blockMsgs, action_id]
+            );
+            return res.status(403).json({
+                error: 'تم منع التنفيذ بسبب سياسات العمل:',
+                blocks: policyResult.blocks,
+                warnings: policyResult.warnings,
+            });
+        }
+
         // Execute in transaction
         const result = await action.execute(logEntry.proposal, req.user);
 
@@ -449,7 +466,7 @@ router.post('/execute-action', async (req, res) => {
             [JSON.stringify(result), action_id]
         );
 
-        res.json({ success: true, result });
+        res.json({ success: true, result, warnings: policyResult.warnings });
     } catch (err) {
         console.error('[AI Assistant] Execute-action error:', err.message);
 
