@@ -159,7 +159,11 @@ router.get('/movements', async (req, res) => {
 
         if (type) {
             params.push(type);
-            conditions.push(`it.transaction_type = $${params.length}`);
+            if (type === 'receipt') {
+                conditions.push(`(it.transaction_type = $${params.length} OR it.transaction_type = 'return')`);
+            } else {
+                conditions.push(`it.transaction_type = $${params.length}`);
+            }
         }
         if (variant_id) {
             params.push(variant_id);
@@ -177,7 +181,7 @@ router.get('/movements', async (req, res) => {
         if (client_id) {
             params.push(client_id);
             conditions.push(`(
-                (it.transaction_type = 'dispense' AND (
+                ((it.transaction_type = 'dispense' OR it.transaction_type = 'return') AND (
                     dn_c.id = $${params.length}
                     OR it.client_id = $${params.length}
                 ))

@@ -214,9 +214,9 @@
 
         rows.forEach(r => {
             const q = parseFloat(r.quantity || 0);
-            if (r.transaction_type === 'receipt') {
+            if (r.transaction_type === 'receipt' || r.transaction_type === 'return') {
                 totalIn += q;
-                const sname = r.supplier_name || '—';
+                const sname = r.supplier_name || r.dn_client_name || r.client_name || '—';
                 supplierTotals[sname] = (supplierTotals[sname] || 0) + q;
             } else {
                 totalOut += q;
@@ -274,18 +274,19 @@
         }
 
         tbody.innerHTML = rows.map((r, i) => {
-            const isReceipt  = r.transaction_type === 'receipt';
-            const typeCell   = isReceipt
-                ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700"><i class="fa-solid fa-arrow-down text-[10px]"></i> استلام</span>`
+            const isIncoming  = r.transaction_type === 'receipt' || r.transaction_type === 'return';
+            const isReturn    = r.transaction_type === 'return';
+            const typeCell   = isIncoming
+                ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700"><i class="fa-solid fa-arrow-down text-[10px]"></i> ${isReturn ? 'مرتجع' : 'استلام'}</span>`
                 : `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-700"><i class="fa-solid fa-arrow-up text-[10px]"></i> تسليم</span>`;
 
-            const unitPrice  = isReceipt
+            const unitPrice  = isIncoming
                 ? parseFloat(r.mo_unit_cost  || r.cost_price    || 0)
                 : parseFloat(r.sale_unit_price || r.selling_price || 0);
             const total      = unitPrice * parseFloat(r.quantity || 0);
-            const counterpart = isReceipt ? (r.supplier_name || '—') : (r.dn_client_name || r.client_name || '—');
-            const ref         = isReceipt
-                ? (r.mo_number ? `<span class="font-mono text-xs text-slate-500">${esc(r.mo_number)}</span>` : '—')
+            const counterpart = isIncoming ? (r.supplier_name || r.dn_client_name || r.client_name || '—') : (r.dn_client_name || r.client_name || '—');
+            const ref         = isIncoming
+                ? (r.mo_number ? `<span class="font-mono text-xs text-slate-500">${esc(r.mo_number)}</span>` : (r.delivery_note_number ? `<span class="font-mono text-xs text-slate-500">DN-${r.delivery_note_number}</span>` : '—'))
                 : (r.delivery_note_number ? `<span class="font-mono text-xs text-slate-500">DN-${r.delivery_note_number}</span>` : '—');
             const rowBg = i % 2 === 1 ? 'bg-slate-50/40' : '';
 
@@ -295,10 +296,10 @@
                 <td class="py-3 px-4 font-semibold text-slate-800">${esc(r.product_name)}</td>
                 <td class="py-3 px-4 text-slate-600">${esc(r.size_name || '—')}</td>
                 <td class="py-3 px-4 text-slate-500 hidden sm:table-cell text-xs">${esc(r.category_name || '—')}</td>
-                <td class="py-3 px-4 font-bold font-mono ${isReceipt ? 'text-emerald-600' : 'text-amber-600'}">
-                    ${isReceipt ? '+' : '-'}${qty(r.quantity)}</td>
+                <td class="py-3 px-4 font-bold font-mono ${isIncoming ? 'text-emerald-600' : 'text-amber-600'}">
+                    ${isIncoming ? '+' : '-'}${qty(r.quantity)}</td>
                 <td class="py-3 px-4 font-mono text-slate-700">${unitPrice > 0 ? fmt(unitPrice) : '—'}</td>
-                <td class="py-3 px-4 font-bold font-mono ${isReceipt ? 'text-emerald-700' : 'text-amber-700'}">
+                <td class="py-3 px-4 font-bold font-mono ${isIncoming ? 'text-emerald-700' : 'text-amber-700'}">
                     ${total > 0 ? fmt(total) : '—'}</td>
                 <td class="py-3 px-4 text-slate-700 font-semibold">${esc(counterpart)}</td>
                 <td class="py-3 px-4 hidden md:table-cell">${ref}</td>
@@ -316,7 +317,7 @@
         let rQty = 0, rVal = 0, dQty = 0, dVal = 0;
         rows.forEach(r => {
             const q = parseFloat(r.quantity || 0);
-            if (r.transaction_type === 'receipt') {
+            if (r.transaction_type === 'receipt' || r.transaction_type === 'return') {
                 rQty += q;
                 rVal += parseFloat(r.mo_unit_cost || r.cost_price || 0) * q;
             } else {
