@@ -1389,6 +1389,80 @@ const AI_FUNCTIONS = [
         }
     },
 
+    // ── 35. getOrderDetails ──────────────────────────────────────────────────
+    {
+        type: 'function',
+        function: {
+            name: 'getOrderDetails',
+            description: 'يرجع تفاصيل طلب أو عرض سعر كامل: بيانات الطلب، الأصناف (الاسم، الكمية، السعر، الإجمالي)، والعميل. ابحث برقم الطلب أو اسم العميل.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    order_number: { type: 'number', description: 'رقم الطلب' },
+                    client_name: { type: 'string', description: 'اسم العميل أو جزء منه (بديل عن رقم الطلب)' }
+                }
+            }
+        },
+        async execute(args, user) {
+            const { order_number, client_name } = args;
+            let orderRes;
+
+            if (order_number) {
+                orderRes = await db.query(
+                    `SELECT o.id, o.order_number, o.status, o.pricing_status,
+                            o.created_at, o.grand_total, o.subtotal, o.tax_amount,
+                            o.discount_amount, o.notes, o.internal_notes,
+                            c.name as client_name, c.phone as client_phone
+                     FROM orders o
+                     JOIN clients c ON c.id = o.client_id
+                     WHERE o.order_number = $1`,
+                    [parseInt(order_number)]
+                );
+            } else if (client_name) {
+                orderRes = await db.query(
+                    `SELECT o.id, o.order_number, o.status, o.pricing_status,
+                            o.created_at, o.grand_total, o.subtotal, o.tax_amount,
+                            o.discount_amount, o.notes, o.internal_notes,
+                            c.name as client_name, c.phone as client_phone
+                     FROM orders o
+                     JOIN clients c ON c.id = o.client_id
+                     WHERE c.name ILIKE $1
+                     ORDER BY o.created_at DESC
+                     LIMIT 1`,
+                    [`%${client_name}%`]
+                );
+            } else {
+                return { error: 'حدد رقم الطلب أو اسم العميل' };
+            }
+
+            if (orderRes.rows.length === 0) {
+                return { error: 'لم يتم العثور على الطلب' };
+            }
+
+            const order = orderRes.rows[0];
+
+            const itemsRes = await db.query(
+                `SELECT oi.id, oi.variant_id,
+                        p.name as product_name,
+                        pv.size_name, pv.sku,
+                        oi.quantity, oi.unit_price,
+                        oi.discount_amount,
+                        oi.line_total
+                 FROM order_items oi
+                 LEFT JOIN product_variants pv ON pv.id = oi.variant_id
+                 LEFT JOIN products p ON p.id = pv.product_id
+                 WHERE oi.order_id = $1
+                 ORDER BY oi.id`,
+                [order.id]
+            );
+
+            order.items = itemsRes.rows;
+            order.item_count = itemsRes.rows.length;
+
+            return _sanitize(order);
+        }
+    },
+
 ];
 
 // =============================================================================
