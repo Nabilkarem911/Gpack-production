@@ -133,9 +133,6 @@
 
         // Check if AI is enabled
         _checkHealth();
-
-        // Try to fetch daily briefing (silently fails if not available)
-        _maybeFetchBriefing();
     }
 
     // =============================================================================
@@ -324,22 +321,8 @@
 
             <!-- Messages area -->
             <div id="ai-chat-messages" class="flex-1 overflow-y-auto px-4 py-3 space-y-3 bg-slate-50">
-                ${_messages.length === 0 ? _renderBriefingCard() + _renderWelcome() : _messages.map(m => _renderMessage(m)).join('')}
+                ${_messages.length === 0 ? _renderWelcome() : _messages.map(m => _renderMessage(m)).join('')}
             </div>
-
-            <!-- Suggestions (shown only when no messages) -->
-            ${_messages.length === 0 ? `
-                <div id="ai-chat-suggestions" class="px-4 py-2 border-t border-slate-200 bg-white">
-                    <p class="text-xs text-slate-400 mb-2">أسئلة مقترحة:</p>
-                    <div class="flex flex-wrap gap-2">
-                        ${_getRoleSuggestions().map(s => `
-                            <button class="ai-suggestion-chip text-xs px-3 py-1.5 rounded-full bg-brand-50 text-brand-700 hover:bg-brand-100 transition-colors border border-brand-200" data-question="${s.text}">
-                                <i class="fa-solid ${s.icon} ml-1 text-[10px]"></i>${s.text}
-                            </button>
-                        `).join('')}
-                    </div>
-                </div>
-            ` : ''}
 
             <!-- Input area -->
             <div class="px-4 py-3 border-t border-slate-200 bg-white rounded-b-2xl">
