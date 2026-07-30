@@ -788,7 +788,7 @@ table.items tbody tr:hover{background:#f3e8ff}
 <tbody>${itemsHTML || '<tr><td colspan="3" style="text-align:center;padding:24px;color:#94a3b8">لا توجد أصناف</td></tr>'}</tbody></table>
 <div class="totals"><div>إجمالي الكمية المُسلَّمة: <strong>${totalQty}</strong></div></div>
 ${d.notes ? `<div class="notes-box"><b>ملاحظات:</b> ${esc(d.notes)}</div>` : ''}
-<div class="footer"><div class="sig-box"><div class="sig-line">توقيع أمين المستودع</div></div><div class="sig-box"><div class="sig-line">توقيع المسلِّم</div></div><div class="sig-box"><div class="sig-line">الختم</div></div></div>
+<div class="footer"><div class="sig-box"><div class="sig-line">توقيع أمين المستودع</div></div><div class="sig-box"><div class="sig-line">توقيع المستلم</div></div><div class="sig-box"><div class="sig-line">الختم</div></div></div>
 <div class="doc-footer"><span class="brand">G.PACK ERP 2.0</span><span>تاريخ الطباعة: ${new Date().toLocaleDateString('en-GB')}</span></div>
 </div>
 <button class="print-btn no-print" onclick="window.print()">🖨️ طباعة</button>
@@ -902,7 +902,7 @@ table.items tbody tr:hover{background:#f3e8ff}
     <div>إجمالي المطلوب: <strong>${totalRequested}</strong></div>
     <div>إجمالي المُسلَّم: <strong>${totalDelivered}</strong></div>
 </div>
-<div class="footer"><div class="sig-box"><div class="sig-line">توقيع أمين المستودع</div></div><div class="sig-box"><div class="sig-line">توقيع المسلِّم</div></div><div class="sig-box"><div class="sig-line">الختم</div></div></div>
+<div class="footer"><div class="sig-box"><div class="sig-line">توقيع أمين المستودع</div></div><div class="sig-box"><div class="sig-line">توقيع المستلم</div></div><div class="sig-box"><div class="sig-line">الختم</div></div></div>
 <div class="doc-footer"><span class="brand">G.PACK ERP 2.0</span><span>تاريخ الطباعة: ${new Date().toLocaleDateString('en-GB')}</span></div>
 </div>
 <button class="print-btn no-print" onclick="window.print()">🖨️ طباعة</button>
