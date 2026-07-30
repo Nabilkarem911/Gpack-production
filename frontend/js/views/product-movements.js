@@ -214,10 +214,14 @@
 
         rows.forEach(r => {
             const q = parseFloat(r.quantity || 0);
-            if (r.transaction_type === 'receipt' || r.transaction_type === 'return') {
+            if (r.transaction_type === 'receipt') {
                 totalIn += q;
-                const sname = r.supplier_name || r.dn_client_name || r.client_name || '—';
+                const sname = r.supplier_name || '—';
                 supplierTotals[sname] = (supplierTotals[sname] || 0) + q;
+            } else if (r.transaction_type === 'return') {
+                totalIn += q;
+                const cname = r.dn_client_name || r.client_name || '—';
+                clientTotals[cname] = (clientTotals[cname] || 0) - q;
             } else {
                 totalOut += q;
                 const cname = r.dn_client_name || r.client_name || '—';
