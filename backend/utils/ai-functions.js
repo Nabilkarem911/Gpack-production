@@ -1411,7 +1411,8 @@ const AI_FUNCTIONS = [
                 orderRes = await db.query(
                     `SELECT o.id, o.order_number, o.status, o.pricing_status,
                             o.created_at, o.grand_total, o.subtotal, o.tax_amount,
-                            o.discount_amount, o.notes, o.internal_notes,
+                            o.tax_rate, o.paid_amount, o.payment_method,
+                            o.internal_notes, o.client_notes,
                             c.name as client_name, c.phone as client_phone
                      FROM orders o
                      JOIN clients c ON c.id = o.client_id
@@ -1422,7 +1423,8 @@ const AI_FUNCTIONS = [
                 orderRes = await db.query(
                     `SELECT o.id, o.order_number, o.status, o.pricing_status,
                             o.created_at, o.grand_total, o.subtotal, o.tax_amount,
-                            o.discount_amount, o.notes, o.internal_notes,
+                            o.tax_rate, o.paid_amount, o.payment_method,
+                            o.internal_notes, o.client_notes,
                             c.name as client_name, c.phone as client_phone
                      FROM orders o
                      JOIN clients c ON c.id = o.client_id
@@ -1446,7 +1448,7 @@ const AI_FUNCTIONS = [
                         p.name as product_name,
                         pv.size_name, pv.sku,
                         oi.quantity, oi.unit_price,
-                        oi.discount_amount,
+                        oi.discount_percent,
                         oi.line_total
                  FROM order_items oi
                  LEFT JOIN product_variants pv ON pv.id = oi.variant_id
