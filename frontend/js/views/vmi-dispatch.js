@@ -782,13 +782,13 @@ table.items tbody tr:hover{background:#f3e8ff}
     <div class="info-item"><label>التاريخ</label><span>${new Date(d.created_at).toLocaleDateString('en-GB')}</span></div>
     <div class="info-item"><label>السائق</label><span>${esc(d.driver_name || '—')}</span></div>
     ${d.vehicle_number ? `<div class="info-item"><label>رقم السيارة</label><span>${esc(d.vehicle_number)}</span></div>` : ''}
-    ${d.created_by_name ? `<div class="info-item"><label>المستلم</label><span>${esc(d.created_by_name)}</span></div>` : ''}
+    ${d.created_by_name ? `<div class="info-item"><label>أمين المستودع</label><span>${esc(d.created_by_name)}</span></div>` : ''}
 </div>
 <table class="items"><thead><tr><th style="width:40px">#</th><th>الصنف / المقاس</th><th style="width:120px;text-align:center">الكمية المُسلَّمة</th></tr></thead>
 <tbody>${itemsHTML || '<tr><td colspan="3" style="text-align:center;padding:24px;color:#94a3b8">لا توجد أصناف</td></tr>'}</tbody></table>
 <div class="totals"><div>إجمالي الكمية المُسلَّمة: <strong>${totalQty}</strong></div></div>
 ${d.notes ? `<div class="notes-box"><b>ملاحظات:</b> ${esc(d.notes)}</div>` : ''}
-<div class="footer"><div class="sig-box"><div class="sig-line">توقيع المستلم</div></div><div class="sig-box"><div class="sig-line">توقيع المسلِّم</div></div><div class="sig-box"><div class="sig-line">الختم</div></div></div>
+<div class="footer"><div class="sig-box"><div class="sig-line">توقيع أمين المستودع</div></div><div class="sig-box"><div class="sig-line">توقيع المسلِّم</div></div><div class="sig-box"><div class="sig-line">الختم</div></div></div>
 <div class="doc-footer"><span class="brand">G.PACK ERP 2.0</span><span>تاريخ الطباعة: ${new Date().toLocaleDateString('en-GB')}</span></div>
 </div>
 <button class="print-btn no-print" onclick="window.print()">🖨️ طباعة</button>
@@ -902,7 +902,7 @@ table.items tbody tr:hover{background:#f3e8ff}
     <div>إجمالي المطلوب: <strong>${totalRequested}</strong></div>
     <div>إجمالي المُسلَّم: <strong>${totalDelivered}</strong></div>
 </div>
-<div class="footer"><div class="sig-box"><div class="sig-line">توقيع المستلم</div></div><div class="sig-box"><div class="sig-line">توقيع المسلِّم</div></div><div class="sig-box"><div class="sig-line">الختم</div></div></div>
+<div class="footer"><div class="sig-box"><div class="sig-line">توقيع أمين المستودع</div></div><div class="sig-box"><div class="sig-line">توقيع المسلِّم</div></div><div class="sig-box"><div class="sig-line">الختم</div></div></div>
 <div class="doc-footer"><span class="brand">G.PACK ERP 2.0</span><span>تاريخ الطباعة: ${new Date().toLocaleDateString('en-GB')}</span></div>
 </div>
 <button class="print-btn no-print" onclick="window.print()">🖨️ طباعة</button>
