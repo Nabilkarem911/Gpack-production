@@ -703,10 +703,15 @@
 
     // ── Print individual dispatch slip ────────────────────────────────────────
     window.dvPrintDispatch = async function(dnId, dispatchId) {
+        // Open window immediately (before await) to avoid popup blocker
+        const w = window.open('', '_blank', 'width=800,height=700');
+        if (!w) { window.showToast('الرجاء السماح بالنوافذ المنبثقة للطباعة', 'error'); return; }
+        w.document.write('<!DOCTYPE html><html dir="rtl"><head><meta charset="UTF-8"><title>جاري التحميل...</title></head><body style="font-family:Tahoma,sans-serif;padding:40px;text-align:center;color:#888"><p>جاري تحميل سند التسليم...</p></body></html>');
+        w.document.close();
         try {
             const res = await window.apiFetch(`/api/delivery-notes/${dnId}/dispatches/${dispatchId}`);
             const d = res?.data;
-            if (!d) { window.showToast('فشل تحميل السند', 'error'); return; }
+            if (!d) { w.document.body.innerHTML = '<p style="text-align:center;color:red;padding:40px">فشل تحميل السند</p>'; return; }
 
             const logoBase64 = await _loadLogoBase64();
 
@@ -788,17 +793,21 @@ ${d.notes ? `<div class="notes-box"><b>ملاحظات:</b> ${esc(d.notes)}</div>
 </div>
 <button class="print-btn no-print" onclick="window.print()">🖨️ طباعة</button>
 </body></html>`;
-            const w = window.open('', '_blank', 'width=800,height=700');
-            w.document.write(html); w.document.close(); setTimeout(() => w.print(), 500);
-        } catch (e) { window.showToast('فشل تحميل السند', 'error'); }
+            w.document.open(); w.document.write(html); w.document.close(); setTimeout(() => w.print(), 500);
+        } catch (e) { w.document.body.innerHTML = '<p style="text-align:center;color:red;padding:40px">فشل تحميل السند</p>'; }
     };
 
     // ── Print delivery note ───────────────────────────────────────────────────
     window.dvPrintNote = async function(dnId, mode) {
+        // Open window immediately (before await) to avoid popup blocker
+        const w = window.open('', '_blank', 'width=800,height=700');
+        if (!w) { window.showToast('الرجاء السماح بالنوافذ المنبثقة للطباعة', 'error'); return; }
+        w.document.write('<!DOCTYPE html><html dir="rtl"><head><meta charset="UTF-8"><title>جاري التحميل...</title></head><body style="font-family:Tahoma,sans-serif;padding:40px;text-align:center;color:#888"><p>جاري تحميل سند التسليم...</p></body></html>');
+        w.document.close();
         try {
             const res = await window.apiFetch('/api/delivery-notes/' + dnId);
             const dn  = res?.data;
-            if (!dn) { window.showToast('فشل تحميل السند', 'error'); return; }
+            if (!dn) { w.document.body.innerHTML = '<p style="text-align:center;color:red;padding:40px">فشل تحميل السند</p>'; return; }
 
             const logoBase64 = await _loadLogoBase64();
 
@@ -898,9 +907,8 @@ table.items tbody tr:hover{background:#f3e8ff}
 </div>
 <button class="print-btn no-print" onclick="window.print()">🖨️ طباعة</button>
 </body></html>`;
-            const w = window.open('', '_blank', 'width=800,height=700');
-            w.document.write(html); w.document.close(); setTimeout(() => w.print(), 500);
-        } catch (e) { window.showToast('فشل التحميل', 'error'); }
+            w.document.open(); w.document.write(html); w.document.close(); setTimeout(() => w.print(), 500);
+        } catch (e) { w.document.body.innerHTML = '<p style="text-align:center;color:red;padding:40px">فشل تحميل السند</p>'; }
     };
 
     // ── Bootstrap ─────────────────────────────────────────────────────────────
