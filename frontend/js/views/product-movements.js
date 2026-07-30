@@ -219,7 +219,7 @@
                 const sname = r.supplier_name || '—';
                 supplierTotals[sname] = (supplierTotals[sname] || 0) + q;
             } else if (r.transaction_type === 'return') {
-                totalIn += q;
+                totalOut -= q;
                 const cname = r.dn_client_name || r.client_name || '—';
                 clientTotals[cname] = (clientTotals[cname] || 0) - q;
             } else {
@@ -321,9 +321,12 @@
         let rQty = 0, rVal = 0, dQty = 0, dVal = 0;
         rows.forEach(r => {
             const q = parseFloat(r.quantity || 0);
-            if (r.transaction_type === 'receipt' || r.transaction_type === 'return') {
+            if (r.transaction_type === 'receipt') {
                 rQty += q;
                 rVal += parseFloat(r.mo_unit_cost || r.cost_price || 0) * q;
+            } else if (r.transaction_type === 'return') {
+                dQty -= q;
+                dVal -= parseFloat(r.sale_unit_price || r.selling_price || 0) * q;
             } else {
                 dQty += q;
                 dVal += parseFloat(r.sale_unit_price || r.selling_price || 0) * q;

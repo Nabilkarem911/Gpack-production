@@ -159,11 +159,7 @@ router.get('/movements', async (req, res) => {
 
         if (type) {
             params.push(type);
-            if (type === 'receipt') {
-                conditions.push(`(it.transaction_type = $${params.length} OR it.transaction_type = 'return')`);
-            } else {
-                conditions.push(`it.transaction_type = $${params.length}`);
-            }
+            conditions.push(`it.transaction_type = $${params.length}`);
         }
         if (variant_id) {
             params.push(variant_id);
