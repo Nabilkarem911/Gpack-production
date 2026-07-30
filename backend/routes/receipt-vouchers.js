@@ -11,6 +11,7 @@ const router  = express.Router();
 const db      = require('../db');
 const authorize = require('../middleware/authorize');
 const { validateBody, receiptVoucherCreate, voucherCancel } = require('../utils/validators');
+const eventBus = require('../utils/event-bus');
 
 router.use(authorize('receipt_voucher', 'view'));
 const restrictWrite  = authorize('receipt_voucher', 'create');
@@ -286,6 +287,17 @@ router.post('/', restrictWrite, validateBody(receiptVoucherCreate), async (req, 
             `, [voucherId, arAccountId, parsedAmount, subAccountType, subAccountId, `ذمة ${payeeName}`]);
 
             return { id: voucherId, voucher_number: voucherNumber };
+        });
+
+        // Emit business event
+        eventBus.emit({
+            event_type: 'payment_received',
+            entity_type: 'payment',
+            entity_id: result.id,
+            entity_name: `سند قبض #${result.voucher_number}`,
+            description: `سند قبض ${parsedAmount} ${payment_method}`,
+            metadata: { amount: parsedAmount, payment_method, client_type: client_type, voucher_number: result.voucher_number },
+            created_by: req.user?.id,
         });
 
         res.status(201).json({ message: 'Receipt voucher created successfully', data: result });

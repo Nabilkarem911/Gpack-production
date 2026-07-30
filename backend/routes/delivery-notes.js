@@ -8,6 +8,7 @@ const router = express.Router();
 const db = require('../db');
 const authorize = require('../middleware/authorize');
 const { validateBody, deliveryNoteCreate, deliveryNoteDispatch } = require('../utils/validators');
+const eventBus = require('../utils/event-bus');
 
 // View permission: 'vmi_dispatch' OR 'production_orders' view can access
 router.use((req, res, next) => {
@@ -177,6 +178,17 @@ router.post('/', restrictWrite, validateBody(deliveryNoteCreate), async (req, re
             }
 
             return { id: dnId, note_number: noteNumber };
+        });
+
+        // Emit business event
+        eventBus.emit({
+            event_type: 'delivery_created',
+            entity_type: 'delivery',
+            entity_id: result.id,
+            entity_name: `#${result.note_number}`,
+            description: `سند تسليم جديد #${result.note_number}`,
+            metadata: { order_id: order_id, client_id: client_id },
+            created_by: req.user?.id,
         });
 
         return res.status(201).json({ data: result, message: 'تم إصدار سند التسليم بنجاح.' });
@@ -393,6 +405,17 @@ router.post('/:id/dispatch', restrictWrite, validateBody(deliveryNoteDispatch), 
             );
 
             return { status: newStatus, dispatch_id: dispatchId, dispatch_number: dispatchNumber };
+        });
+
+        // Emit business event
+        eventBus.emit({
+            event_type: result.status === 'completed' ? 'delivery_completed' : 'delivery_partial',
+            entity_type: 'delivery',
+            entity_id: id,
+            entity_name: `#${result.dispatch_number}`,
+            description: result.status === 'completed' ? `تسليم مكتمل` : `تسليم جزئي`,
+            metadata: { dispatch_id: result.dispatch_id, status: result.status },
+            created_by: req.user?.id,
         });
 
         return res.status(200).json({ message: 'تم تسجيل التسليم بنجاح.', data: result });

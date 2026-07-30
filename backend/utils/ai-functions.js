@@ -2217,6 +2217,233 @@ const AI_FUNCTIONS = [
         }
     },
 
+    // ── getCompanyTimeline ──────────────────────────────────────────────────
+    {
+        type: 'function',
+        function: {
+            name: 'getCompanyTimeline',
+            description: 'يعرض آخر الأحداث في الشركة (عروض، فواتير، دفعات، تسليمات، إنتاج) مرتبة زمنياً. يستخدم للإجابة على "إيه اللي حصل النهاردة؟" أو "وريني آخر الأحداث".',
+            parameters: {
+                type: 'object',
+                properties: {
+                    hours: { type: 'number', description: 'عدد الساعات الأخيرة (افتراضي 24)' },
+                    limit: { type: 'number', description: 'عدد الأحداث الأقصى (افتراضي 30)' },
+                    event_type: { type: 'string', description: 'فلترة بنوع الحدث (اختياري)' },
+                },
+            },
+        },
+        async execute(args, user) {
+            const hours = parseInt(args.hours || 24, 10);
+            const limit = Math.min(parseInt(args.limit || 30, 10), 100);
+            const eventType = args.event_type || null;
+
+            const conditions = [`be.created_at >= NOW() - INTERVAL '${hours} hours'`];
+            const params = [];
+            let idx = 1;
+
+            if (eventType) {
+                params.push(eventType);
+                conditions.push(`be.event_type = $${idx++}`);
+            }
+
+            params.push(limit);
+            const res = await db.query(
+                `SELECT be.id, be.event_type, be.entity_type, be.entity_id, be.entity_name,
+                        be.severity, be.description, be.metadata, be.created_at,
+                        u.name AS created_by_name
+                 FROM business_events be
+                 LEFT JOIN users u ON u.id = be.created_by
+                 WHERE ${conditions.join(' AND ')}
+                 ORDER BY be.created_at DESC
+                 LIMIT $${idx}`,
+                params
+            );
+
+            return _sanitize(res.rows);
+        }
+    },
+
+    // ── getAuditReport ──────────────────────────────────────────────────────
+    {
+        type: 'function',
+        function: {
+            name: 'getAuditReport',
+            description: 'يفحص الشركة ويكتشف الأخطاء والمشاكل: فواتير ناقصة، بيع بخسارة، عملاء خاملين، مخزون غير منطقي، بيانات مكررة، مهام متأخرة. يستخدم للإجابة على "فيه أي مشاكل في النظام؟" أو "فحص الشركة".',
+            parameters: {
+                type: 'object',
+                properties: {},
+            },
+        },
+        async execute(args, user) {
+            const issues = [];
+
+            // 1. Orders without invoices (quotes converted to production but no invoice)
+            const noInvoiceRes = await db.query(
+                `SELECT o.id, o.order_number, o.client_name, o.grand_total, o.created_at
+                 FROM orders o
+                 LEFT JOIN invoices i ON i.order_id = o.id
+                 WHERE o.status IN ('production', 'processing', 'completed')
+                   AND i.id IS NULL
+                 ORDER BY o.created_at DESC
+                 LIMIT 10`
+            );
+            if (noInvoiceRes.rows.length > 0) {
+                issues.push({
+                    severity: 'warning',
+                    category: 'missing_invoices',
+                    title: 'طلبات بدون فواتير',
+                    count: noInvoiceRes.rows.length,
+                    items: noInvoiceRes.rows,
+                    suggestion: 'إنشاء فواتير للطلبات المكتملة',
+                });
+            }
+
+            // 2. Products selling at a loss (selling_price < cost_price)
+            const lossRes = await db.query(
+                `SELECT pv.id, p.name AS product_name, pv.size_name,
+                        pv.cost_price, pv.selling_price,
+                        (pv.selling_price - pv.cost_price) AS loss_per_unit
+                 FROM product_variants pv
+                 JOIN products p ON p.id = pv.product_id
+                 WHERE pv.cost_price IS NOT NULL
+                   AND pv.selling_price IS NOT NULL
+                   AND pv.selling_price < pv.cost_price
+                 LIMIT 20`
+            );
+            if (lossRes.rows.length > 0) {
+                issues.push({
+                    severity: 'critical',
+                    category: 'selling_at_loss',
+                    title: 'منتجات تباع بخسارة',
+                    count: lossRes.rows.length,
+                    items: lossRes.rows,
+                    suggestion: 'مراجعة أسعار هذه المنتجات فوراً',
+                });
+            }
+
+            // 3. Inactive clients (no orders in 30+ days)
+            const inactiveRes = await db.query(
+                `SELECT c.id, c.name, c.phone, c.city,
+                        MAX(o.created_at) AS last_order_date,
+                        EXTRACT(DAY FROM NOW() - MAX(o.created_at))::int AS days_inactive
+                 FROM clients c
+                 LEFT JOIN orders o ON o.client_id = c.id
+                 WHERE c.status = 'active'
+                 GROUP BY c.id, c.name, c.phone, c.city
+                 HAVING MAX(o.created_at) IS NULL
+                    OR MAX(o.created_at) < NOW() - INTERVAL '30 days'
+                 ORDER BY days_inactive DESC
+                 LIMIT 15`
+            );
+            if (inactiveRes.rows.length > 0) {
+                issues.push({
+                    severity: 'warning',
+                    category: 'inactive_clients',
+                    title: 'عملاء خاملون (30+ يوم)',
+                    count: inactiveRes.rows.length,
+                    items: inactiveRes.rows,
+                    suggestion: 'التواصل مع هؤلاء العملاء لمعرفة أسباب الخمول',
+                });
+            }
+
+            // 4. Overdue tasks
+            const overdueTasksRes = await db.query(
+                `SELECT id, title, assigned_to_name, due_date, priority,
+                        EXTRACT(DAY FROM NOW() - due_date)::int AS days_overdue
+                 FROM (
+                    SELECT t.id, t.title, u.name AS assigned_to_name, t.due_date, t.priority
+                    FROM tasks t
+                    LEFT JOIN users u ON u.id = t.assigned_to
+                    WHERE t.status NOT IN ('completed', 'cancelled')
+                      AND t.due_date < NOW()
+                 ) sub
+                 ORDER BY days_overdue DESC
+                 LIMIT 15`
+            );
+            if (overdueTasksRes.rows.length > 0) {
+                issues.push({
+                    severity: 'warning',
+                    category: 'overdue_tasks',
+                    title: 'مهام متأخرة',
+                    count: overdueTasksRes.rows.length,
+                    items: overdueTasksRes.rows,
+                    suggestion: 'متابعة هذه المهام مع المسؤولين',
+                });
+            }
+
+            // 5. Unreasonable stock (negative or very high)
+            const stockIssuesRes = await db.query(
+                `SELECT ws.id, p.name AS product_name, pv.size_name,
+                        ws.quantity, c.name AS client_name
+                 FROM warehouse_stock ws
+                 JOIN product_variants pv ON pv.id = ws.variant_id
+                 JOIN products p ON p.id = pv.product_id
+                 LEFT JOIN clients c ON c.id = ws.client_id
+                 WHERE ws.quantity < 0
+                 LIMIT 10`
+            );
+            if (stockIssuesRes.rows.length > 0) {
+                issues.push({
+                    severity: 'critical',
+                    category: 'negative_stock',
+                    title: 'مخزون سالب',
+                    count: stockIssuesRes.rows.length,
+                    items: stockIssuesRes.rows,
+                    suggestion: 'مراجعة حركات المخزون وتصحيح الكميات',
+                });
+            }
+
+            // 6. Duplicate clients (same phone or similar name)
+            const dupRes = await db.query(
+                `SELECT phone, array_agg(name) AS names, array_agg(id) AS ids, COUNT(*) AS dup_count
+                 FROM clients
+                 WHERE phone IS NOT NULL AND phone != ''
+                 GROUP BY phone
+                 HAVING COUNT(*) > 1
+                 LIMIT 10`
+            );
+            if (dupRes.rows.length > 0) {
+                issues.push({
+                    severity: 'warning',
+                    category: 'duplicate_clients',
+                    title: 'عملاء بنفس رقم الهاتف',
+                    count: dupRes.rows.length,
+                    items: dupRes.rows,
+                    suggestion: 'دمج أو مراجعة العملاء المكررين',
+                });
+            }
+
+            // 7. Overdue invoices
+            const overdueInvRes = await db.query(
+                `SELECT i.id, i.invoice_number, c.name AS client_name,
+                        i.grand_total, i.due_date,
+                        EXTRACT(DAY FROM NOW() - i.due_date)::int AS days_overdue
+                 FROM invoices i
+                 JOIN clients c ON c.id = i.client_id
+                 WHERE i.status = 'issued'
+                   AND i.due_date < NOW()
+                 ORDER BY days_overdue DESC
+                 LIMIT 10`
+            );
+            if (overdueInvRes.rows.length > 0) {
+                issues.push({
+                    severity: 'critical',
+                    category: 'overdue_invoices',
+                    title: 'فواتير متأخرة السداد',
+                    count: overdueInvRes.rows.length,
+                    items: overdueInvRes.rows,
+                    suggestion: 'التواصل مع العملاء لتحصيل الفواتير المتأخرة',
+                });
+            }
+
+            return {
+                audit_date: new Date().toISOString(),
+                total_issues: issues.length,
+                issues,
+            };
+        }
+    },
+
 ];
 
 // =============================================================================

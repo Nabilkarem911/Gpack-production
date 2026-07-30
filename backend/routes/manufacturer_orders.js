@@ -7,6 +7,7 @@ const { success, error: errorResponse } = require('../utils/response');
 const authorize = require('../middleware/authorize');
 const { validateBody, manufacturerOrderCreate, manufacturerOrderStatusUpdate, manufacturerOrderUpdate, manufacturerOrderReceive, manufacturerOrderPricing, moFinalize } = require('../utils/validators');
 const { ensurePdfThumbnail } = require('../utils/pdf-thumbnail');
+const eventBus = require('../utils/event-bus');
 
 const router = express.Router();
 
@@ -539,6 +540,17 @@ router.post('/', restrictWrite, validateBody(manufacturerOrderCreate), async (re
 
             manufacturerOrder.items = insertedItems;
             return manufacturerOrder;
+        });
+
+        // Emit business event
+        eventBus.emit({
+            event_type: 'production_ordered',
+            entity_type: 'production',
+            entity_id: result.id,
+            entity_name: `#${result.mo_number}`,
+            description: `أمر إنتاج جديد #${result.mo_number}`,
+            metadata: { order_id: result.order_id, manufacturer_id: result.manufacturer_id, status: 'pending' },
+            created_by: req.user?.id,
         });
 
         return res.status(201).json({ data: result });

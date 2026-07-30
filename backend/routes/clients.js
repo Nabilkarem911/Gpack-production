@@ -7,6 +7,7 @@ const db = require('../db');
 const { authenticate } = require('../middleware/authMiddleware');
 const authorize = require('../middleware/authorize');
 const { clientCreate, clientUpdate, validateBody } = require('../utils/validators');
+const eventBus = require('../utils/event-bus');
 
 const router = express.Router();
 
@@ -325,6 +326,17 @@ router.post('/', restrictWrite, validateBody(clientCreate), async (req, res) => 
                 req.user.id,
             ]
         );
+
+        // Emit business event
+        eventBus.emit({
+            event_type: 'client_created',
+            entity_type: 'client',
+            entity_id: result.rows[0].id,
+            entity_name: result.rows[0].name,
+            description: `عميل جديد: ${result.rows[0].name}${parent_id ? ' (فرعي)' : ''}`,
+            metadata: { city: result.rows[0].city, phone: result.rows[0].phone, is_branch: !!parent_id },
+            created_by: req.user.id,
+        });
 
         return res.status(201).json({ data: result.rows[0] });
     } catch (err) {

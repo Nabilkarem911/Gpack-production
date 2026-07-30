@@ -7,6 +7,7 @@ const { getVatRate } = require('../utils/settings');
 const { decryptShareToken } = require('../utils/crypto');
 const { orderCreate, orderUpdate, orderStatusUpdate, orderConvertToProduction, orderInvoice, orderPayment, orderNote, orderRelease, validateBody } = require('../utils/validators');
 const authorize = require('../middleware/authorize');
+const eventBus = require('../utils/event-bus');
 
 const router = express.Router();
 
@@ -860,6 +861,17 @@ router.post('/', restrictWrite, validateBody(orderCreate), async (req, res) => {
             return order;
         });
 
+        // Emit business event
+        eventBus.emit({
+            event_type: result.status === 'quote' ? 'quote_created' : 'order_created',
+            entity_type: 'order',
+            entity_id: result.id,
+            entity_name: `#${result.order_number}`,
+            description: result.status === 'quote' ? `عرض سعر جديد #${result.order_number}` : `طلب جديد #${result.order_number}`,
+            metadata: { grand_total: result.grand_total, status: result.status },
+            created_by: req.user.id,
+        });
+
         return res.status(201).json({ data: result });
     } catch (err) {
         console.error('[Orders] POST / error:', err.message);
@@ -1607,6 +1619,17 @@ router.post('/:id/invoice', restrictAdmin, validateBody(orderInvoice), async (re
             return { invoice_id: invoice.id, invoice_number: invoice.invoice_number, grand_total: grandTotal };
         });
 
+        // Emit business event
+        eventBus.emit({
+            event_type: 'invoice_created',
+            entity_type: 'invoice',
+            entity_id: result.invoice_id,
+            entity_name: `#${result.invoice_number}`,
+            description: `فاتورة جديدة #${result.invoice_number}`,
+            metadata: { grand_total: result.grand_total, order_id: id },
+            created_by: req.user?.id,
+        });
+
         return created(res, result);
     } catch (err) {
         console.error('[Orders] POST /:id/invoice error:', err.message);
@@ -1698,6 +1721,17 @@ router.post('/:id/payment', restrictAdmin, validateBody(orderPayment), async (re
                 paid_amount: newPaid,
                 remaining: Math.round((parseFloat(order.grand_total || 0) - newPaid) * 100) / 100,
             };
+        });
+
+        // Emit business event
+        eventBus.emit({
+            event_type: 'payment_received',
+            entity_type: 'payment',
+            entity_id: result.transaction_id,
+            entity_name: `طلب #${id}`,
+            description: `دفعة ${payAmt} ${payment_method}`,
+            metadata: { amount: payAmt, payment_method, order_id: id, remaining: result.remaining },
+            created_by: req.user?.id,
         });
 
         return created(res, result);
