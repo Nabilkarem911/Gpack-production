@@ -671,6 +671,37 @@
                 if (s.items.length > 5) summaryHtml += '<div class="text-slate-400 text-center">+' + (s.items.length - 5) + ' صنف آخر...</div>';
                 summaryHtml += '</div>';
                 summaryHtml += '</div>';
+            } else if (s.action_type === 'create_client') {
+                summaryHtml = '<div class="space-y-1">';
+                summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">الاسم:</span><span class="font-semibold text-slate-700">' + _esc(s.name) + '</span></div>';
+                if (s.is_branch && s.parent_name) {
+                    summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">النوع:</span><span class="font-semibold text-purple-600">فرع تابع لـ ' + _esc(s.parent_name) + '</span></div>';
+                } else {
+                    summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">النوع:</span><span class="font-semibold text-slate-600">عميل أساسي</span></div>';
+                }
+                if (s.contact_person) summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">مسؤول التواصل:</span><span class="text-slate-600">' + _esc(s.contact_person) + '</span></div>';
+                if (s.phone) summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">الهاتف:</span><span class="text-slate-600">' + _esc(s.phone) + '</span></div>';
+                if (s.city) summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">المدينة:</span><span class="text-slate-600">' + _esc(s.city) + '</span></div>';
+                if (s.email) summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">البريد:</span><span class="text-slate-600">' + _esc(s.email) + '</span></div>';
+                if (s.address) summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">العنوان:</span><span class="text-slate-600">' + _esc(s.address) + '</span></div>';
+                if (s.tax_id) summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">الرقم الضريبي:</span><span class="text-slate-600">' + _esc(s.tax_id) + '</span></div>';
+                if (s.credit_limit && parseFloat(s.credit_limit) > 0) summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">حد الائتمان:</span><span class="text-slate-600">' + parseFloat(s.credit_limit).toLocaleString('ar-SA') + ' ر.س</span></div>';
+                summaryHtml += '</div>';
+            } else if (s.action_type === 'update_order_status') {
+                summaryHtml = '<div class="space-y-1">';
+                summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">طلب رقم:</span><span class="font-semibold text-slate-700">' + s.order_number + '</span></div>';
+                if (s.client_name) summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">العميل:</span><span class="text-slate-600">' + _esc(s.client_name) + '</span></div>';
+                summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">الحالة الحالية:</span><span class="text-slate-600">' + _esc(s.current_status) + '</span></div>';
+                summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">الحالة الجديدة:</span><span class="font-bold text-amber-700">' + _esc(s.new_status) + '</span></div>';
+                summaryHtml += '</div>';
+            } else if (s.action_type === 'create_task') {
+                summaryHtml = '<div class="space-y-1">';
+                summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">العنوان:</span><span class="font-semibold text-slate-700">' + _esc(s.title) + '</span></div>';
+                if (s.description) summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">الوصف:</span><span class="text-slate-600">' + _esc(s.description) + '</span></div>';
+                if (s.assigned_to_name) summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">المسؤول:</span><span class="text-slate-600">' + _esc(s.assigned_to_name) + '</span></div>';
+                if (s.priority) summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">الأولوية:</span><span class="text-slate-600">' + _esc(s.priority) + '</span></div>';
+                if (s.due_date) summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">تاريخ الاستحقاق:</span><span class="text-slate-600">' + _esc(s.due_date) + '</span></div>';
+                summaryHtml += '</div>';
             }
 
             if (detailsEl) detailsEl.innerHTML = summaryHtml;
