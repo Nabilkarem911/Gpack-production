@@ -1854,6 +1854,16 @@ const AI_FUNCTIONS = [
                     margin_percent: marginPercent,
                     reasoning: reasoning,
                     client_history_count: clientPrices.length,
+                    _explanation: {
+                        why: `اقترحت هذا السعر بناءً على: التكلفة ${cost} ريال، آخر سعر للعميل ${lastClientPrice || 'غير متوفر'}، متوسط السوق ${avgMarketPrice > 0 ? Math.round(avgMarketPrice * 100) / 100 : 'غير متوفر'} ريال. الهامش المتوقع ${marginPercent}%.`,
+                        confidence: clientPrices.length > 3 && avgMarketPrice > 0 ? 85 : (clientPrices.length > 0 ? 60 : 40),
+                        factors: [
+                            { factor: 'التكلفة', value: cost, weight: 'high' },
+                            { factor: 'آخر سعر للعميل', value: lastClientPrice, weight: clientPrices.length > 0 ? 'high' : 'low' },
+                            { factor: 'متوسط السوق', value: avgMarketPrice > 0 ? Math.round(avgMarketPrice * 100) / 100 : null, weight: avgMarketPrice > 0 ? 'medium' : 'low' },
+                            { factor: 'هامش الربح', value: marginPercent + '%', weight: 'high' },
+                        ],
+                    },
                 });
             }
             return _sanitize(results);
@@ -1927,6 +1937,18 @@ const AI_FUNCTIONS = [
                     recommendation: canReduce
                         ? `يمكن تخفيض السعر إلى ${Math.round(tier2 * 100) / 100} ريال (هامش ${Math.round(((tier2 - cost) / cost * 100) * 100) / 100}%) كحل وسط.`
                         : `السعر الحالي قريب من الحد الأدنى. التكلفة ${cost} ريال، لا يمكن تخفيض أكثر من ${Math.round(minAcceptablePrice * 100) / 100} ريال.`,
+                    _explanation: {
+                        why: canReduce
+                            ? `السعر الحالي ${current} ريال بهامش ${Math.round(currentMargin * 100) / 100}%. الحد الأدنى المقبول ${Math.round(minAcceptablePrice * 100) / 100} ريال (هامش ${target_margin}%). متاح تخفيض ${Math.round(negotiationRoom * 100) / 100} ريال.`
+                            : `السعر الحالي ${current} ريال قريب من الحد الأدنى ${Math.round(minAcceptablePrice * 100) / 100} ريال. التكلفة ${cost} ريال، الهامش الحالي ${Math.round(currentMargin * 100) / 100}% فقط.`,
+                        confidence: cost > 0 ? 90 : 30,
+                        factors: [
+                            { factor: 'التكلفة', value: cost, weight: 'high' },
+                            { factor: 'السعر الحالي', value: current, weight: 'high' },
+                            { factor: 'الهامش الحالي', value: Math.round(currentMargin * 100) / 100 + '%', weight: 'high' },
+                            { factor: 'الهامش الأدنى', value: target_margin + '%', weight: 'medium' },
+                        ],
+                    },
                 });
             }
             return _sanitize(results);

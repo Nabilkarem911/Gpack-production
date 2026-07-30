@@ -512,7 +512,7 @@ router.post('/reject-action', async (req, res) => {
 // Body: { message: string, context?: { page, entity_type, entity_id } }
 // =============================================================================
 router.post('/chat', async (req, res) => {
-    const { message, context } = req.body;
+    const { message, context, session_id } = req.body;
 
     if (!message || !message.trim()) {
         return res.status(400).json({ error: 'الرسالة فارغة' });
@@ -526,23 +526,31 @@ router.post('/chat', async (req, res) => {
         });
     }
 
+    // ── Generate or reuse session_id ───────────────────────────────────────
+    const sessionId = session_id || `sess_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
     try {
-        // ── 1. Load recent conversation context (last 10 messages) ──────────
+        // ── 1. Load recent conversation context (last 10 messages from this session) ──
         const historyResult = await db.query(
-            `SELECT role, content FROM ai_chat_history
-             WHERE user_id = $1
+            `SELECT role, content FROM conversation_context
+             WHERE user_id = $1 AND session_id = $2
              ORDER BY created_at DESC LIMIT 10`,
-            [req.user.id]
+            [req.user.id, sessionId]
         );
         const recentMessages = historyResult.rows.reverse().map(m => ({
             role: m.role === 'assistant' ? 'assistant' : 'user',
             content: m.content,
         }));
 
-        // ── 2. Save user message ─────────────────────────────────────────────
+        // ── 2. Save user message to both tables ──────────────────────────────
         await db.query(
             `INSERT INTO ai_chat_history (user_id, role, content) VALUES ($1, 'user', $2)`,
             [req.user.id, message.trim()]
+        );
+        await db.query(
+            `INSERT INTO conversation_context (user_id, session_id, role, content, metadata)
+             VALUES ($1, $2, 'user', $3, $4)`,
+            [req.user.id, sessionId, message.trim(), context ? JSON.stringify(context) : null]
         );
 
         // ── 3. Build system prompt (with optional page context) ─────────────
@@ -680,16 +688,25 @@ router.post('/chat', async (req, res) => {
             }
         }
 
-        // ── 7. Save assistant reply ──────────────────────────────────────────
+        // ── 7. Save assistant reply to both tables ─────────────────────────
         await db.query(
             `INSERT INTO ai_chat_history (user_id, role, content) VALUES ($1, 'assistant', $2)`,
             [req.user.id, reply]
+        );
+        await db.query(
+            `INSERT INTO conversation_context (user_id, session_id, role, content, metadata)
+             VALUES ($1, $2, 'assistant', $3, $4)`,
+            [req.user.id, sessionId, reply, JSON.stringify({
+                proposed_actions: proposedActions.length > 0 ? proposedActions : undefined,
+                actions: actions.length > 0 ? actions : undefined,
+            })]
         );
 
         res.json({
             reply,
             actions: actions.length > 0 ? actions : undefined,
             proposed_actions: proposedActions.length > 0 ? proposedActions : undefined,
+            session_id: sessionId,
             enabled: true,
         });
 

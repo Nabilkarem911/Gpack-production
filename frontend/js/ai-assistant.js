@@ -12,6 +12,7 @@
     let _isOpen = false;
     let _isLoading = false;
     let _messages = [];
+    let _sessionId = null;
     let _aiEnabled = null;
     let _briefingShown = false;
 
@@ -483,6 +484,30 @@
     }
 
     // =============================================================================
+    // Render explanation metadata (Phase 22: Explainability)
+    // =============================================================================
+    function _renderExplanation(expl) {
+        if (!expl) return 'الشرح غير متاح.';
+        let html = '';
+        if (expl.why) {
+            html += `<div class="mb-1"><i class="fa-solid fa-lightbulb text-amber-400 ml-0.5"></i> ${_esc(expl.why)}</div>`;
+        }
+        if (typeof expl.confidence === 'number') {
+            const barColor = expl.confidence >= 70 ? 'bg-green-400' : expl.confidence >= 50 ? 'bg-amber-400' : 'bg-red-400';
+            html += `<div class="mb-1">الثقة: <span class="inline-block w-16 h-1.5 bg-slate-200 rounded-full align-middle mr-1"><span class="${barColor} h-full rounded-full inline-block" style="width:${expl.confidence}%"></span></span> ${expl.confidence}%</div>`;
+        }
+        if (Array.isArray(expl.factors) && expl.factors.length > 0) {
+            html += '<div class="mt-1">العوامل:</div><ul class="list-disc pr-4 mt-0.5 space-y-0.5">';
+            for (const f of expl.factors) {
+                const weightColor = f.weight === 'high' ? 'text-red-400' : f.weight === 'medium' ? 'text-amber-400' : 'text-slate-300';
+                html += `<li><span class="${weightColor}">●</span> ${_esc(f.factor)}: ${f.value !== null && f.value !== undefined ? _esc(String(f.value)) : 'غير متوفر'} <span class="text-slate-300">(${f.weight})</span></li>`;
+            }
+            html += '</ul>';
+        }
+        return html;
+    }
+
+    // =============================================================================
     // Render a single message
     // =============================================================================
     function _renderMessage(msg) {
@@ -531,6 +556,12 @@
                     ${_esc(msg.content).replace(/\n/g, '<br>')}
                     ${actionsHtml}
                     ${proposeHtml}
+                    <div class="ai-explain-toggle mt-1.5 text-[10px] text-slate-400 hover:text-brand-600 cursor-pointer select-none" onclick="this.nextElementSibling.classList.toggle('hidden')">
+                        <i class="fa-solid fa-circle-question ml-0.5"></i> ليه؟
+                    </div>
+                    <div class="ai-explain-box hidden mt-1.5 p-2 bg-slate-50 border border-slate-100 rounded-lg text-[10px] text-slate-500">
+                        ${msg._explanation ? _renderExplanation(msg._explanation) : 'الشرح غير متاح لهذه الإجابة. الشرح متاح لاقتراحات الأسعار والتفاوض والتدقيق.'}
+                    </div>
                 </div>
             </div>
         `;
@@ -557,8 +588,10 @@
             const ctx = _getCurrentContext();
             const res = await window.apiFetch('/api/ai-assistant/chat', {
                 method: 'POST',
-                body: { message: text, context: ctx },
+                body: { message: text, context: ctx, session_id: _sessionId },
             });
+
+            if (res.session_id) _sessionId = res.session_id;
 
             _messages.push({ role: 'assistant', content: res.reply || 'عذراً، لم أتمكن من الرد.', actions: res.actions, proposed_actions: res.proposed_actions });
         } catch (err) {
