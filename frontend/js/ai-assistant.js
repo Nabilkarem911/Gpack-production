@@ -601,6 +601,8 @@
         }
         if (btnEl) btnEl.disabled = true;
 
+        // Store handler reference so we can remove it later (strict mode forbids arguments.callee)
+        var clickHandler = async function() {
         try {
             // Step 2: Call propose-action API
             var proposeRes = await window.apiFetch('/api/ai-assistant/propose-action', {
@@ -677,7 +679,7 @@
                 btnEl.classList.add('bg-emerald-600', 'hover:bg-emerald-700');
 
                 // Replace click handler — now executes
-                btnEl.removeEventListener('click', arguments.callee);
+                btnEl.removeEventListener('click', clickHandler);
                 btnEl.onclick = async function() {
                     btnEl.disabled = true;
                     btnEl.innerHTML = '<i class="fa-solid fa-spinner fa-spin ml-1 text-[10px]"></i>جاري التنفيذ...';
@@ -707,6 +709,10 @@
             if (detailsEl) detailsEl.innerHTML = '<div class="text-rose-600"><i class="fa-solid fa-circle-exclamation ml-1"></i>' + _esc(err.message || 'فشل في التحقق') + '</div>';
             if (btnEl) btnEl.disabled = false;
         }
+        };
+
+        // Attach the handler
+        btnEl.addEventListener('click', clickHandler);
     }
 
     // =============================================================================
