@@ -45,7 +45,23 @@ const SYSTEM_PROMPT = `أنت مساعد ذكي لنظام G.PACK 2.0 لإدار
 [[propose_action:add_payment|{"order_number":123,"amount":500,"payment_method":"cash"}|تسجيل دفعة]]
 [[propose_action:convert_quote_to_invoice|{"order_number":123}|تحويل لفاتورة]]
 [[propose_action:create_production_order|{"client_name":"اسم العميل","items":[{"product_name":"اسم المنتج","quantity":100}],"internal_notes":"ملاحظات"}|إنشاء أمر تشغيل]]
-اكتب الإجراء في سطر منفصل. الإجراء سيتم تنفيذه فقط بعد تأكيد المستخدم.`;
+اكتب الإجراء في سطر منفصل. الإجراء سيتم تنفيذه فقط بعد تأكيد المستخدم.
+
+--- نتائج البحث ---
+عند استخدام دالة globalSearch، اعرض النتائج مصنفة حسب الفئة (عملاء، منتجات، طلبات، فواتير، موردين).
+لكل نتيجة، أضف زر تنقل بصيغة:
+[[action:navigate|clients|فتح صفحة العملاء]]
+[[action:navigate|products|فتح صفحة المنتجات]]
+[[action:navigate|orders|فتح صفحة الطلبات]]
+[[action:navigate|invoices|فتح صفحة الفواتير]]
+[[action:navigate|suppliers|فتح صفحة الموردين]]
+أضف أزرار التنقل المناسبة لكل فئة وجدت فيها نتائج.
+
+--- إجراءات مجمعة ---
+عندما يطلب المستخدم تطبيق تغيير على مجموعة منتجات أو إنشاء طلبات شراء متعددة، اقترح إجراء مجمع بصيغة:
+[[propose_action:bulk_update_prices|{"category":"أكواب","percentage":10,"direction":"increase"}|زيادة أسعار الأكواب 10%]]
+[[propose_action:bulk_create_reorders|{"supplier_name":"اسم المورد","max_items":20}|إنشاء طلبات شراء للأصناف منخفضة المخزون]]
+الإجراء سيتم تنفيذه فقط بعد تأكيد المستخدم.`;
 
 // =============================================================================
 // GET /api/ai-assistant/health
@@ -442,6 +458,14 @@ router.post('/chat', async (req, res) => {
                 ctxParts.push(`الاسم: ${context.entity_name}`);
             }
             systemPrompt = systemPrompt + '\n\n--- سياق إضافي ---\n' + ctxParts.join('. ') + '.\nاستخدم هذا السياق لتخصيص ردك إذا كان السؤال عاماً.';
+        }
+
+        // Phase 8: Role-scoped system prompt
+        const userRole = req.user.role;
+        if (userRole === 'sales_rep') {
+            systemPrompt += '\n\n--- دور المستخدم ---\nالمستخدم مندوب مبيعات. ركز على بياناته هو: طلباته، عروض أسعاره، عملاؤه. استخدم دائماً created_by = المستخدم الحالي عند الاستعلام. لا تعرض بيانات المستخدمين الآخرين.';
+        } else if (userRole === 'manager' || userRole === 'admin') {
+            systemPrompt += '\n\n--- دور المستخدم ---\nالمستخدم مدير. يمكنه رؤية كل بيانات الشركة: المبيعات، المخزون، الموردين، المستحقات، أداء الفريق. ركز على المؤشرات العامة والتحليلات الإدارية.';
         }
 
         const messages = [

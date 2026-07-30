@@ -469,10 +469,188 @@ const AI_ACTIONS = [
         },
     },
 
-];
+    // ── 5. bulkUpdatePrices ─────────────────────────────────────────────────
+    {
+        type: 'bulk_update_prices',
+        description: 'تطبيق نسبة زيادة/نقص على أسعار فئة منتجات كاملة',
+        async propose(args, user) {
+            const { category, percentage, direction } = args;
 
-// =============================================================================
-// Map for quick lookup by type
+            if (!category) {
+                return { valid: false, error: 'اسم الفئة مطلوب' };
+            }
+            const pct = parseFloat(percentage);
+            if (!pct || pct <= 0 || pct > 100) {
+                return { valid: false, error: 'النسبة يجب أن تكون بين 1 و 100' };
+            }
+            const dir = direction || 'increase';
+
+            const variantsRes = await db.query(
+                `SELECT pv.id, pv.sku, pv.selling_price, pv.cost_price, p.name, p.category
+                 FROM product_variants pv
+                 JOIN products p ON p.id = pv.product_id
+                 WHERE p.category ILIKE $1 AND pv.status = 'active'
+                 ORDER BY p.name
+                 LIMIT 50`,
+                [`%${category}%`]
+            );
+
+            if (variantsRes.rows.length === 0) {
+                return { valid: false, error: `لم يتم العثور على منتجات في فئة "${category}"` };
+            }
+
+            const affected = variantsRes.rows.map(v => {
+                const oldPrice = parseFloat(v.selling_price || 0);
+                const multiplier = dir === 'increase' ? (1 + pct / 100) : (1 - pct / 100);
+                const newPrice = Math.round(oldPrice * multiplier * 100) / 100;
+                return {
+                    variant_id: v.id,
+                    sku: v.sku,
+                    product_name: v.name,
+                    old_price: oldPrice,
+                    new_price: newPrice,
+                };
+            });
+
+            return {
+                valid: true,
+                summary: {
+                    action_type: 'bulk_update_prices',
+                    category,
+                    percentage: pct,
+                    direction: dir,
+                    affected_count: affected.length,
+                    affected_items: affected,
+                },
+            };
+        },
+
+        async execute(proposal, user) {
+            const { affected_items, percentage, direction } = proposal;
+            const multiplier = direction === 'increase' ? (1 + percentage / 100) : (1 - percentage / 100);
+
+            const result = await db.withTransaction(async (client) => {
+                let updated = 0;
+                for (const item of affected_items) {
+                    const newPrice = Math.round(parseFloat(item.old_price) * multiplier * 100) / 100;
+                    await client.query(
+                        `UPDATE product_variants SET selling_price = $1, updated_at = NOW() WHERE id = $2`,
+                        [newPrice, item.variant_id]
+                    );
+                    updated++;
+                }
+                return { updated_count: updated, category: proposal.category, percentage, direction };
+            });
+
+            return result;
+        },
+    },
+
+    // ── 6. bulkCreateReorders ───────────────────────────────────────────────
+    {
+        type: 'bulk_create_reorders',
+        description: 'إنشاء أوامر شراء للأصناف منخفضة المخزون',
+        async propose(args, user) {
+            const { supplier_name, max_items } = args;
+
+            // Find supplier
+            let supplier = null;
+            if (supplier_name) {
+                const supplierRes = await db.query(
+                    `SELECT id, name FROM suppliers WHERE name ILIKE $1 LIMIT 1`,
+                    [`%${supplier_name}%`]
+                );
+                if (supplierRes.rows.length === 0) {
+                    return { valid: false, error: `لم يتم العثور على مورد باسم "${supplier_name}"` };
+                }
+                supplier = supplierRes.rows[0];
+            }
+
+            // Find low-stock items
+            const lowStockRes = await db.query(
+                `SELECT pv.id, pv.sku, pv.selling_price, pv.cost_price,
+                        p.name, pv.size_name,
+                        COALESCE(SUM(ws.quantity), 0) as current_stock,
+                        COALESCE(pv.reorder_point, 100) as reorder_point,
+                        COALESCE(pv.max_stock, 500) as max_stock
+                 FROM product_variants pv
+                 JOIN products p ON p.id = pv.product_id
+                 LEFT JOIN warehouse_stock ws ON ws.variant_id = pv.id
+                 WHERE pv.status = 'active'
+                 GROUP BY pv.id, p.name
+                 HAVING COALESCE(SUM(ws.quantity), 0) < COALESCE(pv.reorder_point, 100)
+                 ORDER BY COALESCE(SUM(ws.quantity), 0) ASC
+                 LIMIT $1`,
+                [parseInt(max_items) || 20]
+            );
+
+            if (lowStockRes.rows.length === 0) {
+                return { valid: false, error: 'لا توجد أصناف منخفضة المخزون حالياً' };
+            }
+
+            const items = lowStockRes.rows.map(r => ({
+                variant_id: r.id,
+                product_name: r.name,
+                size_name: r.size_name,
+                sku: r.sku,
+                current_stock: parseInt(r.current_stock),
+                reorder_qty: parseInt(r.max_stock) - parseInt(r.current_stock),
+                unit_cost: parseFloat(r.cost_price || 0),
+                line_total: Math.round((parseInt(r.max_stock) - parseInt(r.current_stock)) * parseFloat(r.cost_price || 0) * 100) / 100,
+            }));
+
+            const grandTotal = items.reduce((sum, i) => sum + i.line_total, 0);
+
+            return {
+                valid: true,
+                summary: {
+                    action_type: 'bulk_create_reorders',
+                    supplier_id: supplier ? supplier.id : null,
+                    supplier_name: supplier ? supplier.name : 'غير محدد',
+                    items,
+                    item_count: items.length,
+                    grand_total: Math.round(grandTotal * 100) / 100,
+                },
+            };
+        },
+
+        async execute(proposal, user) {
+            const { supplier_id, items } = proposal;
+
+            const result = await db.withTransaction(async (client) => {
+                // Create a purchase order
+                const poRes = await client.query(
+                    `INSERT INTO purchase_orders
+                        (supplier_id, status, created_by)
+                     VALUES ($1, 'draft', $2)
+                     RETURNING id, po_number`,
+                    [supplier_id, user.id]
+                );
+                const po = poRes.rows[0];
+
+                // Add items to purchase order
+                for (const item of items) {
+                    await client.query(
+                        `INSERT INTO purchase_order_items
+                            (po_id, variant_id, quantity, unit_cost)
+                         VALUES ($1, $2, $3, $4)`,
+                        [po.id, item.variant_id, item.reorder_qty, item.unit_cost]
+                    );
+                }
+
+                return {
+                    po_id: po.id,
+                    po_number: po.po_number,
+                    item_count: items.length,
+                    status: 'draft',
+                };
+            });
+
+            return result;
+        },
+    },
+
+];
 // =============================================================================
 const ACTION_MAP = AI_ACTIONS.reduce((map, action) => {
     map[action.type] = action;

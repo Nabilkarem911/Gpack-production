@@ -1260,6 +1260,135 @@ const AI_FUNCTIONS = [
         }
     },
 
+    // ── 17. globalSearch ─────────────────────────────────────────────────────
+    {
+        type: 'function',
+        function: {
+            name: 'globalSearch',
+            description: 'بحث شامل عبر العملاء، المنتجات، الطلبات، الفواتير، والموردين. يرجع نتائج مصنفة مع روابط تنقل.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    query: { type: 'string', description: 'نص البحث (اسم، رقم، SKU)' },
+                    limit: { type: 'number', description: 'أقصى عدد نتائج لكل فئة (افتراضي 5)' }
+                },
+                required: ['query']
+            }
+        },
+        async execute(args, user) {
+            const { query, limit } = args;
+            const maxResults = parseInt(limit) || 5;
+            const searchTerm = `%${query}%`;
+            const results = { query, categories: {} };
+
+            // Clients
+            try {
+                const clientsRes = await db.query(
+                    `SELECT id, name, phone, email, status
+                     FROM clients
+                     WHERE name ILIKE $1 OR phone ILIKE $1 OR email ILIKE $1
+                     ORDER BY name
+                     LIMIT $2`,
+                    [searchTerm, maxResults]
+                );
+                if (clientsRes.rows.length > 0) {
+                    results.categories.clients = clientsRes.rows.map(r => ({
+                        id: r.id, name: r.name, phone: r.phone, status: r.status,
+                        page: 'clients', entity_type: 'client'
+                    }));
+                }
+            } catch { /* ignore */ }
+
+            // Products
+            try {
+                const productsRes = await db.query(
+                    `SELECT p.id, p.name, p.category, pv.sku, pv.selling_price
+                     FROM products p
+                     LEFT JOIN product_variants pv ON pv.product_id = p.id AND pv.status = 'active'
+                     WHERE p.name ILIKE $1 OR pv.sku ILIKE $1
+                     ORDER BY p.name
+                     LIMIT $2`,
+                    [searchTerm, maxResults]
+                );
+                if (productsRes.rows.length > 0) {
+                    results.categories.products = productsRes.rows.map(r => ({
+                        id: r.id, name: r.name, category: r.category, sku: r.sku,
+                        selling_price: r.selling_price,
+                        page: 'products', entity_type: 'product'
+                    }));
+                }
+            } catch { /* ignore */ }
+
+            // Orders
+            try {
+                const ordersRes = await db.query(
+                    `SELECT o.id, o.order_number, o.status, o.grand_total,
+                            c.name as client_name
+                     FROM orders o
+                     LEFT JOIN clients c ON c.id = o.client_id
+                     WHERE o.order_number::text ILIKE $1 OR c.name ILIKE $1
+                     ORDER BY o.created_at DESC
+                     LIMIT $2`,
+                    [searchTerm, maxResults]
+                );
+                if (ordersRes.rows.length > 0) {
+                    results.categories.orders = ordersRes.rows.map(r => ({
+                        id: r.id, order_number: r.order_number, status: r.status,
+                        grand_total: r.grand_total, client_name: r.client_name,
+                        page: 'orders', entity_type: 'order'
+                    }));
+                }
+            } catch { /* ignore */ }
+
+            // Invoices
+            try {
+                const invoicesRes = await db.query(
+                    `SELECT i.id, i.invoice_number, i.status, i.grand_total,
+                            c.name as client_name, i.invoice_date
+                     FROM invoices i
+                     LEFT JOIN clients c ON c.id = i.client_id
+                     WHERE i.invoice_number::text ILIKE $1 OR c.name ILIKE $1
+                     ORDER BY i.invoice_date DESC
+                     LIMIT $2`,
+                    [searchTerm, maxResults]
+                );
+                if (invoicesRes.rows.length > 0) {
+                    results.categories.invoices = invoicesRes.rows.map(r => ({
+                        id: r.id, invoice_number: r.invoice_number, status: r.status,
+                        grand_total: r.grand_total, client_name: r.client_name,
+                        invoice_date: r.invoice_date,
+                        page: 'invoices', entity_type: 'invoice'
+                    }));
+                }
+            } catch { /* ignore */ }
+
+            // Suppliers
+            try {
+                const suppliersRes = await db.query(
+                    `SELECT id, name, phone, email, type
+                     FROM suppliers
+                     WHERE name ILIKE $1 OR phone ILIKE $1 OR email ILIKE $1
+                     ORDER BY name
+                     LIMIT $2`,
+                    [searchTerm, maxResults]
+                );
+                if (suppliersRes.rows.length > 0) {
+                    results.categories.suppliers = suppliersRes.rows.map(r => ({
+                        id: r.id, name: r.name, phone: r.phone, type: r.type,
+                        page: 'suppliers', entity_type: 'supplier'
+                    }));
+                }
+            } catch { /* ignore */ }
+
+            // Summary
+            const totalResults = Object.values(results.categories).reduce((sum, arr) => sum + arr.length, 0);
+            results.total = totalResults;
+            results.found = totalResults > 0;
+
+            return results;
+        }
+    },
+
 ];
 
 // =============================================================================

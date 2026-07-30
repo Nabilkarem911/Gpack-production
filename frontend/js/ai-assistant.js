@@ -75,8 +75,8 @@
         }
     }
 
-    // ── Suggested questions ───────────────────────────────────────────────────
-    const SUGGESTIONS = [
+    // ── Suggested questions (role-dependent — Phase 8) ────────────────────────
+    const MANAGER_SUGGESTIONS = [
         { text: 'إيه إجمالي مبيعات اليوم؟', icon: 'fa-chart-line' },
         { text: 'أكثر 5 منتجات مبيعاً هذا الشهر', icon: 'fa-trophy' },
         { text: 'حالة المخزون — إيه اللي قارب على النفاد؟', icon: 'fa-boxes-stacked' },
@@ -87,7 +87,23 @@
         { text: 'كم نتوقع نبيع الشهر الجاي؟', icon: 'fa-lightbulb' },
         { text: 'أي عملاء ممكن يسيبونا؟', icon: 'fa-user-slash' },
         { text: 'إيه الأصناف اللي محتاجة إعادة طلب؟', icon: 'fa-truck-ramp-box' },
+        { text: 'دورلي على عميل اسمه أحمد', icon: 'fa-magnifying-glass' },
     ];
+
+    const SALES_REP_SUGGESTIONS = [
+        { text: 'إيه عروضي المعلقة؟', icon: 'fa-file-lines' },
+        { text: 'إيه آخر طلباتي؟', icon: 'fa-clipboard-list' },
+        { text: 'أكثر منتجاتي مبيعاً', icon: 'fa-trophy' },
+        { text: 'إيه مستحقات عملائي؟', icon: 'fa-hand-holding-dollar' },
+        { text: 'حالة المخزون — إيه اللي قارب على النفاد؟', icon: 'fa-boxes-stacked' },
+        { text: 'دورلي على عميل اسمه أحمد', icon: 'fa-magnifying-glass' },
+    ];
+
+    function _getRoleSuggestions() {
+        var role = (window.GpackUser && window.GpackUser.role || '').toLowerCase();
+        if (role === 'sales_rep') return SALES_REP_SUGGESTIONS;
+        return MANAGER_SUGGESTIONS;
+    }
 
     // =============================================================================
     // Initialize — inject button + panel into the header
@@ -317,7 +333,7 @@
                 <div id="ai-chat-suggestions" class="px-4 py-2 border-t border-slate-200 bg-white">
                     <p class="text-xs text-slate-400 mb-2">أسئلة مقترحة:</p>
                     <div class="flex flex-wrap gap-2">
-                        ${SUGGESTIONS.map(s => `
+                        ${_getRoleSuggestions().map(s => `
                             <button class="ai-suggestion-chip text-xs px-3 py-1.5 rounded-full bg-brand-50 text-brand-700 hover:bg-brand-100 transition-colors border border-brand-200" data-question="${s.text}">
                                 <i class="fa-solid ${s.icon} ml-1 text-[10px]"></i>${s.text}
                             </button>
@@ -332,6 +348,10 @@
                     <input id="ai-chat-input" type="text"
                         class="flex-1 px-3 py-2 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
                         placeholder="اكتب سؤالك..." autocomplete="off" />
+                    <button id="ai-chat-mic"
+                        class="w-10 h-10 rounded-lg bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors flex items-center justify-center flex-shrink-0 hidden">
+                        <i class="fa-solid fa-microphone text-sm"></i>
+                    </button>
                     <button id="ai-chat-send"
                         class="w-10 h-10 rounded-lg bg-brand-700 text-white hover:bg-brand-800 transition-colors flex items-center justify-center flex-shrink-0">
                         <i class="fa-solid fa-paper-plane text-sm"></i>
@@ -355,6 +375,61 @@
                     _sendMessage();
                 }
             });
+        }
+
+        // Phase 9: Voice input (webkitSpeechRecognition)
+        const micBtn = document.getElementById('ai-chat-mic');
+        if (micBtn) {
+            var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (SpeechRecognition && input) {
+                micBtn.classList.remove('hidden');
+                var isRecording = false;
+                var recognition = null;
+
+                micBtn.addEventListener('click', function() {
+                    if (isRecording) {
+                        if (recognition) recognition.stop();
+                        return;
+                    }
+
+                    recognition = new SpeechRecognition();
+                    recognition.lang = 'ar-SA';
+                    recognition.interimResults = true;
+                    recognition.continuous = false;
+
+                    var baseText = '';
+                    recognition.onstart = function() {
+                        isRecording = true;
+                        micBtn.classList.remove('bg-slate-100', 'text-slate-500', 'hover:bg-slate-200');
+                        micBtn.classList.add('bg-rose-500', 'text-white', 'animate-pulse');
+                        micBtn.querySelector('i').className = 'fa-solid fa-stop text-sm';
+                        baseText = input.value || '';
+                    };
+
+                    recognition.onresult = function(event) {
+                        var transcript = '';
+                        for (var i = 0; i < event.results.length; i++) {
+                            transcript += event.results[i][0].transcript;
+                        }
+                        input.value = baseText + transcript;
+                    };
+
+                    recognition.onerror = function(event) {
+                        if (window.showToast && event.error !== 'aborted') {
+                            window.showToast('خطأ في الإدخال الصوتي: ' + event.error, 'warning');
+                        }
+                    };
+
+                    recognition.onend = function() {
+                        isRecording = false;
+                        micBtn.classList.add('bg-slate-100', 'text-slate-500', 'hover:bg-slate-200');
+                        micBtn.classList.remove('bg-rose-500', 'text-white', 'animate-pulse');
+                        micBtn.querySelector('i').className = 'fa-solid fa-microphone text-sm';
+                    };
+
+                    recognition.start();
+                });
+            }
         }
 
         // Suggestion chips
@@ -566,6 +641,30 @@
                 summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">طلب رقم:</span><span class="font-semibold text-slate-700">' + s.order_number + '</span></div>';
                 summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">العميل:</span><span class="text-slate-600">' + _esc(s.client_name) + '</span></div>';
                 summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">الإجمالي:</span><span class="font-bold text-amber-700">' + parseFloat(s.grand_total).toLocaleString('ar-SA', {maximumFractionDigits: 2}) + ' ر.س</span></div>';
+                summaryHtml += '</div>';
+            } else if (s.action_type === 'bulk_update_prices') {
+                summaryHtml = '<div class="space-y-1">';
+                summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">الفئة:</span><span class="font-semibold text-slate-700">' + _esc(s.category) + '</span></div>';
+                summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">النسبة:</span><span class="font-bold text-amber-700">' + s.percentage + '% ' + (s.direction === 'increase' ? 'زيادة' : 'خصم') + '</span></div>';
+                summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">عدد الأصناف:</span><span class="text-slate-600">' + s.affected_count + ' صنف</span></div>';
+                summaryHtml += '<div class="text-[10px] text-slate-400 mt-1 max-h-20 overflow-y-auto">';
+                s.affected_items.slice(0, 5).forEach(function(item) {
+                    summaryHtml += '<div class="flex justify-between"><span>' + _esc(item.product_name) + '</span><span>' + parseFloat(item.old_price).toFixed(2) + ' ← <b class="text-amber-600">' + parseFloat(item.new_price).toFixed(2) + '</b></span></div>';
+                });
+                if (s.affected_items.length > 5) summaryHtml += '<div class="text-slate-400 text-center">+' + (s.affected_items.length - 5) + ' صنف آخر...</div>';
+                summaryHtml += '</div>';
+                summaryHtml += '</div>';
+            } else if (s.action_type === 'bulk_create_reorders') {
+                summaryHtml = '<div class="space-y-1">';
+                summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">المورد:</span><span class="font-semibold text-slate-700">' + _esc(s.supplier_name) + '</span></div>';
+                summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">عدد الأصناف:</span><span class="text-slate-600">' + s.item_count + ' صنف</span></div>';
+                summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">الإجمالي:</span><span class="font-bold text-amber-700">' + parseFloat(s.grand_total).toLocaleString('ar-SA', {maximumFractionDigits: 2}) + ' ر.س</span></div>';
+                summaryHtml += '<div class="text-[10px] text-slate-400 mt-1 max-h-20 overflow-y-auto">';
+                s.items.slice(0, 5).forEach(function(item) {
+                    summaryHtml += '<div class="flex justify-between"><span>' + _esc(item.product_name) + '</span><span>متبقي: ' + item.current_stock + ' → طلب: ' + item.reorder_qty + '</span></div>';
+                });
+                if (s.items.length > 5) summaryHtml += '<div class="text-slate-400 text-center">+' + (s.items.length - 5) + ' صنف آخر...</div>';
+                summaryHtml += '</div>';
                 summaryHtml += '</div>';
             }
 
