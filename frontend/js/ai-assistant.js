@@ -683,7 +683,7 @@
                 btnEl.classList.add('bg-emerald-600', 'hover:bg-emerald-700');
 
                 // Replace click handler — now executes
-                btnEl.removeEventListener('click', clickHandler);
+                btnEl.removeEventListener('click', btnEl._proposeHandler);
                 btnEl.onclick = async function() {
                     btnEl.disabled = true;
                     btnEl.innerHTML = '<i class="fa-solid fa-spinner fa-spin ml-1 text-[10px]"></i>جاري التنفيذ...';
