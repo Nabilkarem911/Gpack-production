@@ -35,8 +35,27 @@ const SYSTEM_PROMPT = `أنت مساعد ذكي لنظام G.PACK 2.0 لإدار
 عندما يكون ردك يحتوي على بيانات يمكن للمستخدم التصرف عليها، أضف اقتراح إجراء في نهاية الرد بصيغة:
 [[action:navigate|page_key|تسمية الزر]] — للتنقل لصفحة
 [[action:filter|page_key:filter_value|تسمية الزر]] — لتصفية صفحة بقيمة
+
+أسماء الصفحات الصحيحة (استخدمها بالضبط):
+- dashboard — لوحة التحكم
+- clients — العملاء
+- client-profile — ملف العميل
+- quotations — عروض الأسعار / الطلبات
+- sales-invoices — فواتير المبيعات
+- production_orders — أوامر التشغيل
+- suppliers — الموردين
+- purchase-invoices — فواتير المشتريات
+- warehouses — المخازن
+- inventory — إدارة المخزون
+- products — الأصناف
+- users — المستخدمون
+- tasks — المهام
+- settings — الإعدادات
+
 مثال: [[action:navigate|warehouses|فتح صفحة المخازن]]
 مثال: [[action:filter|inventory:warehouse_id=5|فلترة المخزون بالمستودع]]
+مثال: [[action:navigate|quotations|فتح صفحة عروض الأسعار]]
+مثال: [[action:navigate|sales-invoices|فتح صفحة الفواتير]]
 اكتب الإجراءات في سطر منفصل بعد الرد. максимум 3 إجراءات لكل رد.
 
 --- اقتراح إجراءات تنفيذية ---
@@ -52,8 +71,8 @@ const SYSTEM_PROMPT = `أنت مساعد ذكي لنظام G.PACK 2.0 لإدار
 لكل نتيجة، أضف زر تنقل بصيغة:
 [[action:navigate|clients|فتح صفحة العملاء]]
 [[action:navigate|products|فتح صفحة المنتجات]]
-[[action:navigate|orders|فتح صفحة الطلبات]]
-[[action:navigate|invoices|فتح صفحة الفواتير]]
+[[action:navigate|quotations|فتح صفحة عروض الأسعار]]
+[[action:navigate|sales-invoices|فتح صفحة الفواتير]]
 [[action:navigate|suppliers|فتح صفحة الموردين]]
 أضف أزرار التنقل المناسبة لكل فئة وجدت فيها نتائج.
 

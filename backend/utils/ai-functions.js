@@ -1335,7 +1335,7 @@ const AI_FUNCTIONS = [
                     results.categories.orders = ordersRes.rows.map(r => ({
                         id: r.id, order_number: r.order_number, status: r.status,
                         grand_total: r.grand_total, client_name: r.client_name,
-                        page: 'orders', entity_type: 'order'
+                        page: 'quotations', entity_type: 'order'
                     }));
                 }
             } catch { /* ignore */ }
@@ -1357,7 +1357,7 @@ const AI_FUNCTIONS = [
                         id: r.id, invoice_number: r.invoice_number, status: r.status,
                         grand_total: r.grand_total, client_name: r.client_name,
                         invoice_date: r.invoice_date,
-                        page: 'invoices', entity_type: 'invoice'
+                        page: 'sales-invoices', entity_type: 'invoice'
                     }));
                 }
             } catch { /* ignore */ }
