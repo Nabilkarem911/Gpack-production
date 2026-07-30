@@ -133,12 +133,18 @@ const AI_FUNCTIONS = [
             const result = await db.query(
                 `SELECT c.id, c.name,
                         COALESCE(SUM(i.grand_total), 0)::numeric as total_invoiced,
-                        COALESCE(SUM(i.paid_amount), 0)::numeric as total_paid,
-                        COALESCE(SUM(i.grand_total - i.paid_amount), 0)::numeric as balance_due,
+                        COALESCE(SUM(ct.paid), 0)::numeric as total_paid,
+                        COALESCE(SUM(i.grand_total) - COALESCE(SUM(ct.paid), 0), 0)::numeric as balance_due,
                         COUNT(DISTINCT i.id) as invoice_count,
                         COUNT(DISTINCT o.id) as order_count
                  FROM clients c
                  LEFT JOIN invoices i ON i.client_id = c.id AND i.status != 'cancelled'
+                 LEFT JOIN (
+                     SELECT invoice_id, SUM(amount) as paid
+                     FROM client_transactions
+                     WHERE type = 'payment' AND invoice_id IS NOT NULL
+                     GROUP BY invoice_id
+                 ) ct ON ct.invoice_id = i.id
                  LEFT JOIN orders o ON o.client_id = c.id
                  WHERE c.name ILIKE $1
                  GROUP BY c.id, c.name
@@ -234,18 +240,18 @@ const AI_FUNCTIONS = [
             const { supplier_name, product_name } = args;
             let query, params;
             if (supplier_name) {
-                query = `SELECT s.name as supplier_name, p.name as product_name, pv.size_name as size,
+                query = `SELECT s.company_name as supplier_name, p.name as product_name, pv.size_name as size,
                                 pii.unit_cost as cost_price, pi.invoice_date
                          FROM purchase_invoice_items pii
                          JOIN purchase_invoices pi ON pi.id = pii.purchase_invoice_id
                          JOIN suppliers s ON s.id = pi.supplier_id
                          JOIN product_variants pv ON pv.id = pii.variant_id
                          JOIN products p ON p.id = pv.product_id
-                         WHERE p.name ILIKE $1 AND s.name ILIKE $2 AND pi.status != 'cancelled'
+                         WHERE p.name ILIKE $1 AND s.company_name ILIKE $2 AND pi.status != 'cancelled'
                          ORDER BY pii.unit_cost ASC LIMIT 20`;
                 params = [`%${product_name}%`, `%${supplier_name}%`];
             } else {
-                query = `SELECT s.name as supplier_name, p.name as product_name, pv.size_name as size,
+                query = `SELECT s.company_name as supplier_name, p.name as product_name, pv.size_name as size,
                                 pii.unit_cost as cost_price, pi.invoice_date
                          FROM purchase_invoice_items pii
                          JOIN purchase_invoices pi ON pi.id = pii.purchase_invoice_id
@@ -278,7 +284,7 @@ const AI_FUNCTIONS = [
         async execute(args, user) {
             const { product_name } = args;
             const result = await db.query(
-                `SELECT s.name as supplier_name, p.name as product_name, pv.size_name as size,
+                `SELECT s.company_name as supplier_name, p.name as product_name, pv.size_name as size,
                         pii.unit_cost as cost_price, pi.invoice_date
                  FROM purchase_invoice_items pii
                  JOIN purchase_invoices pi ON pi.id = pii.purchase_invoice_id
@@ -403,12 +409,19 @@ const AI_FUNCTIONS = [
             const { limit = 20 } = args;
             const result = await db.query(
                 `SELECT c.name as client_name, i.invoice_number, i.invoice_date,
-                        i.grand_total, i.paid_amount,
-                        (i.grand_total - i.paid_amount) as balance_due
+                        i.grand_total,
+                        COALESCE(ct.paid, 0)::numeric as paid_amount,
+                        (i.grand_total - COALESCE(ct.paid, 0))::numeric as balance_due
                  FROM invoices i
                  JOIN clients c ON c.id = i.client_id
-                 WHERE (i.grand_total - i.paid_amount) > 0 AND i.status != 'cancelled'
-                 ORDER BY (i.grand_total - i.paid_amount) DESC
+                 LEFT JOIN (
+                     SELECT invoice_id, SUM(amount) as paid
+                     FROM client_transactions
+                     WHERE type = 'payment' AND invoice_id IS NOT NULL
+                     GROUP BY invoice_id
+                 ) ct ON ct.invoice_id = i.id
+                 WHERE (i.grand_total - COALESCE(ct.paid, 0)) > 0 AND i.status != 'cancelled'
+                 ORDER BY (i.grand_total - COALESCE(ct.paid, 0)) DESC
                  LIMIT $1`,
                 [parseInt(limit) || 20]
             );
@@ -583,9 +596,16 @@ const AI_FUNCTIONS = [
             );
             const invoicesRes = await db.query(
                 `SELECT COALESCE(SUM(grand_total), 0)::numeric as total_invoiced,
-                        COALESCE(SUM(paid_amount), 0)::numeric as total_collected,
-                        COALESCE(SUM(grand_total - paid_amount), 0)::numeric as total_outstanding
-                 FROM invoices WHERE status != 'cancelled'`
+                        COALESCE(SUM(ct.paid), 0)::numeric as total_collected,
+                        COALESCE(SUM(grand_total) - COALESCE(SUM(ct.paid), 0), 0)::numeric as total_outstanding
+                 FROM invoices i
+                 LEFT JOIN (
+                     SELECT invoice_id, SUM(amount) as paid
+                     FROM client_transactions
+                     WHERE type = 'payment' AND invoice_id IS NOT NULL
+                     GROUP BY invoice_id
+                 ) ct ON ct.invoice_id = i.id
+                 WHERE i.status != 'cancelled'`
             );
             return _sanitize([{
                 ...salesRes.rows[0],
@@ -651,11 +671,17 @@ const AI_FUNCTIONS = [
             const summaryRes = await db.query(
                 `SELECT c.id, c.name, c.phone, c.email,
                         COALESCE(SUM(i.grand_total), 0)::numeric as total_invoiced,
-                        COALESCE(SUM(i.paid_amount), 0)::numeric as total_paid,
-                        COALESCE(SUM(i.grand_total - i.paid_amount), 0)::numeric as balance_due,
+                        COALESCE(SUM(ct.paid), 0)::numeric as total_paid,
+                        COALESCE(SUM(i.grand_total) - COALESCE(SUM(ct.paid), 0), 0)::numeric as balance_due,
                         COUNT(DISTINCT i.id) as invoice_count
                  FROM clients c
                  LEFT JOIN invoices i ON i.client_id = c.id AND i.status != 'cancelled'
+                 LEFT JOIN (
+                     SELECT invoice_id, SUM(amount) as paid
+                     FROM client_transactions
+                     WHERE type = 'payment' AND invoice_id IS NOT NULL
+                     GROUP BY invoice_id
+                 ) ct ON ct.invoice_id = i.id
                  WHERE c.name ILIKE $1
                  GROUP BY c.id, c.name, c.phone, c.email
                  LIMIT 1`,
@@ -664,9 +690,16 @@ const AI_FUNCTIONS = [
             if (summaryRes.rows.length === 0) return { error: 'لم يتم العثور على العميل' };
             const clientId = summaryRes.rows[0].id;
             const invoicesRes = await db.query(
-                `SELECT i.invoice_number, i.invoice_date, i.grand_total, i.paid_amount,
-                        (i.grand_total - i.paid_amount) as balance_due, i.status
+                `SELECT i.invoice_number, i.invoice_date, i.grand_total,
+                        COALESCE(ct.paid, 0)::numeric as paid_amount,
+                        (i.grand_total - COALESCE(ct.paid, 0))::numeric as balance_due, i.status
                  FROM invoices i
+                 LEFT JOIN (
+                     SELECT invoice_id, SUM(amount) as paid
+                     FROM client_transactions
+                     WHERE type = 'payment' AND invoice_id IS NOT NULL
+                     GROUP BY invoice_id
+                 ) ct ON ct.invoice_id = i.id
                  WHERE i.client_id = $1 AND i.status != 'cancelled'
                  ORDER BY i.invoice_date DESC LIMIT 10`,
                 [clientId]
@@ -1237,16 +1270,16 @@ const AI_FUNCTIONS = [
                         CASE WHEN COALESCE(sv.total_sold_90d, 0) > 0
                              THEN CEIL(COALESCE(sv.total_sold_90d, 0) / 3.0)
                              ELSE 0 END as suggested_reorder_qty,
-                        CASE WHEN COALESCE(ws.qty, 0) < 100 THEN true ELSE false END as needs_reorder,
-                        (SELECT s.name FROM suppliers s
-                         JOIN purchase_invoice_items pii ON pii.supplier_id = s.id
-                         JOIN product_variants pv2 ON pv2.sku = pii.sku
-                         WHERE pv2.id = pv.id
-                         ORDER BY pii.unit_price ASC LIMIT 1) as cheapest_supplier,
-                        (SELECT pii.unit_price FROM purchase_invoice_items pii
-                         JOIN product_variants pv2 ON pv2.sku = pii.sku
-                         WHERE pv2.id = pv.id
-                         ORDER BY pii.unit_price ASC LIMIT 1) as cheapest_supplier_price
+                        CASE WHEN COALESCE(ws.qty, 0) < COALESCE(pv.min_stock_level, 0) THEN true ELSE false END as needs_reorder,
+                        (SELECT s.company_name FROM suppliers s
+                         JOIN purchase_invoices pi ON pi.supplier_id = s.id
+                         JOIN purchase_invoice_items pii ON pii.purchase_invoice_id = pi.id
+                         WHERE pii.variant_id = pv.id AND pi.status != 'cancelled'
+                         ORDER BY pii.unit_cost ASC LIMIT 1) as cheapest_supplier,
+                        (SELECT pii.unit_cost FROM purchase_invoice_items pii
+                         JOIN purchase_invoices pi ON pi.id = pii.purchase_invoice_id
+                         WHERE pii.variant_id = pv.id AND pi.status != 'cancelled'
+                         ORDER BY pii.unit_cost ASC LIMIT 1) as cheapest_supplier_price
                  FROM product_variants pv
                  JOIN products p ON p.id = pv.product_id
                  LEFT JOIN (SELECT variant_id, SUM(quantity) as qty FROM warehouse_stock GROUP BY variant_id) ws ON ws.variant_id = pv.id
@@ -1302,8 +1335,9 @@ const AI_FUNCTIONS = [
             // Products
             try {
                 const productsRes = await db.query(
-                    `SELECT p.id, p.name, p.category, pv.sku, pv.selling_price
+                    `SELECT p.id, p.name, cat.name as category, pv.sku, pv.selling_price
                      FROM products p
+                     LEFT JOIN categories cat ON cat.id = p.category_id
                      LEFT JOIN product_variants pv ON pv.product_id = p.id AND pv.status = 'active'
                      WHERE p.name ILIKE $1 OR pv.sku ILIKE $1
                      ORDER BY p.name
@@ -1365,16 +1399,16 @@ const AI_FUNCTIONS = [
             // Suppliers
             try {
                 const suppliersRes = await db.query(
-                    `SELECT id, name, phone, email, type
+                    `SELECT id, company_name, phone, email, supplier_type
                      FROM suppliers
-                     WHERE name ILIKE $1 OR phone ILIKE $1 OR email ILIKE $1
-                     ORDER BY name
+                     WHERE company_name ILIKE $1 OR phone ILIKE $1 OR email ILIKE $1
+                     ORDER BY company_name
                      LIMIT $2`,
                     [searchTerm, maxResults]
                 );
                 if (suppliersRes.rows.length > 0) {
                     results.categories.suppliers = suppliersRes.rows.map(r => ({
-                        id: r.id, name: r.name, phone: r.phone, type: r.type,
+                        id: r.id, name: r.company_name, phone: r.phone, type: r.supplier_type,
                         page: 'suppliers', entity_type: 'supplier'
                     }));
                 }

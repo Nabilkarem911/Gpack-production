@@ -41,7 +41,7 @@ router.get('/:id/print-pdf', authenticate, async (req, res) => {
                 mo.total_amount,
                 mo.notes,
                 mo.created_at,
-                s.name AS supplier_name,
+                s.company_name AS supplier_name,
                 s.phone AS supplier_phone,
                 s.email AS supplier_email,
                 o.order_number,

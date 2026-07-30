@@ -486,10 +486,11 @@ const AI_ACTIONS = [
             const dir = direction || 'increase';
 
             const variantsRes = await db.query(
-                `SELECT pv.id, pv.sku, pv.selling_price, pv.cost_price, p.name, p.category
+                `SELECT pv.id, pv.sku, pv.selling_price, pv.cost_price, p.name, cat.name as category
                  FROM product_variants pv
                  JOIN products p ON p.id = pv.product_id
-                 WHERE p.category ILIKE $1 AND pv.status = 'active'
+                 LEFT JOIN categories cat ON cat.id = p.category_id
+                 WHERE cat.name ILIKE $1 AND pv.status = 'active'
                  ORDER BY p.name
                  LIMIT 50`,
                 [`%${category}%`]
@@ -557,7 +558,7 @@ const AI_ACTIONS = [
             let supplier = null;
             if (supplier_name) {
                 const supplierRes = await db.query(
-                    `SELECT id, name FROM suppliers WHERE name ILIKE $1 LIMIT 1`,
+                    `SELECT id, company_name FROM suppliers WHERE company_name ILIKE $1 LIMIT 1`,
                     [`%${supplier_name}%`]
                 );
                 if (supplierRes.rows.length === 0) {
@@ -571,14 +572,14 @@ const AI_ACTIONS = [
                 `SELECT pv.id, pv.sku, pv.selling_price, pv.cost_price,
                         p.name, pv.size_name,
                         COALESCE(SUM(ws.quantity), 0) as current_stock,
-                        COALESCE(pv.reorder_point, 100) as reorder_point,
-                        COALESCE(pv.max_stock, 500) as max_stock
+                        COALESCE(pv.min_stock_level, 0) as reorder_point,
+                        COALESCE(pv.max_stock_level, 500) as max_stock
                  FROM product_variants pv
                  JOIN products p ON p.id = pv.product_id
                  LEFT JOIN warehouse_stock ws ON ws.variant_id = pv.id
                  WHERE pv.status = 'active'
                  GROUP BY pv.id, p.name
-                 HAVING COALESCE(SUM(ws.quantity), 0) < COALESCE(pv.reorder_point, 100)
+                 HAVING COALESCE(SUM(ws.quantity), 0) < COALESCE(pv.min_stock_level, 0)
                  ORDER BY COALESCE(SUM(ws.quantity), 0) ASC
                  LIMIT $1`,
                 [parseInt(max_items) || 20]
@@ -606,7 +607,7 @@ const AI_ACTIONS = [
                 summary: {
                     action_type: 'bulk_create_reorders',
                     supplier_id: supplier ? supplier.id : null,
-                    supplier_name: supplier ? supplier.name : 'غير محدد',
+                    supplier_name: supplier ? supplier.company_name : 'غير محدد',
                     items,
                     item_count: items.length,
                     grand_total: Math.round(grandTotal * 100) / 100,
@@ -618,31 +619,32 @@ const AI_ACTIONS = [
             const { supplier_id, items } = proposal;
 
             const result = await db.withTransaction(async (client) => {
-                // Create a purchase order
-                const poRes = await client.query(
-                    `INSERT INTO purchase_orders
+                // Create a purchase invoice as draft
+                const piRes = await client.query(
+                    `INSERT INTO purchase_invoices
                         (supplier_id, status, created_by)
-                     VALUES ($1, 'draft', $2)
-                     RETURNING id, po_number`,
+                     VALUES ($1, 'unpaid', $2)
+                     RETURNING id, invoice_number`,
                     [supplier_id, user.id]
                 );
-                const po = poRes.rows[0];
+                const pi = piRes.rows[0];
 
-                // Add items to purchase order
+                // Add items to purchase invoice
                 for (const item of items) {
                     await client.query(
-                        `INSERT INTO purchase_order_items
-                            (po_id, variant_id, quantity, unit_cost)
-                         VALUES ($1, $2, $3, $4)`,
-                        [po.id, item.variant_id, item.reorder_qty, item.unit_cost]
+                        `INSERT INTO purchase_invoice_items
+                            (purchase_invoice_id, variant_id, quantity, unit_cost, total_cost, product_name)
+                         VALUES ($1, $2, $3, $4, $5, $6)`,
+                        [pi.id, item.variant_id, item.reorder_qty, item.unit_cost,
+                         Math.round(item.reorder_qty * item.unit_cost * 100) / 100, item.product_name]
                     );
                 }
 
                 return {
-                    po_id: po.id,
-                    po_number: po.po_number,
+                    purchase_invoice_id: pi.id,
+                    invoice_number: pi.invoice_number,
                     item_count: items.length,
-                    status: 'draft',
+                    status: 'unpaid',
                 };
             });
 

@@ -159,10 +159,16 @@ router.get('/briefing', async (req, res) => {
 
         // 4. Outstanding payments total
         const outstandingRes = await db.query(
-            `SELECT COALESCE(SUM(grand_total - paid_amount), 0)::numeric as total_outstanding,
+            `SELECT COALESCE(SUM(i.grand_total - COALESCE(ct.paid, 0)), 0)::numeric as total_outstanding,
                     COUNT(*) as outstanding_count
-             FROM invoices
-             WHERE (grand_total - paid_amount) > 0 AND status != 'cancelled'`
+             FROM invoices i
+             LEFT JOIN (
+                 SELECT invoice_id, SUM(amount) as paid
+                 FROM client_transactions
+                 WHERE type = 'payment' AND invoice_id IS NOT NULL
+                 GROUP BY invoice_id
+             ) ct ON ct.invoice_id = i.id
+             WHERE (i.grand_total - COALESCE(ct.paid, 0)) > 0 AND i.status != 'cancelled'`
         );
 
         // 5. Overdue tasks
