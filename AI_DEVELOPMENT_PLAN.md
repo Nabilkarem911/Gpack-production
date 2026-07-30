@@ -730,3 +730,281 @@
 - **شجرة الارتباطات:**
   - يقرأ من: `ai_chat_history`, `ai_action_log`, `ai_feedback`
   - **لا يكتب في:** أي جدول
+
+---
+
+## المرحلة 31: ضمانات عدم الكسر والاختبارات (Safety & Testing) ⭐⭐⭐⭐⭐⭐⭐
+
+### 31.1 قواعد عدم الكسر (Non-Breaking Rules)
+
+#### قواعد صارمة لكل تعديل:
+1. **لا تحذف column من جدول موجود** — أضف الجديد، لو محتاج تشيل قديم خليه deprecated لمدة ثم احذفه
+2. **لا تغير نوع column موجود** — أضف column جديد بدل ما تغير القديم
+3. **لا تغير اسم دالة موجودة** — أضف دالة جديدة، القديمة تظل تعمل
+4. **لا تغير signature دالة موجودة** — لو محتاج parameter جديد، خليه optional
+5. **كل migration جديد يجب أن يكون idempotent** — `CREATE TABLE IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`
+6. **كل migration جديد يجب أن يكون reversible** — اكتب UP و DOWN scripts
+7. **لا تعدّل API endpoint موجود** — أضف endpoint جديد بدل ما تغير القديم
+8. **لا تغير شكل JSON response موجود** — أضف fields جديدة، ما تشيلش fields قديمة
+
+#### قواعد الـ AI خاصة:
+1. **كل دالة AI جديدة يجب أن تعمل بدون أخطاء لو DB فارغ** — ترجع `[]` أو `null` مش `throw`
+2. **كل إجراء AI جديد يجب أن يستخدم transaction** — `BEGIN` / `COMMIT` / `ROLLBACK`
+3. **كل إجراء AI جديد يجب أن يكون idempotent** — لو اتنفذ مرتين، النتيجة تكون نفس النتيجة
+4. **الـ AI ما يكتبش في جدول بدون `created_by`** — كل write يسجل منفّذه
+5. **الـ AI ما يحذفش أي صف** — أبداً، تحت أي ظرف
+
+### 31.2 اختبارات الـ AI Functions (Read-Only)
+
+#### ملفات الاختبار:
+- `backend/tests/ai-functions.test.js` — اختبار كل دالة قراءة
+- `backend/tests/ai-actions.test.js` — اختبار كل إجراء تنفيذي
+- `backend/tests/ai-policies.test.js` — اختبار سياسات الإجراءات
+- `backend/tests/ai-assistant-route.test.js` — اختبار الـ API endpoints
+
+#### ماذا نختبر لكل دالة قراءة:
+1. **ترجع data صحيحة** — لو فيه بيانات، ترجعها بشكل صحيح
+2. **ترجع `[]` لو مفيش بيانات** — ما تـthrowش error
+3. **تحترم role-based access** — sales_rep ما يشوفش بيانات مستخدم تاني
+4. **ترجع JSON صالح** — ما ترجعش undefined أو null في مكان مفروض فيه object
+5. **تتعامل مع قيم null في DB** — لو cost_price = null، ما تـcrash
+
+#### مثال اختبار دالة:
+```javascript
+describe('getSmartQuoteSuggestions', () => {
+    test('returns valid suggestion when data exists', async () => {
+        const result = await getSmartQuoteSuggestions({ client_id: '...', product_name: '...' }, user);
+        expect(result).toHaveProperty('suggested_price');
+        expect(result).toHaveProperty('confidence');
+        expect(typeof result.suggested_price).toBe('number');
+    });
+
+    test('returns empty when product not found', async () => {
+        const result = await getSmartQuoteSuggestions({ client_id: '...', product_name: 'غير موجود' }, user);
+        expect(result.suggested_price).toBeNull();
+        expect(result.error).toContain('غير موجود');
+    });
+
+    test('handles null cost_price gracefully', async () => {
+        // product with cost_price = null
+        const result = await getSmartQuoteSuggestions({ client_id: '...', product_name: '...' }, user);
+        expect(result.cost_price).toBe(0);
+        expect(result.confidence).toBeLessThan(60);
+    });
+
+    test('respects sales_rep scope', async () => {
+        const result = await getSmartQuoteSuggestions({ client_id: 'other_rep_client' }, salesRepUser);
+        expect(result.error).toContain('غير مصرح');
+    });
+});
+```
+
+### 31.3 اختبارات الـ AI Actions (Write)
+
+#### ماذا نختبر لكل إجراء:
+1. **propose() يرجع valid=false لو بيانات ناقصة** — ما يعملش execute
+2. **propose() يرجع valid=true لو بيانات كاملة** — ويرجع summary صحيح
+3. **execute() ينشئ السجل الصحيح** — يتأكد إن الـ INSERT حصل
+4. **execute() idempotent** — لو اتنفذ مرتين، ما ينشئش سجلين
+5. **execute() rollback لو فيه خطأ** — ما يترك partial data
+6. **policy check قبل execute** — لو policy فشلت، ما ينفذش
+
+#### مثال اختبار إجراء:
+```javascript
+describe('create_client action', () => {
+    test('propose rejects missing name', async () => {
+        const result = await create_client.propose({ phone: '0582...', city: 'كفر الشيخ' }, managerUser);
+        expect(result.valid).toBe(false);
+        expect(result.error).toContain('الاسم');
+    });
+
+    test('propose accepts complete data', async () => {
+        const result = await create_client.propose({
+            name: 'مطعم كاريزما', contact_person: 'نبيل', phone: '0582...', city: 'كفر الشيخ'
+        }, managerUser);
+        expect(result.valid).toBe(true);
+        expect(result.summary.name).toBe('مطعم كاريزما');
+    });
+
+    test('execute creates client in DB', async () => {
+        const proposal = { name: 'مطعم كاريزما', phone: '0582...', ... };
+        const result = await create_client.execute(proposal, managerUser);
+        expect(result.client_name).toBe('مطعم كاريزما');
+        // Verify in DB
+        const dbCheck = await pool.query('SELECT * FROM clients WHERE name = $1', ['مطعم كاريزما']);
+        expect(dbCheck.rows.length).toBe(1);
+    });
+
+    test('execute is idempotent — duplicate name rejected', async () => {
+        // First execution
+        await create_client.execute(proposal, managerUser);
+        // Second execution with same name
+        const result = await create_client.execute(proposal, managerUser);
+        expect(result.success).toBe(false);
+        expect(result.error).toContain('موجود');
+    });
+
+    test('sales_rep cannot execute', async () => {
+        const result = await create_client.execute(proposal, salesRepUser);
+        expect(result.success).toBe(false);
+        expect(result.error).toContain('صلاحية');
+    });
+});
+```
+
+### 31.4 اختبارات الـ API Endpoints
+
+#### ماذا نختبر:
+1. **`POST /api/ai-assistant/chat`** — يرجع reply + proposed actions
+2. **`POST /api/ai-assistant/propose-action`** — يرجع valid + summary + action_id
+3. **`POST /api/ai-assistant/execute-action`** — يرجع success + result
+4. **`GET /api/ai-assistant/health`** — يرجع status
+5. **Role-based access** — sales_rep ما يقدرش يـexecute
+
+#### مثال:
+```javascript
+describe('POST /api/ai-assistant/propose-action', () => {
+    test('manager can propose', async () => {
+        const res = await request(app)
+            .post('/api/ai-assistant/propose-action')
+            .set('Authorization', `Bearer ${managerToken}`)
+            .send({ action_type: 'create_client', args: { name: '...' } });
+        expect(res.status).toBe(200);
+        expect(res.body.valid).toBe(true);
+    });
+
+    test('sales_rep cannot propose write actions', async () => {
+        const res = await request(app)
+            .post('/api/ai-assistant/propose-action')
+            .set('Authorization', `Bearer ${salesRepToken}`)
+            .send({ action_type: 'create_client', args: { name: '...' } });
+        expect(res.status).toBe(403);
+    });
+});
+```
+
+### 31.5 اختبارات الـ Migrations
+
+#### قواعد:
+1. **كل migration جديد له اختبار** — يتأكد إن الجدول اتعمل صح
+2. **اختبار idempotency** — شغل الـ migration مرتين، ما يـcrash
+3. **اختبار rollback** — شغل DOWN script، يتأكد إن الجدول اتمسح صح
+4. **اختبار البيانات الموجودة** — بعد migration، البيانات القديمة تفضل زي ما هي
+
+#### مثال:
+```javascript
+describe('060_business_events migration', () => {
+    test('creates business_events table', async () => {
+        const res = await pool.query("SELECT EXISTS (SELECT FROM pg_tables WHERE tablename = 'business_events')");
+        expect(res.rows[0].exists).toBe(true);
+    });
+
+    test('is idempotent — running twice does not crash', async () => {
+        await runMigration('060_business_events.sql');
+        await runMigration('060_business_events.sql'); // should not throw
+    });
+
+    test('has required columns', async () => {
+        const res = await pool.query(`
+            SELECT column_name FROM information_schema.columns
+            WHERE table_name = 'business_events'
+        `);
+        const columns = res.rows.map(r => r.column_name);
+        expect(columns).toContain('id');
+        expect(columns).toContain('event_type');
+        expect(columns).toContain('entity_type');
+        expect(columns).toContain('entity_id');
+        expect(columns).toContain('created_at');
+    });
+});
+```
+
+### 31.6 اختبارات الـ Frontend
+
+#### ماذا نختبر:
+1. **بطاقة المراجعة تعرض البيانات صحيحة** — لكل action_type
+2. **زر "تأكيد التنفيذ" يرسل action_id صحيح**
+3. **رسالة النجاح تعرض التفاصيل**
+4. **رسالة الخطأ تعرض السبب**
+5. **أزرار 👍👎 ترسل feedback**
+6. **زر "ليه؟" يعرض explanation**
+
+#### الأداة:
+- استخدام **Playwright** أو **Cypress** لاختبار E2E
+- ملف: `frontend/tests/ai-assistant.spec.js`
+
+### 31.7 استراتيجية الـ Rollback
+
+#### لو حصل كسر بعد deploy:
+1. **DB Rollback:** كل migration له DOWN script
+   ```bash
+   npm run migrate:down -- --file=060_business_events.sql
+   ```
+2. **Code Rollback:** `git revert <commit>` — يرجع الكود للنسخة السابقة
+3. **AI-specific Rollback:** لو إجراء AI عمل مشكلة:
+   - الـ `ai_action_log` يسجل كل إجراء
+   - لو إجراء عمل write غلط، نقدر نحدد الصف المتأثر ونعدّله يدوياً
+   - لو migration أضاف column غلط، DOWN script يشيله
+
+#### Rollback Plan لكل مرحلة:
+| المرحلة | Rollback |
+|---------|----------|
+| Event Bus (6) | DROP TABLE business_events + إزالة eventBus.emit() من routes |
+| Memory (5) | DROP TABLE conversation_context + إزالة conversation_id |
+| Auditor (10) | إزالة دالة getAuditReport من FUNCTION_MAP |
+| Policies (20) | DROP TABLE action_policies + إزالة policyCheck من execute |
+| Explainability (22) | إزالة explanation field من الدوال (backward compatible) |
+
+### 31.8 Pre-Deployment Checklist
+
+#### قبل كل deploy:
+- [ ] `npm test` يعدّي بدون أخطاء
+- [ ] `npm run migrate:up` يعدّي بدون أخطاء
+- [ ] الـ AI health check يرجع `enabled: true`
+- [ ] لا يوجد console.error في الـ logs
+- [ ] لا يوجد unhandled promise rejection
+- [ ] كل الـ endpoints القديمة تفضل شغالة
+- [ ] كل الـ functions القديمة تفضل شغالة
+- [ ] الـ frontend يفتح بدون أخطاء في console
+- [ ] cache-buster محدّث في index.html
+- [ ] git push نجح
+
+### 31.9 مراقبة مستمرة بعد Deploy
+
+#### لو حصل خطأ بعد deploy:
+1. **Log monitoring:** فحص `backend-1.log` كل ساعة أول 24 ساعة
+2. **Error rate:** لو > 5% من الطلبات ترجع 500 → rollback فوري
+3. **AI error rate:** لو > 10% من محادثات الـ AI ترجع error → rollback الـ prompt
+4. **User feedback:** لو فيه شكاوى من المستخدمين → تحقيق فوري
+
+### 31.10 ترتيب تنفيذ الاختبارات
+
+| الأولوية | الاختبار | المدة |
+|----------|---------|-------|
+| 1 | اختبارات الـ AI Actions الموجودة (create_client, create_quote, etc.) | فوري |
+| 2 | اختبارات الـ AI Functions الموجودة (getSmartQuoteSuggestions, etc.) | فوري |
+| 3 | اختبارات الـ API endpoints (chat, propose, execute) | فوري |
+| 4 | اختبارات الـ migrations الجديدة (مع كل migration جديد) | مع كل مرحلة |
+| 5 | اختبارات الـ frontend (Playwright) | بعد Phase 1-5 |
+| 6 | اختبارات الـ policies (مع Phase 20) | مع Phase 20 |
+| 7 | اختبارات الـ explainability (مع Phase 22) | مع Phase 22 |
+
+### 31.11 ملفات الاختبار المطلوبة
+
+```
+backend/tests/
+├── ai-functions.test.js          — كل دوال القراءة
+├── ai-actions.test.js            — كل الإجراءات التنفيذية
+├── ai-policies.test.js           — سياسات الإجراءات
+├── ai-assistant-route.test.js    — API endpoints
+├── migrations.test.js            — كل الـ migrations
+├── helpers/
+│   ├── test-db.js                — إعداد DB اختبار
+│   ├── test-data.js              — بيانات اختبار جاهزة
+│   └── mock-user.js              — مستخدمين وهميين (manager, sales_rep)
+└── jest.config.js                — إعدادات Jest
+
+frontend/tests/
+├── ai-assistant.spec.js          — اختبار E2E للواجهة
+└── playwright.config.js          — إعدادات Playwright
+```
