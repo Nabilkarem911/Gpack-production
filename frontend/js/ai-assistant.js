@@ -693,8 +693,23 @@
                             body: { action_id: proposeRes.action_id },
                         });
                         if (execRes.success) {
-                            // Show success
-                            if (detailsEl) detailsEl.innerHTML = '<div class="text-emerald-600 font-semibold"><i class="fa-solid fa-circle-check ml-1"></i>تم التنفيذ بنجاح!</div>';
+                            // Build detailed success message from result
+                            var resultHtml = '<div class="text-emerald-600 font-semibold"><i class="fa-solid fa-circle-check ml-1"></i>تم التنفيذ بنجاح!</div>';
+                            if (execRes.result) {
+                                var r = execRes.result;
+                                var parts = [];
+                                if (r.client_name) parts.push('العميل: ' + _esc(r.client_name));
+                                if (r.is_branch) parts.push('(فرع تابع)');
+                                if (r.order_number) parts.push('طلب #' + r.order_number);
+                                if (r.order_id) parts.push('رقم الطلب: ' + _esc(String(r.order_id).substring(0, 8)));
+                                if (r.invoice_number) parts.push('فاتورة #' + r.invoice_number);
+                                if (r.task_id) parts.push('مهمة جديدة');
+                                if (r.subtotal !== undefined) parts.push('الإجمالي: ' + r.grand_total + ' ريال');
+                                if (parts.length > 0) {
+                                    resultHtml += '<div class="text-xs text-slate-600 mt-1">' + parts.join(' • ') + '</div>';
+                                }
+                            }
+                            if (detailsEl) detailsEl.innerHTML = resultHtml;
                             btnEl.remove();
                             var rejectBtn = card ? card.querySelector('.ai-propose-reject') : null;
                             if (rejectBtn) rejectBtn.remove();
