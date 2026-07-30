@@ -1499,6 +1499,243 @@ const AI_FUNCTIONS = [
         }
     },
 
+    // ── 31. getProductMovements ──────────────────────────────────────────────
+    {
+        type: 'function',
+        function: {
+            name: 'getProductMovements',
+            description: 'يرجع حركات مخزون صنف معين (استلام، صرف، مرتجع) مع الكميات والتواريخ.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    product_name: { type: 'string', description: 'اسم المنتج أو جزء منه' },
+                    limit: { type: 'integer', description: 'عدد النتائج (افتراضي 20)' }
+                },
+                required: ['product_name']
+            }
+        },
+        async execute(args, user) {
+            const { product_name, limit = 20 } = args;
+            const result = await db.query(
+                `SELECT it.id, it.transaction_type, it.quantity, it.created_at,
+                        it.notes, it.reference_type,
+                        pv.sku, p.name as product_name, pv.size_name,
+                        c.name as client_name, s.company_name as supplier_name,
+                        w.name as warehouse_name
+                 FROM inventory_transactions it
+                 JOIN product_variants pv ON pv.id = it.variant_id
+                 JOIN products p ON p.id = pv.product_id
+                 LEFT JOIN warehouse_stock ws ON ws.id = it.stock_id
+                 LEFT JOIN warehouses w ON w.id = ws.warehouse_id
+                 LEFT JOIN clients c ON c.id = it.client_id
+                 LEFT JOIN suppliers s ON s.id = it.supplier_id
+                 WHERE p.name ILIKE $1
+                 ORDER BY it.created_at DESC
+                 LIMIT $2`,
+                [`%${product_name}%`, parseInt(limit) || 20]
+            );
+            return _sanitize(result.rows);
+        }
+    },
+
+    // ── 32. getClientDeliveries ──────────────────────────────────────────────
+    {
+        type: 'function',
+        function: {
+            name: 'getClientDeliveries',
+            description: 'يرجع سندات التسليم لعميل معين مع الحالة والكميات المسلمة.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    client_name: { type: 'string', description: 'اسم العميل أو جزء منه' },
+                    limit: { type: 'integer', description: 'عدد النتائج (افتراضي 10)' }
+                },
+                required: ['client_name']
+            }
+        },
+        async execute(args, user) {
+            const { client_name, limit = 10 } = args;
+            const result = await db.query(
+                `SELECT dn.id, dn.note_number, dn.status, dn.delivery_date, dn.delivered_at,
+                        dn.driver_name, dn.vehicle_number,
+                        o.order_number,
+                        c.name as client_name,
+                        COUNT(dni.id) as item_count,
+                        COALESCE(SUM(dni.delivered_qty), 0) as total_delivered
+                 FROM delivery_notes dn
+                 JOIN clients c ON c.id = dn.client_id
+                 LEFT JOIN orders o ON o.id = dn.order_id
+                 LEFT JOIN delivery_note_items dni ON dni.delivery_note_id = dn.id
+                 WHERE c.name ILIKE $1
+                 GROUP BY dn.id, o.order_number, c.name
+                 ORDER BY dn.created_at DESC
+                 LIMIT $2`,
+                [`%${client_name}%`, parseInt(limit) || 10]
+            );
+            return _sanitize(result.rows);
+        }
+    },
+
+    // ── 33. getAccountingSummary ─────────────────────────────────────────────
+    {
+        type: 'function',
+        function: {
+            name: 'getAccountingSummary',
+            description: 'يرجع ملخص محاسبي: إجمالي المبيعات، المشتريات، المصروفات، والصافي.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    period: { type: 'string', enum: ['month', 'quarter', 'year'], description: 'الفترة الزمنية (افتراضي: month)' }
+                }
+            }
+        },
+        async execute(args, user) {
+            const { period = 'month' } = args;
+            let dateFilter;
+            if (period === 'quarter') dateFilter = `date_trunc('quarter', NOW())`;
+            else if (period === 'year') dateFilter = `date_trunc('year', NOW())`;
+            else dateFilter = `date_trunc('month', NOW())`;
+
+            const salesRes = await db.query(
+                `SELECT COALESCE(SUM(grand_total), 0)::numeric as total_sales,
+                        COUNT(*) as invoice_count
+                 FROM invoices WHERE status != 'cancelled' AND invoice_date >= ${dateFilter}`
+            );
+            const purchaseRes = await db.query(
+                `SELECT COALESCE(SUM(grand_total), 0)::numeric as total_purchases,
+                        COUNT(*) as invoice_count
+                 FROM purchase_invoices WHERE status != 'cancelled' AND invoice_date >= ${dateFilter}`
+            );
+            const vatRes = await db.query(
+                `SELECT
+                    (SELECT COALESCE(SUM(tax_amount), 0)::numeric FROM invoices WHERE status != 'cancelled' AND invoice_date >= ${dateFilter}) as output_vat,
+                    (SELECT COALESCE(SUM(tax_amount), 0)::numeric FROM purchase_invoices WHERE status != 'cancelled' AND invoice_date >= ${dateFilter}) as input_vat`
+            );
+            const outstandingRes = await db.query(
+                `SELECT
+                    (SELECT COALESCE(SUM(grand_total - paid_amount), 0)::numeric FROM invoices WHERE status != 'cancelled') as receivable,
+                    (SELECT COALESCE(SUM(grand_total - paid_amount), 0)::numeric FROM purchase_invoices WHERE status != 'cancelled') as payable`
+            );
+
+            return _sanitize([{
+                period,
+                total_sales: salesRes.rows[0].total_sales,
+                sales_invoice_count: parseInt(salesRes.rows[0].invoice_count),
+                total_purchases: purchaseRes.rows[0].total_purchases,
+                purchase_invoice_count: parseInt(purchaseRes.rows[0].invoice_count),
+                output_vat: vatRes.rows[0].output_vat,
+                input_vat: vatRes.rows[0].input_vat,
+                net_vat: parseFloat(vatRes.rows[0].output_vat || 0) - parseFloat(vatRes.rows[0].input_vat || 0),
+                total_receivable: outstandingRes.rows[0].receivable,
+                total_payable: outstandingRes.rows[0].payable,
+            }]);
+        }
+    },
+
+    // ── 34. getManufacturerOrders ────────────────────────────────────────────
+    {
+        type: 'function',
+        function: {
+            name: 'getManufacturerOrders',
+            description: 'يرجع أوامر التصنيع مع الحالة والعميل والمنتجات.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    status: { type: 'string', description: 'فلتر بالحالة (pending, in_progress, completed). اختياري.' },
+                    limit: { type: 'integer', description: 'عدد النتائج (افتراضي 20)' }
+                }
+            }
+        },
+        async execute(args, user) {
+            const { status, limit = 20 } = args;
+            let query, params;
+            if (status) {
+                query = `SELECT mo.id, mo.mo_number, mo.status, mo.created_at, mo.completed_at,
+                                o.order_number, c.name as client_name,
+                                COUNT(moi.id) as item_count
+                         FROM manufacturer_orders mo
+                         JOIN orders o ON o.id = mo.order_id
+                         JOIN clients c ON c.id = o.client_id
+                         LEFT JOIN manufacturer_order_items moi ON moi.manufacturer_order_id = mo.id
+                         WHERE mo.status = $1
+                         GROUP BY mo.id, o.order_number, c.name
+                         ORDER BY mo.created_at DESC LIMIT $2`;
+                params = [status, parseInt(limit) || 20];
+            } else {
+                query = `SELECT mo.id, mo.mo_number, mo.status, mo.created_at, mo.completed_at,
+                                o.order_number, c.name as client_name,
+                                COUNT(moi.id) as item_count
+                         FROM manufacturer_orders mo
+                         JOIN orders o ON o.id = mo.order_id
+                         JOIN clients c ON c.id = o.client_id
+                         LEFT JOIN manufacturer_order_items moi ON moi.manufacturer_order_id = mo.id
+                         GROUP BY mo.id, o.order_number, c.name
+                         ORDER BY mo.created_at DESC LIMIT $1`;
+                params = [parseInt(limit) || 20];
+            }
+            const result = await db.query(query, params);
+            return _sanitize(result.rows);
+        }
+    },
+
+    // ── 35. getClientProfile ─────────────────────────────────────────────────
+    {
+        type: 'function',
+        function: {
+            name: 'getClientProfile',
+            description: 'يرجع ملف شامل للعميل: البيانات الأساسية، الفروع التابعة، إجمالي الطلبات، الرصيد، آخر طلب، آخر تسليم.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    client_name: { type: 'string', description: 'اسم العميل أو جزء منه' }
+                },
+                required: ['client_name']
+            }
+        },
+        async execute(args, user) {
+            const { client_name } = args;
+            const clientRes = await db.query(
+                `SELECT id, name, phone, email, address, tax_number, payment_terms,
+                        credit_limit, status, parent_id, created_at
+                 FROM clients WHERE name ILIKE $1 LIMIT 1`,
+                [`%${client_name}%`]
+            );
+            if (clientRes.rows.length === 0) return { error: 'لم يتم العثور على العميل' };
+            const client = clientRes.rows[0];
+
+            // Get branches if parent
+            const branchesRes = await db.query(
+                `SELECT id, name, phone, status FROM clients WHERE parent_id = $1`,
+                [client.id]
+            );
+
+            // Get order summary
+            const ordersRes = await db.query(
+                `SELECT COUNT(*) as total_orders,
+                        COALESCE(SUM(grand_total), 0)::numeric as total_value,
+                        COALESCE(SUM(paid_amount), 0)::numeric as total_paid,
+                        MAX(created_at) as last_order_date
+                 FROM orders WHERE client_id = $1 AND status NOT IN ('cancelled', 'draft')`,
+                [client.id]
+            );
+
+            // Get last delivery
+            const deliveryRes = await db.query(
+                `SELECT dn.note_number, dn.status, dn.delivery_date
+                 FROM delivery_notes dn WHERE dn.client_id = $1
+                 ORDER BY dn.created_at DESC LIMIT 3`,
+                [client.id]
+            );
+
+            return _sanitize([{
+                ...client,
+                branches: branchesRes.rows,
+                order_summary: ordersRes.rows[0],
+                recent_deliveries: deliveryRes.rows,
+            }]);
+        }
+    },
+
 ];
 
 // =============================================================================

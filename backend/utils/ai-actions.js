@@ -652,6 +652,197 @@ const AI_ACTIONS = [
         },
     },
 
+    // ── 7. createClient ──────────────────────────────────────────────────────
+    {
+        type: 'create_client',
+        description: 'إنشاء عميل جديد في النظام',
+        async propose(args, user) {
+            const { name, phone, email, address, tax_id, contact_person, city, commercial_register, credit_limit, parent_client_name } = args;
+
+            if (!name) {
+                return { valid: false, error: 'اسم العميل مطلوب' };
+            }
+
+            // Check if client already exists
+            const existingRes = await db.query(
+                `SELECT id, name FROM clients WHERE name ILIKE $1 AND status = 'active' LIMIT 1`,
+                [`%${name}%`]
+            );
+            if (existingRes.rows.length > 0) {
+                return { valid: false, error: `يوجد عميل بالاسم "${existingRes.rows[0].name}" بالفعل` };
+            }
+
+            // If parent_client_name provided, find parent (for franchise branch)
+            let parentId = null;
+            let parentName = null;
+            if (parent_client_name) {
+                const parentRes = await db.query(
+                    `SELECT id, name FROM clients WHERE name ILIKE $1 AND status = 'active' LIMIT 1`,
+                    [`%${parent_client_name}%`]
+                );
+                if (parentRes.rows.length === 0) {
+                    return { valid: false, error: `لم يتم العثور على العميل الأصلي "${parent_client_name}"` };
+                }
+                parentId = parentRes.rows[0].id;
+                parentName = parentRes.rows[0].name;
+            }
+
+            return {
+                valid: true,
+                summary: {
+                    action_type: 'create_client',
+                    name,
+                    phone: phone || null,
+                    email: email || null,
+                    address: address || null,
+                    tax_id: tax_id || null,
+                    contact_person: contact_person || null,
+                    city: city || null,
+                    commercial_register: commercial_register || null,
+                    credit_limit: parseFloat(credit_limit) || 0,
+                    parent_id: parentId,
+                    parent_name: parentName,
+                    is_branch: !!parentId,
+                },
+            };
+        },
+
+        async execute(proposal, user) {
+            const { name, phone, email, address, tax_id, contact_person, city, commercial_register, credit_limit, parent_id } = proposal;
+
+            const result = await db.withTransaction(async (client) => {
+                const clientRes = await client.query(
+                    `INSERT INTO clients
+                        (name, phone, email, address, tax_id, contact_person, city, commercial_register, credit_limit, parent_id, status, created_by)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'active', $11)
+                     RETURNING id, name`,
+                    [name, phone, email, address, tax_id, contact_person, city, commercial_register, credit_limit, parent_id, user.id]
+                );
+                return {
+                    client_id: clientRes.rows[0].id,
+                    client_name: clientRes.rows[0].name,
+                    is_branch: !!parent_id,
+                };
+            });
+            return result;
+        },
+    },
+
+    // ── 8. updateOrderStatus ─────────────────────────────────────────────────
+    {
+        type: 'update_order_status',
+        description: 'تحديث حالة طلب موجود (تأكيد، تحويل للإنتاج، تسليم، إلخ)',
+        async propose(args, user) {
+            const { order_number, new_status } = args;
+
+            if (!order_number) {
+                return { valid: false, error: 'رقم الطلب مطلوب' };
+            }
+            const validStatuses = ['quote', 'confirmed', 'production', 'processing', 'completed', 'delivered', 'cancelled'];
+            if (!validStatuses.includes(new_status)) {
+                return { valid: false, error: `الحالة "${new_status}" غير صحيحة. الحالات المتاحة: ${validStatuses.join(', ')}` };
+            }
+
+            const orderRes = await db.query(
+                `SELECT o.id, o.order_number, o.status, c.name as client_name
+                 FROM orders o
+                 LEFT JOIN clients c ON c.id = o.client_id
+                 WHERE o.order_number = $1`,
+                [parseInt(order_number)]
+            );
+            if (orderRes.rows.length === 0) {
+                return { valid: false, error: `لم يتم العثور على طلب رقم ${order_number}` };
+            }
+
+            const order = orderRes.rows[0];
+            if (order.status === new_status) {
+                return { valid: false, error: `الطلب رقم ${order_number} بالفعل في الحالة "${new_status}"` };
+            }
+
+            return {
+                valid: true,
+                summary: {
+                    action_type: 'update_order_status',
+                    order_id: order.id,
+                    order_number: order.order_number,
+                    client_name: order.client_name,
+                    current_status: order.status,
+                    new_status: new_status,
+                },
+            };
+        },
+
+        async execute(proposal, user) {
+            const { order_id, new_status } = proposal;
+            const result = await db.withTransaction(async (client) => {
+                await client.query(
+                    `UPDATE orders SET status = $1, updated_at = NOW() WHERE id = $2`,
+                    [new_status, order_id]
+                );
+                return { order_id, new_status };
+            });
+            return result;
+        },
+    },
+
+    // ── 9. createTask ────────────────────────────────────────────────────────
+    {
+        type: 'create_task',
+        description: 'إنشاء مهمة جديدة وتعيينها لمستخدم',
+        async propose(args, user) {
+            const { title, description, assigned_to_name, priority, due_date } = args;
+
+            if (!title) {
+                return { valid: false, error: 'عنوان المهمة مطلوب' };
+            }
+
+            let assignedTo = null;
+            let assignedToName = null;
+            if (assigned_to_name) {
+                const userRes = await db.query(
+                    `SELECT id, name FROM users WHERE name ILIKE $1 AND status = 'active' LIMIT 1`,
+                    [`%${assigned_to_name}%`]
+                );
+                if (userRes.rows.length === 0) {
+                    return { valid: false, error: `لم يتم العثور على مستخدم بالاسم "${assigned_to_name}"` };
+                }
+                assignedTo = userRes.rows[0].id;
+                assignedToName = userRes.rows[0].name;
+            }
+
+            const validPriorities = ['low', 'medium', 'high', 'urgent'];
+            const taskPriority = validPriorities.includes(priority) ? priority : 'medium';
+
+            return {
+                valid: true,
+                summary: {
+                    action_type: 'create_task',
+                    title,
+                    description: description || null,
+                    assigned_to: assignedTo,
+                    assigned_to_name: assignedToName || 'غير معين',
+                    priority: taskPriority,
+                    due_date: due_date || null,
+                },
+            };
+        },
+
+        async execute(proposal, user) {
+            const { title, description, assigned_to, priority, due_date } = proposal;
+            const result = await db.withTransaction(async (client) => {
+                const taskRes = await client.query(
+                    `INSERT INTO tasks
+                        (title, description, assigned_to, priority, due_date, status, created_by)
+                     VALUES ($1, $2, $3, $4, $5, 'pending', $6)
+                     RETURNING id, title`,
+                    [title, description, assigned_to, priority, due_date, user.id]
+                );
+                return { task_id: taskRes.rows[0].id, title: taskRes.rows[0].title };
+            });
+            return result;
+        },
+    },
+
 ];
 // =============================================================================
 const ACTION_MAP = AI_ACTIONS.reduce((map, action) => {
