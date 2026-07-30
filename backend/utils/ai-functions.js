@@ -1736,6 +1736,487 @@ const AI_FUNCTIONS = [
         }
     },
 
+    // ── 36. getSmartQuoteSuggestions ─────────────────────────────────────────
+    {
+        type: 'function',
+        function: {
+            name: 'getSmartQuoteSuggestions',
+            description: 'تحليل ذكي لاقتراح أسعار عرض سعر: يجيب تكلفة المنتج، آخر سعر بيع للعميل، متوسط الأسعار التاريخية، ويقترح سعر بهامش ربح معقول.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    client_name: { type: 'string', description: 'اسم العميل' },
+                    product_name: { type: 'string', description: 'اسم المنتج' },
+                    quantity: { type: 'number', description: 'الكمية المطلوبة (اختياري)' }
+                },
+                required: ['client_name', 'product_name']
+            }
+        },
+        async execute(args, user) {
+            const { client_name, product_name, quantity } = args;
+
+            // 1. Get product variant + cost
+            const variantRes = await db.query(
+                `SELECT pv.id, pv.sku, pv.size_name, pv.selling_price, pv.cost_price,
+                        p.name as product_name
+                 FROM product_variants pv
+                 JOIN products p ON p.id = pv.product_id
+                 WHERE p.name ILIKE $1 AND pv.status = 'active'
+                 LIMIT 5`,
+                [`%${product_name}%`]
+            );
+            if (variantRes.rows.length === 0) return { error: 'لم يتم العثور على المنتج' };
+
+            const results = [];
+            for (const v of variantRes.rows) {
+                const cost = parseFloat(v.cost_price || 0);
+                const currentPrice = parseFloat(v.selling_price || 0);
+
+                // 2. What did THIS client pay before?
+                const clientHistRes = await db.query(
+                    `SELECT oi.unit_price, oi.quantity, o.order_number, o.created_at
+                     FROM order_items oi
+                     JOIN orders o ON o.id = oi.order_id
+                     JOIN clients c ON c.id = o.client_id
+                     WHERE oi.variant_id = $1 AND c.name ILIKE $2
+                       AND o.status NOT IN ('cancelled', 'draft')
+                     ORDER BY o.created_at DESC LIMIT 5`,
+                    [v.id, `%${client_name}%`]
+                );
+                const clientPrices = clientHistRes.rows.map(r => parseFloat(r.unit_price));
+                const lastClientPrice = clientPrices.length > 0 ? clientPrices[0] : null;
+                const avgClientPrice = clientPrices.length > 0
+                    ? clientPrices.reduce((a, b) => a + b, 0) / clientPrices.length
+                    : null;
+
+                // 3. What did ALL clients pay (market average)?
+                const marketHistRes = await db.query(
+                    `SELECT AVG(oi.unit_price)::numeric as avg_price,
+                            MAX(oi.unit_price)::numeric as max_price,
+                            MIN(oi.unit_price)::numeric as min_price,
+                            COUNT(*) as times_sold
+                     FROM order_items oi
+                     JOIN orders o ON o.id = oi.order_id
+                     WHERE oi.variant_id = $1 AND o.status NOT IN ('cancelled', 'draft', 'quote')`,
+                    [v.id]
+                );
+                const avgMarketPrice = parseFloat(marketHistRes.rows[0].avg_price || 0);
+                const minMarketPrice = parseFloat(marketHistRes.rows[0].min_price || 0);
+                const maxMarketPrice = parseFloat(marketHistRes.rows[0].max_price || 0);
+
+                // 4. Calculate suggested price
+                // Base: cost + 20% margin (default)
+                // If client has history, lean towards their previous price
+                // If market avg is higher, can go up
+                let suggestedPrice;
+                let reasoning;
+
+                if (lastClientPrice) {
+                    // Client has history — keep similar price, small increase
+                    suggestedPrice = lastClientPrice * 1.03; // 3% increase
+                    reasoning = `العميل اشترى قبل بسعر ${lastClientPrice} ريال. اقتراح زيادة 3% للحفاظ على العلاقة.`;
+                } else if (avgMarketPrice > 0) {
+                    // No client history but market data exists
+                    suggestedPrice = Math.min(avgMarketPrice, cost * 1.25);
+                    reasoning = `لا يوجد سجل سابق للعميل. متوسط سعر السوق ${avgMarketPrice.toFixed(2)} ريال. التكلفة ${cost} ريال.`;
+                } else {
+                    // No data — use cost + 20%
+                    suggestedPrice = cost * 1.20;
+                    reasoning = `لا توجد بيانات سابقة. التكلفة ${cost} ريال، هامش مقترح 20%.`;
+                }
+
+                // Volume discount: if quantity > 10000, reduce 5%
+                if (quantity && quantity >= 10000) {
+                    suggestedPrice = suggestedPrice * 0.95;
+                    reasoning += ` خصم 5% للكمية الكبيرة (${quantity}).`;
+                } else if (quantity && quantity >= 50000) {
+                    suggestedPrice = suggestedPrice * 0.90;
+                    reasoning += ` خصم 10% للكمية الكبيرة جداً (${quantity}).`;
+                }
+
+                const marginPercent = cost > 0
+                    ? Math.round(((suggestedPrice - cost) / cost * 100) * 100) / 100
+                    : 0;
+
+                results.push({
+                    product_name: v.product_name,
+                    size_name: v.size_name,
+                    sku: v.sku,
+                    cost_price: cost,
+                    current_selling_price: currentPrice,
+                    last_client_price: lastClientPrice,
+                    avg_client_price: avgClientPrice ? Math.round(avgClientPrice * 100) / 100 : null,
+                    avg_market_price: avgMarketPrice > 0 ? Math.round(avgMarketPrice * 100) / 100 : null,
+                    min_market_price: minMarketPrice > 0 ? minMarketPrice : null,
+                    max_market_price: maxMarketPrice > 0 ? maxMarketPrice : null,
+                    times_sold_market: parseInt(marketHistRes.rows[0].times_sold || 0),
+                    suggested_price: Math.round(suggestedPrice * 100) / 100,
+                    margin_percent: marginPercent,
+                    reasoning: reasoning,
+                    client_history_count: clientPrices.length,
+                });
+            }
+            return _sanitize(results);
+        }
+    },
+
+    // ── 37. getNegotiationRoom ───────────────────────────────────────────────
+    {
+        type: 'function',
+        function: {
+            name: 'getNegotiationRoom',
+            description: 'يحسب أدنى سعر مقبول لمنتج مع هامش ربح محدد. استخدمه عندما يقول المستخدم "السعر غالي" أو يريد التفاوض.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    product_name: { type: 'string', description: 'اسم المنتج' },
+                    current_price: { type: 'number', description: 'السعر الحالي المقترح' },
+                    target_margin: { type: 'number', description: 'هامش الربح الأدنى المقبول (افتراضي 10%)' }
+                },
+                required: ['product_name', 'current_price']
+            }
+        },
+        async execute(args, user) {
+            const { product_name, current_price, target_margin = 10 } = args;
+
+            const variantRes = await db.query(
+                `SELECT pv.id, pv.sku, pv.size_name, pv.cost_price, pv.selling_price,
+                        p.name as product_name
+                 FROM product_variants pv
+                 JOIN products p ON p.id = pv.product_id
+                 WHERE p.name ILIKE $1 AND pv.status = 'active'
+                 LIMIT 5`,
+                [`%${product_name}%`]
+            );
+            if (variantRes.rows.length === 0) return { error: 'لم يتم العثور على المنتج' };
+
+            const results = [];
+            for (const v of variantRes.rows) {
+                const cost = parseFloat(v.cost_price || 0);
+                const current = parseFloat(current_price);
+                const currentMargin = cost > 0 ? ((current - cost) / cost * 100) : 0;
+
+                // Minimum acceptable price = cost + target_margin%
+                const minAcceptablePrice = cost * (1 + target_margin / 100);
+
+                // How much room to negotiate?
+                const negotiationRoom = current - minAcceptablePrice;
+                const canReduce = negotiationRoom > 0;
+
+                // Suggest 3 price tiers
+                const tier1 = current; // Current
+                const tier2 = (current + minAcceptablePrice) / 2; // Midpoint
+                const tier3 = minAcceptablePrice; // Floor
+
+                results.push({
+                    product_name: v.product_name,
+                    size_name: v.size_name,
+                    sku: v.sku,
+                    cost_price: cost,
+                    current_price: current,
+                    current_margin_percent: Math.round(currentMargin * 100) / 100,
+                    min_acceptable_price: Math.round(minAcceptablePrice * 100) / 100,
+                    min_margin_percent: target_margin,
+                    can_reduce: canReduce,
+                    negotiation_room: Math.round(negotiationRoom * 100) / 100,
+                    price_tiers: {
+                        premium: Math.round(tier1 * 100) / 100,
+                        balanced: Math.round(tier2 * 100) / 100,
+                        floor: Math.round(tier3 * 100) / 100,
+                    },
+                    recommendation: canReduce
+                        ? `يمكن تخفيض السعر إلى ${Math.round(tier2 * 100) / 100} ريال (هامش ${Math.round(((tier2 - cost) / cost * 100) * 100) / 100}%) كحل وسط.`
+                        : `السعر الحالي قريب من الحد الأدنى. التكلفة ${cost} ريال، لا يمكن تخفيض أكثر من ${Math.round(minAcceptablePrice * 100) / 100} ريال.`,
+                });
+            }
+            return _sanitize(results);
+        }
+    },
+
+    // ── 38. getClientPricingHistory ──────────────────────────────────────────
+    {
+        type: 'function',
+        function: {
+            name: 'getClientPricingHistory',
+            description: 'يرجع تاريخ أسعار عميل معين لكل المنتجات: كم دفع، متى، وأي سعر. مفيد لمعرفة أنماط شراء العميل.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    client_name: { type: 'string', description: 'اسم العميل' },
+                    limit: { type: 'integer', description: 'عدد النتائج (افتراضي 20)' }
+                },
+                required: ['client_name']
+            }
+        },
+        async execute(args, user) {
+            const { client_name, limit = 20 } = args;
+            const result = await db.query(
+                `SELECT o.order_number, o.created_at, o.status,
+                        p.name as product_name, pv.size_name, pv.sku,
+                        oi.quantity, oi.unit_price, oi.line_total,
+                        pv.cost_price
+                 FROM order_items oi
+                 JOIN orders o ON o.id = oi.order_id
+                 JOIN clients c ON c.id = o.client_id
+                 LEFT JOIN product_variants pv ON pv.id = oi.variant_id
+                 LEFT JOIN products p ON p.id = pv.product_id
+                 WHERE c.name ILIKE $1 AND o.status NOT IN ('cancelled', 'draft')
+                 ORDER BY o.created_at DESC
+                 LIMIT $2`,
+                [`%${client_name}%`, parseInt(limit) || 20]
+            );
+
+            // Add margin analysis for each item
+            const enriched = result.rows.map(r => {
+                const cost = parseFloat(r.cost_price || 0);
+                const price = parseFloat(r.unit_price || 0);
+                const margin = cost > 0 ? Math.round(((price - cost) / cost * 100) * 100) / 100 : null;
+                return { ...r, margin_percent: margin };
+            });
+
+            return _sanitize(enriched);
+        }
+    },
+
+    // ── 39. getProfitabilityAnalysis ─────────────────────────────────────────
+    {
+        type: 'function',
+        function: {
+            name: 'getProfitabilityAnalysis',
+            description: 'تحليل ربحية عميل: إجمالي المشتريات، إجمالي التكلفة، صافي الربح، متوسط هامش الربح، وأكثر المنتجات ربحية.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    client_name: { type: 'string', description: 'اسم العميل' }
+                },
+                required: ['client_name']
+            }
+        },
+        async execute(args, user) {
+            const { client_name } = args;
+
+            const clientRes = await db.query(
+                `SELECT id FROM clients WHERE name ILIKE $1 LIMIT 1`,
+                [`%${client_name}%`]
+            );
+            if (clientRes.rows.length === 0) return { error: 'لم يتم العثور على العميل' };
+            const clientId = clientRes.rows[0].id;
+
+            // Overall profitability
+            const overallRes = await db.query(
+                `SELECT
+                    COUNT(DISTINCT o.id) as total_orders,
+                    COALESCE(SUM(oi.line_total), 0)::numeric as total_revenue,
+                    COALESCE(SUM(oi.quantity * pv.cost_price), 0)::numeric as total_cost,
+                    COALESCE(SUM(oi.line_total - oi.quantity * pv.cost_price), 0)::numeric as gross_profit
+                 FROM order_items oi
+                 JOIN orders o ON o.id = oi.order_id
+                 LEFT JOIN product_variants pv ON pv.id = oi.variant_id
+                 WHERE o.client_id = $1 AND o.status NOT IN ('cancelled', 'draft')`,
+                [clientId]
+            );
+
+            const totalRevenue = parseFloat(overallRes.rows[0].total_revenue || 0);
+            const totalCost = parseFloat(overallRes.rows[0].total_cost || 0);
+            const grossProfit = parseFloat(overallRes.rows[0].gross_profit || 0);
+            const avgMargin = totalRevenue > 0 ? Math.round((grossProfit / totalRevenue * 100) * 100) / 100 : 0;
+
+            // Most profitable products for this client
+            const topProductsRes = await db.query(
+                `SELECT p.name as product_name, pv.size_name,
+                        COUNT(*) as times_ordered,
+                        SUM(oi.quantity) as total_qty,
+                        SUM(oi.line_total)::numeric as revenue,
+                        SUM(oi.quantity * pv.cost_price)::numeric as cost,
+                        SUM(oi.line_total - oi.quantity * pv.cost_price)::numeric as profit,
+                        CASE WHEN SUM(oi.line_total) > 0
+                             THEN ROUND((SUM(oi.line_total - oi.quantity * pv.cost_price) / SUM(oi.line_total) * 100)::numeric, 2)
+                             ELSE 0 END as margin_percent
+                 FROM order_items oi
+                 JOIN orders o ON o.id = oi.order_id
+                 LEFT JOIN product_variants pv ON pv.id = oi.variant_id
+                 LEFT JOIN products p ON p.id = pv.product_id
+                 WHERE o.client_id = $1 AND o.status NOT IN ('cancelled', 'draft')
+                 GROUP BY p.name, pv.size_name
+                 ORDER BY profit DESC
+                 LIMIT 10`,
+                [clientId]
+            );
+
+            // Monthly trend
+            const trendRes = await db.query(
+                `SELECT DATE_TRUNC('month', o.created_at) as month,
+                        COUNT(DISTINCT o.id) as orders,
+                        SUM(oi.line_total)::numeric as revenue,
+                        SUM(oi.line_total - oi.quantity * pv.cost_price)::numeric as profit
+                 FROM order_items oi
+                 JOIN orders o ON o.id = oi.order_id
+                 LEFT JOIN product_variants pv ON pv.id = oi.variant_id
+                 WHERE o.client_id = $1 AND o.status NOT IN ('cancelled', 'draft')
+                   AND o.created_at >= NOW() - INTERVAL '6 months'
+                 GROUP BY DATE_TRUNC('month', o.created_at)
+                 ORDER BY month DESC`,
+                [clientId]
+            );
+
+            return _sanitize([{
+                total_orders: parseInt(overallRes.rows[0].total_orders || 0),
+                total_revenue: totalRevenue,
+                total_cost: totalCost,
+                gross_profit: grossProfit,
+                avg_margin_percent: avgMargin,
+                top_profitable_products: topProductsRes.rows.map(r => ({
+                    product_name: r.product_name,
+                    size_name: r.size_name,
+                    times_ordered: parseInt(r.times_ordered),
+                    total_qty: parseInt(r.total_qty),
+                    revenue: parseFloat(r.revenue),
+                    cost: parseFloat(r.cost),
+                    profit: parseFloat(r.profit),
+                    margin_percent: parseFloat(r.margin_percent),
+                })),
+                monthly_trend: trendRes.rows.map(r => ({
+                    month: r.month.toISOString().split('T')[0],
+                    orders: parseInt(r.orders),
+                    revenue: parseFloat(r.revenue),
+                    profit: parseFloat(r.profit),
+                })),
+            }]);
+        }
+    },
+
+    // ── 40. getProactiveAlerts ───────────────────────────────────────────────
+    {
+        type: 'function',
+        function: {
+            name: 'getProactiveAlerts',
+            description: 'يرجع تنبيهات استباقية: عملاء لم يطلبوا منذ فترة، مخزون منخفض، عروض أسعار متأخرة، دفعات مستحقة، فرص بيع.',
+            parameters: {
+                type: 'object',
+                properties: {}
+            }
+        },
+        async execute(args, user) {
+            const alerts = [];
+
+            // 1. Clients who haven't ordered in 30+ days
+            const inactiveClientsRes = await db.query(
+                `SELECT c.id, c.name, c.phone,
+                        MAX(o.created_at) as last_order,
+                        EXTRACT(DAY FROM NOW() - MAX(o.created_at))::int as days_inactive,
+                        COALESCE(SUM(o.grand_total), 0)::numeric as lifetime_value
+                 FROM clients c
+                 LEFT JOIN orders o ON o.client_id = c.id AND o.status NOT IN ('cancelled', 'draft')
+                 WHERE c.status = 'active' AND c.parent_id IS NULL
+                 GROUP BY c.id, c.name, c.phone
+                 HAVING MAX(o.created_at) IS NULL OR MAX(o.created_at) < NOW() - INTERVAL '30 days'
+                 ORDER BY days_inactive DESC NULLS FIRST
+                 LIMIT 5`
+            );
+            if (inactiveClientsRes.rows.length > 0) {
+                alerts.push({
+                    type: 'inactive_clients',
+                    severity: 'high',
+                    title: 'عملاء لم يطلبوا منذ 30 يوم',
+                    count: inactiveClientsRes.rows.length,
+                    items: inactiveClientsRes.rows.map(r => ({
+                        name: r.name,
+                        phone: r.phone,
+                        days_inactive: r.days_inactive || 'لا طلبات',
+                        lifetime_value: parseFloat(r.lifetime_value || 0),
+                    })),
+                    suggestion: 'تواصل مع هؤلاء العملاء لمعرفة أسباب عدم الطلب',
+                });
+            }
+
+            // 2. Low stock items
+            const lowStockRes = await db.query(
+                `SELECT p.name, pv.size_name, pv.sku,
+                        COALESCE(ws.qty, 0) as current_stock,
+                        pv.min_stock_level,
+                        pv.cost_price
+                 FROM product_variants pv
+                 JOIN products p ON p.id = pv.product_id
+                 LEFT JOIN (SELECT variant_id, SUM(quantity) as qty FROM warehouse_stock GROUP BY variant_id) ws ON ws.variant_id = pv.id
+                 WHERE pv.status = 'active' AND COALESCE(ws.qty, 0) < COALESCE(pv.min_stock_level, 100)
+                 ORDER BY COALESCE(ws.qty, 0) ASC
+                 LIMIT 5`
+            );
+            if (lowStockRes.rows.length > 0) {
+                alerts.push({
+                    type: 'low_stock',
+                    severity: 'high',
+                    title: 'مخزون منخفض',
+                    count: lowStockRes.rows.length,
+                    items: lowStockRes.rows.map(r => ({
+                        product_name: r.name,
+                        size_name: r.size_name,
+                        current_stock: parseInt(r.current_stock || 0),
+                        min_level: parseInt(r.min_stock_level || 100),
+                    })),
+                    suggestion: 'فكر في إعادة الطلب من الموردين قبل نفاد المخزون',
+                });
+            }
+
+            // 3. Pending quotes older than 7 days
+            const oldQuotesRes = await db.query(
+                `SELECT o.order_number, o.created_at, c.name as client_name,
+                        o.grand_total,
+                        EXTRACT(DAY FROM NOW() - o.created_at)::int as days_pending
+                 FROM orders o
+                 LEFT JOIN clients c ON c.id = o.client_id
+                 WHERE o.status = 'quote'
+                   AND o.created_at < NOW() - INTERVAL '7 days'
+                 ORDER BY o.created_at ASC
+                 LIMIT 5`
+            );
+            if (oldQuotesRes.rows.length > 0) {
+                alerts.push({
+                    type: 'stale_quotes',
+                    severity: 'medium',
+                    title: 'عروض أسعار متأخرة (أكثر من 7 أيام)',
+                    count: oldQuotesRes.rows.length,
+                    items: oldQuotesRes.rows.map(r => ({
+                        order_number: r.order_number,
+                        client_name: r.client_name,
+                        grand_total: parseFloat(r.grand_total || 0),
+                        days_pending: r.days_pending,
+                    })),
+                    suggestion: 'تابع مع العملاء لتأكيد أو تعديل هذه العروض',
+                });
+            }
+
+            // 4. Outstanding payments
+            const outstandingRes = await db.query(
+                `SELECT i.invoice_number, c.name as client_name,
+                        i.grand_total, i.paid_amount,
+                        (i.grand_total - i.paid_amount) as remaining,
+                        i.invoice_date
+                 FROM invoices i
+                 JOIN clients c ON c.id = i.client_id
+                 WHERE (i.grand_total - i.paid_amount) > 0 AND i.status != 'cancelled'
+                 ORDER BY i.invoice_date ASC
+                 LIMIT 5`
+            );
+            if (outstandingRes.rows.length > 0) {
+                alerts.push({
+                    type: 'outstanding_payments',
+                    severity: 'high',
+                    title: 'دفعات مستحقة',
+                    count: outstandingRes.rows.length,
+                    items: outstandingRes.rows.map(r => ({
+                        invoice_number: r.invoice_number,
+                        client_name: r.client_name,
+                        remaining: parseFloat(r.remaining || 0),
+                    })),
+                    suggestion: 'تذكير العملاء بالمستحقات',
+                });
+            }
+
+            return _sanitize(alerts);
+        }
+    },
+
 ];
 
 // =============================================================================
