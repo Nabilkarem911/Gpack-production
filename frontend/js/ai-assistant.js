@@ -460,16 +460,18 @@
 
         // Proposed action confirm/reject buttons (Phase 6)
         document.querySelectorAll('.ai-propose-confirm').forEach(btn => {
-            btn.addEventListener('click', function() {
-                var msgEl = this.closest('[data-msg-proposed]');
+            var handler = function() {
+                var msgEl = btn.closest('[data-msg-proposed]');
                 if (!msgEl) return;
                 try {
                     var proposed = JSON.parse(msgEl.getAttribute('data-msg-proposed') || '[]');
-                    var idx = parseInt(this.getAttribute('data-propose-idx') || '0');
+                    var idx = parseInt(btn.getAttribute('data-propose-idx') || '0');
                     var pa = proposed[idx];
-                    if (pa) _handleProposeAction(pa, this);
+                    if (pa) _handleProposeAction(pa, btn);
                 } catch(e) { /* ignore */ }
-            });
+            };
+            btn._proposeHandler = handler;
+            btn.addEventListener('click', handler);
         });
         document.querySelectorAll('.ai-propose-reject').forEach(btn => {
             btn.addEventListener('click', function() {
@@ -595,14 +597,16 @@
         var card = btnEl.closest('.ai-propose-card');
         var detailsEl = card ? card.querySelector('.ai-propose-details') : null;
 
+        // Remove original click handler so it doesn't fire again
+        btnEl.onclick = null;
+        btnEl.removeEventListener('click', btnEl._proposeHandler);
+
         // Step 1: Show loading
         if (detailsEl) {
             detailsEl.innerHTML = '<div class="flex items-center gap-1.5 text-amber-600"><i class="fa-solid fa-spinner fa-spin text-[10px]"></i> جاري التحقق...</div>';
         }
         if (btnEl) btnEl.disabled = true;
 
-        // Store handler reference so we can remove it later (strict mode forbids arguments.callee)
-        var clickHandler = async function() {
         try {
             // Step 2: Call propose-action API
             var proposeRes = await window.apiFetch('/api/ai-assistant/propose-action', {
@@ -709,10 +713,6 @@
             if (detailsEl) detailsEl.innerHTML = '<div class="text-rose-600"><i class="fa-solid fa-circle-exclamation ml-1"></i>' + _esc(err.message || 'فشل في التحقق') + '</div>';
             if (btnEl) btnEl.disabled = false;
         }
-        };
-
-        // Attach the handler
-        btnEl.addEventListener('click', clickHandler);
     }
 
     // =============================================================================
