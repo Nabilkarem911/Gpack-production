@@ -573,15 +573,23 @@ router.post('/chat', async (req, res) => {
         reply = reply.replace(actionRegex, '').trim();
 
         // Parse propose_action tags ([[propose_action:type|json_args|label]])
+        // Use a broad regex then split manually — regex can't handle nested JSON braces
         const proposedActions = [];
-        const proposeRegex = /\[\[propose_action:(\w+)\|(\{[^}]*\})\|([^\]]+)\]\]/g;
+        const proposeRegex = /\[\[propose_action:(\w+)\|([\s\S]+?)\]\]/g;
         let proposeMatch;
         while ((proposeMatch = proposeRegex.exec(reply)) !== null) {
             try {
+                const actionType = proposeMatch[1];
+                const rest = proposeMatch[2];
+                // Split by last | to separate JSON args from label
+                const lastPipeIdx = rest.lastIndexOf('|');
+                if (lastPipeIdx === -1) continue;
+                const jsonStr = rest.substring(0, lastPipeIdx).trim();
+                const label = rest.substring(lastPipeIdx + 1).trim();
                 proposedActions.push({
-                    action_type: proposeMatch[1],
-                    args: JSON.parse(proposeMatch[2]),
-                    label: proposeMatch[3].trim(),
+                    action_type: actionType,
+                    args: JSON.parse(jsonStr),
+                    label: label,
                 });
             } catch {
                 // Skip malformed JSON
