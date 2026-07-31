@@ -193,30 +193,54 @@ const AI_FUNCTIONS = [
         type: 'function',
         function: {
             name: 'getInventoryStatus',
-            description: 'يرجع حالة المخزون: الأصناف القاربت على النفاد (أقل من حد معين) أو النافدة تماماً.',
+            description: 'يرجع حالة المخزون: الأصناف القاربت على النفاد (أقل من حد معين) أو النافدة تماماً. يمكن فلترة النتائج باسم مستودع معين.',
             parameters: {
                 type: 'object',
                 properties: {
-                    threshold: { type: 'number', description: 'الحد الأدنى للتنبيه (افتراضي 100)' }
+                    threshold: { type: 'number', description: 'الحد الأدنى للتنبيه (افتراضي 100)' },
+                    warehouse_name: { type: 'string', description: 'اسم المستودع أو جزء منه للفلترة (اختياري)' }
                 }
             }
         },
         async execute(args, user) {
-            const { threshold = 100 } = args;
-            const result = await db.query(
-                `SELECT p.name as product_name, pv.size_name as size,
-                        COALESCE(SUM(ws.quantity), 0)::numeric as total_stock,
-                        w.name as warehouse_name
-                 FROM product_variants pv
-                 JOIN products p ON p.id = pv.product_id
-                 CROSS JOIN warehouses w
-                 LEFT JOIN warehouse_stock ws ON ws.variant_id = pv.id AND ws.warehouse_id = w.id
-                 GROUP BY p.name, pv.size_name, w.name
-                 HAVING COALESCE(SUM(ws.quantity), 0) < $1
-                 ORDER BY total_stock ASC
-                 LIMIT 20`,
-                [parseFloat(threshold)]
-            );
+            const { threshold = 100, warehouse_name } = args;
+            let query, params;
+
+            if (warehouse_name) {
+                // Filter by specific warehouse — use LEFT JOIN to show 0-stock items too
+                query = `SELECT p.name as product_name, pv.size_name as size,
+                                COALESCE(ws.quantity, 0)::numeric as total_stock,
+                                w.name as warehouse_name,
+                                COALESCE(ws.reserved_qty, 0)::numeric as reserved_qty,
+                                (COALESCE(ws.quantity, 0) - COALESCE(ws.reserved_qty, 0))::numeric as available_qty
+                         FROM product_variants pv
+                         JOIN products p ON p.id = pv.product_id
+                         JOIN warehouses w ON w.name ILIKE $1
+                         LEFT JOIN warehouse_stock ws ON ws.variant_id = pv.id AND ws.warehouse_id = w.id
+                         WHERE pv.status = 'active'
+                           AND COALESCE(ws.quantity, 0) < $2
+                         ORDER BY total_stock ASC
+                         LIMIT 30`;
+                params = [`%${warehouse_name}%`, parseFloat(threshold)];
+            } else {
+                // No warehouse filter — only show actual stock records (no CROSS JOIN)
+                query = `SELECT p.name as product_name, pv.size_name as size,
+                                COALESCE(ws.quantity, 0)::numeric as total_stock,
+                                w.name as warehouse_name,
+                                COALESCE(ws.reserved_qty, 0)::numeric as reserved_qty,
+                                (COALESCE(ws.quantity, 0) - COALESCE(ws.reserved_qty, 0))::numeric as available_qty
+                         FROM warehouse_stock ws
+                         JOIN product_variants pv ON pv.id = ws.variant_id
+                         JOIN products p ON p.id = pv.product_id
+                         JOIN warehouses w ON w.id = ws.warehouse_id
+                         WHERE pv.status = 'active'
+                           AND ws.quantity < $1
+                         ORDER BY ws.quantity ASC
+                         LIMIT 30`;
+                params = [parseFloat(threshold)];
+            }
+
+            const result = await db.query(query, params);
             return _sanitize(result.rows);
         }
     },
