@@ -120,6 +120,10 @@ services:
       DB_NAME: ${DATABASE_NAME}
       DB_USER: ${DATABASE_USER}
       DB_PASSWORD: ${DATABASE_PASSWORD}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      VOICE_PROVIDER: ${VOICE_PROVIDER:-whisper}
+      VOICE_WHISPER_MODEL: ${VOICE_WHISPER_MODEL:-whisper-1}
     expose:
       - "8000"
     healthcheck:

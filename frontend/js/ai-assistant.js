@@ -424,7 +424,8 @@
                     const badge = document.getElementById('ai-briefing-badge');
                     if (badge) badge.classList.add('hidden');
                 } catch (err) {
-                    if (window.showToast) window.showToast('فشل في جلب الملخص اليومي', 'error');
+                    console.error('[AI Briefing] Error:', err);
+                    if (window.showToast) window.showToast('فشل في جلب الملخص اليومي: ' + (err.message || err), 'error');
                 }
             });
         }
@@ -499,9 +500,12 @@
                             micBtn.disabled = true;
                             micBtn.querySelector('i').className = 'fa-solid fa-spinner fa-spin text-sm';
 
+                            // Use raw fetch with credentials (same as apiFetch but with FormData — no JSON content-type)
+                            var token = localStorage.getItem('token') || (window.GpackUser && window.GpackUser.token) || '';
                             fetch('/api/ai-assistant/transcribe', {
                                 method: 'POST',
-                                headers: { 'Authorization': 'Bearer ' + (window.authToken || localStorage.getItem('token') || '') },
+                                credentials: 'include',
+                                headers: token ? { 'Authorization': 'Bearer ' + token } : {},
                                 body: formData,
                             })
                             .then(function(r) { return r.json(); })

@@ -331,11 +331,15 @@ def _get_vosk_model():
 async def transcribe(audio: UploadFile = File(...)):
     """
     Receive an audio file (webm/wav/ogg) from the browser MediaRecorder,
-    convert to WAV, and run Vosk speech recognition.
-    Returns: { "text": "recognized text", "success": true/false }
+    convert to WAV, and run speech recognition.
+    Provider selection via VOICE_PROVIDER env var:
+      - 'whisper' (default if OPENAI_API_KEY is set) — best accuracy, ~$0.006/min
+      - 'vosk' (fallback) — free, offline, lower accuracy
+    Returns: { "text": "recognized text", "success": true/false, "provider": "whisper|vosk" }
     """
+    import subprocess
+
     try:
-        # Read uploaded audio
         raw = await audio.read()
 
         # Write to temp file
@@ -343,26 +347,83 @@ async def transcribe(audio: UploadFile = File(...)):
             tmp_in.write(raw)
             tmp_in_path = tmp_in.name
 
-        # Convert to WAV 16kHz mono using ffmpeg if available, otherwise try direct
-        tmp_out_path = tmp_in_path.replace(".webm", ".wav")
-
-        # Try ffmpeg first (handles webm/ogg from browser)
-        import subprocess
+        # Convert to WAV 16kHz mono using ffmpeg
+        tmp_wav_path = tmp_in_path.replace(".webm", ".wav")
         try:
             subprocess.run(
-                ["ffmpeg", "-y", "-i", tmp_in_path, "-ar", "16000", "-ac", "1", "-f", "wav", tmp_out_path],
+                ["ffmpeg", "-y", "-i", tmp_in_path, "-ar", "16000", "-ac", "1", "-f", "wav", tmp_wav_path],
                 capture_output=True, timeout=10
             )
         except (FileNotFoundError, subprocess.TimeoutExpired):
-            # No ffmpeg — try reading as raw WAV
-            tmp_out_path = tmp_in_path
+            tmp_wav_path = tmp_in_path
 
-        # Run Vosk recognition
+        # Determine provider
+        provider = os.getenv("VOICE_PROVIDER", "").lower()
+        if not provider:
+            provider = "whisper" if os.getenv("OPENAI_API_KEY") else "vosk"
+
+        # ── Whisper API (best accuracy) ──────────────────────────────────────
+        if provider == "whisper":
+            try:
+                import urllib.request
+
+                api_key = os.getenv("OPENAI_API_KEY", "")
+                base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+                model = os.getenv("VOICE_WHISPER_MODEL", "whisper-1")
+
+                # Read the original audio file (not converted — Whisper handles webm)
+                with open(tmp_in_path, "rb") as f:
+                    audio_bytes = f.read()
+
+                # Build multipart form data
+                boundary = "----WebKitFormBoundary" + os.urandom(8).hex()
+                body = (
+                    f"--{boundary}\r\n"
+                    f'Content-Disposition: form-data; name="file"; filename="audio.webm"\r\n'
+                    f"Content-Type: audio/webm\r\n\r\n"
+                ).encode() + audio_bytes + f"\r\n--{boundary}\r\n".encode() + (
+                    f'Content-Disposition: form-data; name="model"\r\n\r\n'
+                    f"{model}\r\n"
+                    f"--{boundary}\r\n"
+                    f'Content-Disposition: form-data; name="language"\r\n\r\n'
+                    f"ar\r\n"
+                    f"--{boundary}--\r\n"
+                ).encode()
+
+                req = urllib.request.Request(
+                    f"{base_url}/audio/transcriptions",
+                    data=body,
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": f"multipart/form-data; boundary={boundary}",
+                    },
+                    method="POST",
+                )
+
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    result = json.loads(resp.read().decode())
+                    text = result.get("text", "").strip()
+
+                # Cleanup
+                for p in [tmp_in_path, tmp_wav_path]:
+                    try:
+                        os.unlink(p)
+                    except OSError:
+                        pass
+
+                if text:
+                    return {"success": True, "text": text, "provider": "whisper"}
+
+                # If Whisper returned empty, try Vosk as fallback
+            except Exception as whisper_err:
+                print(f"[Transcribe] Whisper failed: {whisper_err}, falling back to Vosk")
+
+        # ── Vosk (free, offline) ──────────────────────────────────────────────
         from vosk import KaldiRecognizer
         model = _get_vosk_model()
         rec = KaldiRecognizer(model, 16000)
 
-        wf = wave.open(tmp_out_path, "rb")
+        wf = wave.open(tmp_wav_path, "rb")
         result_text = ""
 
         while True:
@@ -374,22 +435,21 @@ async def transcribe(audio: UploadFile = File(...)):
                 if res.get("text"):
                     result_text += " " + res["text"]
 
-        # Final result
         final = json.loads(rec.FinalResult())
         if final.get("text"):
             result_text += " " + final["text"]
 
         wf.close()
 
-        # Cleanup temp files
-        for p in [tmp_in_path, tmp_out_path]:
+        # Cleanup
+        for p in [tmp_in_path, tmp_wav_path]:
             try:
                 os.unlink(p)
             except OSError:
                 pass
 
         result_text = result_text.strip()
-        return {"success": bool(result_text), "text": result_text}
+        return {"success": bool(result_text), "text": result_text, "provider": "vosk"}
 
     except Exception as e:
         return {"success": False, "text": "", "error": str(e)}

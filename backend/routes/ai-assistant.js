@@ -307,8 +307,8 @@ router.get('/briefing', async (req, res) => {
 
         res.json(briefing);
     } catch (err) {
-        console.error('[AI Assistant] Briefing error:', err.message);
-        res.status(500).json({ error: 'فشل في تحميل الملخص اليومي' });
+        console.error('[AI Assistant] Briefing error:', err.message, err.stack);
+        res.status(500).json({ error: 'فشل في تحميل الملخص اليومي: ' + err.message });
     }
 });
 
