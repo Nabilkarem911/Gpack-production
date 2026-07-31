@@ -151,7 +151,7 @@ async function generateBriefing(userId) {
     let briefingId;
     if (existingRes.rows.length > 0) {
         const updateRes = await db.query(
-            `UPDATE ai_briefings SET summary = $1, alerts = $2::jsonb, stats = $3::jsonb, updated_at = NOW()
+            `UPDATE ai_briefings SET summary = $1, alerts = $2::jsonb, stats = $3::jsonb
              WHERE id = $4 RETURNING id`,
             [summary, JSON.stringify(alerts), JSON.stringify(stats), existingRes.rows[0].id]
         );

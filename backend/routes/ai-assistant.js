@@ -470,7 +470,7 @@ router.post('/update-proposal', async (req, res) => {
 
         // Update the proposal in DB
         await db.query(
-            `UPDATE ai_action_log SET proposal = $1::jsonb, updated_at = NOW() WHERE id = $2`,
+            `UPDATE ai_action_log SET proposal = $1::jsonb WHERE id = $2`,
             [JSON.stringify(merged), action_id]
         );
 

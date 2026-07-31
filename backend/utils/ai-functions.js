@@ -2551,7 +2551,7 @@ const AI_FUNCTIONS = [
                             COUNT(*) as transaction_count
                      FROM inventory_transactions
                      WHERE stock_id = $1
-                       AND type = 'dispense'
+                       AND transaction_type = 'dispense'
                        AND created_at >= NOW() - INTERVAL '90 days'`,
                     [stock.id]
                 );
@@ -3217,32 +3217,34 @@ const AI_FUNCTIONS = [
         async execute(args, user) {
             const { product_name } = args;
 
-            // 1. Supplier pricing comparison
+            // 1. Supplier pricing comparison (from historical purchase invoices)
             let pricingQuery, pricingParams;
             if (product_name) {
                 pricingQuery = `
-                    SELECT sp.supplier_id, s.company_name as supplier_name,
+                    SELECT pi.supplier_id, s.company_name as supplier_name,
                            pv.id as variant_id, p.name as product_name, pv.size_name,
-                           sp.price, sp.updated_at
-                    FROM supplier_pricing sp
-                    JOIN suppliers s ON s.id = sp.supplier_id
-                    JOIN product_variants pv ON pv.id = sp.variant_id
+                           pii.unit_cost as price, pi.invoice_date as updated_at
+                    FROM purchase_invoice_items pii
+                    JOIN purchase_invoices pi ON pi.id = pii.purchase_invoice_id
+                    JOIN suppliers s ON s.id = pi.supplier_id
+                    JOIN product_variants pv ON pv.id = pii.variant_id
                     JOIN products p ON p.id = pv.product_id
                     WHERE p.name ILIKE $1 AND s.status = 'active'
-                    ORDER BY p.name, pv.size_name, sp.price
+                    ORDER BY p.name, pv.size_name, pii.unit_cost
                 `;
                 pricingParams = [`%${product_name}%`];
             } else {
                 pricingQuery = `
-                    SELECT sp.supplier_id, s.company_name as supplier_name,
+                    SELECT pi.supplier_id, s.company_name as supplier_name,
                            pv.id as variant_id, p.name as product_name, pv.size_name,
-                           sp.price, sp.updated_at
-                    FROM supplier_pricing sp
-                    JOIN suppliers s ON s.id = sp.supplier_id
-                    JOIN product_variants pv ON pv.id = sp.variant_id
+                           pii.unit_cost as price, pi.invoice_date as updated_at
+                    FROM purchase_invoice_items pii
+                    JOIN purchase_invoices pi ON pi.id = pii.purchase_invoice_id
+                    JOIN suppliers s ON s.id = pi.supplier_id
+                    JOIN product_variants pv ON pv.id = pii.variant_id
                     JOIN products p ON p.id = pv.product_id
                     WHERE s.status = 'active'
-                    ORDER BY p.name, pv.size_name, sp.price
+                    ORDER BY p.name, pv.size_name, pii.unit_cost
                     LIMIT 50
                 `;
                 pricingParams = [];
