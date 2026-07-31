@@ -13,6 +13,7 @@ const db = require('../db');
 const { AI_FUNCTIONS, FUNCTION_MAP } = require('../utils/ai-functions');
 const { AI_ACTIONS, ACTION_MAP } = require('../utils/ai-actions');
 const { checkPolicies } = require('../utils/ai-policies');
+const { generateBriefing, getLatestBriefing, markBriefingRead } = require('../utils/ai-briefing');
 
 // ── Config ───────────────────────────────────────────────────────────────────
 // Supports ANY OpenAI-compatible provider: OpenAI, Azure OpenAI, OpenRouter,
@@ -145,6 +146,8 @@ const SYSTEM_PROMPT = `أنت المساعد الذكي والذراع الأي�
 - عندما يقول المستخدم "أفضل مورد" أو "قارن الموردين" أو "أداء الموردين"، استخدم getSupplierIntelligence لمقارنة الأسعار وجودة التسليم. اعرض الترتيب وأفضل مورد.
 - عندما يقول المستخدم "أنماط متكررة" أو "طلبات دورية" أو "عملاء بنمط ثابت"، استخدم detectRecurringPatterns لكشف الأنماط المتكررة في الطلبات وحفظها كقوالب. اعرض الأنماط المكتشفة مع عدد التكرار وفترة الدورية.
 - عندما يقول المستخدم "القوالب المتكررة" أو "الطلبات الدورية"، استخدم getRecurringTemplates لعرض القوالب المحفوظة مع تاريخ الطلب المتوقع القادم. اعرض القوالب المتأخرة أولاً.
+- عندما يقول المستخدم "العميل طلب خصم" أو "أعطيه كام خصم؟" أو "هل أوافق على الخصم؟"، استخدم getDiscountDecision لتقييم الطلب: الهامش، تاريخ العميل، الحد الأدنى للربح. اعرض القرار (موافقة/تفاوض/رفض) مع الأسباب والخصم المقترح.
+- عندما يسأل المستخدم "ليه المبيعات قلت؟" أو "ليه الأرباح نزلت؟" أو "سبب الانخفاض"، استخدم getRootCauseAnalysis للتحليل السببي. اعرض الأسباب المحتملة مرتبة حسب الأهمية.
 - عندما تقترح عدة إجراءات في رد واحد، اعرضها معاً ليتمكن المستخدم من تنفيذها دفعة واحدة عبر زر "تنفيذ الكل".
 - اعرض التحليل بوضوح: التكلفة، السعر المقترح، الهامش، وسبب الاقتراح. كن مستشاراً ذكياً مش مجرد ناقل بيانات.`;
 
@@ -710,6 +713,69 @@ router.post('/execute-batch', async (req, res) => {
     } catch (err) {
         console.error('[AI Assistant] Execute-batch error:', err.message);
         res.status(500).json({ error: 'فشل في تنفيذ سلسلة الإجراءات: ' + err.message });
+    }
+});
+
+// =============================================================================
+// POST /api/ai-assistant/feedback
+// Phase 24.1: Recommendation Feedback — 👍/👎 under each AI suggestion
+// Body: { message_id, rating: 'positive'|'negative', reason?, function_name?, action_id? }
+// =============================================================================
+router.post('/feedback', async (req, res) => {
+    try {
+        const { message_id, rating, reason, function_name, action_id } = req.body;
+
+        if (!rating || !['positive', 'negative'].includes(rating)) {
+            return res.status(400).json({ error: 'التقييم يجب أن يكون positive أو negative' });
+        }
+
+        const result = await db.query(
+            `INSERT INTO ai_feedback (user_id, message_id, rating, reason, function_name, action_id)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             RETURNING id`,
+            [req.user.id, message_id || null, rating, reason || null, function_name || null, action_id || null]
+        );
+
+        res.json({ success: true, feedback_id: result.rows[0].id });
+    } catch (err) {
+        console.error('[AI Assistant] Feedback error:', err.message);
+        res.status(500).json({ error: 'فشل في حفظ التقييم' });
+    }
+});
+
+// =============================================================================
+// GET /api/ai-assistant/briefing
+// Phase 8.1: Morning Briefing — get latest unread briefing (auto-generates if missing)
+// =============================================================================
+router.get('/briefing', async (req, res) => {
+    try {
+        let briefing = await getLatestBriefing(req.user.id);
+
+        // Auto-generate if today's briefing doesn't exist
+        if (!briefing || new Date(briefing.briefing_date).toDateString() !== new Date().toDateString()) {
+            briefing = await generateBriefing(req.user.id);
+        }
+
+        res.json(briefing);
+    } catch (err) {
+        console.error('[AI Assistant] Briefing error:', err.message);
+        res.status(500).json({ error: 'فشل في جلب الملخص اليومي' });
+    }
+});
+
+// =============================================================================
+// POST /api/ai-assistant/briefing/mark-read
+// Phase 8.1: Mark briefing as read
+// Body: { briefing_id }
+// =============================================================================
+router.post('/briefing/mark-read', async (req, res) => {
+    try {
+        const { briefing_id } = req.body;
+        if (!briefing_id) return res.status(400).json({ error: 'معرف الملخص مطلوب' });
+        await markBriefingRead(briefing_id);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: 'فشل في تحديث حالة الملخص' });
     }
 });
 

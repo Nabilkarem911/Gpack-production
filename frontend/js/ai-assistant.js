@@ -315,9 +315,15 @@
                     <i class="fa-solid fa-robot text-lg"></i>
                     <span class="font-semibold text-sm">المساعد الذكي</span>
                 </div>
-                <button id="ai-chat-close" class="text-white/80 hover:text-white transition-colors">
-                    <i class="fa-solid fa-xmark text-lg"></i>
-                </button>
+                <div class="flex items-center gap-2">
+                    <button id="ai-briefing-btn" class="relative text-white/80 hover:text-white transition-colors" title="الملخص اليومي">
+                        <i class="fa-solid fa-bell text-base"></i>
+                        <span id="ai-briefing-badge" class="absolute -top-1 -left-1 w-4 h-4 bg-red-500 text-white text-[9px] rounded-full flex items-center justify-center hidden"></span>
+                    </button>
+                    <button id="ai-chat-close" class="text-white/80 hover:text-white transition-colors">
+                        <i class="fa-solid fa-xmark text-lg"></i>
+                    </button>
+                </div>
             </div>
 
             <!-- Messages area -->
@@ -346,6 +352,82 @@
         // Bind events
         const closeBtn = document.getElementById('ai-chat-close');
         if (closeBtn) closeBtn.addEventListener('click', togglePanel);
+
+        // Phase 8.1: Briefing button
+        const briefingBtn = document.getElementById('ai-briefing-btn');
+        if (briefingBtn) {
+            briefingBtn.addEventListener('click', async function() {
+                try {
+                    const briefing = await window.apiFetch('/api/ai-assistant/briefing', { method: 'GET' });
+                    if (!briefing) return;
+
+                    // Build briefing message
+                    let alertHtml = '';
+                    if (briefing.alerts && briefing.alerts.length > 0) {
+                        alertHtml = '<div class="mt-2 space-y-1">';
+                        for (const a of briefing.alerts) {
+                            const color = a.severity === 'critical' ? 'border-red-300 bg-red-50 text-red-700'
+                                : a.severity === 'warning' ? 'border-amber-300 bg-amber-50 text-amber-700'
+                                : 'border-slate-200 bg-slate-50 text-slate-600';
+                            alertHtml += `<div class="px-2 py-1 rounded-lg border ${color} text-[11px]"><i class="fa-solid fa-circle-exclamation ml-1"></i>${_esc(a.message)}</div>`;
+                        }
+                        alertHtml += '</div>';
+                    }
+
+                    const stats = briefing.stats || {};
+                    let statsHtml = '';
+                    if (stats.today_orders !== undefined) {
+                        statsHtml += `<div class="text-[11px] text-slate-500 mt-1">مبيعات اليوم: ${stats.today_orders} طلب — ${stats.today_sales} ر.س</div>`;
+                    }
+                    if (stats.month_sales !== undefined) {
+                        const changeColor = stats.month_change_pct >= 0 ? 'text-green-600' : 'text-red-600';
+                        statsHtml += `<div class="text-[11px] text-slate-500">مبيعات الشهر: ${stats.month_sales} ر.س <span class="${changeColor}">(${stats.month_change_pct >= 0 ? '+' : ''}${stats.month_change_pct}%)</span></div>`;
+                    }
+
+                    const briefingMsg = {
+                        role: 'assistant',
+                        content: (briefing.summary || '').replace(/\n/g, ' '),
+                        _briefing: true,
+                    };
+                    _messages.push(briefingMsg);
+                    _renderMessages();
+
+                    // Render briefing as special HTML
+                    const msgArea = document.getElementById('ai-chat-messages');
+                    if (msgArea) {
+                        const briefingDiv = document.createElement('div');
+                        briefingDiv.className = 'flex justify-start';
+                        briefingDiv.innerHTML = `
+                            <div class="bg-white border border-indigo-200 rounded-2xl rounded-tl-sm px-3 py-2 max-w-[80%] text-sm text-slate-700 shadow-sm">
+                                <div class="flex items-center gap-1.5 mb-1">
+                                    <i class="fa-solid fa-newspaper text-indigo-600 text-xs"></i>
+                                    <span class="text-xs font-bold text-indigo-800">الملخص اليومي</span>
+                                </div>
+                                <div class="text-[12px] text-slate-600">${_esc(briefing.summary || '').replace(/\n/g, '<br>')}</div>
+                                ${alertHtml}
+                                ${statsHtml}
+                            </div>
+                        `;
+                        msgArea.appendChild(briefingDiv);
+                        _scrollToBottom();
+                    }
+
+                    // Mark as read
+                    if (briefing.id) {
+                        window.apiFetch('/api/ai-assistant/briefing/mark-read', {
+                            method: 'POST',
+                            body: { briefing_id: briefing.id },
+                        }).catch(() => {});
+                    }
+
+                    // Hide badge
+                    const badge = document.getElementById('ai-briefing-badge');
+                    if (badge) badge.classList.add('hidden');
+                } catch (err) {
+                    if (window.showToast) window.showToast('فشل في جلب الملخص اليومي', 'error');
+                }
+            });
+        }
 
         const sendBtn = document.getElementById('ai-chat-send');
         if (sendBtn) sendBtn.addEventListener('click', _sendMessage);
@@ -539,6 +621,43 @@
             });
         });
 
+        // Feedback buttons (Phase 24.1: Recommendation Feedback)
+        document.querySelectorAll('.ai-fb-up').forEach(btn => {
+            btn.addEventListener('click', async function() {
+                var msgEl = btn.closest('[data-msg-proposed]') || btn.closest('.flex');
+                var msgText = msgEl ? msgEl.querySelector('.text-sm.text-slate-700') : null;
+                var msgContent = msgText ? msgText.textContent.trim().substring(0, 200) : '';
+                var fbMsg = btn.parentElement.querySelector('.ai-fb-msg');
+                try {
+                    await window.apiFetch('/api/ai-assistant/feedback', {
+                        method: 'POST',
+                        body: { rating: 'positive', message_id: msgContent },
+                    });
+                    btn.classList.add('text-green-600');
+                    btn.disabled = true;
+                    if (fbMsg) { fbMsg.textContent = 'شكراً للتقييم'; fbMsg.classList.remove('hidden'); }
+                } catch (e) { /* ignore */ }
+            });
+        });
+        document.querySelectorAll('.ai-fb-down').forEach(btn => {
+            btn.addEventListener('click', async function() {
+                var msgEl = btn.closest('[data-msg-proposed]') || btn.closest('.flex');
+                var msgText = msgEl ? msgEl.querySelector('.text-sm.text-slate-700') : null;
+                var msgContent = msgText ? msgText.textContent.trim().substring(0, 200) : '';
+                var fbMsg = btn.parentElement.querySelector('.ai-fb-msg');
+                var reason = prompt('ليه مش مفيد؟ (اختياري)');
+                try {
+                    await window.apiFetch('/api/ai-assistant/feedback', {
+                        method: 'POST',
+                        body: { rating: 'negative', reason: reason || null, message_id: msgContent },
+                    });
+                    btn.classList.add('text-red-600');
+                    btn.disabled = true;
+                    if (fbMsg) { fbMsg.textContent = 'شكراً، سنتعلم من ملاحظتك'; fbMsg.classList.remove('hidden'); }
+                } catch (e) { /* ignore */ }
+            });
+        });
+
         // Scroll to bottom
         _scrollToBottom();
     }
@@ -644,6 +763,16 @@
                     </div>
                     <div class="ai-explain-box hidden mt-1.5 p-2 bg-slate-50 border border-slate-100 rounded-lg text-[10px] text-slate-500">
                         ${msg._explanation ? _renderExplanation(msg._explanation) : 'الشرح غير متاح لهذه الإجابة. الشرح متاح لاقتراحات الأسعار والتفاوض والتدقيق.'}
+                    </div>
+                    <div class="ai-feedback-row flex items-center gap-1 mt-1.5 text-[10px]">
+                        <span class="text-slate-300">التقييم:</span>
+                        <button class="ai-fb-up px-1.5 py-0.5 rounded hover:bg-green-50 text-slate-400 hover:text-green-600 transition-colors" title="مفيد">
+                            <i class="fa-solid fa-thumbs-up text-[10px]"></i>
+                        </button>
+                        <button class="ai-fb-down px-1.5 py-0.5 rounded hover:bg-red-50 text-slate-400 hover:text-red-600 transition-colors" title="غير مفيد">
+                            <i class="fa-solid fa-thumbs-down text-[10px]"></i>
+                        </button>
+                        <span class="ai-fb-msg text-[10px] text-slate-400 hidden"></span>
                     </div>
                 </div>
             </div>

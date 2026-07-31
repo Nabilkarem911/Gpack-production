@@ -3602,6 +3602,389 @@ const AI_FUNCTIONS = [
         }
     },
 
+    // ── 49. getDiscountDecision ──────────────────────────────────────────────
+    // Decision engine: evaluates discount requests and gives recommendation
+    {
+        type: 'function',
+        function: {
+            name: 'getDiscountDecision',
+            description: 'محرك القرارات: يقيم طلب خصم من عميل ويوصي بقبوله أو رفضه أو التفاوض. يحلل الهامش، تاريخ العميل، حجم التعامل، والحد الأدنى للربح. استخدمه عندما يقول المستخدم "العميل طلب خصم" أو "أعطيه كام خصم؟".',
+            parameters: {
+                type: 'object',
+                properties: {
+                    client_name: { type: 'string', description: 'اسم العميل' },
+                    order_total: { type: 'number', description: 'إجمالي الطلب قبل الخصم' },
+                    requested_discount_pct: { type: 'number', description: 'نسبة الخصم المطلوبة (مثال: 10 لـ 10%)' },
+                    cost_estimate: { type: 'number', description: 'تكلفة الطلب التقديرية — اختياري، سيحسب تلقائياً لو لم يحدد' }
+                },
+                required: ['client_name', 'order_total', 'requested_discount_pct']
+            }
+        },
+        async execute(args, user) {
+            const { client_name, order_total, requested_discount_pct, cost_estimate } = args;
+
+            // Find client
+            const clientRes = await db.query(
+                `SELECT id, name, credit_limit, status, parent_id FROM clients WHERE name ILIKE $1 AND status = 'active' LIMIT 1`,
+                [`%${client_name}%`]
+            );
+            if (clientRes.rows.length === 0) return { error: 'العميل غير موجود' };
+            const client = clientRes.rows[0];
+
+            // Get client's purchase history (last 12 months)
+            const historyRes = await db.query(
+                `SELECT COUNT(*) as order_count,
+                        COALESCE(SUM(grand_total), 0)::numeric as total_purchases,
+                        COALESCE(AVG(grand_total), 0)::numeric as avg_order_value
+                 FROM orders
+                 WHERE client_id = $1 AND status NOT IN ('cancelled', 'draft')
+                   AND created_at >= NOW() - INTERVAL '365 days'`,
+                [client.id]
+            );
+            const history = historyRes.rows[0];
+            const orderCount = parseInt(history.order_count || 0);
+            const totalPurchases = parseFloat(history.total_purchases || 0);
+            const avgOrder = parseFloat(history.avg_order_value || 0);
+
+            // Payment timeliness
+            const payTimeRes = await db.query(
+                `SELECT AVG(EXTRACT(DAY FROM ct.created_at - i.invoice_date))::numeric as avg_days_to_pay,
+                        COUNT(*) as payment_count
+                 FROM client_transactions ct
+                 JOIN invoices i ON i.id = ct.invoice_id
+                 WHERE ct.type = 'payment' AND i.client_id = $1
+                   AND ct.created_at >= NOW() - INTERVAL '180 days'`,
+                [client.id]
+            );
+            const avgDaysToPay = parseFloat(payTimeRes.rows[0].avg_days_to_pay || 0);
+            const paymentCount = parseInt(payTimeRes.rows[0].payment_count || 0);
+
+            // Calculate cost if not provided
+            let cost = cost_estimate;
+            if (cost === undefined || cost === null) {
+                // Estimate cost as 70% of order total (conservative estimate)
+                cost = order_total * 0.7;
+            }
+
+            // Calculate margins
+            const currentMargin = order_total > 0 ? ((order_total - cost) / order_total * 100) : 0;
+            const discountAmount = order_total * (requested_discount_pct / 100);
+            const discountedTotal = order_total - discountAmount;
+            const discountedMargin = discountedTotal > 0 ? ((discountedTotal - cost) / discountedTotal * 100) : 0;
+            const minAcceptableMargin = 15; // 15% minimum
+
+            // Decision logic
+            let decision = 'reject';
+            let recommendedDiscount = 0;
+            let reasons = [];
+
+            // Factor 1: Client value (tier)
+            let clientTier = 'regular';
+            if (totalPurchases >= 100000 && avgDaysToPay <= 30) {
+                clientTier = 'vip';
+                reasons.push(`عميل VIP: مشتريات ${Math.round(totalPurchases)} ر.س سنة، التزام دفع`);
+            } else if (totalPurchases >= 50000) {
+                clientTier = 'good';
+                reasons.push(`عميل جيد: مشتريات ${Math.round(totalPurchases)} ر.س سنة`);
+            } else if (orderCount === 0) {
+                clientTier = 'new';
+                reasons.push(`عميل جديد: لا يوجد تاريخ تعامل`);
+            } else {
+                reasons.push(`عميل منتظم: ${orderCount} طلب، ${Math.round(totalPurchases)} ر.س`);
+            }
+
+            // Factor 2: Margin analysis
+            reasons.push(`الهامش الحالي: ${Math.round(currentMargin)}%، بعد الخصم: ${Math.round(discountedMargin)}%`);
+
+            // Factor 3: Order size relative to average
+            if (order_total > avgOrder * 1.5 && avgOrder > 0) {
+                reasons.push(`طلب أكبر من المتوسط (${Math.round(avgOrder)} ر.س) — مرن في الخصم`);
+            }
+
+            // Decision matrix
+            if (discountedMargin >= minAcceptableMargin) {
+                // Margin still acceptable
+                if (clientTier === 'vip' && requested_discount_pct <= 15) {
+                    decision = 'approve';
+                    recommendedDiscount = requested_discount_pct;
+                    reasons.push(`العميل VIP والهامش بعد الخصم (${Math.round(discountedMargin)}%) فوق الحد الأدنى (${minAcceptableMargin}%) → موافقة`);
+                } else if (clientTier === 'good' && requested_discount_pct <= 10) {
+                    decision = 'approve';
+                    recommendedDiscount = requested_discount_pct;
+                    reasons.push(`العميل جيد والخصم معقول → موافقة`);
+                } else if (discountedMargin >= 20) {
+                    decision = 'approve';
+                    recommendedDiscount = requested_discount_pct;
+                    reasons.push(`الهامش بعد الخصم (${Math.round(discountedMargin)}%) مريح → موافقة`);
+                } else {
+                    // Counter-offer
+                    const maxDiscount = ((order_total - cost) / order_total - minAcceptableMargin / 100) * 100;
+                    recommendedDiscount = Math.max(0, Math.min(maxDiscount, requested_discount_pct));
+                    decision = 'negotiate';
+                    reasons.push(`الهامش بعد الخصم (${Math.round(discountedMargin)}%) قريب من الحد الأدنى → اقترح خصم ${Math.round(recommendedDiscount)}% بدلاً من ذلك`);
+                }
+            } else {
+                // Margin too low
+                const maxDiscount = ((order_total - cost) / order_total - minAcceptableMargin / 100) * 100;
+                if (maxDiscount > 0) {
+                    recommendedDiscount = Math.round(maxDiscount * 100) / 100;
+                    decision = 'negotiate';
+                    reasons.push(`الخصم المطلوب (${requested_discount_pct}%) يخفض الهامش لـ ${Math.round(discountedMargin)}% — تحت الحد الأدنى. أقصى خصم ممكن: ${recommendedDiscount}%`);
+                } else {
+                    decision = 'reject';
+                    recommendedDiscount = 0;
+                    reasons.push(`لا يمكن منح أي خصم — التكلفة (${Math.round(cost)} ر.س) قريبة من السعر (${order_total} ر.س)`);
+                }
+            }
+
+            return {
+                client_name: client.name,
+                client_tier: clientTier,
+                order_total: Math.round(order_total * 100) / 100,
+                cost: Math.round(cost * 100) / 100,
+                requested_discount_pct: requested_discount_pct,
+                recommended_discount_pct: recommendedDiscount,
+                current_margin_pct: Math.round(currentMargin * 100) / 100,
+                discounted_margin_pct: Math.round(discountedMargin * 100) / 100,
+                min_acceptable_margin_pct: minAcceptableMargin,
+                decision: decision,
+                recommendation: decision === 'approve'
+                    ? `وافق على خصم ${requested_discount_pct}%`
+                    : decision === 'negotiate'
+                    ? `تفاوض: اقترح خصم ${recommendedDiscount}% بدلاً من ${requested_discount_pct}%`
+                    : `ارفض — الهامش لا يسمح`,
+                reasons: reasons,
+                client_stats: {
+                    total_purchases_12m: Math.round(totalPurchases * 100) / 100,
+                    order_count_12m: orderCount,
+                    avg_order_value: Math.round(avgOrder * 100) / 100,
+                    avg_days_to_pay: Math.round(avgDaysToPay),
+                    payment_history_count: paymentCount,
+                },
+                _explanation: {
+                    why: `قرار الخصم للعميل ${client.name}: طلب ${requested_discount_pct}%، الهامش الحالي ${Math.round(currentMargin)}% → بعد الخصم ${Math.round(discountedMargin)}%. العميل ${clientTier}. القرار: ${decision}.`,
+                    confidence: orderCount >= 5 ? 85 : orderCount >= 2 ? 65 : 40,
+                    factors: [
+                        { factor: 'الهامش الحالي', value: Math.round(currentMargin) + '%', weight: 'high' },
+                        { factor: 'الهامش بعد الخصم', value: Math.round(discountedMargin) + '%', weight: 'high' },
+                        { factor: 'تصنيف العميل', value: clientTier, weight: 'high' },
+                        { factor: 'إجمالي مشتريات 12 شهر', value: Math.round(totalPurchases), weight: 'medium' },
+                        { factor: 'متوسط أيام الدفع', value: Math.round(avgDaysToPay), weight: paymentCount > 0 ? 'medium' : 'low' },
+                    ],
+                },
+            };
+        }
+    },
+
+    // ── 50. getRootCauseAnalysis ─────────────────────────────────────────────
+    // Root cause analysis: "why did sales drop?" etc.
+    {
+        type: 'function',
+        function: {
+            name: 'getRootCauseAnalysis',
+            description: 'تحليل سببي: يجيب على سؤال "ليه؟" — ليه المبيعات قلت؟ ليه الأرباح نزلت؟ يحلل الأسباب المحتملة ويربط الأحداث ببعض. استخدمه عندما يسأل المستخدم "ليه" أو "سبب" أو "تحليل سببي".',
+            parameters: {
+                type: 'object',
+                properties: {
+                    metric: { type: 'string', enum: ['sales', 'profit', 'collections', 'orders'], description: 'المؤشر المراد تحليله' },
+                    comparison: { type: 'string', enum: ['month', 'quarter'], description: 'فترة المقارنة (افتراضي month)' }
+                },
+                required: ['metric']
+            }
+        },
+        async execute(args, user) {
+            const { metric, comparison = 'month' } = args;
+
+            const interval = comparison === 'quarter' ? '90 days' : '30 days';
+            const label = comparison === 'quarter' ? 'ربع سنة' : 'شهر';
+
+            // Current period vs previous period
+            let currentRes, previousRes;
+            let metricLabel = '';
+
+            if (metric === 'sales') {
+                metricLabel = 'المبيعات';
+                currentRes = await db.query(
+                    `SELECT COALESCE(SUM(grand_total), 0)::numeric as value, COUNT(*) as count
+                     FROM orders WHERE status NOT IN ('cancelled', 'draft')
+                       AND created_at >= NOW() - INTERVAL '${interval}'`
+                );
+                previousRes = await db.query(
+                    `SELECT COALESCE(SUM(grand_total), 0)::numeric as value, COUNT(*) as count
+                     FROM orders WHERE status NOT IN ('cancelled', 'draft')
+                       AND created_at >= NOW() - INTERVAL '${parseInt(interval) * 2} days'
+                       AND created_at < NOW() - INTERVAL '${interval}'`
+                );
+            } else if (metric === 'profit') {
+                metricLabel = 'الأرباح';
+                currentRes = await db.query(
+                    `SELECT COALESCE(SUM(oi.line_total - oi.quantity * pv.cost_price), 0)::numeric as value, COUNT(*) as count
+                     FROM order_items oi
+                     JOIN orders o ON o.id = oi.order_id
+                     JOIN product_variants pv ON pv.id = oi.variant_id
+                     WHERE o.status NOT IN ('cancelled', 'draft', 'quote')
+                       AND o.created_at >= NOW() - INTERVAL '${interval}'`
+                );
+                previousRes = await db.query(
+                    `SELECT COALESCE(SUM(oi.line_total - oi.quantity * pv.cost_price), 0)::numeric as value, COUNT(*) as count
+                     FROM order_items oi
+                     JOIN orders o ON o.id = oi.order_id
+                     JOIN product_variants pv ON pv.id = oi.variant_id
+                     WHERE o.status NOT IN ('cancelled', 'draft', 'quote')
+                       AND o.created_at >= NOW() - INTERVAL '${parseInt(interval) * 2} days'
+                       AND o.created_at < NOW() - INTERVAL '${interval}'`
+                );
+            } else if (metric === 'collections') {
+                metricLabel = 'تحصيل الديون';
+                currentRes = await db.query(
+                    `SELECT COALESCE(SUM(amount), 0)::numeric as value, COUNT(*) as count
+                     FROM client_transactions WHERE type = 'payment'
+                       AND created_at >= NOW() - INTERVAL '${interval}'`
+                );
+                previousRes = await db.query(
+                    `SELECT COALESCE(SUM(amount), 0)::numeric as value, COUNT(*) as count
+                     FROM client_transactions WHERE type = 'payment'
+                       AND created_at >= NOW() - INTERVAL '${parseInt(interval) * 2} days'
+                       AND created_at < NOW() - INTERVAL '${interval}'`
+                );
+            } else {
+                metricLabel = 'عدد الطلبات';
+                currentRes = await db.query(
+                    `SELECT COALESCE(SUM(grand_total), 0)::numeric as value, COUNT(*) as count
+                     FROM orders WHERE status NOT IN ('cancelled', 'draft')
+                       AND created_at >= NOW() - INTERVAL '${interval}'`
+                );
+                previousRes = await db.query(
+                    `SELECT COALESCE(SUM(grand_total), 0)::numeric as value, COUNT(*) as count
+                     FROM orders WHERE status NOT IN ('cancelled', 'draft')
+                       AND created_at >= NOW() - INTERVAL '${parseInt(interval) * 2} days'
+                       AND created_at < NOW() - INTERVAL '${interval}'`
+                );
+            }
+
+            const currentValue = parseFloat(currentRes.rows[0].value || 0);
+            const previousValue = parseFloat(previousRes.rows[0].value || 0);
+            const currentCount = parseInt(currentRes.rows[0].count || 0);
+            const previousCount = parseInt(previousRes.rows[0].count || 0);
+            const changePct = previousValue > 0 ? ((currentValue - previousValue) / previousValue * 100) : 0;
+            const isDecrease = currentValue < previousValue;
+
+            // Find potential causes
+            const causes = [];
+
+            // Cause 1: Clients who stopped ordering
+            const inactiveClientsRes = await db.query(
+                `SELECT c.name, MAX(o.created_at) as last_order,
+                        COALESCE(SUM(o.grand_total), 0)::numeric as total_before
+                 FROM clients c
+                 JOIN orders o ON o.client_id = c.id AND o.status NOT IN ('cancelled', 'draft')
+                 WHERE c.status = 'active' AND c.parent_id IS NULL
+                   AND o.created_at < NOW() - INTERVAL '${interval}'
+                 GROUP BY c.name
+                 HAVING MAX(o.created_at) < NOW() - INTERVAL '${interval}'`
+            );
+            if (inactiveClientsRes.rows.length > 0 && isDecrease) {
+                causes.push({
+                    cause: 'عملاء توقفوا عن الطلب',
+                    severity: 'high',
+                    details: `${inactiveClientsRes.rows.length} عميل لم يطلب في ${label} الحالي`,
+                    clients: inactiveClientsRes.rows.slice(0, 5).map(r => ({
+                        name: r.name,
+                        last_order: r.last_order,
+                        previous_value: parseFloat(r.total_before || 0),
+                    })),
+                });
+            }
+
+            // Cause 2: Out-of-stock products
+            const stockoutRes = await db.query(
+                `SELECT p.name, pv.size_name, ws.quantity
+                 FROM warehouse_stock ws
+                 JOIN product_variants pv ON pv.id = ws.variant_id
+                 JOIN products p ON p.id = pv.product_id
+                 WHERE ws.quantity <= 0
+                 LIMIT 10`
+            );
+            if (stockoutRes.rows.length > 0 && isDecrease) {
+                causes.push({
+                    cause: 'منتجات نفدت من المخزون',
+                    severity: 'high',
+                    details: `${stockoutRes.rows.length} صنف غير متوفر — يمنع البيع`,
+                    products: stockoutRes.rows,
+                });
+            }
+
+            // Cause 3: Business events in the period
+            const eventsRes = await db.query(
+                `SELECT event_type, COUNT(*) as count
+                 FROM business_events
+                 WHERE created_at >= NOW() - INTERVAL '${interval}'
+                 GROUP BY event_type
+                 ORDER BY count DESC
+                 LIMIT 10`
+            );
+            if (eventsRes.rows.length > 0) {
+                causes.push({
+                    cause: 'أحداث في الفترة',
+                    severity: 'info',
+                    details: `${eventsRes.rows.length} أنواع أحداث في ${label} الحالي`,
+                    events: eventsRes.rows,
+                });
+            }
+
+            // Cause 4: Average order value change
+            const currentAvg = currentCount > 0 ? currentValue / currentCount : 0;
+            const previousAvg = previousCount > 0 ? previousValue / previousCount : 0;
+            const avgChangePct = previousAvg > 0 ? ((currentAvg - previousAvg) / previousAvg * 100) : 0;
+            if (Math.abs(avgChangePct) > 10) {
+                causes.push({
+                    cause: avgChangePct < 0 ? 'انخفاض متوسط قيمة الطلب' : 'ارتفاع متوسط قيمة الطلب',
+                    severity: 'medium',
+                    details: `متوسط الطلب: ${Math.round(currentAvg)} ر.س مقابل ${Math.round(previousAvg)} ر.س (${Math.round(avgChangePct)}%)`,
+                });
+            }
+
+            // Cause 5: Order count change
+            const countChangePct = previousCount > 0 ? ((currentCount - previousCount) / previousCount * 100) : 0;
+            if (Math.abs(countChangePct) > 10) {
+                causes.push({
+                    cause: countChangePct < 0 ? 'انخفاض عدد الطلبات' : 'ارتفاع عدد الطلبات',
+                    severity: 'medium',
+                    details: `${currentCount} طلب مقابل ${previousCount} طلب (${Math.round(countChangePct)}%)`,
+                });
+            }
+
+            return {
+                analysis_date: new Date().toISOString(),
+                metric: metricLabel,
+                comparison_period: label,
+                current_value: Math.round(currentValue * 100) / 100,
+                previous_value: Math.round(previousValue * 100) / 100,
+                change_pct: Math.round(changePct * 100) / 100,
+                direction: isDecrease ? 'decrease' : 'increase',
+                current_order_count: currentCount,
+                previous_order_count: previousCount,
+                current_avg_order: Math.round(currentAvg * 100) / 100,
+                previous_avg_order: Math.round(previousAvg * 100) / 100,
+                causes_found: causes.length,
+                causes,
+                conclusion: isDecrease
+                    ? `${metricLabel} انخفضت ${Math.abs(Math.round(changePct))}% مقارنة بـ${label} السابق. الأسباب المحتملة: ${causes.map(c => c.cause).join('، ') || 'غير محدد'}.`
+                    : `${metricLabel} ارتفعت ${Math.round(changePct)}% مقارنة بـ${label} السابق.`,
+                _explanation: {
+                    why: `تمت مقارنة ${metricLabel} في ${label} الحالي (${Math.round(currentValue)}) مع ${label} السابق (${Math.round(previousValue)}). التغير: ${Math.round(changePct)}%. تم تحديد ${causes.length} سبب محتمل.`,
+                    confidence: 75,
+                    factors: [
+                        { factor: 'القيمة الحالية', value: Math.round(currentValue), weight: 'high' },
+                        { factor: 'القيمة السابقة', value: Math.round(previousValue), weight: 'high' },
+                        { factor: 'نسبة التغير', value: Math.round(changePct) + '%', weight: 'high' },
+                        { factor: 'عدد الأسباب', value: causes.length, weight: 'medium' },
+                    ],
+                },
+            };
+        }
+    },
+
 ];
 
 // =============================================================================
