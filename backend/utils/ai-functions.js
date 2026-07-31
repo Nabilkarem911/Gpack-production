@@ -2466,6 +2466,423 @@ const AI_FUNCTIONS = [
         }
     },
 
+    // ── 41. getStockForecast ─────────────────────────────────────────────────
+    // Predicts stock depletion based on consumption rate from inventory_transactions
+    {
+        type: 'function',
+        function: {
+            name: 'getStockForecast',
+            description: 'تحليل تنبؤي للمخزون: يحسب معدل الاستهلاك اليومي من حركات المخزون آخر 90 يوم ويتنبأ متى سينفد المخزون. استخدمه عندما يسأل المستخدم عن المخزون أو يقول "هل نحتاج طلب شراء؟".',
+            parameters: {
+                type: 'object',
+                properties: {
+                    client_id: { type: 'string', description: 'معرف العميل (المستودع) — اختياري، لو لم يحدد سيتم تحليل كل المستودعات' },
+                    threshold_days: { type: 'integer', description: 'عدد الأيام الحرجة (افتراضي 14 يوم)' }
+                }
+            }
+        },
+        async execute(args, user) {
+            const { client_id, threshold_days = 14 } = args;
+
+            // Get current stock levels
+            let stockQuery, stockParams;
+            if (client_id) {
+                stockQuery = `
+                    SELECT ws.id, ws.client_id, ws.variant_id, ws.quantity,
+                           c.name AS client_name, p.name AS product_name,
+                           pv.size_name, pv.sku
+                    FROM warehouse_stock ws
+                    JOIN clients c ON c.id = ws.client_id
+                    JOIN product_variants pv ON pv.id = ws.variant_id
+                    JOIN products p ON p.id = pv.product_id
+                    WHERE ws.client_id = $1 AND ws.quantity > 0
+                `;
+                stockParams = [client_id];
+            } else {
+                stockQuery = `
+                    SELECT ws.id, ws.client_id, ws.variant_id, ws.quantity,
+                           c.name AS client_name, p.name AS product_name,
+                           pv.size_name, pv.sku
+                    FROM warehouse_stock ws
+                    JOIN clients c ON c.id = ws.client_id
+                    JOIN product_variants pv ON pv.id = ws.variant_id
+                    JOIN products p ON p.id = pv.product_id
+                    WHERE ws.quantity > 0
+                `;
+                stockParams = [];
+            }
+
+            const stockRes = await db.query(stockQuery, stockParams);
+            if (stockRes.rows.length === 0) return { error: 'لا يوجد مخزون متاح للتحليل' };
+
+            const results = [];
+            let criticalCount = 0;
+
+            for (const stock of stockRes.rows) {
+                // Calculate daily consumption rate from inventory_transactions (dispense) last 90 days
+                const consumptionRes = await db.query(
+                    `SELECT COALESCE(SUM(ABS(quantity)), 0)::numeric as total_consumed,
+                            COUNT(*) as transaction_count
+                     FROM inventory_transactions
+                     WHERE stock_id = $1
+                       AND type = 'dispense'
+                       AND created_at >= NOW() - INTERVAL '90 days'`,
+                    [stock.id]
+                );
+
+                const totalConsumed = parseFloat(consumptionRes.rows[0].total_consumed || 0);
+                const txnCount = parseInt(consumptionRes.rows[0].transaction_count || 0);
+
+                if (totalConsumed === 0) {
+                    // No consumption data — skip prediction
+                    results.push({
+                        client_name: stock.client_name,
+                        product_name: stock.product_name,
+                        size_name: stock.size_name,
+                        sku: stock.sku,
+                        current_stock: stock.quantity,
+                        daily_consumption: 0,
+                        days_remaining: null,
+                        status: 'no_data',
+                        recommendation: 'لا توجد بيانات استهلاك كافية للتنبؤ',
+                    });
+                    continue;
+                }
+
+                const dailyRate = totalConsumed / 90;
+                const daysRemaining = Math.floor(stock.quantity / dailyRate);
+                const status = daysRemaining < threshold_days ? 'critical' : daysRemaining < threshold_days * 2 ? 'warning' : 'ok';
+
+                if (status === 'critical') criticalCount++;
+
+                results.push({
+                    client_name: stock.client_name,
+                    product_name: stock.product_name,
+                    size_name: stock.size_name,
+                    sku: stock.sku,
+                    current_stock: stock.quantity,
+                    daily_consumption: Math.round(dailyRate * 100) / 100,
+                    days_remaining: daysRemaining,
+                    status: status,
+                    recommendation: status === 'critical'
+                        ? `تنبيه: المخزون سينفد خلال ${daysRemaining} يوم. يُنصح بطلب شراء فوري.`
+                        : status === 'warning'
+                        ? `تحذير: المخزون سينفد خلال ${daysRemaining} يوم. يُنصح بالبدء في طلب شراء.`
+                        : `المخزون كافٍ لـ ${daysRemaining} يوم.`,
+                    _explanation: {
+                        why: `استهلاك ${totalConsumed} وحدة في 90 يوم = ${Math.round(dailyRate * 100) / 100} وحدة/يوم. المخزون الحالي ${stock.quantity} = ${daysRemaining} يوم متبقية.`,
+                        confidence: txnCount >= 10 ? 85 : txnCount >= 5 ? 65 : 40,
+                        factors: [
+                            { factor: 'المخزون الحالي', value: stock.quantity, weight: 'high' },
+                            { factor: 'معدل الاستهلاك اليومي', value: Math.round(dailyRate * 100) / 100, weight: 'high' },
+                            { factor: 'بيانات الاستهلاك (90 يوم)', value: txnCount + ' حركة', weight: txnCount >= 10 ? 'high' : 'medium' },
+                        ],
+                    },
+                });
+            }
+
+            // Sort: critical first, then warning, then ok
+            results.sort((a, b) => {
+                const order = { critical: 0, warning: 1, ok: 2, no_data: 3 };
+                return (order[a.status] || 3) - (order[b.status] || 3);
+            });
+
+            return {
+                forecast_date: new Date().toISOString(),
+                threshold_days: threshold_days,
+                total_items: results.length,
+                critical_count: criticalCount,
+                items: results,
+            };
+        }
+    },
+
+    // ── 42. getCreditRiskAssessment ──────────────────────────────────────────
+    // Evaluates credit risk for a specific client or all clients
+    {
+        type: 'function',
+        function: {
+            name: 'getCreditRiskAssessment',
+            description: 'تقييم مخاطر الائتمان لعميل: يحلل سجل الدفعات، الرصيد المستحق، حد الائتمان، ويصنف العميل (آمن/احذر/ممنوع). استخدمه عندما يسأل المستخدم عن جدارة عميل أو يقول "هل أعطيه آجل؟".',
+            parameters: {
+                type: 'object',
+                properties: {
+                    client_name: { type: 'string', description: 'اسم العميل' },
+                    include_all: { type: 'boolean', description: 'لو true، يعرض تقييم كل العملاء (افتراضي false)' }
+                }
+            }
+        },
+        async execute(args, user) {
+            const { client_name, include_all = false } = args;
+
+            let clientFilter, clientParams;
+            if (!include_all && client_name) {
+                clientFilter = `AND c.name ILIKE $1`;
+                clientParams = [`%${client_name}%`];
+            } else {
+                clientFilter = '';
+                clientParams = [];
+            }
+
+            const clientsRes = await db.query(
+                `SELECT c.id, c.name, c.credit_limit, c.status,
+                        c.parent_id
+                 FROM clients c
+                 WHERE c.status = 'active' ${clientFilter}
+                 ORDER BY c.name
+                 LIMIT ${include_all ? '50' : '5'}`,
+                clientParams
+            );
+
+            if (clientsRes.rows.length === 0) return { error: 'لم يتم العثور على العميل' };
+
+            const results = [];
+
+            for (const client of clientsRes.rows) {
+                // Outstanding balance: total invoices - total payments
+                const balanceRes = await db.query(
+                    `SELECT
+                        COALESCE(SUM(i.grand_total), 0)::numeric as total_invoiced,
+                        COALESCE(SUM(COALESCE(ct.paid, 0)), 0)::numeric as total_paid
+                     FROM invoices i
+                     LEFT JOIN (
+                         SELECT invoice_id, SUM(amount) as paid
+                         FROM client_transactions
+                         WHERE type = 'payment' AND invoice_id IS NOT NULL
+                         GROUP BY invoice_id
+                     ) ct ON ct.invoice_id = i.id
+                     WHERE i.client_id = $1 AND i.status != 'cancelled'`,
+                    [client.id]
+                );
+
+                const totalInvoiced = parseFloat(balanceRes.rows[0].total_invoiced || 0);
+                const totalPaid = parseFloat(balanceRes.rows[0].total_paid || 0);
+                const outstanding = totalInvoiced - totalPaid;
+
+                // Overdue invoices count
+                const overdueRes = await db.query(
+                    `SELECT COUNT(*) as overdue_count,
+                            COALESCE(SUM(i.grand_total - COALESCE(ct.paid, 0)), 0)::numeric as overdue_amount
+                     FROM invoices i
+                     LEFT JOIN (
+                         SELECT invoice_id, SUM(amount) as paid
+                         FROM client_transactions
+                         WHERE type = 'payment' AND invoice_id IS NOT NULL
+                         GROUP BY invoice_id
+                     ) ct ON ct.invoice_id = i.id
+                     WHERE i.client_id = $1 AND i.status = 'issued'
+                       AND i.due_date < NOW()
+                       AND (i.grand_total - COALESCE(ct.paid, 0)) > 0`,
+                    [client.id]
+                );
+
+                const overdueCount = parseInt(overdueRes.rows[0].overdue_count || 0);
+                const overdueAmount = parseFloat(overdueRes.rows[0].overdue_amount || 0);
+
+                // Payment timeliness: average days to pay
+                const payTimeRes = await db.query(
+                    `SELECT AVG(EXTRACT(DAY FROM ct.created_at - i.invoice_date))::numeric as avg_days_to_pay,
+                            COUNT(*) as payment_count
+                     FROM client_transactions ct
+                     JOIN invoices i ON i.id = ct.invoice_id
+                     WHERE ct.type = 'payment' AND i.client_id = $1
+                       AND ct.created_at >= NOW() - INTERVAL '180 days'`,
+                    [client.id]
+                );
+
+                const avgDaysToPay = parseFloat(payTimeRes.rows[0].avg_days_to_pay || 0);
+                const paymentCount = parseInt(payTimeRes.rows[0].payment_count || 0);
+
+                // Credit limit utilization
+                const creditLimit = parseFloat(client.credit_limit || 0);
+                const utilizationPct = creditLimit > 0 ? (outstanding / creditLimit * 100) : 0;
+
+                // Risk scoring
+                let riskScore = 0;
+                let riskLevel = 'safe';
+                let riskReasons = [];
+
+                if (creditLimit > 0 && utilizationPct > 90) {
+                    riskScore += 30;
+                    riskReasons.push(`استخدام حد الائتمان ${Math.round(utilizationPct)}%`);
+                } else if (creditLimit > 0 && utilizationPct > 70) {
+                    riskScore += 15;
+                    riskReasons.push(`استخدام حد الائتمان ${Math.round(utilizationPct)}%`);
+                }
+
+                if (overdueCount > 0) {
+                    riskScore += overdueCount * 10;
+                    riskReasons.push(`${overdueCount} فاتورة متأخرة بقيمة ${Math.round(overdueAmount)} ر.س`);
+                }
+
+                if (avgDaysToPay > 45 && paymentCount > 0) {
+                    riskScore += 20;
+                    riskReasons.push(`متوسط تأخر الدفع ${Math.round(avgDaysToPay)} يوم`);
+                } else if (avgDaysToPay > 30 && paymentCount > 0) {
+                    riskScore += 10;
+                    riskReasons.push(`متوسط تأخر الدفع ${Math.round(avgDaysToPay)} يوم`);
+                }
+
+                if (riskScore >= 40) {
+                    riskLevel = 'blocked';
+                } else if (riskScore >= 20) {
+                    riskLevel = 'caution';
+                }
+
+                results.push({
+                    client_name: client.name,
+                    credit_limit: creditLimit,
+                    total_invoiced: Math.round(totalInvoiced * 100) / 100,
+                    total_paid: Math.round(totalPaid * 100) / 100,
+                    outstanding: Math.round(outstanding * 100) / 100,
+                    credit_utilization_pct: Math.round(utilizationPct * 100) / 100,
+                    overdue_invoices: overdueCount,
+                    overdue_amount: Math.round(overdueAmount * 100) / 100,
+                    avg_days_to_pay: Math.round(avgDaysToPay),
+                    payment_history_count: paymentCount,
+                    risk_level: riskLevel,
+                    risk_score: riskScore,
+                    risk_reasons: riskReasons,
+                    recommendation: riskLevel === 'blocked'
+                        ? 'ممنوع منح آجل — مخاطر ائتمانية عالية'
+                        : riskLevel === 'caution'
+                        ? 'احذر — يُنصح بطلب دفعة مقدمة أو تقليل حد الائتمان'
+                        : 'آمن — يمكن منح آجل ضمن حد الائتمان',
+                    _explanation: {
+                        why: `تقييم العميل ${client.name}: مستحق ${Math.round(outstanding)} ر.س من حد ائتمان ${creditLimit} ر.س (${Math.round(utilizationPct)}%). ${overdueCount} فاتورة متأخرة. متوسط الدفع ${Math.round(avgDaysToPay)} يوم. النتيجة: ${riskLevel}.`,
+                        confidence: paymentCount >= 5 ? 85 : paymentCount >= 2 ? 60 : 35,
+                        factors: [
+                            { factor: 'المستحق', value: Math.round(outstanding), weight: 'high' },
+                            { factor: 'حد الائتمان', value: creditLimit, weight: 'high' },
+                            { factor: 'نسبة الاستخدام', value: Math.round(utilizationPct) + '%', weight: 'high' },
+                            { factor: 'فواتير متأخرة', value: overdueCount, weight: overdueCount > 0 ? 'high' : 'low' },
+                            { factor: 'متوسط أيام الدفع', value: Math.round(avgDaysToPay), weight: paymentCount > 0 ? 'medium' : 'low' },
+                        ],
+                    },
+                });
+            }
+
+            return {
+                assessment_date: new Date().toISOString(),
+                clients_assessed: results.length,
+                results,
+            };
+        }
+    },
+
+    // ── 43. getClientSegmentation ────────────────────────────────────────────
+    // Classifies clients into VIP, regular, at_risk, credit_risk
+    {
+        type: 'function',
+        function: {
+            name: 'getClientSegmentation',
+            description: 'تصنيف العملاء تلقائياً: VIP (مشتريات عالية + التزام دفع)، منتظم، معرض للضياع (ما طلبش من 30+ يوم)، مخاطر ائتمانية. استخدمه عندما يقول المستخدم "صنف لي العملاء" أو "مين أهم العملاء؟".',
+            parameters: {
+                type: 'object',
+                properties: {}
+            }
+        },
+        async execute(args, user) {
+            // Get all active clients with their purchase stats
+            const clientsRes = await db.query(
+                `SELECT c.id, c.name, c.status, c.parent_id,
+                        COALESCE(SUM(o.grand_total), 0)::numeric as total_purchases,
+                        COUNT(o.id) as order_count,
+                        MAX(o.created_at) as last_order_date
+                 FROM clients c
+                 LEFT JOIN orders o ON o.client_id = c.id AND o.status NOT IN ('cancelled', 'draft')
+                 WHERE c.status = 'active' AND c.parent_id IS NULL
+                 GROUP BY c.id, c.name, c.status, c.parent_id
+                 ORDER BY total_purchases DESC`
+            );
+
+            if (clientsRes.rows.length === 0) return { error: 'لا يوجد عملاء' };
+
+            const segments = {
+                vip: [],
+                regular: [],
+                at_risk: [],
+                credit_risk: [],
+            };
+
+            for (const client of clientsRes.rows) {
+                const totalPurchases = parseFloat(client.total_purchases || 0);
+                const orderCount = parseInt(client.order_count || 0);
+                const lastOrderDate = client.last_order_date ? new Date(client.last_order_date) : null;
+                const daysSinceLastOrder = lastOrderDate ? Math.floor((Date.now() - lastOrderDate.getTime()) / (1000 * 60 * 60 * 24)) : null;
+
+                // Check credit risk: overdue invoices
+                const overdueRes = await db.query(
+                    `SELECT COUNT(*) as overdue_count
+                     FROM invoices i
+                     LEFT JOIN (
+                         SELECT invoice_id, SUM(amount) as paid
+                         FROM client_transactions
+                         WHERE type = 'payment' AND invoice_id IS NOT NULL
+                         GROUP BY invoice_id
+                     ) ct ON ct.invoice_id = i.id
+                     WHERE i.client_id = $1 AND i.status = 'issued'
+                       AND i.due_date < NOW() - INTERVAL '60 days'
+                       AND (i.grand_total - COALESCE(ct.paid, 0)) > 0`,
+                    [client.id]
+                );
+                const overdueCount = parseInt(overdueRes.rows[0].overdue_count || 0);
+
+                // Payment timeliness
+                const payTimeRes = await db.query(
+                    `SELECT AVG(EXTRACT(DAY FROM ct.created_at - i.invoice_date))::numeric as avg_days_to_pay
+                     FROM client_transactions ct
+                     JOIN invoices i ON i.id = ct.invoice_id
+                     WHERE ct.type = 'payment' AND i.client_id = $1
+                       AND ct.created_at >= NOW() - INTERVAL '180 days'`,
+                    [client.id]
+                );
+                const avgDaysToPay = parseFloat(payTimeRes.rows[0].avg_days_to_pay || 0);
+
+                let segment = 'regular';
+                let reasons = [];
+
+                // VIP: > 100k purchases + good payment behavior
+                if (totalPurchases >= 100000 && avgDaysToPay <= 30 && overdueCount === 0) {
+                    segment = 'vip';
+                    reasons.push('مشتريات عالية (100k+)');
+                    reasons.push('التزام في الدفع');
+                } else if (overdueCount > 0) {
+                    segment = 'credit_risk';
+                    reasons.push(`${overdueCount} فاتورة متأخرة أكثر من 60 يوم`);
+                } else if (daysSinceLastOrder !== null && daysSinceLastOrder > 30) {
+                    segment = 'at_risk';
+                    reasons.push(`لم يطلب منذ ${daysSinceLastOrder} يوم`);
+                } else {
+                    reasons.push('نشاط منتظم');
+                }
+
+                segments[segment].push({
+                    client_name: client.name,
+                    total_purchases: Math.round(totalPurchases * 100) / 100,
+                    order_count: orderCount,
+                    last_order_date: client.last_order_date,
+                    days_since_last_order: daysSinceLastOrder,
+                    avg_days_to_pay: Math.round(avgDaysToPay) || null,
+                    overdue_invoices: overdueCount,
+                    reasons: reasons,
+                });
+            }
+
+            return {
+                segmentation_date: new Date().toISOString(),
+                total_clients: clientsRes.rows.length,
+                summary: {
+                    vip: segments.vip.length,
+                    regular: segments.regular.length,
+                    at_risk: segments.at_risk.length,
+                    credit_risk: segments.credit_risk.length,
+                },
+                segments,
+            };
+        }
+    },
+
 ];
 
 // =============================================================================

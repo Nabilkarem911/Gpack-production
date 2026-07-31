@@ -137,6 +137,9 @@ const SYSTEM_PROMPT = `أنت المساعد الذكي والذراع الأي�
 - عندما يطلب المستخدم "إيه الأخبار" أو "فيه حاجة محتاجة انتباه"، استخدم getProactiveAlerts لعرض التنبيهات الاستباقية.
 - عندما يطلب المستخدم "إيه اللي حصل النهاردة؟" أو "آخر الأحداث" أو "وريني السجل"، استخدم getCompanyTimeline لعرض آخر الأحداث في الشركة مرتبة زمنياً.
 - عندما يطلب المستخدم "فحص الشركة" أو "فيه مشاكل؟" أو "تدقيق"، استخدم getAuditReport لفحص الأخطاء: فواتير ناقصة، بيع بخسارة، عملاء خاملون، مخزون سالب، بيانات مكررة، مهام متأخرة، فواتير متأخرة. اعرض كل مشكلة مع التفاصيل والاقتراح.
+- عندما يسأل المستخدم عن المخزون أو يقول "هل نحتاج طلب شراء؟" أو "المخزون ناقص؟"، استخدم getStockForecast للتنبؤ بمتى سينفد المخزون بناءً على معدل الاستهلاك. اعرض الأصناف الحرجة أولاً مع عدد الأيام المتبقية.
+- عندما يسأل المستخدم عن جدارة عميل أو يقول "هل أعطيه آجل؟" أو "وضعه المالي؟"، استخدم getCreditRiskAssessment لتقييم المخاطر: المستحق، حد الائتمان، فواتير متأخرة، متوسط الدفع. اعرض التصنيف (آمن/احذر/ممنوع) مع الأسباب.
+- عندما يقول المستخدم "صنف لي العملاء" أو "مين أهم العملاء؟" أو "تصنيف العملاء"، استخدم getClientSegmentation لتصنيفهم: VIP، منتظم، معرض للضياع، مخاطر ائتمانية. اعرض ملخص الأرقام ثم تفاصيل كل فئة.
 - اعرض التحليل بوضوح: التكلفة، السعر المقترح، الهامش، وسبب الاقتراح. كن مستشاراً ذكياً مش مجرد ناقل بيانات.`;
 
 // =============================================================================
@@ -393,6 +396,69 @@ router.post('/propose-action', async (req, res) => {
     } catch (err) {
         console.error('[AI Assistant] Propose-action error:', err.message);
         res.status(500).json({ error: 'فشل في تجهيز الإجراء: ' + err.message });
+    }
+});
+
+// =============================================================================
+// POST /api/ai-assistant/update-proposal
+// Phase 1.1: Update a proposed action's fields before execution.
+// Body: { action_id: uuid, updated_proposal: object }
+// =============================================================================
+router.post('/update-proposal', async (req, res) => {
+    try {
+        const { action_id, updated_proposal } = req.body;
+
+        if (!action_id) {
+            return res.status(400).json({ error: 'معرف الإجراء مطلوب' });
+        }
+
+        if (!updated_proposal || typeof updated_proposal !== 'object') {
+            return res.status(400).json({ error: 'بيانات التحديث مطلوبة' });
+        }
+
+        // Fetch the action log entry
+        const logRes = await db.query(
+            `SELECT id, user_id, status, proposal FROM ai_action_log
+             WHERE id = $1 AND user_id = $2 AND status = 'proposed'
+             LIMIT 1`,
+            [action_id, req.user.id]
+        );
+
+        if (logRes.rows.length === 0) {
+            return res.status(404).json({ error: 'الإجراء غير موجود أو لا يمكن تعديله' });
+        }
+
+        const existing = logRes.rows[0].proposal;
+        // Merge: updated_proposal overrides existing fields
+        const merged = { ...existing, ...updated_proposal };
+
+        // Recalculate totals if items were changed
+        if (merged.items && Array.isArray(merged.items)) {
+            let subtotal = 0;
+            for (const item of merged.items) {
+                const qty = parseFloat(item.quantity) || 0;
+                const price = parseFloat(item.unit_price) || 0;
+                item.line_total = Math.round(qty * price * 100) / 100;
+                subtotal += item.line_total;
+            }
+            merged.subtotal = Math.round(subtotal * 100) / 100;
+            if (merged.tax_rate !== undefined) {
+                const taxRate = parseFloat(merged.tax_rate) || 0;
+                merged.tax_amount = Math.round(subtotal * taxRate / 100 * 100) / 100;
+            }
+            merged.grand_total = Math.round((subtotal + (merged.tax_amount || 0) + (merged.additional_expenses || 0) - (merged.discount_amount || 0)) * 100) / 100;
+        }
+
+        // Update the proposal in DB
+        await db.query(
+            `UPDATE ai_action_log SET proposal = $1::jsonb, updated_at = NOW() WHERE id = $2`,
+            [JSON.stringify(merged), action_id]
+        );
+
+        res.json({ success: true, proposal: merged });
+    } catch (err) {
+        console.error('[AI Assistant] Update-proposal error:', err.message);
+        res.status(500).json({ error: 'فشل في تحديث الإجراء: ' + err.message });
     }
 });
 

@@ -643,19 +643,26 @@
             if (s.action_type === 'create_quote' || s.action_type === 'create_production_order') {
                 summaryHtml = '<div class="space-y-1">';
                 summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">العميل:</span><span class="font-semibold text-slate-700">' + _esc(s.client_name) + '</span></div>';
-                s.items.forEach(function(item) {
-                    summaryHtml += '<div class="flex justify-between"><span class="text-slate-400">' + _esc(item.product_name) + (item.size_name ? ' (' + _esc(item.size_name) + ')' : '') + '</span><span class="text-slate-600">' + item.quantity + ' ' + (item.sku || '') + '</span></div>';
+                s.items.forEach(function(item, idx) {
+                    summaryHtml += '<div class="border border-amber-200 rounded-lg p-1.5 bg-amber-50/50">';
+                    summaryHtml += '<div class="text-slate-600 text-[11px] mb-1">' + _esc(item.product_name) + (item.size_name ? ' (' + _esc(item.size_name) + ')' : '') + '</div>';
+                    summaryHtml += '<div class="flex gap-1 items-center">';
+                    summaryHtml += '<input type="number" min="1" value="' + item.quantity + '" data-edit="item_qty_' + idx + '" class="w-12 text-[11px] text-center border border-slate-200 rounded px-1 py-0.5 focus:border-brand-400 focus:outline-none" title="الكمية">';
+                    summaryHtml += '<span class="text-[10px] text-slate-400">×</span>';
+                    summaryHtml += '<input type="number" min="0" step="0.01" value="' + parseFloat(item.unit_price || 0).toFixed(2) + '" data-edit="item_price_' + idx + '" class="w-16 text-[11px] text-center border border-slate-200 rounded px-1 py-0.5 focus:border-brand-400 focus:outline-none" title="السعر">';
+                    summaryHtml += '<span class="text-[10px] text-slate-500 flex-1 text-left" data-edit="item_total_' + idx + '">' + parseFloat(item.line_total || 0).toFixed(2) + '</span>';
+                    summaryHtml += '</div></div>';
                 });
                 if (s.subtotal !== undefined) {
-                    summaryHtml += '<div class="flex justify-between pt-1 border-t border-amber-200"><span class="text-slate-500">الإجمالي:</span><span class="font-bold text-amber-700">' + parseFloat(s.grand_total).toLocaleString('ar-SA', {maximumFractionDigits: 2}) + ' ر.س</span></div>';
+                    summaryHtml += '<div class="flex justify-between pt-1 border-t border-amber-200"><span class="text-slate-500">الإجمالي:</span><span class="font-bold text-amber-700" data-edit="grand_total">' + parseFloat(s.grand_total).toLocaleString('ar-SA', {maximumFractionDigits: 2}) + ' ر.س</span></div>';
                 }
                 summaryHtml += '</div>';
             } else if (s.action_type === 'add_payment') {
                 summaryHtml = '<div class="space-y-1">';
                 summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">طلب رقم:</span><span class="font-semibold text-slate-700">' + s.order_number + '</span></div>';
                 summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">العميل:</span><span class="text-slate-600">' + _esc(s.client_name) + '</span></div>';
-                summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">المبلغ:</span><span class="font-bold text-amber-700">' + parseFloat(s.amount).toLocaleString('ar-SA', {maximumFractionDigits: 2}) + ' ر.س</span></div>';
-                summaryHtml += '<div class="flex justify-between"><span class="text-slate-400">المتبقي بعد الدفعة:</span><span class="text-slate-600">' + parseFloat(s.remaining_after).toLocaleString('ar-SA', {maximumFractionDigits: 2}) + ' ر.س</span></div>';
+                summaryHtml += '<div class="flex justify-between items-center"><span class="text-slate-500">المبلغ:</span><input type="number" min="0" step="0.01" value="' + parseFloat(s.amount).toFixed(2) + '" data-edit="payment_amount" class="w-24 text-[11px] text-center font-bold text-amber-700 border border-slate-200 rounded px-1 py-0.5 focus:border-brand-400 focus:outline-none"></div>';
+                summaryHtml += '<div class="flex justify-between"><span class="text-slate-400">المتبقي بعد الدفعة:</span><span class="text-slate-600" data-edit="remaining_after">' + parseFloat(s.remaining_after).toLocaleString('ar-SA', {maximumFractionDigits: 2}) + ' ر.س</span></div>';
                 summaryHtml += '</div>';
             } else if (s.action_type === 'convert_quote_to_invoice') {
                 summaryHtml = '<div class="space-y-1">';
@@ -695,13 +702,12 @@
                 } else {
                     summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">النوع:</span><span class="font-semibold text-slate-600">عميل أساسي</span></div>';
                 }
-                if (s.contact_person) summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">مسؤول التواصل:</span><span class="text-slate-600">' + _esc(s.contact_person) + '</span></div>';
-                if (s.phone) summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">الهاتف:</span><span class="text-slate-600">' + _esc(s.phone) + '</span></div>';
-                if (s.city) summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">المدينة:</span><span class="text-slate-600">' + _esc(s.city) + '</span></div>';
-                if (s.email) summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">البريد:</span><span class="text-slate-600">' + _esc(s.email) + '</span></div>';
-                if (s.address) summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">العنوان:</span><span class="text-slate-600">' + _esc(s.address) + '</span></div>';
-                if (s.tax_id) summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">الرقم الضريبي:</span><span class="text-slate-600">' + _esc(s.tax_id) + '</span></div>';
-                if (s.credit_limit && parseFloat(s.credit_limit) > 0) summaryHtml += '<div class="flex justify-between"><span class="text-slate-500">حد الائتمان:</span><span class="text-slate-600">' + parseFloat(s.credit_limit).toLocaleString('ar-SA') + ' ر.س</span></div>';
+                summaryHtml += '<div class="flex justify-between items-center"><span class="text-slate-500">مسؤول التواصل:</span><input type="text" value="' + _esc(s.contact_person || '') + '" data-edit="contact_person" class="w-28 text-[11px] text-center border border-slate-200 rounded px-1 py-0.5 focus:border-brand-400 focus:outline-none"></div>';
+                summaryHtml += '<div class="flex justify-between items-center"><span class="text-slate-500">الهاتف:</span><input type="text" value="' + _esc(s.phone || '') + '" data-edit="phone" class="w-28 text-[11px] text-center border border-slate-200 rounded px-1 py-0.5 focus:border-brand-400 focus:outline-none"></div>';
+                summaryHtml += '<div class="flex justify-between items-center"><span class="text-slate-500">المدينة:</span><input type="text" value="' + _esc(s.city || '') + '" data-edit="city" class="w-28 text-[11px] text-center border border-slate-200 rounded px-1 py-0.5 focus:border-brand-400 focus:outline-none"></div>';
+                summaryHtml += '<div class="flex justify-between items-center"><span class="text-slate-500">البريد:</span><input type="email" value="' + _esc(s.email || '') + '" data-edit="email" class="w-28 text-[11px] text-center border border-slate-200 rounded px-1 py-0.5 focus:border-brand-400 focus:outline-none"></div>';
+                summaryHtml += '<div class="flex justify-between items-center"><span class="text-slate-500">العنوان:</span><input type="text" value="' + _esc(s.address || '') + '" data-edit="address" class="w-28 text-[11px] text-center border border-slate-200 rounded px-1 py-0.5 focus:border-brand-400 focus:outline-none"></div>';
+                summaryHtml += '<div class="flex justify-between items-center"><span class="text-slate-500">حد الائتمان:</span><input type="number" min="0" step="0.01" value="' + parseFloat(s.credit_limit || 0).toFixed(2) + '" data-edit="credit_limit" class="w-24 text-[11px] text-center border border-slate-200 rounded px-1 py-0.5 focus:border-brand-400 focus:outline-none"></div>';
                 summaryHtml += '</div>';
             } else if (s.action_type === 'update_order_status') {
                 summaryHtml = '<div class="space-y-1">';
@@ -722,6 +728,35 @@
 
             if (detailsEl) detailsEl.innerHTML = summaryHtml;
 
+            // ── Live update: recalculate item totals on input change ──────────
+            if (card) {
+                var inputs = card.querySelectorAll('input[data-edit^="item_qty_"], input[data-edit^="item_price_"]');
+                inputs.forEach(function(inp) {
+                    inp.addEventListener('input', function() {
+                        var editKey = inp.getAttribute('data-edit');
+                        var match = editKey.match(/item_(qty|price)_(\d+)/);
+                        if (!match) return;
+                        var idx = parseInt(match[2]);
+                        var qtyEl = card.querySelector('[data-edit="item_qty_' + idx + '"]');
+                        var priceEl = card.querySelector('[data-edit="item_price_' + idx + '"]');
+                        var totalEl = card.querySelector('[data-edit="item_total_' + idx + '"]');
+                        var grandEl = card.querySelector('[data-edit="grand_total"]');
+                        if (qtyEl && priceEl && totalEl) {
+                            var lineTotal = (parseFloat(qtyEl.value) || 0) * (parseFloat(priceEl.value) || 0);
+                            totalEl.textContent = lineTotal.toFixed(2);
+                            // Recalculate grand total
+                            if (grandEl) {
+                                var grand = 0;
+                                card.querySelectorAll('[data-edit^="item_total_"]').forEach(function(tEl) {
+                                    grand += parseFloat(tEl.textContent) || 0;
+                                });
+                                grandEl.textContent = grand.toLocaleString('ar-SA', {maximumFractionDigits: 2}) + ' ر.س';
+                            }
+                        }
+                    });
+                });
+            }
+
             // Step 4: Change button to "confirm execute"
             if (btnEl) {
                 btnEl.innerHTML = '<i class="fa-solid fa-check ml-1 text-[10px]"></i>تأكيد التنفيذ';
@@ -735,6 +770,44 @@
                     btnEl.disabled = true;
                     btnEl.innerHTML = '<i class="fa-solid fa-spinner fa-spin ml-1 text-[10px]"></i>جاري التنفيذ...';
                     try {
+                        // ── Collect edited fields and send update-proposal first ──
+                        var updatedProposal = {};
+                        if (card) {
+                            // Item quantities and prices (create_quote / create_production_order)
+                            if (s.items && Array.isArray(s.items)) {
+                                var updatedItems = s.items.map(function(item, idx) {
+                                    var qtyEl = card.querySelector('[data-edit="item_qty_' + idx + '"]');
+                                    var priceEl = card.querySelector('[data-edit="item_price_' + idx + '"]');
+                                    return {
+                                        variant_id: item.variant_id,
+                                        product_name: item.product_name,
+                                        size_name: item.size_name,
+                                        sku: item.sku,
+                                        quantity: qtyEl ? parseFloat(qtyEl.value) || 0 : item.quantity,
+                                        unit_price: priceEl ? parseFloat(priceEl.value) || 0 : item.unit_price,
+                                    };
+                                });
+                                updatedProposal.items = updatedItems;
+                            }
+                            // Payment amount (add_payment)
+                            var payAmtEl = card.querySelector('[data-edit="payment_amount"]');
+                            if (payAmtEl) updatedProposal.amount = parseFloat(payAmtEl.value) || 0;
+                            // Client fields (create_client)
+                            var clientFields = ['contact_person', 'phone', 'city', 'email', 'address', 'credit_limit'];
+                            clientFields.forEach(function(field) {
+                                var el = card.querySelector('[data-edit="' + field + '"]');
+                                if (el) updatedProposal[field] = el.value;
+                            });
+                        }
+
+                        // Send update if there are changes
+                        if (Object.keys(updatedProposal).length > 0) {
+                            await window.apiFetch('/api/ai-assistant/update-proposal', {
+                                method: 'POST',
+                                body: { action_id: proposeRes.action_id, updated_proposal: updatedProposal },
+                            });
+                        }
+
                         var execRes = await window.apiFetch('/api/ai-assistant/execute-action', {
                             method: 'POST',
                             body: { action_id: proposeRes.action_id },
