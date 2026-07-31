@@ -1637,7 +1637,7 @@ const AI_FUNCTIONS = [
             );
             const outstandingRes = await db.query(
                 `SELECT
-                    (SELECT COALESCE(SUM(grand_total - paid_amount), 0)::numeric FROM invoices WHERE status != 'cancelled') as receivable,
+                    (SELECT COALESCE(SUM(i.grand_total - COALESCE((SELECT SUM(ct.amount) FROM client_transactions ct WHERE ct.invoice_id = i.id AND ct.type = 'payment'), 0)), 0)::numeric FROM invoices i WHERE i.status != 'cancelled') as receivable,
                     (SELECT COALESCE(SUM(grand_total - paid_amount), 0)::numeric FROM purchase_invoices WHERE status != 'cancelled') as payable`
             );
 
@@ -1674,7 +1674,7 @@ const AI_FUNCTIONS = [
             const { status, limit = 20 } = args;
             let query, params;
             if (status) {
-                query = `SELECT mo.id, mo.mo_number, mo.status, mo.created_at, mo.completed_at,
+                query = `SELECT mo.id, mo.mo_number, mo.status, mo.created_at, mo.updated_at,
                                 o.order_number, c.name as client_name,
                                 COUNT(moi.id) as item_count
                          FROM manufacturer_orders mo
@@ -1686,7 +1686,7 @@ const AI_FUNCTIONS = [
                          ORDER BY mo.created_at DESC LIMIT $2`;
                 params = [status, parseInt(limit) || 20];
             } else {
-                query = `SELECT mo.id, mo.mo_number, mo.status, mo.created_at, mo.completed_at,
+                query = `SELECT mo.id, mo.mo_number, mo.status, mo.created_at, mo.updated_at,
                                 o.order_number, c.name as client_name,
                                 COUNT(moi.id) as item_count
                          FROM manufacturer_orders mo
@@ -2232,15 +2232,16 @@ const AI_FUNCTIONS = [
                 });
             }
 
-            // 4. Outstanding payments
+            // 4. Outstanding payments (paid_amount is not on invoices table — use client_transactions)
             const outstandingRes = await db.query(
                 `SELECT i.invoice_number, c.name as client_name,
-                        i.grand_total, i.paid_amount,
-                        (i.grand_total - i.paid_amount) as remaining,
+                        i.grand_total,
+                        COALESCE((SELECT SUM(ct.amount) FROM client_transactions ct WHERE ct.invoice_id = i.id AND ct.type = 'payment'), 0)::numeric as paid_amount,
+                        (i.grand_total - COALESCE((SELECT SUM(ct.amount) FROM client_transactions ct WHERE ct.invoice_id = i.id AND ct.type = 'payment'), 0))::numeric as remaining,
                         i.invoice_date
                  FROM invoices i
                  JOIN clients c ON c.id = i.client_id
-                 WHERE (i.grand_total - i.paid_amount) > 0 AND i.status != 'cancelled'
+                 WHERE i.status NOT IN ('cancelled', 'paid')
                  ORDER BY i.invoice_date ASC
                  LIMIT 5`
             );
@@ -2325,8 +2326,9 @@ const AI_FUNCTIONS = [
 
             // 1. Orders without invoices (quotes converted to production but no invoice)
             const noInvoiceRes = await db.query(
-                `SELECT o.id, o.order_number, o.client_name, o.grand_total, o.created_at
+                `SELECT o.id, o.order_number, c.name as client_name, o.grand_total, o.created_at
                  FROM orders o
+                 JOIN clients c ON c.id = o.client_id
                  LEFT JOIN invoices i ON i.order_id = o.id
                  WHERE o.status IN ('production', 'processing', 'completed')
                    AND i.id IS NULL
@@ -3284,16 +3286,16 @@ const AI_FUNCTIONS = [
                 };
             });
 
-            // 2. Delivery performance per supplier
+            // 2. Delivery performance per supplier (uses manufacturer_orders, not purchase_orders)
             const deliveryRes = await db.query(
                 `SELECT s.id, s.company_name as supplier_name,
-                        COUNT(po.id) as total_orders,
-                        COUNT(CASE WHEN po.status = 'received' THEN 1 END) as received_count,
-                        AVG(CASE WHEN po.received_date IS NOT NULL AND po.expected_date IS NOT NULL
-                            THEN CASE WHEN po.received_date <= po.expected_date THEN 1 ELSE 0 END
+                        COUNT(mo.id) as total_orders,
+                        COUNT(CASE WHEN mo.status IN ('received', 'partially_received') THEN 1 END) as received_count,
+                        AVG(CASE WHEN mo.status IN ('received', 'partially_received') AND mo.expected_delivery_date IS NOT NULL
+                            THEN CASE WHEN mo.updated_at::date <= mo.expected_delivery_date THEN 1 ELSE 0 END
                             ELSE NULL END)::numeric as on_time_rate
                  FROM suppliers s
-                 LEFT JOIN purchase_orders po ON po.supplier_id = s.id
+                 LEFT JOIN manufacturer_orders mo ON mo.manufacturer_id = s.id
                  WHERE s.status = 'active'
                  GROUP BY s.id, s.company_name
                  ORDER BY total_orders DESC`
@@ -4518,15 +4520,26 @@ const AI_FUNCTIONS = [
             const interval = period === 'quarter' ? '90 days' : period === 'week' ? '7 days' : '30 days';
             const label = period === 'quarter' ? 'ربع سنة' : period === 'week' ? 'أسبوع' : 'شهر';
 
-            // 1. Chat conversations count
+            // 1. Chat conversations count (session_id is in conversation_context, not ai_chat_history)
             let chatCount = 0;
             try {
                 const chatRes = await db.query(
-                    `SELECT COUNT(DISTINCT session_id) as count
+                    `SELECT COUNT(DISTINCT user_id) as count
                      FROM ai_chat_history
                      WHERE created_at >= NOW() - INTERVAL '${interval}'`
                 );
                 chatCount = parseInt(chatRes.rows[0].count || 0);
+            } catch (e) { /* table might not exist */ }
+
+            // 1b. Session count from conversation_context
+            let sessionCount = 0;
+            try {
+                const sessRes = await db.query(
+                    `SELECT COUNT(DISTINCT session_id) as count
+                     FROM conversation_context
+                     WHERE created_at >= NOW() - INTERVAL '${interval}'`
+                );
+                sessionCount = parseInt(sessRes.rows[0].count || 0);
             } catch (e) { /* table might not exist */ }
 
             // 2. Action success/failure
@@ -4608,6 +4621,7 @@ const AI_FUNCTIONS = [
                 period: label,
                 measured_at: new Date().toISOString(),
                 conversations: chatCount,
+                sessions: sessionCount,
                 actions: {
                     total: totalActions,
                     by_status: actionStats,
