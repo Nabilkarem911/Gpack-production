@@ -18,5 +18,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_briefings_user_date ON ai_briefings(use
 
 -- Enable RLS
 ALTER TABLE ai_briefings ENABLE ROW LEVEL SECURITY;
-CREATE POLICY IF NOT EXISTS ai_briefings_all ON ai_briefings
+DROP POLICY IF EXISTS ai_briefings_all ON ai_briefings;
+CREATE POLICY ai_briefings_all ON ai_briefings
     FOR ALL USING (true) WITH CHECK (true);

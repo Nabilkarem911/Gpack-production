@@ -30,10 +30,10 @@ services:
       - "3000"
     healthcheck:
       test: ["CMD-SHELL", "wget --spider -q http://localhost:3000/api/health || exit 1"]
-      interval: 30s
+      interval: 15s
       timeout: 5s
-      retries: 3
-      start_period: 15s
+      retries: 5
+      start_period: 40s
     volumes:
       - /var/data/gpack-uploads:/app/uploads
     networks:

@@ -21,5 +21,6 @@ CREATE INDEX IF NOT EXISTS idx_recurring_templates_active ON recurring_order_tem
 
 -- Enable RLS
 ALTER TABLE recurring_order_templates ENABLE ROW LEVEL SECURITY;
-CREATE POLICY IF NOT EXISTS recurring_templates_all ON recurring_order_templates
+DROP POLICY IF EXISTS recurring_templates_all ON recurring_order_templates;
+CREATE POLICY recurring_templates_all ON recurring_order_templates
     FOR ALL USING (true) WITH CHECK (true);

@@ -20,5 +20,6 @@ CREATE INDEX IF NOT EXISTS idx_ai_feedback_created ON ai_feedback(created_at DES
 
 -- Enable RLS
 ALTER TABLE ai_feedback ENABLE ROW LEVEL SECURITY;
-CREATE POLICY IF NOT EXISTS ai_feedback_all ON ai_feedback
+DROP POLICY IF EXISTS ai_feedback_all ON ai_feedback;
+CREATE POLICY ai_feedback_all ON ai_feedback
     FOR ALL USING (true) WITH CHECK (true);

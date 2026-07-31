@@ -50,15 +50,18 @@ CREATE INDEX IF NOT EXISTS idx_ai_goals_dates ON ai_goals(start_date, end_date);
 
 -- Enable RLS
 ALTER TABLE ai_prompt_versions ENABLE ROW LEVEL SECURITY;
-CREATE POLICY IF NOT EXISTS ai_prompt_versions_all ON ai_prompt_versions
+DROP POLICY IF EXISTS ai_prompt_versions_all ON ai_prompt_versions;
+CREATE POLICY ai_prompt_versions_all ON ai_prompt_versions
     FOR ALL USING (true) WITH CHECK (true);
 
 ALTER TABLE ai_feature_flags ENABLE ROW LEVEL SECURITY;
-CREATE POLICY IF NOT EXISTS ai_feature_flags_all ON ai_feature_flags
+DROP POLICY IF EXISTS ai_feature_flags_all ON ai_feature_flags;
+CREATE POLICY ai_feature_flags_all ON ai_feature_flags
     FOR ALL USING (true) WITH CHECK (true);
 
 ALTER TABLE ai_goals ENABLE ROW LEVEL SECURITY;
-CREATE POLICY IF NOT EXISTS ai_goals_all ON ai_goals
+DROP POLICY IF EXISTS ai_goals_all ON ai_goals;
+CREATE POLICY ai_goals_all ON ai_goals
     FOR ALL USING (true) WITH CHECK (true);
 
 -- Seed default feature flags
