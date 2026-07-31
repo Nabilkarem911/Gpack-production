@@ -2,7 +2,7 @@
 // Phase 29.1: Feature Flags — toggle AI features on/off
 // Cached in memory with 60s TTL
 
-const db = require('../config/db');
+const db = require('../db');
 
 let _cache = null;
 let _cacheTime = 0;

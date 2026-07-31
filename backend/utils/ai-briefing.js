@@ -2,7 +2,7 @@
 // Phase 8.1: Morning Briefing — generates daily AI summary
 // Called by cron job or on-demand endpoint
 
-const db = require('../config/db');
+const db = require('../db');
 
 // =============================================================================
 // Generate daily briefing
