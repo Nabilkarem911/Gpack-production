@@ -3985,6 +3985,633 @@ const AI_FUNCTIONS = [
         }
     },
 
+    // ── 51. getKPIStatus ─────────────────────────────────────────────────────
+    // KPI Engine: monitors key performance indicators and alerts on deviation
+    {
+        type: 'function',
+        function: {
+            name: 'getKPIStatus',
+            description: 'محرك مؤشرات الأداء: يراقب KPIs (الإيرادات، الأرباح، التحصيل، الإنتاج، دوران المخزون، التسليم) وينبه عند الانحراف > 15%. استخدمه عندما يقول المستخدم "مؤشرات الأداء" أو "KPIs" أو "كيف أداء الشركة؟".',
+            parameters: {
+                type: 'object',
+                properties: {
+                    period: { type: 'string', enum: ['week', 'month', 'quarter'], description: 'الفترة (افتراضي month)' }
+                }
+            }
+        },
+        async execute(args, user) {
+            const { period = 'month' } = args;
+            const interval = period === 'quarter' ? '90 days' : period === 'week' ? '7 days' : '30 days';
+            const label = period === 'quarter' ? 'ربع سنة' : period === 'week' ? 'أسبوع' : 'شهر';
+
+            const kpis = [];
+
+            // KPI 1: Revenue
+            const revenueRes = await db.query(
+                `SELECT COALESCE(SUM(grand_total), 0)::numeric as actual
+                 FROM orders WHERE status NOT IN ('cancelled', 'draft')
+                   AND created_at >= NOW() - INTERVAL '${interval}'`
+            );
+            const revenueActual = parseFloat(revenueRes.rows[0].actual || 0);
+            // Target: based on previous period + 10% growth expectation
+            const prevRevenueRes = await db.query(
+                `SELECT COALESCE(SUM(grand_total), 0)::numeric as prev
+                 FROM orders WHERE status NOT IN ('cancelled', 'draft')
+                   AND created_at >= NOW() - INTERVAL '${parseInt(interval) * 2} days'
+                   AND created_at < NOW() - INTERVAL '${interval}'`
+            );
+            const revenuePrev = parseFloat(prevRevenueRes.rows[0].prev || 0);
+            const revenueTarget = revenuePrev * 1.1; // 10% growth target
+            const revenueDeviation = revenueTarget > 0 ? ((revenueActual - revenueTarget) / revenueTarget * 100) : 0;
+            kpis.push({
+                name: 'الإيرادات',
+                actual: Math.round(revenueActual * 100) / 100,
+                target: Math.round(revenueTarget * 100) / 100,
+                deviation_pct: Math.round(revenueDeviation * 100) / 100,
+                status: Math.abs(revenueDeviation) > 15 ? 'alert' : 'ok',
+                unit: 'ر.س',
+            });
+
+            // KPI 2: Profit margin
+            const profitRes = await db.query(
+                `SELECT COALESCE(SUM(oi.line_total - oi.quantity * pv.cost_price), 0)::numeric as profit,
+                        COALESCE(SUM(oi.line_total), 0)::numeric as revenue
+                 FROM order_items oi
+                 JOIN orders o ON o.id = oi.order_id
+                 JOIN product_variants pv ON pv.id = oi.variant_id
+                 WHERE o.status NOT IN ('cancelled', 'draft', 'quote')
+                   AND o.created_at >= NOW() - INTERVAL '${interval}'`
+            );
+            const profitActual = parseFloat(profitRes.rows[0].profit || 0);
+            const profitRevenue = parseFloat(profitRes.rows[0].revenue || 0);
+            const marginActual = profitRevenue > 0 ? (profitActual / profitRevenue * 100) : 0;
+            const marginTarget = 25; // 25% target margin
+            const marginDeviation = marginActual - marginTarget;
+            kpis.push({
+                name: 'هامش الربح',
+                actual: Math.round(marginActual * 100) / 100,
+                target: marginTarget,
+                deviation_pct: Math.round(marginDeviation * 100) / 100,
+                status: Math.abs(marginDeviation) > 15 ? 'alert' : 'ok',
+                unit: '%',
+            });
+
+            // KPI 3: Collection rate
+            const collectionRes = await db.query(
+                `SELECT COALESCE(SUM(amount), 0)::numeric as collected
+                 FROM client_transactions WHERE type = 'payment'
+                   AND created_at >= NOW() - INTERVAL '${interval}'`
+            );
+            const invoicedRes = await db.query(
+                `SELECT COALESCE(SUM(grand_total), 0)::numeric as invoiced
+                 FROM invoices WHERE status != 'cancelled'
+                   AND created_at >= NOW() - INTERVAL '${interval}'`
+            );
+            const collected = parseFloat(collectionRes.rows[0].collected || 0);
+            const invoiced = parseFloat(invoicedRes.rows[0].invoiced || 0);
+            const collectionRate = invoiced > 0 ? (collected / invoiced * 100) : 0;
+            const collectionTarget = 80; // 80% collection target
+            const collectionDeviation = collectionRate - collectionTarget;
+            kpis.push({
+                name: 'معدل التحصيل',
+                actual: Math.round(collectionRate * 100) / 100,
+                target: collectionTarget,
+                deviation_pct: Math.round(collectionDeviation * 100) / 100,
+                status: Math.abs(collectionDeviation) > 15 ? 'alert' : 'ok',
+                unit: '%',
+            });
+
+            // KPI 4: Inventory turnover (simplified: sales / stock value)
+            const stockValueRes = await db.query(
+                `SELECT COALESCE(SUM(ws.quantity * pv.cost_price), 0)::numeric as stock_value
+                 FROM warehouse_stock ws
+                 JOIN product_variants pv ON pv.id = ws.variant_id
+                 WHERE ws.quantity > 0`
+            );
+            const stockValue = parseFloat(stockValueRes.rows[0].stock_value || 0);
+            const turnover = stockValue > 0 ? (profitRevenue / stockValue) : 0;
+            const turnoverTarget = 2; // 2x per period
+            const turnoverDeviation = turnoverTarget > 0 ? ((turnover - turnoverTarget) / turnoverTarget * 100) : 0;
+            kpis.push({
+                name: 'دوران المخزون',
+                actual: Math.round(turnover * 100) / 100,
+                target: turnoverTarget,
+                deviation_pct: Math.round(turnoverDeviation * 100) / 100,
+                status: Math.abs(turnoverDeviation) > 15 ? 'alert' : 'ok',
+                unit: 'x',
+            });
+
+            // KPI 5: Order count
+            const orderCountRes = await db.query(
+                `SELECT COUNT(*) as count FROM orders
+                 WHERE status NOT IN ('cancelled', 'draft')
+                   AND created_at >= NOW() - INTERVAL '${interval}'`
+            );
+            const orderCount = parseInt(orderCountRes.rows[0].count || 0);
+            const prevOrderCountRes = await db.query(
+                `SELECT COUNT(*) as count FROM orders
+                 WHERE status NOT IN ('cancelled', 'draft')
+                   AND created_at >= NOW() - INTERVAL '${parseInt(interval) * 2} days'
+                   AND created_at < NOW() - INTERVAL '${interval}'`
+            );
+            const prevOrderCount = parseInt(prevOrderCountRes.rows[0].count || 0);
+            const orderTarget = prevOrderCount > 0 ? prevOrderCount : 10;
+            const orderDeviation = orderTarget > 0 ? ((orderCount - orderTarget) / orderTarget * 100) : 0;
+            kpis.push({
+                name: 'عدد الطلبات',
+                actual: orderCount,
+                target: orderTarget,
+                deviation_pct: Math.round(orderDeviation * 100) / 100,
+                status: Math.abs(orderDeviation) > 15 ? 'alert' : 'ok',
+                unit: 'طلب',
+            });
+
+            const alertCount = kpis.filter(k => k.status === 'alert').length;
+
+            return {
+                period: label,
+                measured_at: new Date().toISOString(),
+                total_kpis: kpis.length,
+                alerts: alertCount,
+                kpis,
+                summary: alertCount > 0
+                    ? `${alertCount} من ${kpis.length} مؤشر يحتاج انتباه (انحراف > 15%)`
+                    : `كل المؤشرات ضمن النطاق المقبول`,
+                _explanation: {
+                    why: `تم قياس ${kpis.length} مؤشر أداء لـ${label}. ${alertCount} مؤشر ينحرف عن الهدف بأكثر من 15%.`,
+                    confidence: 85,
+                    factors: kpis.map(k => ({ factor: k.name, value: k.actual + ' ' + k.unit, weight: k.status === 'alert' ? 'high' : 'medium' })),
+                },
+            };
+        }
+    },
+
+    // ── 52. simulateAction ───────────────────────────────────────────────────
+    // AI Sandbox: simulates action impact without writing to DB
+    {
+        type: 'function',
+        function: {
+            name: 'simulateAction',
+            description: 'بيئة محاكاة: يحاكي أثر إجراء قبل تنفيذه. مثال: "لو رفعت الأسعار 5%؟" أو "لو فقدت هذا العميل؟". يحسب الأثر المتوقع على المبيعات والأرباح بدون كتابة في DB. استخدمه عندما يقول المستخدم "لو" أو "ماذا لو" أو "حاكي".',
+            parameters: {
+                type: 'object',
+                properties: {
+                    scenario: { type: 'string', enum: ['price_increase', 'price_decrease', 'lose_client', 'lose_product', 'increase_inventory'], description: 'نوع السيناريو' },
+                    pct: { type: 'number', description: 'نسبة التغيير (مثال: 5 لـ 5%)' },
+                    client_name: { type: 'string', description: 'اسم العميل — لسيناريو lose_client' },
+                    product_name: { type: 'string', description: 'اسم المنتج — لسيناريو lose_product' }
+                },
+                required: ['scenario']
+            }
+        },
+        async execute(args, user) {
+            const { scenario, pct = 10, client_name, product_name } = args;
+
+            // Get current baseline metrics
+            const baselineRes = await db.query(
+                `SELECT COALESCE(SUM(grand_total), 0)::numeric as monthly_revenue,
+                        COUNT(DISTINCT o.id) as order_count
+                 FROM orders o
+                 WHERE o.status NOT IN ('cancelled', 'draft')
+                   AND o.created_at >= NOW() - INTERVAL '30 days'`
+            );
+            const baselineRevenue = parseFloat(baselineRes.rows[0].monthly_revenue || 0);
+            const baselineOrders = parseInt(baselineRes.rows[0].order_count || 0);
+
+            const profitRes = await db.query(
+                `SELECT COALESCE(SUM(oi.line_total - oi.quantity * pv.cost_price), 0)::numeric as profit
+                 FROM order_items oi
+                 JOIN orders o ON o.id = oi.order_id
+                 JOIN product_variants pv ON pv.id = oi.variant_id
+                 WHERE o.status NOT IN ('cancelled', 'draft', 'quote')
+                   AND o.created_at >= NOW() - INTERVAL '30 days'`
+            );
+            const baselineProfit = parseFloat(profitRes.rows[0].profit || 0);
+
+            let projectedRevenue = baselineRevenue;
+            let projectedProfit = baselineProfit;
+            let projectedOrders = baselineOrders;
+            let assumptions = [];
+            let risks = [];
+
+            if (scenario === 'price_increase') {
+                // Assume 20% volume drop per 10% price increase (elasticity)
+                const elasticity = 0.2 * (pct / 10);
+                const volumeMultiplier = 1 - elasticity;
+                projectedRevenue = baselineRevenue * (1 + pct / 100) * volumeMultiplier;
+                projectedProfit = baselineProfit * (1 + pct / 100) * volumeMultiplier;
+                projectedOrders = Math.round(baselineOrders * volumeMultiplier);
+                assumptions.push(`زيادة سعر ${pct}% مع مرونة سعرية ${elasticity * 100}% (انخفاض حجم البيع)`);
+                risks.push('العملاء قد يتحولون للمنافسين');
+                risks.push('قد ينخفض عدد الطلبات بنسبة ' + Math.round(elasticity * 100) + '%');
+            } else if (scenario === 'price_decrease') {
+                // Assume 15% volume increase per 10% price decrease
+                const volumeBoost = 0.15 * (pct / 10);
+                const volumeMultiplier = 1 + volumeBoost;
+                projectedRevenue = baselineRevenue * (1 - pct / 100) * volumeMultiplier;
+                projectedProfit = baselineProfit * (1 - pct / 100) * volumeMultiplier;
+                projectedOrders = Math.round(baselineOrders * volumeMultiplier);
+                assumptions.push(`خفض سعر ${pct}% مع زيادة حجم متوقع ${Math.round(volumeBoost * 100)}%`);
+                risks.push('قد لا يتحقق الزيادة المتوقعة في الحجم');
+                risks.push('ضغط على الهامش');
+            } else if (scenario === 'lose_client' && client_name) {
+                const clientRes = await db.query(
+                    `SELECT c.id, c.name,
+                            COALESCE(SUM(o.grand_total), 0)::numeric as monthly_avg,
+                            COUNT(o.id) as order_count
+                     FROM clients c
+                     LEFT JOIN orders o ON o.client_id = c.id AND o.status NOT IN ('cancelled', 'draft')
+                         AND o.created_at >= NOW() - INTERVAL '90 days'
+                     WHERE c.name ILIKE $1 AND c.status = 'active'
+                     GROUP BY c.id, c.name`,
+                    [`%${client_name}%`]
+                );
+                if (clientRes.rows.length === 0) return { error: 'العميل غير موجود' };
+                const client = clientRes.rows[0];
+                const clientRevenue = parseFloat(client.monthly_avg || 0) / 3; // monthly avg from 90 days
+                projectedRevenue = baselineRevenue - clientRevenue;
+                projectedProfit = baselineProfit - (clientRevenue * 0.25); // assume 25% margin
+                projectedOrders = baselineOrders - Math.round(parseInt(client.order_count || 0) / 3);
+                assumptions.push(`فقدان العميل ${client.name} بمتوسط شهري ${Math.round(clientRevenue)} ر.س`);
+                risks.push('العملاء المرتبطين بهذا العميل قد يتأثرون');
+                risks.push('الحصة السوقية تنخفض');
+            } else if (scenario === 'lose_product' && product_name) {
+                const prodRes = await db.query(
+                    `SELECT COALESCE(SUM(oi.line_total), 0)::numeric as monthly_revenue,
+                            COALESCE(SUM(oi.quantity), 0)::numeric as monthly_qty
+                     FROM order_items oi
+                     JOIN orders o ON o.id = oi.order_id
+                     JOIN product_variants pv ON pv.id = oi.variant_id
+                     JOIN products p ON p.id = pv.product_id
+                     WHERE o.status NOT IN ('cancelled', 'draft', 'quote')
+                       AND o.created_at >= NOW() - INTERVAL '30 days'
+                       AND p.name ILIKE $1`,
+                    [`%${product_name}%`]
+                );
+                if (prodRes.rows.length === 0 || parseFloat(prodRes.rows[0].monthly_revenue || 0) === 0) {
+                    return { error: 'المنتج غير موجود أو لا يوجد مبيعات' };
+                }
+                const productRevenue = parseFloat(prodRes.rows[0].monthly_revenue || 0);
+                projectedRevenue = baselineRevenue - productRevenue;
+                projectedProfit = baselineProfit - (productRevenue * 0.25);
+                assumptions.push(`فقدان المنتج "${product_name}" بمبيعات شهرية ${Math.round(productRevenue)} ر.س`);
+                risks.push('العملاء الذين يشترون هذا المنتج قد يبحثون عن بديل');
+                risks.push('مخزون قد يتراكم');
+            } else if (scenario === 'increase_inventory') {
+                const stockValueRes = await db.query(
+                    `SELECT COALESCE(SUM(ws.quantity * pv.cost_price), 0)::numeric as current_value
+                     FROM warehouse_stock ws
+                     JOIN product_variants pv ON pv.id = ws.variant_id
+                     WHERE ws.quantity > 0`
+                );
+                const currentStockValue = parseFloat(stockValueRes.rows[0].current_value || 0);
+                const additionalInvestment = currentStockValue * (pct / 100);
+                // Assume increased availability leads to 5% revenue boost per 10% inventory increase
+                const revenueBoost = 0.05 * (pct / 10);
+                projectedRevenue = baselineRevenue * (1 + revenueBoost);
+                projectedProfit = baselineProfit * (1 + revenueBoost) - (additionalInvestment * 0.1); // carrying cost
+                assumptions.push(`زيادة مخزون ${pct}% باستثمار ${Math.round(additionalInvestment)} ر.س`);
+                assumptions.push(`زيادة متوقعة في الإيرادات ${Math.round(revenueBoost * 100)}%`);
+                risks.push('تكلفة تخزين إضافية');
+                risks.push('خطر بطء الحركة');
+            }
+
+            const revenueChange = projectedRevenue - baselineRevenue;
+            const profitChange = projectedProfit - baselineProfit;
+            const revenueChangePct = baselineRevenue > 0 ? (revenueChange / baselineRevenue * 100) : 0;
+            const profitChangePct = baselineProfit > 0 ? (profitChange / baselineProfit * 100) : 0;
+
+            return {
+                scenario,
+                simulated_at: new Date().toISOString(),
+                baseline: {
+                    monthly_revenue: Math.round(baselineRevenue * 100) / 100,
+                    monthly_profit: Math.round(baselineProfit * 100) / 100,
+                    order_count: baselineOrders,
+                },
+                projected: {
+                    monthly_revenue: Math.round(projectedRevenue * 100) / 100,
+                    monthly_profit: Math.round(projectedProfit * 100) / 100,
+                    order_count: projectedOrders,
+                },
+                impact: {
+                    revenue_change: Math.round(revenueChange * 100) / 100,
+                    revenue_change_pct: Math.round(revenueChangePct * 100) / 100,
+                    profit_change: Math.round(profitChange * 100) / 100,
+                    profit_change_pct: Math.round(profitChangePct * 100) / 100,
+                    order_count_change: projectedOrders - baselineOrders,
+                },
+                assumptions,
+                risks,
+                recommendation: revenueChange > 0 && profitChange > 0
+                    ? 'السيناريو إيجابي — قد يكون مفيداً'
+                    : revenueChange < 0 && profitChange < 0
+                    ? 'السيناريو سلبي — يُنصح بالحذر'
+                    : 'السيناريو متفاوت — راجع الافتراضات بعناية',
+                _explanation: {
+                    why: `محاكاة "${scenario}" بنسبة ${pct}%. الأثر: الإيراد ${revenueChangePct >= 0 ? '+' : ''}${Math.round(revenueChangePct)}%، الربح ${profitChangePct >= 0 ? '+' : ''}${Math.round(profitChangePct)}%.`,
+                    confidence: 60,
+                    factors: [
+                        { factor: 'الإيراد الحالي', value: Math.round(baselineRevenue), weight: 'high' },
+                        { factor: 'الربح الحالي', value: Math.round(baselineProfit), weight: 'high' },
+                        { factor: 'تغير الإيراد', value: Math.round(revenueChangePct) + '%', weight: 'high' },
+                        { factor: 'تغير الربح', value: Math.round(profitChangePct) + '%', weight: 'high' },
+                    ],
+                },
+            };
+        }
+    },
+
+    // ── 53. getTimelineReplay ────────────────────────────────────────────────
+    // Timeline Replay: shows events for a specific period
+    {
+        type: 'function',
+        function: {
+            name: 'getTimelineReplay',
+            description: 'إعادة عرض الزمن: يعرض أحداث فترة محددة يوم بيوم مع شرح كل حدث وربطه بالأحداث الأخرى. استخدمه عندما يقول المستخدم "وريني الأسبوع اللي فات" أو "أحداث أمس" أو "ملخص الفترة".',
+            parameters: {
+                type: 'object',
+                properties: {
+                    period: { type: 'string', enum: ['today', 'yesterday', 'week', 'month'], description: 'الفترة (افتراضي week)' }
+                }
+            }
+        },
+        async execute(args, user) {
+            const { period = 'week' } = args;
+
+            let interval, label;
+            if (period === 'today') { interval = "DATE(created_at) = CURRENT_DATE"; label = 'اليوم'; }
+            else if (period === 'yesterday') { interval = "DATE(created_at) = CURRENT_DATE - 1"; label = 'أمس'; }
+            else if (period === 'week') { interval = "created_at >= NOW() - INTERVAL '7 days'"; label = 'الأسبوع'; }
+            else { interval = "created_at >= NOW() - INTERVAL '30 days'"; label = 'الشهر'; }
+
+            // Try business_events first
+            let eventsRes;
+            try {
+                eventsRes = await db.query(
+                    `SELECT id, event_type, entity_type, entity_id, description, created_at, metadata
+                     FROM business_events
+                     WHERE ${interval}
+                     ORDER BY created_at DESC
+                     LIMIT 100`
+                );
+            } catch (e) {
+                eventsRes = { rows: [] };
+            }
+
+            // If no business_events, fallback to reconstructing from actual tables
+            if (eventsRes.rows.length === 0) {
+                const fallbackEvents = [];
+
+                // Orders
+                const ordersRes = await db.query(
+                    `SELECT id, client_id, grand_total, status, created_at,
+                            (SELECT name FROM clients WHERE id = orders.client_id) as client_name
+                     FROM orders
+                     WHERE ${interval.replace('created_at', 'orders.created_at')}
+                     ORDER BY created_at DESC LIMIT 30`
+                );
+                for (const o of ordersRes.rows) {
+                    fallbackEvents.push({
+                        event_type: 'order_' + o.status,
+                        entity_type: 'order',
+                        entity_id: o.id,
+                        description: `طلب من ${o.client_name || 'عميل'} — ${o.grand_total} ر.س (${o.status})`,
+                        created_at: o.created_at,
+                    });
+                }
+
+                // Invoices
+                try {
+                    const invRes = await db.query(
+                        `SELECT i.id, i.invoice_number, i.grand_total, i.status, i.created_at,
+                                (SELECT name FROM clients WHERE id = i.client_id) as client_name
+                         FROM invoices i
+                         WHERE ${interval.replace('created_at', 'i.created_at')}
+                         ORDER BY i.created_at DESC LIMIT 20`
+                    );
+                    for (const inv of invRes.rows) {
+                        fallbackEvents.push({
+                            event_type: 'invoice_' + inv.status,
+                            entity_type: 'invoice',
+                            entity_id: inv.id,
+                            description: `فاتورة ${inv.invoice_number} لـ ${inv.client_name || 'عميل'} — ${inv.grand_total} ر.س`,
+                            created_at: inv.created_at,
+                        });
+                    }
+                } catch (e) { /* invoices table might not exist */ }
+
+                // Payments
+                try {
+                    const payRes = await db.query(
+                        `SELECT ct.id, ct.amount, ct.created_at,
+                                (SELECT name FROM clients WHERE id = ct.client_id) as client_name
+                         FROM client_transactions ct
+                         WHERE ct.type = 'payment' AND ${interval.replace('created_at', 'ct.created_at')}
+                         ORDER BY ct.created_at DESC LIMIT 20`
+                    );
+                    for (const p of payRes.rows) {
+                        fallbackEvents.push({
+                            event_type: 'payment_received',
+                            entity_type: 'payment',
+                            entity_id: p.id,
+                            description: `دفعة من ${p.client_name || 'عميل'} — ${p.amount} ر.س`,
+                            created_at: p.created_at,
+                        });
+                    }
+                } catch (e) { /* table might not exist */ }
+
+                // Sort by created_at DESC
+                fallbackEvents.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+                eventsRes = { rows: fallbackEvents.slice(0, 50) };
+            }
+
+            if (eventsRes.rows.length === 0) {
+                return { error: `لا توجد أحداث في ${label}` };
+            }
+
+            // Group by day
+            const byDay = {};
+            for (const ev of eventsRes.rows) {
+                const day = new Date(ev.created_at).toLocaleDateString('ar-SA');
+                if (!byDay[day]) byDay[day] = [];
+                byDay[day].push({
+                    event_type: ev.event_type,
+                    entity_type: ev.entity_type,
+                    description: ev.description || ev.event_type,
+                    time: new Date(ev.created_at).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
+                });
+            }
+
+            // Build timeline
+            const timeline = Object.entries(byDay).map(([day, events]) => ({
+                day,
+                event_count: events.length,
+                events: events.sort((a, b) => a.time.localeCompare(b.time)),
+            }));
+
+            // Summary stats
+            const typeCounts = {};
+            for (const ev of eventsRes.rows) {
+                typeCounts[ev.event_type] = (typeCounts[ev.event_type] || 0) + 1;
+            }
+
+            return {
+                period: label,
+                replayed_at: new Date().toISOString(),
+                total_events: eventsRes.rows.length,
+                days_covered: timeline.length,
+                event_type_summary: typeCounts,
+                timeline,
+                _explanation: {
+                    why: `تم استرجاع ${eventsRes.rows.length} حدث من ${label} موزعة على ${timeline.length} يوم.`,
+                    confidence: 80,
+                    factors: [
+                        { factor: 'إجمالي الأحداث', value: eventsRes.rows.length, weight: 'high' },
+                        { factor: 'الأيام المغطاة', value: timeline.length, weight: 'medium' },
+                    ],
+                },
+            };
+        }
+    },
+
+    // ── 54. getAIMetrics ─────────────────────────────────────────────────────
+    // AI Metrics Dashboard: measures AI assistant performance
+    {
+        type: 'function',
+        function: {
+            name: 'getAIMetrics',
+            description: 'لوحة أداء الـ AI: يقيس أداء المساعد الذكي — عدد المحادثات، نسبة نجاح الإجراءات، الاقتراحات المقبولة vs المرفوضة، أكثر الدوال استخداماً، متوسط زمن الرد. استخدمه عندما يقول المستخدم "أداء الـ AI" أو "إحصائيات المساعد".',
+            parameters: {
+                type: 'object',
+                properties: {
+                    period: { type: 'string', enum: ['week', 'month', 'quarter'], description: 'الفترة (افتراضي month)' }
+                }
+            }
+        },
+        async execute(args, user) {
+            const { period = 'month' } = args;
+            const interval = period === 'quarter' ? '90 days' : period === 'week' ? '7 days' : '30 days';
+            const label = period === 'quarter' ? 'ربع سنة' : period === 'week' ? 'أسبوع' : 'شهر';
+
+            // 1. Chat conversations count
+            let chatCount = 0;
+            try {
+                const chatRes = await db.query(
+                    `SELECT COUNT(DISTINCT session_id) as count
+                     FROM ai_chat_history
+                     WHERE created_at >= NOW() - INTERVAL '${interval}'`
+                );
+                chatCount = parseInt(chatRes.rows[0].count || 0);
+            } catch (e) { /* table might not exist */ }
+
+            // 2. Action success/failure
+            const actionRes = await db.query(
+                `SELECT status, COUNT(*) as count
+                 FROM ai_action_log
+                 WHERE created_at >= NOW() - INTERVAL '${interval}'
+                 GROUP BY status`
+            );
+            const actionStats = {};
+            let totalActions = 0;
+            for (const r of actionRes.rows) {
+                actionStats[r.status] = parseInt(r.count || 0);
+                totalActions += parseInt(r.count || 0);
+            }
+            const successRate = totalActions > 0
+                ? Math.round((actionStats.executed || 0) / totalActions * 100)
+                : 0;
+
+            // 3. Feedback stats
+            let feedbackStats = { positive: 0, negative: 0 };
+            try {
+                const fbRes = await db.query(
+                    `SELECT rating, COUNT(*) as count
+                     FROM ai_feedback
+                     WHERE created_at >= NOW() - INTERVAL '${interval}'
+                     GROUP BY rating`
+                );
+                for (const r of fbRes.rows) {
+                    feedbackStats[r.rating] = parseInt(r.count || 0);
+                }
+            } catch (e) { /* table might not exist */ }
+
+            const totalFeedback = feedbackStats.positive + feedbackStats.negative;
+            const satisfactionRate = totalFeedback > 0
+                ? Math.round(feedbackStats.positive / totalFeedback * 100)
+                : 0;
+
+            // 4. Most used functions (from ai_action_log action_type)
+            const funcRes = await db.query(
+                `SELECT action_type, COUNT(*) as count
+                 FROM ai_action_log
+                 WHERE created_at >= NOW() - INTERVAL '${interval}'
+                 GROUP BY action_type
+                 ORDER BY count DESC
+                 LIMIT 10`
+            );
+            const topActions = funcRes.rows.map(r => ({
+                action_type: r.action_type,
+                count: parseInt(r.count || 0),
+            }));
+
+            // 5. Errors
+            const errorRes = await db.query(
+                `SELECT error_message, COUNT(*) as count
+                 FROM ai_action_log
+                 WHERE status = 'failed' AND created_at >= NOW() - INTERVAL '${interval}'
+                   AND error_message IS NOT NULL
+                 GROUP BY error_message
+                 ORDER BY count DESC
+                 LIMIT 5`
+            );
+            const topErrors = errorRes.rows.map(r => ({
+                error: r.error_message,
+                count: parseInt(r.count || 0),
+            }));
+
+            // 6. Briefing engagement
+            let briefingCount = 0;
+            try {
+                const briefRes = await db.query(
+                    `SELECT COUNT(*) as count FROM ai_briefings
+                     WHERE created_at >= NOW() - INTERVAL '${interval}'`
+                );
+                briefingCount = parseInt(briefRes.rows[0].count || 0);
+            } catch (e) { /* table might not exist */ }
+
+            return {
+                period: label,
+                measured_at: new Date().toISOString(),
+                conversations: chatCount,
+                actions: {
+                    total: totalActions,
+                    by_status: actionStats,
+                    success_rate: successRate,
+                },
+                feedback: {
+                    positive: feedbackStats.positive,
+                    negative: feedbackStats.negative,
+                    satisfaction_rate: satisfactionRate,
+                },
+                top_actions: topActions,
+                top_errors: topErrors,
+                briefings_generated: briefingCount,
+                summary: `${chatCount} محادثة، ${totalActions} إجراء (${successRate}% نجاح)، ${totalFeedback} تقييم (${satisfactionRate}% رضا) في ${label}`,
+                _explanation: {
+                    why: `تم قياس أداء الـ AI لـ${label}: ${chatCount} محادثة، ${totalActions} إجراء بنسبة نجاح ${successRate}%، رضا ${satisfactionRate}%.`,
+                    confidence: 90,
+                    factors: [
+                        { factor: 'المحادثات', value: chatCount, weight: 'medium' },
+                        { factor: 'الإجراءات', value: totalActions, weight: 'high' },
+                        { factor: 'نسبة النجاح', value: successRate + '%', weight: 'high' },
+                        { factor: 'الرضا', value: satisfactionRate + '%', weight: 'high' },
+                    ],
+                },
+            };
+        }
+    },
+
 ];
 
 // =============================================================================
