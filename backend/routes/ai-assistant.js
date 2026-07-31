@@ -9,6 +9,8 @@
 
 const express = require('express');
 const router = express.Router();
+const http = require('http');
+const multer = require('multer');
 const db = require('../db');
 const { AI_FUNCTIONS, FUNCTION_MAP } = require('../utils/ai-functions');
 const { AI_ACTIONS, ACTION_MAP } = require('../utils/ai-actions');
@@ -16,6 +18,14 @@ const { checkPolicies } = require('../utils/ai-policies');
 const { generateBriefing, getLatestBriefing, markBriefingRead } = require('../utils/ai-briefing');
 const featureFlags = require('../utils/ai-feature-flags');
 const { auditFunctions, auditActions, validateSqlSafety } = require('../utils/ai-safety');
+
+// Multer for voice upload (in-memory, 5MB max)
+const voiceUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 5 * 1024 * 1024 },
+});
+
+const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://ai-service:8000';
 
 // ── Config ───────────────────────────────────────────────────────────────────
 // Supports ANY OpenAI-compatible provider: OpenAI, Azure OpenAI, OpenRouter,
@@ -1250,6 +1260,73 @@ router.get('/safety-audit', async (req, res) => {
         });
     } catch (err) {
         res.status(500).json({ error: 'فشل في فحص الأمان: ' + err.message });
+    }
+});
+
+// =============================================================================
+// POST /api/ai-assistant/transcribe
+// Voice input: receives audio from browser MediaRecorder, proxies to ai-service
+// Vosk for Arabic speech-to-text. Returns { text, success }.
+// =============================================================================
+router.post('/transcribe', voiceUpload.single('audio'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ error: 'لم يتم استلام ملف صوتي' });
+        }
+
+        const url = new URL('/transcribe', AI_SERVICE_URL);
+        const boundary = '----FormBoundary' + Math.random().toString(16).slice(2);
+        const fileBuffer = req.file.buffer;
+        const filename = req.file.originalname || 'audio.webm';
+        const mimetype = req.file.mimetype || 'audio/webm';
+
+        // Build multipart/form-data body manually
+        const header = Buffer.from(
+            `--${boundary}\r\n` +
+            `Content-Disposition: form-data; name="audio"; filename="${filename}"\r\n` +
+            `Content-Type: ${mimetype}\r\n\r\n`
+        );
+        const footer = Buffer.from(`\r\n--${boundary}--\r\n`);
+        const body = Buffer.concat([header, fileBuffer, footer]);
+
+        const options = {
+            hostname: url.hostname,
+            port: url.port,
+            path: url.pathname,
+            method: 'POST',
+            headers: {
+                'Content-Type': `multipart/form-data; boundary=${boundary}`,
+                'Content-Length': body.length,
+            },
+            timeout: 15000,
+        };
+
+        const proxyReq = http.request(options, (proxyRes) => {
+            let data = '';
+            proxyRes.on('data', (chunk) => { data += chunk; });
+            proxyRes.on('end', () => {
+                try {
+                    const parsed = JSON.parse(data);
+                    res.json(parsed);
+                } catch {
+                    res.status(502).json({ error: 'استجابة غير صالحة من خدمة التعرف الصوتي' });
+                }
+            });
+        });
+
+        proxyReq.on('error', (err) => {
+            res.status(503).json({ error: 'خدمة التعرف الصوتي غير متاحة: ' + err.message });
+        });
+
+        proxyReq.on('timeout', () => {
+            proxyReq.destroy();
+            res.status(504).json({ error: 'انتهت مهلة خدمة التعرف الصوتي' });
+        });
+
+        proxyReq.write(body);
+        proxyReq.end();
+    } catch (err) {
+        res.status(500).json({ error: 'فشل في التعرف الصوتي: ' + err.message });
     }
 });
 

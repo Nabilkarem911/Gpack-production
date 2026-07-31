@@ -4,13 +4,16 @@ Simple demand forecasting using rolling average + trend
 """
 
 import os
+import json
+import wave
+import tempfile
 from datetime import datetime, timedelta
 
 import numpy as np
 import pandas as pd
 import psycopg2
 from psycopg2 import pool as psycopg2_pool
-from fastapi import FastAPI
+from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="G.PACK AI Forecasting")
@@ -304,3 +307,89 @@ def churn_alerts(days: int = 30):
         "clients": clients,
         "count": len(clients),
     }
+
+
+# =============================================================================
+# Speech Recognition (Vosk — offline, free, Arabic support)
+# =============================================================================
+
+_vosk_model = None
+
+def _get_vosk_model():
+    """Lazy-load Vosk model on first request."""
+    global _vosk_model
+    if _vosk_model is None:
+        from vosk import Model
+        model_path = os.getenv("VOSK_MODEL_PATH", "/app/models/ar")
+        if not os.path.exists(model_path):
+            raise RuntimeError(f"Vosk model not found at {model_path}")
+        _vosk_model = Model(model_path)
+    return _vosk_model
+
+
+@app.post("/transcribe")
+async def transcribe(audio: UploadFile = File(...)):
+    """
+    Receive an audio file (webm/wav/ogg) from the browser MediaRecorder,
+    convert to WAV, and run Vosk speech recognition.
+    Returns: { "text": "recognized text", "success": true/false }
+    """
+    try:
+        # Read uploaded audio
+        raw = await audio.read()
+
+        # Write to temp file
+        with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as tmp_in:
+            tmp_in.write(raw)
+            tmp_in_path = tmp_in.name
+
+        # Convert to WAV 16kHz mono using ffmpeg if available, otherwise try direct
+        tmp_out_path = tmp_in_path.replace(".webm", ".wav")
+
+        # Try ffmpeg first (handles webm/ogg from browser)
+        import subprocess
+        try:
+            subprocess.run(
+                ["ffmpeg", "-y", "-i", tmp_in_path, "-ar", "16000", "-ac", "1", "-f", "wav", tmp_out_path],
+                capture_output=True, timeout=10
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            # No ffmpeg — try reading as raw WAV
+            tmp_out_path = tmp_in_path
+
+        # Run Vosk recognition
+        from vosk import KaldiRecognizer
+        model = _get_vosk_model()
+        rec = KaldiRecognizer(model, 16000)
+
+        wf = wave.open(tmp_out_path, "rb")
+        result_text = ""
+
+        while True:
+            data = wf.readframes(4000)
+            if len(data) == 0:
+                break
+            if rec.AcceptWaveform(data):
+                res = json.loads(rec.Result())
+                if res.get("text"):
+                    result_text += " " + res["text"]
+
+        # Final result
+        final = json.loads(rec.FinalResult())
+        if final.get("text"):
+            result_text += " " + final["text"]
+
+        wf.close()
+
+        # Cleanup temp files
+        for p in [tmp_in_path, tmp_out_path]:
+            try:
+                os.unlink(p)
+            except OSError:
+                pass
+
+        result_text = result_text.strip()
+        return {"success": bool(result_text), "text": result_text}
+
+    except Exception as e:
+        return {"success": False, "text": "", "error": str(e)}

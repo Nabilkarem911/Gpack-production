@@ -442,59 +442,102 @@
             });
         }
 
-        // Phase 9: Voice input (webkitSpeechRecognition)
+        // Voice input via MediaRecorder + Vosk (works on all platforms)
         const micBtn = document.getElementById('ai-chat-mic');
-        if (micBtn) {
-            var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-            if (SpeechRecognition && input) {
-                micBtn.classList.remove('hidden');
-                var isRecording = false;
-                var recognition = null;
+        if (micBtn && input) {
+            micBtn.classList.remove('hidden');
+            var isRecording = false;
+            var mediaRecorder = null;
+            var audioChunks = [];
 
-                micBtn.addEventListener('click', function() {
-                    if (isRecording) {
-                        if (recognition) recognition.stop();
-                        return;
+            micBtn.addEventListener('click', function() {
+                if (isRecording) {
+                    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                        mediaRecorder.stop();
                     }
+                    return;
+                }
 
-                    recognition = new SpeechRecognition();
-                    recognition.lang = 'ar-SA';
-                    recognition.interimResults = true;
-                    recognition.continuous = false;
-
-                    var baseText = '';
-                    recognition.onstart = function() {
+                navigator.mediaDevices.getUserMedia({ audio: true })
+                    .then(function(stream) {
                         isRecording = true;
                         micBtn.classList.remove('bg-slate-100', 'text-slate-500', 'hover:bg-slate-200');
                         micBtn.classList.add('bg-rose-500', 'text-white', 'animate-pulse');
                         micBtn.querySelector('i').className = 'fa-solid fa-stop text-sm';
-                        baseText = input.value || '';
-                    };
 
-                    recognition.onresult = function(event) {
-                        var transcript = '';
-                        for (var i = 0; i < event.results.length; i++) {
-                            transcript += event.results[i][0].transcript;
+                        audioChunks = [];
+                        var mimeType = 'audio/webm';
+                        if (!MediaRecorder.isTypeSupported(mimeType)) {
+                            mimeType = 'audio/ogg';
                         }
-                        input.value = baseText + transcript;
-                    };
-
-                    recognition.onerror = function(event) {
-                        if (window.showToast && event.error !== 'aborted') {
-                            window.showToast('خطأ في الإدخال الصوتي: ' + event.error, 'warning');
+                        if (!MediaRecorder.isTypeSupported(mimeType)) {
+                            mimeType = '';
                         }
-                    };
 
-                    recognition.onend = function() {
+                        mediaRecorder = mimeType
+                            ? new MediaRecorder(stream, { mimeType: mimeType })
+                            : new MediaRecorder(stream);
+
+                        mediaRecorder.ondataavailable = function(e) {
+                            if (e.data.size > 0) audioChunks.push(e.data);
+                        };
+
+                        mediaRecorder.onstop = function() {
+                            isRecording = false;
+                            micBtn.classList.add('bg-slate-100', 'text-slate-500', 'hover:bg-slate-200');
+                            micBtn.classList.remove('bg-rose-500', 'text-white', 'animate-pulse');
+                            micBtn.querySelector('i').className = 'fa-solid fa-microphone text-sm';
+
+                            stream.getTracks().forEach(function(t) { t.stop(); });
+
+                            if (audioChunks.length === 0) return;
+
+                            var audioBlob = new Blob(audioChunks, { type: mimeType || 'audio/webm' });
+                            var formData = new FormData();
+                            formData.append('audio', audioBlob, 'voice.webm');
+
+                            micBtn.disabled = true;
+                            micBtn.querySelector('i').className = 'fa-solid fa-spinner fa-spin text-sm';
+
+                            fetch('/api/ai-assistant/transcribe', {
+                                method: 'POST',
+                                headers: { 'Authorization': 'Bearer ' + (window.authToken || localStorage.getItem('token') || '') },
+                                body: formData,
+                            })
+                            .then(function(r) { return r.json(); })
+                            .then(function(data) {
+                                micBtn.disabled = false;
+                                micBtn.querySelector('i').className = 'fa-solid fa-microphone text-sm';
+
+                                if (data.success && data.text) {
+                                    var baseText = input.value || '';
+                                    input.value = baseText + (baseText && !baseText.endsWith(' ') ? ' ' : '') + data.text;
+                                    input.focus();
+                                } else if (data.error) {
+                                    if (window.showToast) window.showToast('فشل التعرف الصوتي: ' + data.error, 'warning');
+                                } else {
+                                    if (window.showToast) window.showToast('لم يتم التعرف على الكلام', 'warning');
+                                }
+                            })
+                            .catch(function(err) {
+                                micBtn.disabled = false;
+                                micBtn.querySelector('i').className = 'fa-solid fa-microphone text-sm';
+                                if (window.showToast) window.showToast('خطأ في الاتصال بخدمة التعرف الصوتي', 'warning');
+                            });
+                        };
+
+                        mediaRecorder.start();
+                    })
+                    .catch(function(err) {
                         isRecording = false;
-                        micBtn.classList.add('bg-slate-100', 'text-slate-500', 'hover:bg-slate-200');
-                        micBtn.classList.remove('bg-rose-500', 'text-white', 'animate-pulse');
-                        micBtn.querySelector('i').className = 'fa-solid fa-microphone text-sm';
-                    };
-
-                    recognition.start();
-                });
-            }
+                        if (window.showToast) {
+                            var msg = 'تعذر الوصول للميكروفون';
+                            if (err.name === 'NotAllowedError') msg = 'تم رفض إذن الميكروفون. يرجى السماح للموقع باستخدام الميكروفون.';
+                            else if (err.name === 'NotFoundError') msg = 'لا يوجد ميكروفون في هذا الجهاز';
+                            window.showToast(msg, 'warning');
+                        }
+                    });
+            });
         }
 
         // Suggestion chips
