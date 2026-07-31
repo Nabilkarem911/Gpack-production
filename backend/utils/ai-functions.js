@@ -4768,6 +4768,508 @@ const AI_FUNCTIONS = [
         }
     },
 
+    // ── 56. getCompanyLearning ───────────────────────────────────────────────
+    // Learning Layer: extracts patterns and insights from company history
+    {
+        type: 'function',
+        function: {
+            name: 'getCompanyLearning',
+            description: 'التعلم من الشركة: يستخرج أنماط ودروس من بيانات الشركة التاريخية. يكتشف: أفضل العملاء، المنتجات الرابحة، أنماط الطلب، المواسم النشطة، العملاء المعرضون للضياع. استخدمه عندما يقول المستخدم "تعلم من بياناتي" أو "أنماط الشركة" أو "دروس من الماضي".',
+            parameters: {
+                type: 'object',
+                properties: {
+                    focus: { type: 'string', enum: ['clients', 'products', 'sales_patterns', 'all'], description: 'محور التحليل (افتراضي all)' }
+                }
+            }
+        },
+        async execute(args, user) {
+            const { focus = 'all' } = args;
+            const insights = [];
+
+            // 1. Client patterns
+            if (focus === 'all' || focus === 'clients') {
+                // Top clients by revenue
+                const topClientsRes = await db.query(
+                    `SELECT c.id, c.name,
+                            COUNT(o.id) as order_count,
+                            COALESCE(SUM(o.grand_total), 0)::numeric as total_revenue,
+                            COALESCE(AVG(o.grand_total), 0)::numeric as avg_order,
+                            MAX(o.created_at) as last_order
+                     FROM clients c
+                     JOIN orders o ON o.client_id = c.id AND o.status NOT IN ('cancelled', 'draft')
+                     WHERE c.status = 'active' AND c.parent_id IS NULL
+                       AND o.created_at >= NOW() - INTERVAL '12 months'
+                     GROUP BY c.id, c.name
+                     ORDER BY total_revenue DESC
+                     LIMIT 5`
+                );
+                if (topClientsRes.rows.length > 0) {
+                    insights.push({
+                        category: 'clients',
+                        type: 'top_clients',
+                        title: 'أفضل 5 عملاء',
+                        data: topClientsRes.rows.map(r => ({
+                            name: r.name,
+                            orders: parseInt(r.order_count),
+                            revenue: Math.round(parseFloat(r.total_revenue)),
+                            avg_order: Math.round(parseFloat(r.avg_order)),
+                            last_order: r.last_order,
+                        })),
+                        lesson: `هؤلاء العملاء يمثلون العمود الفقري للإيرادات. ${topClientsRes.rows[0].name} هو الأهم بـ ${Math.round(parseFloat(topClientsRes.rows[0].total_revenue))} ر.س`,
+                    });
+                }
+
+                // Churn risk clients
+                const churnRes = await db.query(
+                    `SELECT c.id, c.name,
+                            COUNT(o.id) as order_count,
+                            COALESCE(SUM(o.grand_total), 0)::numeric as total_revenue,
+                            MAX(o.created_at) as last_order,
+                            EXTRACT(DAYS FROM NOW() - MAX(o.created_at))::int as days_since_last
+                     FROM clients c
+                     JOIN orders o ON o.client_id = c.id AND o.status NOT IN ('cancelled', 'draft')
+                     WHERE c.status = 'active' AND c.parent_id IS NULL
+                     GROUP BY c.id, c.name
+                     HAVING MAX(o.created_at) < NOW() - INTERVAL '45 days'
+                       AND COUNT(o.id) >= 3
+                     ORDER BY days_since_last DESC
+                     LIMIT 5`
+                );
+                if (churnRes.rows.length > 0) {
+                    insights.push({
+                        category: 'clients',
+                        type: 'churn_risk',
+                        title: 'عملاء معرضون للضياع',
+                        data: churnRes.rows.map(r => ({
+                            name: r.name,
+                            orders: parseInt(r.order_count),
+                            revenue: Math.round(parseFloat(r.total_revenue)),
+                            days_since_last: r.days_since_last,
+                        })),
+                        lesson: `${churnRes.rows.length} عملاء نشطين سابقاً لم يطلبوا منذ 45+ يوم. تواصل معهم فوراً.`,
+                    });
+                }
+            }
+
+            // 2. Product patterns
+            if (focus === 'all' || focus === 'products') {
+                // Best selling products
+                const topProductsRes = await db.query(
+                    `SELECT p.id, p.name,
+                            SUM(oi.quantity)::numeric as total_qty,
+                            SUM(oi.line_total)::numeric as total_revenue,
+                            COUNT(DISTINCT o.id) as order_count
+                     FROM order_items oi
+                     JOIN orders o ON o.id = oi.order_id
+                     JOIN product_variants pv ON pv.id = oi.variant_id
+                     JOIN products p ON p.id = pv.product_id
+                     WHERE o.status NOT IN ('cancelled', 'draft', 'quote')
+                       AND o.created_at >= NOW() - INTERVAL '12 months'
+                     GROUP BY p.id, p.name
+                     ORDER BY total_revenue DESC
+                     LIMIT 5`
+                );
+                if (topProductsRes.rows.length > 0) {
+                    insights.push({
+                        category: 'products',
+                        type: 'top_products',
+                        title: 'المنتجات الأكثر مبيعاً',
+                        data: topProductsRes.rows.map(r => ({
+                            name: r.name,
+                            quantity: parseInt(r.total_qty),
+                            revenue: Math.round(parseFloat(r.total_revenue)),
+                            order_count: parseInt(r.order_count),
+                        })),
+                        lesson: `${topProductsRes.rows[0].name} هو الأكثر مبيعاً بـ ${parseInt(topProductsRes.rows[0].total_qty)} وحدة. ركز عليه في المخزون.`,
+                    });
+                }
+
+                // Low performance products
+                const lowProductsRes = await db.query(
+                    `SELECT p.id, p.name,
+                            COALESCE(SUM(oi.quantity), 0)::numeric as total_qty,
+                            COALESCE(SUM(oi.line_total), 0)::numeric as total_revenue
+                     FROM products p
+                     LEFT JOIN product_variants pv ON pv.product_id = p.id
+                     LEFT JOIN order_items oi ON oi.variant_id = pv.id
+                     LEFT JOIN orders o ON o.id = oi.order_id AND o.status NOT IN ('cancelled', 'draft', 'quote')
+                         AND o.created_at >= NOW() - INTERVAL '90 days'
+                     WHERE p.status = 'active'
+                     GROUP BY p.id, p.name
+                     HAVING COALESCE(SUM(oi.line_total), 0) = 0
+                     LIMIT 5`
+                );
+                if (lowProductsRes.rows.length > 0) {
+                    insights.push({
+                        category: 'products',
+                        type: 'dead_stock',
+                        title: 'منتجات راكدة (لا مبيعات في 90 يوم)',
+                        data: lowProductsRes.rows.map(r => ({
+                            name: r.name,
+                        })),
+                        lesson: `${lowProductsRes.rows.length} منتجات لم تبع منذ 90 يوم. فكر في عروض تصفية أو إيقافها.`,
+                    });
+                }
+            }
+
+            // 3. Sales patterns
+            if (focus === 'all' || focus === 'sales_patterns') {
+                // Day of week pattern
+                const dowRes = await db.query(
+                    `SELECT EXTRACT(DOW FROM created_at)::int as dow,
+                            COUNT(*) as order_count,
+                            COALESCE(SUM(grand_total), 0)::numeric as revenue
+                     FROM orders
+                     WHERE status NOT IN ('cancelled', 'draft')
+                       AND created_at >= NOW() - INTERVAL '90 days'
+                     GROUP BY dow ORDER BY revenue DESC`
+                );
+                const dayNames = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+                if (dowRes.rows.length > 0) {
+                    const bestDay = dowRes.rows[0];
+                    insights.push({
+                        category: 'sales_patterns',
+                        type: 'best_day',
+                        title: 'أفضل أيام الأسبوع',
+                        data: dowRes.rows.map(r => ({
+                            day: dayNames[r.dow] || r.dow,
+                            orders: parseInt(r.order_count),
+                            revenue: Math.round(parseFloat(r.revenue)),
+                        })),
+                        lesson: `${dayNames[bestDay.dow]} هو أنشط يوم بـ ${Math.round(parseFloat(bestDay.revenue))} ر.س. جهّز المخزون والطاقه لهذا اليوم.`,
+                    });
+                }
+
+                // Average order value trend
+                const aovRes = await db.query(
+                    `SELECT DATE_TRUNC('month', created_at) as month,
+                            COUNT(*) as orders,
+                            COALESCE(AVG(grand_total), 0)::numeric as aov
+                     FROM orders
+                     WHERE status NOT IN ('cancelled', 'draft')
+                       AND created_at >= NOW() - INTERVAL '6 months'
+                     GROUP BY month ORDER BY month DESC LIMIT 6`
+                );
+                if (aovRes.rows.length >= 2) {
+                    const latest = aovRes.rows[0];
+                    const prev = aovRes.rows[1];
+                    const aovChange = parseFloat(prev.aov) > 0
+                        ? Math.round((parseFloat(latest.aov) - parseFloat(prev.aov)) / parseFloat(prev.aov) * 100)
+                        : 0;
+                    insights.push({
+                        category: 'sales_patterns',
+                        type: 'aov_trend',
+                        title: 'اتجاه متوسط قيمة الطلب',
+                        data: {
+                            current_aov: Math.round(parseFloat(latest.aov)),
+                            previous_aov: Math.round(parseFloat(prev.aov)),
+                            change_pct: aovChange,
+                        },
+                        lesson: aovChange > 0
+                            ? `متوسط الطلب ارتفع ${aovChange}% — العملاء يشترون أكثر. استمر في التوصيات المتقاطعة.`
+                            : `متوسط الطلب انخفض ${Math.abs(aovChange)}% — فكر في عروض bundle أو خصومات كمية.`,
+                    });
+                }
+            }
+
+            return {
+                focus,
+                analyzed_at: new Date().toISOString(),
+                insight_count: insights.length,
+                insights,
+                summary: insights.length > 0
+                    ? `${insights.length} نمط مكتشف من بيانات الشركة`
+                    : 'لا توجد بيانات كافية للتحليل',
+                _explanation: {
+                    why: `تم تحليل ${focus === 'all' ? 'كل الأنماط' : focus} واكتشاف ${insights.length} نمط.`,
+                    confidence: 80,
+                    factors: insights.slice(0, 5).map(i => ({
+                        factor: i.title,
+                        value: i.data ? (Array.isArray(i.data) ? i.data.length + ' عناصر' : 'اتجاه') : 'نمط',
+                        weight: i.type === 'churn_risk' || i.type === 'dead_stock' ? 'high' : 'medium',
+                    })),
+                },
+            };
+        }
+    },
+
+    // ── 57. getBusinessPlanner ───────────────────────────────────────────────
+    // Business Planner: generates actionable plans based on goals and data
+    {
+        type: 'function',
+        function: {
+            name: 'getBusinessPlanner',
+            description: 'مخطط الأعمال: يولّد خطة عمل عملية بناءً على الأهداف والبيانات الحالية. يقترح خطوات محددة مع الأولوية والجدول الزمني. استخدمه عندما يقول المستخدم "خطة الشهر" أو "ماذا أفعل؟" أو "اقترح خطة" أو "خطوات قادمة".',
+            parameters: {
+                type: 'object',
+                properties: {
+                    horizon: { type: 'string', enum: ['week', 'month', 'quarter'], description: 'أفق التخطيط (افتراضي month)' }
+                }
+            }
+        },
+        async execute(args, user) {
+            const { horizon = 'month' } = args;
+            const days = horizon === 'quarter' ? 90 : horizon === 'week' ? 7 : 30;
+            const label = horizon === 'quarter' ? 'ربع سنة' : horizon === 'week' ? 'أسبوع' : 'شهر';
+
+            const tasks = [];
+
+            // 1. Check overdue invoices → collection task
+            const overdueRes = await db.query(
+                `SELECT COUNT(*) as count, COALESCE(SUM(i.grand_total - COALESCE(ct.paid, 0)), 0)::numeric as amount
+                 FROM invoices i
+                 LEFT JOIN (
+                     SELECT invoice_id, SUM(amount) as paid
+                     FROM client_transactions WHERE type = 'payment' AND invoice_id IS NOT NULL
+                     GROUP BY invoice_id
+                 ) ct ON ct.invoice_id = i.id
+                 WHERE i.status = 'issued' AND i.due_date < NOW()
+                   AND (i.grand_total - COALESCE(ct.paid, 0)) > 0`
+            );
+            const overdueCount = parseInt(overdueRes.rows[0].count || 0);
+            const overdueAmount = parseFloat(overdueRes.rows[0].amount || 0);
+            if (overdueCount > 0) {
+                tasks.push({
+                    priority: 'critical',
+                    category: 'collections',
+                    title: `تحصيل ${overdueCount} فاتورة متأخرة`,
+                    description: `فاتورات متأخرة بقيمة ${Math.round(overdueAmount)} ر.س. تواصل مع العملاء فوراً.`,
+                    action: 'اتصل بكل عميل متأخر وحدد موعد دفع. ابدأ بالأكبر قيمة.',
+                    deadline: '3 أيام',
+                    expected_impact: Math.round(overdueAmount),
+                });
+            }
+
+            // 2. Check stockouts → reorder task
+            const stockoutRes = await db.query(
+                `SELECT ws.variant_id, pv.sku, p.name,
+                        ws.quantity
+                 FROM warehouse_stock ws
+                 JOIN product_variants pv ON pv.id = ws.variant_id
+                 JOIN products p ON p.id = pv.product_id
+                 WHERE ws.quantity <= 0
+                 LIMIT 10`
+            );
+            if (stockoutRes.rows.length > 0) {
+                tasks.push({
+                    priority: 'critical',
+                    category: 'inventory',
+                    title: `إعادة طلب ${stockoutRes.rows.length} صنف نفد`,
+                    description: `أصناف نفدت من المخزون: ${stockoutRes.rows.slice(0, 3).map(r => r.name).join('، ')}${stockoutRes.rows.length > 3 ? '...' : ''}`,
+                    action: 'أنشئ أوامر شراء للأصناف النافدة. رتّب حسب معدل البيع.',
+                    deadline: '2 أيام',
+                    expected_impact: 'منع فقدان مبيعات',
+                });
+            }
+
+            // 3. Inactive clients → reactivation task
+            const inactiveRes = await db.query(
+                `SELECT c.id, c.name, c.phone,
+                        MAX(o.created_at) as last_order,
+                        EXTRACT(DAYS FROM NOW() - MAX(o.created_at))::int as days_inactive
+                 FROM clients c
+                 LEFT JOIN orders o ON o.client_id = c.id AND o.status NOT IN ('cancelled', 'draft')
+                 WHERE c.status = 'active' AND c.parent_id IS NULL
+                 GROUP BY c.id, c.name, c.phone
+                 HAVING MAX(o.created_at) < NOW() - INTERVAL '30 days'
+                    OR MAX(o.created_at) IS NULL
+                 ORDER BY days_inactive DESC NULLS LAST
+                 LIMIT 10`
+            );
+            if (inactiveRes.rows.length > 0) {
+                tasks.push({
+                    priority: 'high',
+                    category: 'client_reactivation',
+                    title: `إعادة تنشيط ${inactiveRes.rows.length} عميل خامل`,
+                    description: `عملاء لم يطلبوا منذ 30+ يوم. ${inactiveRes.rows.slice(0, 3).map(r => r.name).join('، ')}${inactiveRes.rows.length > 3 ? '...' : ''}`,
+                    action: 'اتصل أو أرسل واتساب بعرض خاص. ابدأ بالعملاء الذين كانوا يطلبون بكثرة.',
+                    deadline: 'أسبوع',
+                    expected_impact: 'استعادة ' + inactiveRes.rows.length + ' عميل',
+                });
+            }
+
+            // 4. Pending quotes → follow-up task
+            const pendingQuotesRes = await db.query(
+                `SELECT COUNT(*) as count, COALESCE(SUM(grand_total), 0)::numeric as value
+                 FROM orders WHERE status = 'quote' AND created_at >= NOW() - INTERVAL '30 days'`
+            );
+            const pendingCount = parseInt(pendingQuotesRes.rows[0].count || 0);
+            const pendingValue = parseFloat(pendingQuotesRes.rows[0].value || 0);
+            if (pendingCount > 0) {
+                tasks.push({
+                    priority: 'high',
+                    category: 'quotes',
+                    title: `متابعة ${pendingCount} عرض سعر معلق`,
+                    description: `عروض بانتظار الرد بقيمة ${Math.round(pendingValue)} ر.س.`,
+                    action: 'اتصل بالعملاء واكتسب ملاحظاتهم. عدّل العرض لو لازم.',
+                    deadline: '5 أيام',
+                    expected_impact: Math.round(pendingValue),
+                });
+            }
+
+            // 5. Revenue goal check
+            try {
+                const goalRes = await db.query(
+                    `SELECT title, target_value, current_value, end_date
+                     FROM ai_goals WHERE status = 'active' AND goal_type = 'revenue'
+                     ORDER BY end_date ASC LIMIT 1`
+                );
+                if (goalRes.rows.length > 0) {
+                    const goal = goalRes.rows[0];
+                    const target = parseFloat(goal.target_value);
+                    const current = parseFloat(goal.current_value || 0);
+                    const remaining = Math.max(0, target - current);
+                    const progress = target > 0 ? Math.round(current / target * 100) : 0;
+                    if (progress < 100) {
+                        tasks.push({
+                            priority: 'medium',
+                            category: 'goal',
+                            title: `العمل على هدف: ${goal.title}`,
+                            description: `التقدم ${progress}% — تبقى ${Math.round(remaining)} ر.س لتحقيق الهدف.`,
+                            action: 'ركز على العملاء النشطين. اعرض bundle deals. فعّل حملة تسويقية محدودة.',
+                            deadline: goal.end_date,
+                            expected_impact: Math.round(remaining),
+                        });
+                    }
+                }
+            } catch (e) { /* goals table might not exist */ }
+
+            // Sort by priority
+            const priorityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
+            tasks.sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority]);
+
+            return {
+                horizon: label,
+                generated_at: new Date().toISOString(),
+                total_tasks: tasks.length,
+                critical_count: tasks.filter(t => t.priority === 'critical').length,
+                tasks,
+                summary: tasks.length > 0
+                    ? `${tasks.length} مهام لـ${label} — ${tasks.filter(t => t.priority === 'critical').length} حرجة، ${tasks.filter(t => t.priority === 'high').length} عالية الأولوية`
+                    : `لا توجد مهام عاجلة لـ${label}. الوضع مستقر.`,
+                _explanation: {
+                    why: `خطة ${label} تحتوي على ${tasks.length} مهام. ${tasks.filter(t => t.priority === 'critical').length} حرجة تحتاج تنفيذ فوري.`,
+                    confidence: 85,
+                    factors: tasks.slice(0, 5).map(t => ({
+                        factor: t.title,
+                        value: t.priority,
+                        weight: t.priority === 'critical' ? 'high' : t.priority === 'high' ? 'medium' : 'low',
+                    })),
+                },
+            };
+        }
+    },
+
+    // ── 58. getVoiceCommands ─────────────────────────────────────────────────
+    // Voice Assistant: maps Arabic voice commands to system actions
+    {
+        type: 'function',
+        function: {
+            name: 'getVoiceCommands',
+            description: 'مساعد صوتي للمستودع: يحول الأوامر الصوتية العربية إلى إجراءات في النظام. استخدمه عندما يقول المستخدم "أوامر صوتية" أو "اشرح الأوامر" أو "ماذا أقول للمساعد الصوتي".',
+            parameters: {
+                type: 'object',
+                properties: {
+                    query: { type: 'string', description: 'الأمر الصوتي المطلوب تفسيره (اختياري)' }
+                }
+            }
+        },
+        async execute(args, user) {
+            const { query } = args;
+
+            const commands = [
+                { phrase: 'كم المخزون', action: 'navigate', target: 'inventory', description: 'عرض صفحة المخزون' },
+                { phrase: 'كم طلب اليوم', action: 'query', target: 'today_orders', description: 'عدد طلبات اليوم' },
+                { phrase: 'فواتير متأخرة', action: 'query', target: 'overdue_invoices', description: 'عرض الفواتير المتأخرة' },
+                { phrase: 'افتح العملاء', action: 'navigate', target: 'clients', description: 'صفحة العملاء' },
+                { phrase: 'افتح المنتجات', action: 'navigate', target: 'products', description: 'صفحة المنتجات' },
+                { phrase: 'افتح الفواتير', action: 'navigate', target: 'sales-invoices', description: 'صفحة فواتير المبيعات' },
+                { phrase: 'افتح عروض الأسعار', action: 'navigate', target: 'quotations', description: 'صفحة عروض الأسعار' },
+                { phrase: 'افتح الموردين', action: 'navigate', target: 'suppliers', description: 'صفحة الموردين' },
+                { phrase: 'افتح لوحة التحكم', action: 'navigate', target: 'dashboard', description: 'لوحة التحكم الرئيسية' },
+                { phrase: 'افتح المخازن', action: 'navigate', target: 'warehouses', description: 'صفحة المخازن' },
+                { phrase: 'افتح أوامر التشغيل', action: 'navigate', target: 'production_orders', description: 'أوامر التشغيل' },
+                { phrase: 'ملخص اليوم', action: 'briefing', target: 'briefing', description: 'الملخص اليومي' },
+                { phrase: 'الأهداف', action: 'query', target: 'goals', description: 'حالة الأهداف' },
+                { phrase: 'مؤشرات الأداء', action: 'query', target: 'kpis', description: 'مؤشرات الأداء' },
+                { phrase: 'كم باقي من المخزون', action: 'query', target: 'stock_forecast', description: 'التنبؤ بنفاد المخزون' },
+                { phrase: 'أفضل العملاء', action: 'query', target: 'top_clients', description: 'أفضل العملاء' },
+                { phrase: 'المنتجات الراكدة', action: 'query', target: 'dead_stock', description: 'منتجات لم تبع' },
+                { phrase: 'خطة الشهر', action: 'query', target: 'business_planner', description: 'خطة عمل شهرية' },
+            ];
+
+            if (query) {
+                // Try to match the voice command
+                const normalized = query.trim().toLowerCase();
+                let bestMatch = null;
+                let bestScore = 0;
+
+                for (const cmd of commands) {
+                    const cmdNormalized = cmd.phrase.toLowerCase();
+                    if (normalized.includes(cmdNormalized) || cmdNormalized.includes(normalized)) {
+                        const score = Math.min(normalized.length, cmdNormalized.length) / Math.max(normalized.length, cmdNormalized.length);
+                        if (score > bestScore) {
+                            bestScore = score;
+                            bestMatch = cmd;
+                        }
+                    }
+                }
+
+                if (bestMatch) {
+                    // Execute the matched command
+                    if (bestMatch.action === 'navigate') {
+                        return {
+                            understood: true,
+                            command: bestMatch.phrase,
+                            action: 'navigate',
+                            target: bestMatch.target,
+                            description: bestMatch.description,
+                            response: `فتح ${bestMatch.description}`,
+                        };
+                    } else if (bestMatch.action === 'briefing') {
+                        return {
+                            understood: true,
+                            command: bestMatch.phrase,
+                            action: 'briefing',
+                            target: bestMatch.target,
+                            description: bestMatch.description,
+                            response: 'جاري توليد الملخص اليومي...',
+                        };
+                    } else {
+                        return {
+                            understood: true,
+                            command: bestMatch.phrase,
+                            action: 'query',
+                            target: bestMatch.target,
+                            description: bestMatch.description,
+                            response: `جاري البحث عن ${bestMatch.description}...`,
+                        };
+                    }
+                }
+
+                return {
+                    understood: false,
+                    query: query,
+                    response: 'لم أتعرف على هذا الأمر. الأوامر المتاحة: ' + commands.map(c => `"${c.phrase}"`).join('، '),
+                };
+            }
+
+            return {
+                commands_available: commands.length,
+                commands,
+                summary: `${commands.length} أمر صوتي متاح. قل أحد الأوامر التالية للمساعد الصوتي.`,
+                _explanation: {
+                    why: `المساعد الصوتي يدعم ${commands.length} أمر بالعربية للتنفيذ في النظام.`,
+                    confidence: 95,
+                    factors: [
+                        { factor: 'أوامر التنقل', value: commands.filter(c => c.action === 'navigate').length, weight: 'medium' },
+                        { factor: 'أوامر الاستعلام', value: commands.filter(c => c.action === 'query').length, weight: 'medium' },
+                    ],
+                },
+            };
+        }
+    },
+
 ];
 
 // =============================================================================
