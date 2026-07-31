@@ -8,6 +8,7 @@
 // =============================================================================
 
 const db = require('../db');
+const featureFlags = require('./ai-feature-flags');
 
 // ── Helper: build sales-rep scope clause ─────────────────────────────────────
 function _salesRepScope(user, alias) {
@@ -3375,6 +3376,9 @@ const AI_FUNCTIONS = [
             }
         },
         async execute(args, user) {
+            if (!await featureFlags.isEnabled('ai_recurring')) {
+                return { error: 'ميزة كشف الأنماط المتكررة معطلة بواسطة الإدارة' };
+            }
             const { client_name, min_occurrences = 2 } = args;
 
             let clientFilter = '';
@@ -3548,6 +3552,9 @@ const AI_FUNCTIONS = [
             }
         },
         async execute(args, user) {
+            if (!await featureFlags.isEnabled('ai_recurring')) {
+                return { error: 'ميزة القوالب المتكررة معطلة بواسطة الإدارة' };
+            }
             const { client_name } = args;
 
             let query, params;
@@ -3649,6 +3656,9 @@ const AI_FUNCTIONS = [
             }
         },
         async execute(args, user) {
+            if (!await featureFlags.isEnabled('ai_discount_decision')) {
+                return { error: 'ميزة محرك قرارات الخصم معطلة بواسطة الإدارة' };
+            }
             const { client_name, order_total, requested_discount_pct, cost_estimate } = args;
 
             // Find client
@@ -3821,6 +3831,9 @@ const AI_FUNCTIONS = [
             }
         },
         async execute(args, user) {
+            if (!await featureFlags.isEnabled('ai_root_cause')) {
+                return { error: 'ميزة التحليل السببي معطلة بواسطة الإدارة' };
+            }
             const { metric, comparison = 'month' } = args;
 
             const interval = comparison === 'quarter' ? '90 days' : '30 days';
@@ -4028,6 +4041,9 @@ const AI_FUNCTIONS = [
             }
         },
         async execute(args, user) {
+            if (!await featureFlags.isEnabled('ai_kpi_engine')) {
+                return { error: 'ميزة مؤشرات الأداء معطلة بواسطة الإدارة' };
+            }
             const { period = 'month' } = args;
             const interval = period === 'quarter' ? '90 days' : period === 'week' ? '7 days' : '30 days';
             const label = period === 'quarter' ? 'ربع سنة' : period === 'week' ? 'أسبوع' : 'شهر';
@@ -4193,6 +4209,9 @@ const AI_FUNCTIONS = [
             }
         },
         async execute(args, user) {
+            if (!await featureFlags.isEnabled('ai_sandbox')) {
+                return { error: 'ميزة بيئة المحاكاة معطلة بواسطة الإدارة' };
+            }
             const { scenario, pct = 10, client_name, product_name } = args;
 
             // Get current baseline metrics

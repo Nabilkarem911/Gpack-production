@@ -201,6 +201,9 @@ router.get('/history', async (req, res) => {
 // =============================================================================
 router.get('/briefing', async (req, res) => {
     try {
+        if (!await featureFlags.isEnabled('ai_briefing')) {
+            return res.status(403).json({ error: 'ميزة الملخص اليومي معطلة بواسطة الإدارة' });
+        }
         const user = req.user;
         const isSalesRep = user.role === 'sales_rep';
         const scopeClause = isSalesRep ? `AND created_by = $1` : '';
@@ -376,6 +379,9 @@ router.get('/suggest-price', async (req, res) => {
 // =============================================================================
 router.post('/propose-action', async (req, res) => {
     try {
+        if (!await featureFlags.isEnabled('ai_propose_actions')) {
+            return res.status(403).json({ error: 'ميزة اقتراح الإجراءات معطلة بواسطة الإدارة' });
+        }
         const { action_type, args } = req.body;
 
         if (!action_type) {
@@ -600,6 +606,9 @@ router.post('/reject-action', async (req, res) => {
 // =============================================================================
 router.post('/execute-batch', async (req, res) => {
     try {
+        if (!await featureFlags.isEnabled('ai_batch_execute')) {
+            return res.status(403).json({ error: 'ميزة التنفيذ الجماعي معطلة بواسطة الإدارة' });
+        }
         const { action_ids } = req.body;
 
         if (!Array.isArray(action_ids) || action_ids.length === 0) {
@@ -733,6 +742,9 @@ router.post('/execute-batch', async (req, res) => {
 // =============================================================================
 router.post('/feedback', async (req, res) => {
     try {
+        if (!await featureFlags.isEnabled('ai_feedback')) {
+            return res.status(403).json({ error: 'ميزة تقييم الاقتراحات معطلة بواسطة الإدارة' });
+        }
         const { message_id, rating, reason, function_name, action_id } = req.body;
 
         if (!rating || !['positive', 'negative'].includes(rating)) {
@@ -798,6 +810,14 @@ router.post('/chat', async (req, res) => {
 
     if (!message || !message.trim()) {
         return res.status(400).json({ error: 'الرسالة فارغة' });
+    }
+
+    // ── Feature flag check ──────────────────────────────────────────────────
+    if (!await featureFlags.isEnabled('ai_chat')) {
+        return res.json({
+            reply: 'المساعد الذكي معطيل حالياً بواسطة الإدارة.',
+            enabled: false,
+        });
     }
 
     // ── If AI is not configured, return a friendly message ──────────────────
