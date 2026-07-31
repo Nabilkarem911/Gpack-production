@@ -15,6 +15,7 @@ const { AI_ACTIONS, ACTION_MAP } = require('../utils/ai-actions');
 const { checkPolicies } = require('../utils/ai-policies');
 const { generateBriefing, getLatestBriefing, markBriefingRead } = require('../utils/ai-briefing');
 const featureFlags = require('../utils/ai-feature-flags');
+const { auditFunctions, auditActions, validateSqlSafety } = require('../utils/ai-safety');
 
 // ── Config ───────────────────────────────────────────────────────────────────
 // Supports ANY OpenAI-compatible provider: OpenAI, Azure OpenAI, OpenRouter,
@@ -1197,6 +1198,38 @@ router.put('/goals/:id', async (req, res) => {
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: 'فشل في تحديث الهدف' });
+    }
+});
+
+// =============================================================================
+// GET /api/ai-assistant/safety-audit
+// Phase 31.1: Safety audit — checks all AI functions and actions for compliance
+// =============================================================================
+router.get('/safety-audit', async (req, res) => {
+    try {
+        if (req.user.role !== 'admin' && req.user.role !== 'manager') {
+            return res.status(403).json({ error: 'غير مصرح' });
+        }
+
+        const fnAudit = auditFunctions(AI_FUNCTIONS);
+        const actionAudit = auditActions(AI_ACTIONS);
+
+        res.json({
+            timestamp: new Date().toISOString(),
+            functions: fnAudit,
+            actions: actionAudit,
+            summary: {
+                total_functions: fnAudit.total,
+                functions_passed: fnAudit.passed,
+                functions_failed: fnAudit.failed,
+                total_actions: actionAudit.total,
+                actions_passed: actionAudit.passed,
+                actions_failed: actionAudit.failed,
+                overall_status: fnAudit.failed === 0 && actionAudit.failed === 0 ? 'healthy' : 'issues_detected',
+            },
+        });
+    } catch (err) {
+        res.status(500).json({ error: 'فشل في فحص الأمان: ' + err.message });
     }
 });
 
