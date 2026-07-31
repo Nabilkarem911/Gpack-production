@@ -49,7 +49,7 @@
 
 ### 2.2 تقييم مخاطر الائتمان
 - **المنطق:**
-  1. تحليل سجل الدفعات من `payments` (متأخر ولا ملتزم؟)
+  1. تحليل سجل الدفعات من `client_transactions` (type = 'payment')
   2. متوسط المشتريات الشهرية من `orders` + `invoices`
   3. الرصيد الحالي = `invoices.grand_total - invoices.paid_amount`
   4. مقارنة بـ `clients.credit_limit`
@@ -58,7 +58,7 @@
 - **شجرة الارتباطات:**
   - يقرأ من: `clients` (credit_limit, status)
   - يقرأ من: `invoices` (grand_total, paid_amount, invoice_date)
-  - يقرأ من: `payments` (amount, payment_date, created_at)
+  - يقرأ من: `client_transactions` (amount, type, created_at)
   - **لا يقرأ من:** `warehouse_stock` أو `inventory_transactions`
   - **لا يكتب في:** أي جدول
 
@@ -91,13 +91,13 @@
 
 ### 2.5 ذكاء الموردين والشراء
 - **المنطق:**
-  1. مقارنة أسعار الموردين لنفس المنتج من `supplier_pricing`
-  2. تحليل جودة التسليم من `purchase_orders` (نسبة التسليم في الموعد)
+  1. مقارنة أسعار الموردين لنفس المنتج من `purchase_invoice_items` + `purchase_invoices`
+  2. تحليل جودة التسليم من `manufacturer_orders` (نسبة التسليم في الموعد)
   3. اقتراح أفضل مورد بناءً على السعر + الجودة
 - **الملفات المتأثرة:** `backend/utils/ai-functions.js` (دوال جديدة)
 - **شجرة الارتباطات:**
-  - يقرأ من: `supplier_pricing` (supplier_id, variant_id, price)
-  - يقرأ من: `purchase_orders` + `purchase_order_items` (delivery_date vs expected_date)
+  - يقرأ من: `purchase_invoice_items` + `purchase_invoices` (unit_cost, invoice_date)
+  - يقرأ من: `manufacturer_orders` (delivery_date vs expected_date)
   - **لا يكتب في:** أي جدول
 
 ---
@@ -118,7 +118,7 @@
   4. الـ AI يعرضها كجدول Markdown في الشات
 - **الملفات المتأثرة:** `backend/utils/ai-functions.js`, `frontend/js/ai-assistant.js` (render جداول)
 - **شجرة الارتباطات:**
-  - يقرأ من: `orders`, `order_items`, `invoices`, `payments`, `clients`, `products`
+  - يقرأ من: `orders`, `order_items`, `invoices`, `client_transactions`, `clients`, `products`
   - **لا يكتب في:** أي جدول
 
 ### 3.2 تحليل موسمي
@@ -170,12 +170,12 @@
 | `orders` | الطلبات | `client_id` → `clients.id` |
 | `order_items` | أصناف الطلبات | `order_id` → `orders.id`, `variant_id` → `product_variants.id` |
 | `invoices` | الفواتير | `client_id` → `clients.id`, `order_id` → `orders.id` |
-| `payments` | الدفعات | `order_id` → `orders.id` |
+| `client_transactions` | حركات العملاء | `client_id` → `clients.id`, `order_id` → `orders.id` |
 | `warehouse_stock` | المخزون | `client_id` → `clients.id`, `variant_id` → `product_variants.id` |
 | `inventory_transactions` | حركات المخزون | `stock_id` → `warehouse_stock.id` |
 | `suppliers` | الموردين | — |
-| `supplier_pricing` | أسعار الموردين | `supplier_id` → `suppliers.id`, `variant_id` → `product_variants.id` |
-| `purchase_orders` | أوامر الشراء | `supplier_id` → `suppliers.id` |
+| `purchase_invoice_items` | أصناف فواتير الشراء | `purchase_invoice_id` → `purchase_invoices.id`, `variant_id` → `product_variants.id` |
+| `purchase_invoices` | فواتير الشراء | `supplier_id` → `suppliers.id` |
 | `delivery_notes` | سندات التسليم | `order_id` → `orders.id`, `client_id` → `clients.id` |
 | `tasks` | المهام | `assigned_to` → `users.id` |
 | `ai_chat_history` | سجل المحادثة | `user_id` → `users.id` |
@@ -187,7 +187,7 @@
 | `clients` | create_client | name, phone, email, address, tax_id, contact_person, city, commercial_register, credit_limit, parent_id, status, created_by |
 | `orders` | create_quote, create_production_order | client_id, status, order_number, internal_notes, created_by |
 | `order_items` | (مع create_quote) | order_id, variant_id, quantity, unit_price, line_total |
-| `payments` | add_payment | order_id, amount, payment_method, payment_date |
+| `client_transactions` | add_payment | client_id, order_id, type, amount, payment_method, description |
 | `tasks` | create_task | title, description, assigned_to, created_by, due_date, status, priority |
 | `ai_action_log` | (تلقائي) | user_id, action_type, proposal, status, result |
 
@@ -427,9 +427,9 @@
 - **الملفات المتأثرة:** `backend/utils/ai-functions.js` (دالة `getBusinessForecast`)
 - **شجرة الارتباطات:**
   - يقرأ من: `orders` (آخر 12 شهر — اتجاه)
-  - يقرأ من: `invoices` + `payments` (كاش متوقع)
+  - يقرأ من: `invoices` + `client_transactions` (كاش متوقع)
   - يقرأ من: `warehouse_stock` + `inventory_transactions` (مخزون)
-  - يقرأ من: `production_orders` (إنتاج)
+  - يقرأ من: `manufacturer_orders` (إنتاج)
   - **لا يكتب في:** أي جدول
 
 ---
@@ -605,7 +605,7 @@
   - `backend/utils/ai-goals.js` (وحدة جديدة)
   - `backend/migrations/065_ai_goals.sql`
 - **شجرة الارتباطات:**
-  - يقرأ من: `orders`, `invoices`, `payments` (قياس التقدم)
+  - يقرأ من: `orders`, `invoices`, `client_transactions` (قياس التقدم)
   - يكتب في: `ai_goals` (current_value, last_measured)
   - `ai_goals.user_id` → `users.id`
 
@@ -643,7 +643,7 @@
 - **المنطق:** كل KPI له target و actual. لو الانحراف > 15% → تنبيه
 - **الملفات المتأثرة:** `backend/utils/ai-functions.js` (دالة `getKPIStatus`)
 - **شجرة الارتباطات:**
-  - يقرأ من: `orders`, `invoices`, `payments`, `warehouse_stock`, `production_orders`, `delivery_notes`
+  - يقرأ من: `orders`, `invoices`, `client_transactions`, `warehouse_stock`, `manufacturer_orders`, `delivery_notes`
   - **لا يكتب في:** أي جدول
 
 ---
