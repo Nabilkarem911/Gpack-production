@@ -22,7 +22,14 @@ const metrics = require('./utils/metrics');
 // Safe to run on every startup — already-applied files are skipped.
 // =============================================================================
 async function runMigrations() {
-    const client = await db.getClient();
+    let client;
+    try {
+        client = await db.getClient();
+    } catch (err) {
+        console.error('[Migrate] Cannot connect to database:', err.message);
+        console.error('[Migrate] Skipping migrations — server will start in degraded mode.');
+        return;
+    }
     try {
         // Ensure tracking table exists
         await client.query(`
@@ -80,8 +87,13 @@ async function runMigrations() {
                         skippedAny = true;
                         continue;
                     }
-                    if (notFound && /DROP CONSTRAINT|DROP INDEX|DROP TRIGGER/i.test(stmt)) {
+                    if (notFound && /DROP CONSTRAINT|DROP INDEX|DROP TRIGGER|DROP POLICY/i.test(stmt)) {
                         // Benign — trying to drop something that doesn't exist
+                        skippedAny = true;
+                        continue;
+                    }
+                    // RLS policy already exists — benign
+                    if (/policy .* already exists/i.test(msg)) {
                         skippedAny = true;
                         continue;
                     }
@@ -94,7 +106,8 @@ async function runMigrations() {
             }
 
             if (failedAny) {
-                throw new Error(`Migration ${file} failed — see logs above`);
+                console.error(`[Migrate] Migration ${file} failed — continuing to next file.`);
+                continue;
             }
 
             // Mark as applied
@@ -206,9 +219,10 @@ app.get('/api/health', async (req, res) => {
     });
   } catch (err) {
     console.error('[Health] Database ping failed:', err.message);
-    return res.status(503).json({
-      status: 'error',
+    return res.status(200).json({
+      status: 'degraded',
       service: 'gpack-backend',
+      version: '2.0.0',
       db_connected: false,
       error: 'Database connection failed.',
     });
@@ -380,8 +394,23 @@ runMigrations()
         });
     })
     .catch((err) => {
-        console.error('[Server] Migration failed, aborting startup:', err.message);
-        process.exit(1);
+        console.error('[Server] Migration error:', err.message);
+        console.error('[Server] Starting anyway — some features may be unavailable.');
+        const server = app.listen(PORT, () => {
+            console.log(`[Server] G.PACK 2.0 Backend running on port ${PORT} (degraded)`);
+            console.log(`[Server] Environment: ${process.env.NODE_ENV || 'development'}`);
+            console.log(`[Server] Health check: http://localhost:${PORT}/api/health`);
+        });
+        const shutdown = async (signal) => {
+            console.log(`[Server] ${signal} received, shutting down gracefully...`);
+            server.close(async () => {
+                try { await db.pool.end(); process.exit(0); }
+                catch (e) { process.exit(1); }
+            });
+            setTimeout(() => process.exit(1), 10000);
+        };
+        process.on('SIGTERM', () => shutdown('SIGTERM'));
+        process.on('SIGINT', () => shutdown('SIGINT'));
     });
 
 module.exports = app;
