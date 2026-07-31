@@ -2883,6 +2883,454 @@ const AI_FUNCTIONS = [
         }
     },
 
+    // ── 44. generateCustomReport ─────────────────────────────────────────────
+    // Custom report generator: sales, profit, inventory, client reports
+    {
+        type: 'function',
+        function: {
+            name: 'generateCustomReport',
+            description: 'مولد تقارير ذكية: يولد تقارير مخصصة حسب النوع والفترة. الأنواع: sales_summary (ملخص المبيعات)، profit_analysis (تحليل الأرباح)، inventory_valuation (تقييم المخزون)، client_performance (أداء العملاء)، top_products (المنتجات الأكثر مبيعاً). استخدمه عندما يطلب المستخدم تقريراً.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    report_type: { type: 'string', enum: ['sales_summary', 'profit_analysis', 'inventory_valuation', 'client_performance', 'top_products'], description: 'نوع التقرير' },
+                    period: { type: 'string', enum: ['today', 'week', 'month', 'quarter', 'year'], description: 'الفترة الزمنية (افتراضي month)' },
+                    client_name: { type: 'string', description: 'اسم العميل — اختياري، لفلترة التقرير' }
+                },
+                required: ['report_type']
+            }
+        },
+        async execute(args, user) {
+            const { report_type, period = 'month', client_name } = args;
+
+            // Build date filter
+            const periodMap = {
+                today: "DATE(created_at) = CURRENT_DATE",
+                week: "created_at >= NOW() - INTERVAL '7 days'",
+                month: "created_at >= NOW() - INTERVAL '30 days'",
+                quarter: "created_at >= NOW() - INTERVAL '90 days'",
+                year: "created_at >= NOW() - INTERVAL '365 days'",
+            };
+            const dateFilter = periodMap[period] || periodMap.month;
+
+            let data = {};
+            let summary = '';
+
+            if (report_type === 'sales_summary') {
+                const res = await db.query(
+                    `SELECT
+                        COUNT(*) as total_orders,
+                        COALESCE(SUM(grand_total), 0)::numeric as total_sales,
+                        COALESCE(AVG(grand_total), 0)::numeric as avg_order_value,
+                        COUNT(CASE WHEN status = 'quote' THEN 1 END) as pending_quotes,
+                        COUNT(CASE WHEN status = 'confirmed' THEN 1 END) as confirmed_orders,
+                        COUNT(CASE WHEN status = 'delivered' THEN 1 END) as delivered_orders
+                     FROM orders
+                     WHERE ${dateFilter} AND status NOT IN ('cancelled', 'draft')`
+                );
+                const r = res.rows[0];
+                data = {
+                    period,
+                    total_orders: parseInt(r.total_orders || 0),
+                    total_sales: parseFloat(r.total_sales || 0),
+                    avg_order_value: parseFloat(r.avg_order_value || 0),
+                    pending_quotes: parseInt(r.pending_quotes || 0),
+                    confirmed_orders: parseInt(r.confirmed_orders || 0),
+                    delivered_orders: parseInt(r.delivered_orders || 0),
+                };
+                summary = `ملخص المبيعات (${period}): ${data.total_orders} طلب، إجمالي ${Math.round(data.total_sales)} ر.س، متوسط الطلب ${Math.round(data.avg_order_value)} ر.س`;
+            } else if (report_type === 'profit_analysis') {
+                const res = await db.query(
+                    `SELECT
+                        COALESCE(SUM(oi.line_total), 0)::numeric as revenue,
+                        COALESCE(SUM(oi.quantity * pv.cost_price), 0)::numeric as cost,
+                        COALESCE(SUM(oi.line_total - (oi.quantity * pv.cost_price)), 0)::numeric as gross_profit
+                     FROM order_items oi
+                     JOIN orders o ON o.id = oi.order_id
+                     JOIN product_variants pv ON pv.id = oi.variant_id
+                     WHERE ${dateFilter.replace('created_at', 'o.created_at')} AND o.status NOT IN ('cancelled', 'draft', 'quote')`
+                );
+                const r = res.rows[0];
+                const revenue = parseFloat(r.revenue || 0);
+                const cost = parseFloat(r.cost || 0);
+                const profit = parseFloat(r.gross_profit || 0);
+                const margin = revenue > 0 ? (profit / revenue * 100) : 0;
+                data = {
+                    period,
+                    revenue: Math.round(revenue * 100) / 100,
+                    cost: Math.round(cost * 100) / 100,
+                    gross_profit: Math.round(profit * 100) / 100,
+                    margin_pct: Math.round(margin * 100) / 100,
+                };
+                summary = `تحليل الأرباح (${period}): إيرادات ${Math.round(revenue)} ر.س، تكلفة ${Math.round(cost)} ر.س، ربح إجمالي ${Math.round(profit)} ر.س، هامش ${Math.round(margin)}%`;
+            } else if (report_type === 'inventory_valuation') {
+                const res = await db.query(
+                    `SELECT
+                        COUNT(*) as total_items,
+                        COALESCE(SUM(ws.quantity), 0)::numeric as total_units,
+                        COALESCE(SUM(ws.quantity * pv.cost_price), 0)::numeric as cost_value,
+                        COALESCE(SUM(ws.quantity * pv.selling_price), 0)::numeric as retail_value
+                     FROM warehouse_stock ws
+                     JOIN product_variants pv ON pv.id = ws.variant_id
+                     WHERE ws.quantity > 0`
+                );
+                const r = res.rows[0];
+                const costValue = parseFloat(r.cost_value || 0);
+                const retailValue = parseFloat(r.retail_value || 0);
+                data = {
+                    total_items: parseInt(r.total_items || 0),
+                    total_units: parseFloat(r.total_units || 0),
+                    cost_value: Math.round(costValue * 100) / 100,
+                    retail_value: Math.round(retailValue * 100) / 100,
+                    potential_profit: Math.round((retailValue - costValue) * 100) / 100,
+                };
+                summary = `تقييم المخزون: ${data.total_items} صنف، ${data.total_units} وحدة، تكلفة ${Math.round(costValue)} ر.س، قيمة بيع ${Math.round(retailValue)} ر.س`;
+            } else if (report_type === 'client_performance') {
+                let clientFilter = '';
+                let params = [];
+                if (client_name) {
+                    clientFilter = `AND c.name ILIKE $1`;
+                    params = [`%${client_name}%`];
+                }
+                const res = await db.query(
+                    `SELECT c.name as client_name,
+                            COUNT(o.id) as order_count,
+                            COALESCE(SUM(o.grand_total), 0)::numeric as total_sales,
+                            MAX(o.created_at) as last_order,
+                            COALESCE(AVG(o.grand_total), 0)::numeric as avg_order
+                     FROM clients c
+                     LEFT JOIN orders o ON o.client_id = c.id AND o.status NOT IN ('cancelled', 'draft')
+                         AND ${dateFilter.replace('created_at', 'o.created_at')}
+                     WHERE c.status = 'active' AND c.parent_id IS NULL ${clientFilter}
+                     GROUP BY c.name
+                     ORDER BY total_sales DESC
+                     LIMIT 20`,
+                    params
+                );
+                data = {
+                    period,
+                    clients: res.rows.map(r => ({
+                        client_name: r.client_name,
+                        order_count: parseInt(r.order_count || 0),
+                        total_sales: parseFloat(r.total_sales || 0),
+                        avg_order: parseFloat(r.avg_order || 0),
+                        last_order: r.last_order,
+                    })),
+                };
+                summary = `أداء العملاء (${period}): ${data.clients.length} عميل، أعلى مبيعات: ${data.clients[0]?.client_name || 'لا يوجد'} (${Math.round(parseFloat(data.clients[0]?.total_sales || 0))} ر.س)`;
+            } else if (report_type === 'top_products') {
+                const res = await db.query(
+                    `SELECT p.name as product_name, pv.size_name,
+                            SUM(oi.quantity)::numeric as total_qty,
+                            SUM(oi.line_total)::numeric as total_revenue,
+                            COUNT(DISTINCT o.id) as order_count
+                     FROM order_items oi
+                     JOIN orders o ON o.id = oi.order_id
+                     JOIN product_variants pv ON pv.id = oi.variant_id
+                     JOIN products p ON p.id = pv.product_id
+                     WHERE ${dateFilter.replace('created_at', 'o.created_at')} AND o.status NOT IN ('cancelled', 'draft', 'quote')
+                     GROUP BY p.name, pv.size_name
+                     ORDER BY total_revenue DESC NULLS LAST
+                     LIMIT 15`
+                );
+                data = {
+                    period,
+                    products: res.rows.map(r => ({
+                        product_name: r.product_name,
+                        size_name: r.size_name,
+                        total_qty: parseFloat(r.total_qty || 0),
+                        total_revenue: parseFloat(r.total_revenue || 0),
+                        order_count: parseInt(r.order_count || 0),
+                    })),
+                };
+                summary = `المنتجات الأكثر مبيعاً (${period}): ${data.products.length} صنف، الأعلى: ${data.products[0]?.product_name || 'لا يوجد'} (${Math.round(parseFloat(data.products[0]?.total_revenue || 0))} ر.س)`;
+            }
+
+            return {
+                report_type,
+                period,
+                generated_at: new Date().toISOString(),
+                summary,
+                data,
+                _explanation: {
+                    why: `تم توليد تقرير "${report_type}" للفترة ${period} بناءً على طلب المستخدم.`,
+                    confidence: 90,
+                    factors: [
+                        { factor: 'نوع التقرير', value: report_type, weight: 'high' },
+                        { factor: 'الفترة', value: period, weight: 'high' },
+                    ],
+                },
+            };
+        }
+    },
+
+    // ── 45. getSeasonalAnalysis ──────────────────────────────────────────────
+    // 12-month seasonal trend analysis for products
+    {
+        type: 'function',
+        function: {
+            name: 'getSeasonalAnalysis',
+            description: 'تحليل موسمي للمبيعات: يحلل مبيعات 12 شهر لكل منتج، يكتشف القمم والأودية، ويقترح زيادة مخزون قبل المواسم. استخدمه عندما يقول المستخدم "موسم" أو "أنماط البيع" أو "متى نبيع أكثر؟".',
+            parameters: {
+                type: 'object',
+                properties: {
+                    product_name: { type: 'string', description: 'اسم المنتج — اختياري، لو لم يحدد سيحلل كل المنتجات' }
+                }
+            }
+        },
+        async execute(args, user) {
+            const { product_name } = args;
+
+            let productFilter = '';
+            let params = [];
+            if (product_name) {
+                productFilter = `AND p.name ILIKE $1`;
+                params = [`%${product_name}%`];
+            }
+
+            // Get monthly sales for last 12 months
+            const res = await db.query(
+                `SELECT p.name as product_name,
+                        TO_CHAR(o.created_at, 'YYYY-MM') as month,
+                        SUM(oi.quantity)::numeric as total_qty,
+                        SUM(oi.line_total)::numeric as total_revenue
+                 FROM order_items oi
+                 JOIN orders o ON o.id = oi.order_id
+                 JOIN product_variants pv ON pv.id = oi.variant_id
+                 JOIN products p ON p.id = pv.product_id
+                 WHERE o.status NOT IN ('cancelled', 'draft', 'quote')
+                   AND o.created_at >= NOW() - INTERVAL '12 months'
+                   ${productFilter}
+                 GROUP BY p.name, TO_CHAR(o.created_at, 'YYYY-MM')
+                 ORDER BY p.name, month`,
+                params
+            );
+
+            if (res.rows.length === 0) return { error: 'لا توجد بيانات مبيعات كافية للتحليل الموسمي' };
+
+            // Group by product
+            const productMap = {};
+            for (const row of res.rows) {
+                if (!productMap[row.product_name]) {
+                    productMap[row.product_name] = [];
+                }
+                productMap[row.product_name].push({
+                    month: row.month,
+                    qty: parseFloat(row.total_qty || 0),
+                    revenue: parseFloat(row.total_revenue || 0),
+                });
+            }
+
+            const results = [];
+            for (const [name, months] of Object.entries(productMap)) {
+                const qtyArr = months.map(m => m.qty);
+                const avgQty = qtyArr.reduce((a, b) => a + b, 0) / qtyArr.length;
+                const maxQty = Math.max(...qtyArr);
+                const minQty = Math.min(...qtyArr);
+                const peakMonth = months.find(m => m.qty === maxQty);
+                const lowMonth = months.find(m => m.qty === minQty);
+
+                // Seasonality index: how much peak exceeds average
+                const seasonalityIndex = avgQty > 0 ? (maxQty / avgQty) : 1;
+                const isSeasonal = seasonalityIndex > 1.5;
+
+                // Current stock for this product
+                const stockRes = await db.query(
+                    `SELECT COALESCE(SUM(ws.quantity), 0)::numeric as current_stock
+                     FROM warehouse_stock ws
+                     JOIN product_variants pv ON pv.id = ws.variant_id
+                     JOIN products p ON p.id = pv.product_id
+                     WHERE p.name = $1`,
+                    [name]
+                );
+                const currentStock = parseFloat(stockRes.rows[0].current_stock || 0);
+
+                results.push({
+                    product_name: name,
+                    months_analyzed: months.length,
+                    avg_monthly_qty: Math.round(avgQty * 100) / 100,
+                    peak_month: peakMonth ? { month: peakMonth.month, qty: maxQty } : null,
+                    low_month: lowMonth ? { month: lowMonth.month, qty: minQty } : null,
+                    seasonality_index: Math.round(seasonalityIndex * 100) / 100,
+                    is_seasonal: isSeasonal,
+                    current_stock: currentStock,
+                    recommendation: isSeasonal
+                        ? `منتج موسمي: ذروة البيع في ${peakMonth?.month || '?'} (${maxQty} وحدة). يُنصح بزيادة المخزون قبل الموعد بشهر. المخزون الحالي: ${currentStock}.`
+                        : `منتج منتظم: مبيعات مستقرة. متوسط شهري ${Math.round(avgQty)} وحدة. المخزون الحالي: ${currentStock}.`,
+                    monthly_data: months,
+                });
+            }
+
+            // Sort: seasonal products first
+            results.sort((a, b) => (b.is_seasonal ? 1 : 0) - (a.is_seasonal ? 1 : 0));
+
+            return {
+                analysis_date: new Date().toISOString(),
+                period_covered: '12 months',
+                total_products: results.length,
+                seasonal_count: results.filter(r => r.is_seasonal).length,
+                results,
+            };
+        }
+    },
+
+    // ── 46. getSupplierIntelligence ──────────────────────────────────────────
+    // Supplier comparison + delivery performance
+    {
+        type: 'function',
+        function: {
+            name: 'getSupplierIntelligence',
+            description: 'ذكاء الموردين: يقارن أسعار الموردين لنفس المنتج، يحلل جودة التسليم (نسبة الالتزام بالمواعيد)، ويقترح أفضل مورد. استخدمه عندما يقول المستخدم "أفضل مورد" أو "قارن الموردين" أو "أداء الموردين".',
+            parameters: {
+                type: 'object',
+                properties: {
+                    product_name: { type: 'string', description: 'اسم المنتج — اختياري، للمقارنة على منتج معين' }
+                }
+            }
+        },
+        async execute(args, user) {
+            const { product_name } = args;
+
+            // 1. Supplier pricing comparison
+            let pricingQuery, pricingParams;
+            if (product_name) {
+                pricingQuery = `
+                    SELECT sp.supplier_id, s.company_name as supplier_name,
+                           pv.id as variant_id, p.name as product_name, pv.size_name,
+                           sp.price, sp.updated_at
+                    FROM supplier_pricing sp
+                    JOIN suppliers s ON s.id = sp.supplier_id
+                    JOIN product_variants pv ON pv.id = sp.variant_id
+                    JOIN products p ON p.id = pv.product_id
+                    WHERE p.name ILIKE $1 AND s.status = 'active'
+                    ORDER BY p.name, pv.size_name, sp.price
+                `;
+                pricingParams = [`%${product_name}%`];
+            } else {
+                pricingQuery = `
+                    SELECT sp.supplier_id, s.company_name as supplier_name,
+                           pv.id as variant_id, p.name as product_name, pv.size_name,
+                           sp.price, sp.updated_at
+                    FROM supplier_pricing sp
+                    JOIN suppliers s ON s.id = sp.supplier_id
+                    JOIN product_variants pv ON pv.id = sp.variant_id
+                    JOIN products p ON p.id = pv.product_id
+                    WHERE s.status = 'active'
+                    ORDER BY p.name, pv.size_name, sp.price
+                    LIMIT 50
+                `;
+                pricingParams = [];
+            }
+
+            const pricingRes = await db.query(pricingQuery, pricingParams);
+
+            // Group by product+variant to find cheapest supplier
+            const productPrices = {};
+            for (const row of pricingRes.rows) {
+                const key = `${row.product_name}__${row.size_name || ''}`;
+                if (!productPrices[key]) {
+                    productPrices[key] = {
+                        product_name: row.product_name,
+                        size_name: row.size_name,
+                        suppliers: [],
+                    };
+                }
+                productPrices[key].suppliers.push({
+                    supplier_name: row.supplier_name,
+                    price: parseFloat(row.price || 0),
+                });
+            }
+
+            // Find best supplier per product
+            const priceComparison = Object.values(productPrices).map(item => {
+                const sorted = item.suppliers.sort((a, b) => a.price - b.price);
+                const cheapest = sorted[0];
+                const expensive = sorted[sorted.length - 1];
+                const savings = sorted.length > 1 ? (expensive.price - cheapest.price) : 0;
+                return {
+                    product_name: item.product_name,
+                    size_name: item.size_name,
+                    cheapest_supplier: cheapest ? cheapest.supplier_name : null,
+                    cheapest_price: cheapest ? cheapest.price : null,
+                    expensive_supplier: expensive ? expensive.supplier_name : null,
+                    expensive_price: expensive ? expensive.price : null,
+                    potential_savings: Math.round(savings * 100) / 100,
+                    supplier_count: sorted.length,
+                    all_suppliers: sorted,
+                };
+            });
+
+            // 2. Delivery performance per supplier
+            const deliveryRes = await db.query(
+                `SELECT s.id, s.company_name as supplier_name,
+                        COUNT(po.id) as total_orders,
+                        COUNT(CASE WHEN po.status = 'received' THEN 1 END) as received_count,
+                        AVG(CASE WHEN po.received_date IS NOT NULL AND po.expected_date IS NOT NULL
+                            THEN CASE WHEN po.received_date <= po.expected_date THEN 1 ELSE 0 END
+                            ELSE NULL END)::numeric as on_time_rate
+                 FROM suppliers s
+                 LEFT JOIN purchase_orders po ON po.supplier_id = s.id
+                 WHERE s.status = 'active'
+                 GROUP BY s.id, s.company_name
+                 ORDER BY total_orders DESC`
+            );
+
+            const deliveryPerformance = deliveryRes.rows.map(r => ({
+                supplier_name: r.supplier_name,
+                total_orders: parseInt(r.total_orders || 0),
+                received_orders: parseInt(r.received_count || 0),
+                on_time_rate: Math.round(parseFloat(r.on_time_rate || 0) * 100) / 100,
+                delivery_rating: parseFloat(r.on_time_rate || 0) >= 0.8 ? 'excellent'
+                    : parseFloat(r.on_time_rate || 0) >= 0.6 ? 'good'
+                    : parseFloat(r.on_time_rate || 0) >= 0.4 ? 'fair'
+                    : 'poor',
+            }));
+
+            // 3. Overall supplier ranking (price + delivery)
+            const supplierStats = {};
+            for (const dp of deliveryPerformance) {
+                supplierStats[dp.supplier_name] = {
+                    supplier_name: dp.supplier_name,
+                    delivery_rating: dp.delivery_rating,
+                    on_time_rate: dp.on_time_rate,
+                    total_orders: dp.total_orders,
+                    cheapest_count: 0,
+                    avg_price_rank: 0,
+                };
+            }
+
+            for (const pc of priceComparison) {
+                if (pc.cheapest_supplier && supplierStats[pc.cheapest_supplier]) {
+                    supplierStats[pc.cheapest_supplier].cheapest_count++;
+                }
+            }
+
+            const ranking = Object.values(supplierStats)
+                .filter(s => s.total_orders > 0 || s.cheapest_count > 0)
+                .sort((a, b) => (b.cheapest_count * 2 + b.on_time_rate) - (a.cheapest_count * 2 + a.on_time_rate));
+
+            return {
+                analysis_date: new Date().toISOString(),
+                product_filter: product_name || 'all',
+                price_comparison: priceComparison.slice(0, 20),
+                delivery_performance: deliveryPerformance,
+                supplier_ranking: ranking.slice(0, 10),
+                top_recommendation: ranking[0]
+                    ? `أفضل مورد: ${ranking[0].supplier_name} — أرخص في ${ranking[0].cheapest_count} منتج، نسبة الالتزام ${Math.round(ranking[0].on_time_rate * 100)}%`
+                    : 'لا توجد بيانات كافية',
+                _explanation: {
+                    why: `تم تحليل ${priceComparison.length} مقارنة سعر و ${deliveryPerformance.length} مورد. التقييم يعتمد على السعر + جودة التسليم.`,
+                    confidence: pricingRes.rows.length > 10 ? 80 : 50,
+                    factors: [
+                        { factor: 'مقارنات الأسعار', value: priceComparison.length, weight: 'high' },
+                        { factor: 'الموردين النشطين', value: deliveryPerformance.length, weight: 'high' },
+                        { factor: 'أوامر الشراء', value: deliveryRes.rows.reduce((s, r) => s + parseInt(r.total_orders || 0), 0), weight: 'medium' },
+                    ],
+                },
+            };
+        }
+    },
+
 ];
 
 // =============================================================================
