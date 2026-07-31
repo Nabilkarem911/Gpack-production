@@ -14,6 +14,7 @@ const { AI_FUNCTIONS, FUNCTION_MAP } = require('../utils/ai-functions');
 const { AI_ACTIONS, ACTION_MAP } = require('../utils/ai-actions');
 const { checkPolicies } = require('../utils/ai-policies');
 const { generateBriefing, getLatestBriefing, markBriefingRead } = require('../utils/ai-briefing');
+const featureFlags = require('../utils/ai-feature-flags');
 
 // ── Config ───────────────────────────────────────────────────────────────────
 // Supports ANY OpenAI-compatible provider: OpenAI, Azure OpenAI, OpenRouter,
@@ -152,6 +153,7 @@ const SYSTEM_PROMPT = `أنت المساعد الذكي والذراع الأي�
 - عندما يقول المستخدم "لو" أو "ماذا لو" أو "حاكي" أو "لو رفعت الأسعار"، استخدم simulateAction لمحاكاة الأثر المتوقع. اعرض baseline vs projected مع الافتراضات والمخاطر.
 - عندما يقول المستخدم "وريني الأسبوع اللي فات" أو "أحداث أمس" أو "ملخص الفترة"، استخدم getTimelineReplay لعرض الأحداث يوم بيوم. اعرض كل يوم مع أحداثه مرتبة زمنياً.
 - عندما يقول المستخدم "أداء الـ AI" أو "إحصائيات المساعد"، استخدم getAIMetrics لعرض عدد المحادثات، نسبة نجاح الإجراءات، رضا المستخدمين، أكثر الدوال استخداماً.
+- عندما يقول المستخدم "الأهداف" أو "هدف الشهر" أو "كيف نحن مقابل الهدف؟"، استخدم getGoalStatus لعرض الأهداف النشطة وحالة التقدم. اعرض النسبة المئوية والأيام المتبقية والأهداف المتأخرة مع توصيات.
 - عندما تقترح عدة إجراءات في رد واحد، اعرضها معاً ليتمكن المستخدم من تنفيذها دفعة واحدة عبر زر "تنفيذ الكل".
 - اعرض التحليل بوضوح: التكلفة، السعر المقترح، الهامش، وسبب الاقتراح. كن مستشاراً ذكياً مش مجرد ناقل بيانات.`;
 
@@ -1052,5 +1054,147 @@ async function _callOpenAI(messages, tools) {
     const data = await response.json();
     return data.choices[0].message;
 }
+
+// =============================================================================
+// GET /api/ai-assistant/feature-flags
+// Phase 29.1: List all feature flags
+// =============================================================================
+router.get('/feature-flags', async (req, res) => {
+    try {
+        const flags = await featureFlags.getAllFlags();
+        res.json(flags);
+    } catch (err) {
+        res.status(500).json({ error: 'فشل في جلب الميزات' });
+    }
+});
+
+// =============================================================================
+// PUT /api/ai-assistant/feature-flags/:key
+// Phase 29.1: Toggle a feature flag (admin only)
+// =============================================================================
+router.put('/feature-flags/:key', async (req, res) => {
+    try {
+        if (req.user.role !== 'admin' && req.user.role !== 'manager') {
+            return res.status(403).json({ error: 'غير مصرح' });
+        }
+        const { enabled } = req.body;
+        await featureFlags.setFlag(req.params.key, enabled, req.user.id);
+        res.json({ success: true, flag: req.params.key, enabled });
+    } catch (err) {
+        res.status(500).json({ error: 'فشل في تحديث الميزة' });
+    }
+});
+
+// =============================================================================
+// GET /api/ai-assistant/prompt-versions
+// Phase 28.1: List prompt versions
+// =============================================================================
+router.get('/prompt-versions', async (req, res) => {
+    try {
+        const result = await db.query(
+            `SELECT id, version, description, is_active, created_at,
+                    LEFT(prompt_text, 200) as preview
+             FROM ai_prompt_versions ORDER BY created_at DESC LIMIT 20`
+        );
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: 'فشل في جلب إصدارات الـ prompt' });
+    }
+});
+
+// =============================================================================
+// POST /api/ai-assistant/prompt-versions
+// Phase 28.1: Save current prompt as new version (admin only)
+// =============================================================================
+router.post('/prompt-versions', async (req, res) => {
+    try {
+        if (req.user.role !== 'admin' && req.user.role !== 'manager') {
+            return res.status(403).json({ error: 'غير مصرح' });
+        }
+        const { version, description } = req.body;
+        if (!version) return res.status(400).json({ error: 'الإصدار مطلوب' });
+
+        // Deactivate previous active version
+        await db.query(`UPDATE ai_prompt_versions SET is_active = false WHERE is_active = true`);
+
+        const result = await db.query(
+            `INSERT INTO ai_prompt_versions (version, prompt_text, description, is_active, created_by)
+             VALUES ($1, $2, $3, true, $4) RETURNING id`,
+            [version, SYSTEM_PROMPT, description || null, req.user.id]
+        );
+        res.json({ success: true, id: result.rows[0].id });
+    } catch (err) {
+        res.status(500).json({ error: 'فشل في حفظ الإصدار' });
+    }
+});
+
+// =============================================================================
+// GET /api/ai-assistant/goals
+// Phase 23.1: List active goals
+// =============================================================================
+router.get('/goals', async (req, res) => {
+    try {
+        const result = await db.query(
+            `SELECT * FROM ai_goals WHERE status = 'active' ORDER BY end_date ASC`
+        );
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: 'فشل في جلب الأهداف' });
+    }
+});
+
+// =============================================================================
+// POST /api/ai-assistant/goals
+// Phase 23.1: Create a new goal (admin/manager only)
+// =============================================================================
+router.post('/goals', async (req, res) => {
+    try {
+        if (req.user.role !== 'admin' && req.user.role !== 'manager') {
+            return res.status(403).json({ error: 'غير مصرح' });
+        }
+        const { goal_type, title, description, target_value, unit, period, end_date } = req.body;
+        if (!goal_type || !title || !target_value || !end_date) {
+            return res.status(400).json({ error: 'الحقول المطلوبة: goal_type, title, target_value, end_date' });
+        }
+
+        const result = await db.query(
+            `INSERT INTO ai_goals (goal_type, title, description, target_value, unit, period, end_date, created_by)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+            [goal_type, title, description || null, target_value, unit || 'ر.س', period || 'month', end_date, req.user.id]
+        );
+        res.json({ success: true, id: result.rows[0].id });
+    } catch (err) {
+        res.status(500).json({ error: 'فشل في إنشاء الهدف' });
+    }
+});
+
+// =============================================================================
+// PUT /api/ai-assistant/goals/:id
+// Phase 23.1: Update goal (status, target, end_date)
+// =============================================================================
+router.put('/goals/:id', async (req, res) => {
+    try {
+        if (req.user.role !== 'admin' && req.user.role !== 'manager') {
+            return res.status(403).json({ error: 'غير مصرح' });
+        }
+        const { status, target_value, end_date } = req.body;
+        const updates = [];
+        const params = [];
+        let idx = 1;
+
+        if (status) { updates.push(`status = $${idx++}`); params.push(status); }
+        if (target_value !== undefined) { updates.push(`target_value = $${idx++}`); params.push(target_value); }
+        if (end_date) { updates.push(`end_date = $${idx++}`); params.push(end_date); }
+        updates.push(`updated_at = NOW()`);
+
+        if (updates.length === 1) return res.status(400).json({ error: 'لا توجد حقول للتحديث' });
+
+        params.push(req.params.id);
+        await db.query(`UPDATE ai_goals SET ${updates.join(', ')} WHERE id = $${idx}`, params);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: 'فشل في تحديث الهدف' });
+    }
+});
 
 module.exports = router;

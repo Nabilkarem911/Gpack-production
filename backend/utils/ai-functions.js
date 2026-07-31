@@ -4612,6 +4612,162 @@ const AI_FUNCTIONS = [
         }
     },
 
+    // ── 55. getGoalStatus ────────────────────────────────────────────────────
+    // Goal Engine: tracks business goals and progress
+    {
+        type: 'function',
+        function: {
+            name: 'getGoalStatus',
+            description: 'محرك الأهداف: يعرض الأهداف النشطة وحالة التقدم نحوها. يحسب النسبة المئوية لكل هدف ويقترح إجراءات للوصول. استخدمه عندما يقول المستخدم "الأهداف" أو "هدف الشهر" أو "كيف نحن مقابل الهدف؟".',
+            parameters: {
+                type: 'object',
+                properties: {
+                    include_completed: { type: 'boolean', description: 'تضمين الأهداف المكتملة (افتراضي false)' }
+                }
+            }
+        },
+        async execute(args, user) {
+            const { include_completed = false } = args;
+
+            const goalsRes = await db.query(
+                `SELECT * FROM ai_goals WHERE ${include_completed ? "status IN ('active', 'completed')" : "status = 'active'"} ORDER BY end_date ASC`
+            );
+
+            if (goalsRes.rows.length === 0) {
+                return {
+                    goals: [],
+                    summary: 'لا توجد أهداف نشطة. أنشئ هدفاً جديداً من خلال الإعدادات.',
+                };
+            }
+
+            const goals = [];
+
+            for (const goal of goalsRes.rows) {
+                let currentValue = 0;
+
+                // Calculate current value based on goal_type
+                if (goal.goal_type === 'revenue') {
+                    const res = await db.query(
+                        `SELECT COALESCE(SUM(grand_total), 0)::numeric as val
+                         FROM orders WHERE status NOT IN ('cancelled', 'draft')
+                           AND created_at >= $1 AND created_at <= $2`,
+                        [goal.start_date, goal.end_date]
+                    );
+                    currentValue = parseFloat(res.rows[0].val || 0);
+                } else if (goal.goal_type === 'profit') {
+                    const res = await db.query(
+                        `SELECT COALESCE(SUM(oi.line_total - oi.quantity * pv.cost_price), 0)::numeric as val
+                         FROM order_items oi
+                         JOIN orders o ON o.id = oi.order_id
+                         JOIN product_variants pv ON pv.id = oi.variant_id
+                         WHERE o.status NOT IN ('cancelled', 'draft', 'quote')
+                           AND o.created_at >= $1 AND o.created_at <= $2`,
+                        [goal.start_date, goal.end_date]
+                    );
+                    currentValue = parseFloat(res.rows[0].val || 0);
+                } else if (goal.goal_type === 'orders') {
+                    const res = await db.query(
+                        `SELECT COUNT(*) as val FROM orders
+                         WHERE status NOT IN ('cancelled', 'draft')
+                           AND created_at >= $1 AND created_at <= $2`,
+                        [goal.start_date, goal.end_date]
+                    );
+                    currentValue = parseInt(res.rows[0].val || 0);
+                } else if (goal.goal_type === 'collections') {
+                    const res = await db.query(
+                        `SELECT COALESCE(SUM(amount), 0)::numeric as val
+                         FROM client_transactions WHERE type = 'payment'
+                           AND created_at >= $1 AND created_at <= $2`,
+                        [goal.start_date, goal.end_date]
+                    );
+                    currentValue = parseFloat(res.rows[0].val || 0);
+                } else if (goal.goal_type === 'new_clients') {
+                    const res = await db.query(
+                        `SELECT COUNT(*) as val FROM clients
+                         WHERE status = 'active' AND parent_id IS NULL
+                           AND created_at >= $1 AND created_at <= $2`,
+                        [goal.start_date, goal.end_date]
+                    );
+                    currentValue = parseInt(res.rows[0].val || 0);
+                }
+
+                const targetValue = parseFloat(goal.target_value);
+                const progressPct = targetValue > 0 ? Math.min(100, Math.round(currentValue / targetValue * 100)) : 0;
+                const remaining = Math.max(0, targetValue - currentValue);
+                const daysLeft = Math.ceil((new Date(goal.end_date) - new Date()) / (1000 * 60 * 60 * 24));
+                const daysTotal = Math.ceil((new Date(goal.end_date) - new Date(goal.start_date)) / (1000 * 60 * 60 * 24));
+                const daysElapsed = daysTotal - daysLeft;
+                const expectedPct = daysTotal > 0 ? Math.min(100, Math.round(daysElapsed / daysTotal * 100)) : 100;
+                const onTrack = progressPct >= expectedPct;
+
+                // Update current_value in DB
+                await db.query(
+                    `UPDATE ai_goals SET current_value = $1, updated_at = NOW() WHERE id = $2`,
+                    [currentValue, goal.id]
+                );
+
+                // Auto-complete if reached
+                let status = goal.status;
+                if (progressPct >= 100 && goal.status === 'active') {
+                    status = 'completed';
+                    await db.query(`UPDATE ai_goals SET status = 'completed' WHERE id = $1`, [goal.id]);
+                }
+
+                goals.push({
+                    id: goal.id,
+                    title: goal.title,
+                    goal_type: goal.goal_type,
+                    target: targetValue,
+                    current: Math.round(currentValue * 100) / 100,
+                    remaining: Math.round(remaining * 100) / 100,
+                    unit: goal.unit,
+                    progress_pct: progressPct,
+                    expected_pct: expectedPct,
+                    on_track: onTrack,
+                    days_left: daysLeft,
+                    status,
+                    description: goal.description,
+                });
+            }
+
+            const activeGoals = goals.filter(g => g.status === 'active');
+            const completedGoals = goals.filter(g => g.status === 'completed');
+            const offTrack = activeGoals.filter(g => !g.on_track);
+
+            let summary = `${activeGoals.length} أهداف نشطة، ${completedGoals.length} مكتملة`;
+            if (offTrack.length > 0) {
+                summary += `، ${offTrack.length} متأخرة عن الجدول`;
+            }
+
+            return {
+                total_goals: goals.length,
+                active: activeGoals.length,
+                completed: completedGoals.length,
+                off_track: offTrack.length,
+                goals,
+                summary,
+                recommendations: offTrack.map(g => ({
+                    goal: g.title,
+                    issue: `التقدم ${g.progress_pct}% مقابل المتوقع ${g.expected_pct}% — متأخر بـ ${g.expected_pct - g.progress_pct}%`,
+                    action: g.goal_type === 'revenue' ? 'ركز على العملاء النشطين وقدم عروض خاصة'
+                        : g.goal_type === 'orders' ? 'تواصل مع العملاء الخاملين'
+                        : g.goal_type === 'collections' ? 'تابع الفواتير المتأخرة بقوة'
+                        : g.goal_type === 'new_clients' ? 'فعّل حملة تسويقية'
+                        : 'راجع استراتيجية الهدف',
+                })),
+                _explanation: {
+                    why: `${activeGoals.length} أهداف نشطة، ${offTrack.length} متأخرة عن الجدول الزمني.`,
+                    confidence: 85,
+                    factors: goals.map(g => ({
+                        factor: g.title,
+                        value: `${g.progress_pct}% (${g.current}/${g.target} ${g.unit})`,
+                        weight: g.on_track ? 'medium' : 'high',
+                    })),
+                },
+            };
+        }
+    },
+
 ];
 
 // =============================================================================
