@@ -143,6 +143,9 @@ const SYSTEM_PROMPT = `أنت المساعد الذكي والذراع الأي�
 - عندما يطلب المستخدم تقريراً (مبيعات، أرباح، مخزون، عملاء، منتجات)، استخدم generateCustomReport مع report_type المناسب و period. اعرض التقرير كجدول منسق في الشات.
 - عندما يقول المستخدم "موسم" أو "أنماط البيع" أو "متى نبيع أكثر؟"، استخدم getSeasonalAnalysis لتحليل 12 شهر واكتشاف القمم الموسمية. اعرض المنتجات الموسمية أولاً مع توصيات المخزون.
 - عندما يقول المستخدم "أفضل مورد" أو "قارن الموردين" أو "أداء الموردين"، استخدم getSupplierIntelligence لمقارنة الأسعار وجودة التسليم. اعرض الترتيب وأفضل مورد.
+- عندما يقول المستخدم "أنماط متكررة" أو "طلبات دورية" أو "عملاء بنمط ثابت"، استخدم detectRecurringPatterns لكشف الأنماط المتكررة في الطلبات وحفظها كقوالب. اعرض الأنماط المكتشفة مع عدد التكرار وفترة الدورية.
+- عندما يقول المستخدم "القوالب المتكررة" أو "الطلبات الدورية"، استخدم getRecurringTemplates لعرض القوالب المحفوظة مع تاريخ الطلب المتوقع القادم. اعرض القوالب المتأخرة أولاً.
+- عندما تقترح عدة إجراءات في رد واحد، اعرضها معاً ليتمكن المستخدم من تنفيذها دفعة واحدة عبر زر "تنفيذ الكل".
 - اعرض التحليل بوضوح: التكلفة، السعر المقترح، الهامش، وسبب الاقتراح. كن مستشاراً ذكياً مش مجرد ناقل بيانات.`;
 
 // =============================================================================
@@ -573,6 +576,140 @@ router.post('/reject-action', async (req, res) => {
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: 'فشل في رفض الإجراء' });
+    }
+});
+
+// =============================================================================
+// POST /api/ai-assistant/execute-batch
+// Phase 1.3: Execute multiple proposed actions sequentially (Workflows).
+// Body: { action_ids: [uuid, uuid, ...] }
+// Stops on first failure, returns results for each action.
+// =============================================================================
+router.post('/execute-batch', async (req, res) => {
+    try {
+        const { action_ids } = req.body;
+
+        if (!Array.isArray(action_ids) || action_ids.length === 0) {
+            return res.status(400).json({ error: 'قائمة الإجراءات مطلوبة' });
+        }
+
+        // Role check
+        const userRole = req.user.role;
+        if (userRole === 'sales_rep' || userRole === 'designer') {
+            return res.status(403).json({ error: 'غير مصرح لك بتنفيذ إجراءات.' });
+        }
+
+        const results = [];
+        let allSuccess = true;
+
+        for (let i = 0; i < action_ids.length; i++) {
+            const action_id = action_ids[i];
+
+            // Fetch the action log entry
+            const logRes = await db.query(
+                `SELECT id, user_id, action_type, proposal, status
+                 FROM ai_action_log
+                 WHERE id = $1 AND user_id = $2 AND status = 'proposed'
+                 LIMIT 1`,
+                [action_id, req.user.id]
+            );
+
+            if (logRes.rows.length === 0) {
+                results.push({
+                    action_id,
+                    index: i,
+                    success: false,
+                    error: 'الإجراء غير موجود أو تم تنفيذه بالفعل',
+                });
+                allSuccess = false;
+                break;
+            }
+
+            const logEntry = logRes.rows[0];
+            const action = ACTION_MAP[logEntry.action_type];
+
+            if (!action) {
+                results.push({
+                    action_id,
+                    index: i,
+                    action_type: logEntry.action_type,
+                    success: false,
+                    error: 'نوع إجراء غير معروف',
+                });
+                allSuccess = false;
+                break;
+            }
+
+            // Policy check
+            const policyResult = await checkPolicies(
+                logEntry.action_type, logEntry.proposal, req.user,
+                logEntry.proposal?.args || logEntry.proposal || {}
+            );
+
+            if (!policyResult.passed) {
+                const blockMsgs = policyResult.blocks.map(b => b.message).join(' • ');
+                await db.query(
+                    `UPDATE ai_action_log SET status = 'blocked', error_message = $1 WHERE id = $2`,
+                    [blockMsgs, action_id]
+                );
+                results.push({
+                    action_id,
+                    index: i,
+                    action_type: logEntry.action_type,
+                    success: false,
+                    error: blockMsgs,
+                    blocks: policyResult.blocks,
+                });
+                allSuccess = false;
+                break;
+            }
+
+            try {
+                const result = await action.execute(logEntry.proposal, req.user);
+
+                await db.query(
+                    `UPDATE ai_action_log
+                     SET status = 'executed', result = $1::jsonb, executed_at = NOW()
+                     WHERE id = $2`,
+                    [JSON.stringify(result), action_id]
+                );
+
+                results.push({
+                    action_id,
+                    index: i,
+                    action_type: logEntry.action_type,
+                    success: true,
+                    result,
+                    warnings: policyResult.warnings,
+                });
+            } catch (execErr) {
+                await db.query(
+                    `UPDATE ai_action_log SET status = 'failed', error_message = $1 WHERE id = $2 AND status = 'proposed'`,
+                    [execErr.message, action_id]
+                ).catch(() => {});
+
+                results.push({
+                    action_id,
+                    index: i,
+                    action_type: logEntry.action_type,
+                    success: false,
+                    error: execErr.message,
+                });
+                allSuccess = false;
+                break;
+            }
+        }
+
+        res.json({
+            success: allSuccess,
+            total: action_ids.length,
+            executed: results.filter(r => r.success).length,
+            failed: results.filter(r => !r.success).length,
+            results,
+        });
+    } catch (err) {
+        console.error('[AI Assistant] Execute-batch error:', err.message);
+        res.status(500).json({ error: 'فشل في تنفيذ سلسلة الإجراءات: ' + err.message });
     }
 });
 

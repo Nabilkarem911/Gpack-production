@@ -464,6 +464,81 @@
             });
         });
 
+        // Batch execute button (Phase 1.3: Workflows)
+        document.querySelectorAll('.ai-batch-execute').forEach(btn => {
+            btn.addEventListener('click', async function() {
+                var msgEl = btn.closest('[data-msg-proposed]');
+                if (!msgEl) return;
+                var proposed;
+                try {
+                    proposed = JSON.parse(msgEl.getAttribute('data-msg-proposed') || '[]');
+                } catch(e) { return; }
+
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin ml-1 text-[10px]"></i>جاري تجهيز الإجراءات...';
+
+                try {
+                    // Step 1: Propose all actions and collect action_ids
+                    var actionIds = [];
+                    var proposeErrors = [];
+
+                    for (var i = 0; i < proposed.length; i++) {
+                        var pa = proposed[i];
+                        try {
+                            var proposeRes = await window.apiFetch('/api/ai-assistant/propose-action', {
+                                method: 'POST',
+                                body: { action_type: pa.action_type, args: pa.args },
+                            });
+                            if (proposeRes.valid) {
+                                actionIds.push(proposeRes.action_id);
+                            } else {
+                                proposeErrors.push({ index: i, label: pa.label, error: proposeRes.error });
+                                break;
+                            }
+                        } catch (err) {
+                            proposeErrors.push({ index: i, label: pa.label, error: err.message });
+                            break;
+                        }
+                    }
+
+                    if (proposeErrors.length > 0) {
+                        btn.innerHTML = '<i class="fa-solid fa-circle-exclamation ml-1 text-[10px]"></i>فشل: ' + _esc(proposeErrors[0].error);
+                        btn.disabled = false;
+                        return;
+                    }
+
+                    // Step 2: Execute batch
+                    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin ml-1 text-[10px]"></i>جاري التنفيذ المتسلسل...';
+                    var batchRes = await window.apiFetch('/api/ai-assistant/execute-batch', {
+                        method: 'POST',
+                        body: { action_ids: actionIds },
+                    });
+
+                    // Step 3: Show results
+                    var successCount = batchRes.executed || 0;
+                    var failCount = batchRes.failed || 0;
+
+                    if (batchRes.success) {
+                        btn.innerHTML = '<i class="fa-solid fa-circle-check ml-1 text-[10px]"></i>تم تنفيذ الكل بنجاح (' + successCount + ' إجراء)';
+                        btn.classList.remove('bg-indigo-600', 'hover:bg-indigo-700');
+                        btn.classList.add('bg-emerald-600', 'hover:bg-emerald-700');
+                        // Remove individual cards
+                        msgEl.querySelectorAll('.ai-propose-card').forEach(function(c) { c.remove(); });
+                        if (window.showToast) window.showToast('تم تنفيذ ' + successCount + ' إجراء بنجاح', 'success');
+                    } else {
+                        btn.innerHTML = '<i class="fa-solid fa-circle-exclamation ml-1 text-[10px]"></i>تم تنفيذ ' + successCount + ' وفشل ' + failCount;
+                        btn.classList.remove('bg-indigo-600', 'hover:bg-indigo-700');
+                        btn.classList.add('bg-rose-600', 'hover:bg-rose-700');
+                        if (window.showToast) window.showToast('تم تنفيذ ' + successCount + ' وفشل ' + failCount, 'warning');
+                    }
+                    btn.disabled = false;
+                } catch (err) {
+                    btn.innerHTML = '<i class="fa-solid fa-circle-exclamation ml-1 text-[10px]"></i>خطأ: ' + _esc(err.message || 'فشل');
+                    btn.disabled = false;
+                }
+            });
+        });
+
         // Scroll to bottom
         _scrollToBottom();
     }
@@ -532,7 +607,15 @@
         // Proposed write actions (Phase 6)
         let proposeHtml = '';
         if (msg.proposed_actions && msg.proposed_actions.length > 0) {
-            proposeHtml = msg.proposed_actions.map((pa, i) => {
+            // Batch execute button (Phase 1.3: Workflows) — only if 2+ actions
+            if (msg.proposed_actions.length >= 2) {
+                proposeHtml += `<div class="mt-2 mb-1">
+                    <button class="ai-batch-execute w-full px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-semibold hover:bg-indigo-700 transition-colors">
+                        <i class="fa-solid fa-layer-group ml-1 text-[10px]"></i>تنفيذ الكل (${msg.proposed_actions.length} إجراءات)
+                    </button>
+                </div>`;
+            }
+            proposeHtml += msg.proposed_actions.map((pa, i) => {
                 return `<div class="ai-propose-card mt-2 p-3 bg-amber-50 border border-amber-300 rounded-xl" data-propose-idx="${i}">
                     <div class="flex items-center gap-1.5 mb-1.5">
                         <i class="fa-solid fa-wand-magic-sparkles text-amber-600 text-xs"></i>

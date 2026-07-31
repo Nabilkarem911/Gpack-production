@@ -3331,6 +3331,277 @@ const AI_FUNCTIONS = [
         }
     },
 
+    // ── 47. detectRecurringPatterns ──────────────────────────────────────────
+    // Analyzes order history for repeating patterns and saves templates
+    {
+        type: 'function',
+        function: {
+            name: 'detectRecurringPatterns',
+            description: 'كشف أنماط الطلبات المتكررة: يحلل طلبات كل عميل في آخر 90 يوم، يكتشف الأنماط المتكررة (نفس المنتجات + نفس الكميات)، ويحفظها كقوالب. استخدمه عندما يقول المستخدم "أنماط متكررة" أو "طلبات دورية" أو "عملاء بنمط ثابت".',
+            parameters: {
+                type: 'object',
+                properties: {
+                    client_name: { type: 'string', description: 'اسم العميل — اختياري، لتحليل عميل معين' },
+                    min_occurrences: { type: 'integer', description: 'الحد الأدنى لتكرار النمط (افتراضي 2)' }
+                }
+            }
+        },
+        async execute(args, user) {
+            const { client_name, min_occurrences = 2 } = args;
+
+            let clientFilter = '';
+            let params = [];
+            if (client_name) {
+                clientFilter = `AND c.name ILIKE $1`;
+                params = [`%${client_name}%`];
+            }
+
+            // Get all orders with items for last 90 days, grouped by client
+            const ordersRes = await db.query(
+                `SELECT o.id, o.client_id, c.name as client_name,
+                        o.created_at, o.status,
+                        json_agg(
+                            json_build_object(
+                                'variant_id', oi.variant_id,
+                                'product_name', p.name,
+                                'size_name', pv.size_name,
+                                'quantity', oi.quantity,
+                                'unit_price', oi.unit_price
+                            ) ORDER BY p.name
+                        ) as items
+                 FROM orders o
+                 JOIN clients c ON c.id = o.client_id
+                 JOIN order_items oi ON oi.order_id = o.id
+                 JOIN product_variants pv ON pv.id = oi.variant_id
+                 JOIN products p ON p.id = pv.product_id
+                 WHERE o.status NOT IN ('cancelled', 'draft')
+                   AND o.created_at >= NOW() - INTERVAL '90 days'
+                   ${clientFilter}
+                 GROUP BY o.id, o.client_id, c.name, o.created_at, o.status
+                 ORDER BY c.name, o.created_at`,
+                params
+            );
+
+            if (ordersRes.rows.length === 0) return { error: 'لا توجد طلبات كافية للتحليل' };
+
+            // Group orders by client
+            const clientOrders = {};
+            for (const order of ordersRes.rows) {
+                if (!clientOrders[order.client_id]) {
+                    clientOrders[order.client_id] = {
+                        client_id: order.client_id,
+                        client_name: order.client_name,
+                        orders: [],
+                    };
+                }
+                clientOrders[order.client_id].orders.push(order);
+            }
+
+            const detectedPatterns = [];
+
+            for (const { client_id, client_name, orders } of Object.values(clientOrders)) {
+                if (orders.length < min_occurrences) continue;
+
+                // Create a signature for each order based on variant_id + quantity
+                const orderSignatures = orders.map(order => {
+                    const sig = order.items
+                        .map(i => `${i.variant_id}:${i.quantity}`)
+                        .sort()
+                        .join('|');
+                    return { order_id: order.id, signature: sig, created_at: order.created_at, items: order.items };
+                });
+
+                // Find repeating signatures
+                const sigCounts = {};
+                for (const os of orderSignatures) {
+                    if (!sigCounts[os.signature]) {
+                        sigCounts[os.signature] = [];
+                    }
+                    sigCounts[os.signature].push(os);
+                }
+
+                for (const [sig, occurrences] of Object.entries(sigCounts)) {
+                    if (occurrences.length >= min_occurrences) {
+                        // Calculate average interval
+                        const dates = occurrences.map(o => new Date(o.created_at).getTime()).sort();
+                        let avgInterval = 0;
+                        if (dates.length >= 2) {
+                            let totalDays = 0;
+                            for (let i = 1; i < dates.length; i++) {
+                                totalDays += (dates[i] - dates[i - 1]) / (1000 * 60 * 60 * 24);
+                            }
+                            avgInterval = Math.round(totalDays / (dates.length - 1));
+                        }
+
+                        const lastOccurrence = occurrences[occurrences.length - 1];
+                        const items = lastOccurrence.items;
+
+                        // Check if template already exists
+                        const existingRes = await db.query(
+                            `SELECT id FROM recurring_order_templates
+                             WHERE client_id = $1 AND items::text = $2::text AND is_active = true
+                             LIMIT 1`,
+                            [client_id, JSON.stringify(items.map(i => ({ variant_id: i.variant_id, quantity: i.quantity, unit_price: i.unit_price })))]
+                        );
+
+                        if (existingRes.rows.length === 0) {
+                            // Save new template
+                            await db.query(
+                                `INSERT INTO recurring_order_templates
+                                 (client_id, template_name, items, interval_days, last_order_date, last_order_id, occurrence_count, is_active, created_by)
+                                 VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7, true, $8)`,
+                                [
+                                    client_id,
+                                    `${client_name} — ${items.length} أصناف`,
+                                    JSON.stringify(items.map(i => ({ variant_id: i.variant_id, quantity: i.quantity, unit_price: i.unit_price }))),
+                                    avgInterval || 30,
+                                    lastOccurrence.created_at,
+                                    lastOccurrence.order_id,
+                                    occurrences.length,
+                                    user.id,
+                                ]
+                            );
+                        } else {
+                            // Update existing template
+                            await db.query(
+                                `UPDATE recurring_order_templates
+                                 SET occurrence_count = $1, last_order_date = $2, last_order_id = $3, interval_days = $4, updated_at = NOW()
+                                 WHERE id = $5`,
+                                [occurrences.length, lastOccurrence.created_at, lastOccurrence.order_id, avgInterval || 30, existingRes.rows[0].id]
+                            );
+                        }
+
+                        detectedPatterns.push({
+                            client_name,
+                            occurrence_count: occurrences.length,
+                            interval_days: avgInterval,
+                            items: items.map(i => ({
+                                product_name: i.product_name,
+                                size_name: i.size_name,
+                                quantity: i.quantity,
+                                unit_price: i.unit_price,
+                            })),
+                            last_order_date: lastOccurrence.created_at,
+                        });
+                    }
+                }
+            }
+
+            return {
+                analysis_date: new Date().toISOString(),
+                clients_analyzed: Object.keys(clientOrders).length,
+                patterns_detected: detectedPatterns.length,
+                patterns: detectedPatterns.sort((a, b) => b.occurrence_count - a.occurrence_count),
+                _explanation: {
+                    why: `تم تحليل ${Object.keys(clientOrders).length} عميل و ${ordersRes.rows.length} طلب. اكتشف ${detectedPatterns.length} نمط متكرر بحد أدنى ${min_occurrences} مرات.`,
+                    confidence: detectedPatterns.length > 0 ? 80 : 50,
+                    factors: [
+                        { factor: 'العملاء المحللين', value: Object.keys(clientOrders).length, weight: 'high' },
+                        { factor: 'الطلبات المحللة', value: ordersRes.rows.length, weight: 'high' },
+                        { factor: 'الأنماط المكتشفة', value: detectedPatterns.length, weight: 'high' },
+                    ],
+                },
+            };
+        }
+    },
+
+    // ── 48. getRecurringTemplates ────────────────────────────────────────────
+    // Retrieves saved recurring order templates
+    {
+        type: 'function',
+        function: {
+            name: 'getRecurringTemplates',
+            description: 'عرض قوالب الطلبات المتكررة المحفوظة: يسترجع القوالب النشطة مع تفاصيل الأصناف وفترة التكرار. استخدمه عندما يقول المستخدم "القوالب المتكررة" أو "الطلبات الدورية".',
+            parameters: {
+                type: 'object',
+                properties: {
+                    client_name: { type: 'string', description: 'اسم العميل — اختياري، لفلترة القوالب' }
+                }
+            }
+        },
+        async execute(args, user) {
+            const { client_name } = args;
+
+            let query, params;
+            if (client_name) {
+                query = `
+                    SELECT rot.id, rot.template_name, rot.items, rot.interval_days,
+                           rot.last_order_date, rot.occurrence_count, rot.is_active,
+                           c.name as client_name
+                    FROM recurring_order_templates rot
+                    JOIN clients c ON c.id = rot.client_id
+                    WHERE rot.is_active = true AND c.name ILIKE $1
+                    ORDER BY rot.occurrence_count DESC, rot.last_order_date DESC
+                `;
+                params = [`%${client_name}%`];
+            } else {
+                query = `
+                    SELECT rot.id, rot.template_name, rot.items, rot.interval_days,
+                           rot.last_order_date, rot.occurrence_count, rot.is_active,
+                           c.name as client_name
+                    FROM recurring_order_templates rot
+                    JOIN clients c ON c.id = rot.client_id
+                    WHERE rot.is_active = true
+                    ORDER BY rot.occurrence_count DESC, rot.last_order_date DESC
+                `;
+                params = [];
+            }
+
+            const res = await db.query(query, params);
+
+            if (res.rows.length === 0) return { error: 'لا توجد قوالب متكررة محفوظة. استخدم detectRecurringPatterns لاكتشافها.' };
+
+            // Enrich items with product names
+            const templates = [];
+            for (const row of res.rows) {
+                const items = Array.isArray(row.items) ? row.items : JSON.parse(row.items);
+                const enrichedItems = [];
+                for (const item of items) {
+                    const productRes = await db.query(
+                        `SELECT p.name as product_name, pv.size_name, pv.sku
+                         FROM product_variants pv
+                         JOIN products p ON p.id = pv.product_id
+                         WHERE pv.id = $1`,
+                        [item.variant_id]
+                    );
+                    enrichedItems.push({
+                        product_name: productRes.rows[0]?.product_name || 'غير معروف',
+                        size_name: productRes.rows[0]?.size_name || null,
+                        sku: productRes.rows[0]?.sku || null,
+                        quantity: item.quantity,
+                        unit_price: item.unit_price,
+                    });
+                }
+
+                // Calculate next expected order date
+                const lastDate = new Date(row.last_order_date);
+                const nextDate = new Date(lastDate.getTime() + row.interval_days * 24 * 60 * 60 * 1000);
+                const daysUntilNext = Math.ceil((nextDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+
+                templates.push({
+                    id: row.id,
+                    client_name: row.client_name,
+                    template_name: row.template_name,
+                    interval_days: row.interval_days,
+                    occurrence_count: row.occurrence_count,
+                    last_order_date: row.last_order_date,
+                    next_expected_date: nextDate.toISOString(),
+                    days_until_next: daysUntilNext,
+                    status: daysUntilNext <= 0 ? 'overdue' : daysUntilNext <= 7 ? 'due_soon' : 'upcoming',
+                    items: enrichedItems,
+                });
+            }
+
+            return {
+                retrieved_at: new Date().toISOString(),
+                total_templates: templates.length,
+                overdue_count: templates.filter(t => t.status === 'overdue').length,
+                due_soon_count: templates.filter(t => t.status === 'due_soon').length,
+                templates,
+            };
+        }
+    },
+
 ];
 
 // =============================================================================
