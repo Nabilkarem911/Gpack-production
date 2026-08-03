@@ -1014,6 +1014,13 @@ var _adjustmentCart = [];
 function openStockModal() {
   const el = document.getElementById('stock-modal');
   if (el) el.classList.remove('hidden');
+
+  // Auto-select the active warehouse if we're inside a warehouse detail
+  if (_activeWhId) {
+    const whSelect = document.getElementById('modal-warehouse');
+    if (whSelect) whSelect.value = _activeWhId;
+  }
+
   _renderAdjustmentCart();
 }
 
@@ -1023,9 +1030,12 @@ function closeStockModal() {
 }
 
 function _resetAdjustmentForm() {
-  document.getElementById('modal-product').value = '';
+  // Keep product selected so user can pick another variant of the same product
   document.getElementById('modal-variant').innerHTML = '<option value="">اختر المقاس *</option>';
   document.getElementById('modal-qty').value = '';
+  // Focus the variant dropdown for quick next selection
+  var variantSelect = document.getElementById('modal-variant');
+  if (variantSelect) variantSelect.focus();
 }
 
 function addToAdjustmentCart() {

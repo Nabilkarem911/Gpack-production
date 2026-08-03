@@ -1311,6 +1311,51 @@
         _applyPermissions();
         _initSearch();
 
+        // Enter key navigation in product modal (Excel-like tab behavior)
+        const _productModalFields = [
+            'product-name', 'product-sku', 'variant-size-name',
+            'variant-sku', 'variant-cost-price', 'variant-selling-price', 'variant-min-stock'
+        ];
+        _productModalFields.forEach(function(id, idx) {
+            var el = document.getElementById(id);
+            if (!el) return;
+            el.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    var nextId = _productModalFields[idx + 1];
+                    if (nextId) {
+                        var nextEl = document.getElementById(nextId);
+                        if (nextEl) { nextEl.focus(); nextEl.select(); }
+                    } else {
+                        var submitBtn = document.getElementById('product-modal-submit-btn');
+                        if (submitBtn) submitBtn.click();
+                    }
+                }
+            });
+        });
+
+        // Enter key navigation in variant add form (Excel-like tab behavior)
+        const _variantFormFields = [
+            'vf-size-name', 'vf-sku', 'vf-cost-price', 'vf-selling-price', 'vf-min-stock'
+        ];
+        _variantFormFields.forEach(function(id, idx) {
+            var el = document.getElementById(id);
+            if (!el) return;
+            el.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    var nextId = _variantFormFields[idx + 1];
+                    if (nextId) {
+                        var nextEl = document.getElementById(nextId);
+                        if (nextEl) { nextEl.focus(); nextEl.select(); }
+                    } else {
+                        var submitBtn = document.getElementById('variant-form-submit-btn');
+                        if (submitBtn) submitBtn.click();
+                    }
+                }
+            });
+        });
+
         // Product modal close buttons
         const closeBtn  = document.getElementById('product-modal-close-btn');
         const cancelBtn = document.getElementById('product-modal-cancel-btn');
