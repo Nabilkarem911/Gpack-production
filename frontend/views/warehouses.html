@@ -1027,12 +1027,17 @@ function openStockModal() {
   if (_activeWhId) {
     // Opened from warehouse detail — lock the warehouse, show as readonly badge
     if (whSelect)   { whSelect.value = _activeWhId; whSelect.classList.add('hidden'); }
+    // Also hide the searchable-select wrapper if present
+    var whWrap = whSelect ? whSelect.closest('.searchable-wrap') : null;
+    if (whWrap) whWrap.classList.add('hidden');
     if (whReadonly) whReadonly.classList.remove('hidden');
     const w = warehouses.find(x => x.id === _activeWhId);
     if (whNameSpan) whNameSpan.textContent = w ? w.name : '';
   } else {
     // Opened from general stock tab — show the dropdown
     if (whSelect)   whSelect.classList.remove('hidden');
+    var whWrap2 = whSelect ? whSelect.closest('.searchable-wrap') : null;
+    if (whWrap2) whWrap2.classList.remove('hidden');
     if (whReadonly) whReadonly.classList.add('hidden');
   }
 
