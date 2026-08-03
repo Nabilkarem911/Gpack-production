@@ -337,6 +337,11 @@
 
       <!-- Form area -->
       <div class="space-y-3">
+        <!-- Warehouse: readonly badge when opened from detail, dropdown otherwise -->
+        <div id="modal-warehouse-readonly" class="hidden w-full px-3 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-sm text-slate-700 font-semibold flex items-center gap-2">
+          <i class="fa-solid fa-warehouse text-brand-600 text-xs"></i>
+          <span id="modal-warehouse-readonly-name"></span>
+        </div>
         <select id="modal-warehouse" class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-brand-500 outline-none">
           <option value="">اختر المستودع *</option>
         </select>
@@ -1015,10 +1020,20 @@ function openStockModal() {
   const el = document.getElementById('stock-modal');
   if (el) el.classList.remove('hidden');
 
-  // Auto-select the active warehouse if we're inside a warehouse detail
+  const whSelect    = document.getElementById('modal-warehouse');
+  const whReadonly  = document.getElementById('modal-warehouse-readonly');
+  const whNameSpan  = document.getElementById('modal-warehouse-readonly-name');
+
   if (_activeWhId) {
-    const whSelect = document.getElementById('modal-warehouse');
-    if (whSelect) whSelect.value = _activeWhId;
+    // Opened from warehouse detail — lock the warehouse, show as readonly badge
+    if (whSelect)   { whSelect.value = _activeWhId; whSelect.classList.add('hidden'); }
+    if (whReadonly) whReadonly.classList.remove('hidden');
+    const w = warehouses.find(x => x.id === _activeWhId);
+    if (whNameSpan) whNameSpan.textContent = w ? w.name : '';
+  } else {
+    // Opened from general stock tab — show the dropdown
+    if (whSelect)   whSelect.classList.remove('hidden');
+    if (whReadonly) whReadonly.classList.add('hidden');
   }
 
   _renderAdjustmentCart();
