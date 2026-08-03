@@ -1031,8 +1031,9 @@ function closeStockModal() {
 
 function _resetAdjustmentForm() {
   // Keep product selected so user can pick another variant of the same product
-  document.getElementById('modal-variant').innerHTML = '<option value="">اختر المقاس *</option>';
   document.getElementById('modal-qty').value = '';
+  // Reload variants for the still-selected product (instead of clearing to empty)
+  loadVariantsForAdjustment();
   // Focus the variant dropdown for quick next selection
   var variantSelect = document.getElementById('modal-variant');
   if (variantSelect) variantSelect.focus();
