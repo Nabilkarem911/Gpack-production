@@ -390,7 +390,7 @@
                         _briefing: true,
                     };
                     _messages.push(briefingMsg);
-                    _renderMessages();
+                    _renderPanel();
 
                     // Render briefing as special HTML
                     const msgArea = document.getElementById('ai-chat-messages');
