@@ -15,6 +15,9 @@ var forecastView = {
     chatAiEnabled: null,
     briefingLoaded: false,
     chatInitialized: false,
+    goalsLoaded: false,
+    pricingBound: false,
+    actionsLoaded: false,
 
     init() {
         this.bindTabEvents();
@@ -75,6 +78,12 @@ var forecastView = {
             if (!document.getElementById('forecast-client').dataset.loaded) {
                 this.loadClients();
             }
+        } else if (tab === 'goals') {
+            if (!this.goalsLoaded) this.loadGoals();
+        } else if (tab === 'pricing') {
+            if (!this.pricingBound) this.bindPricingEvents();
+        } else if (tab === 'actions') {
+            if (!this.actionsLoaded) this.loadActions();
         }
     },
 
@@ -375,6 +384,7 @@ var forecastView = {
                 content: res.reply || 'عذراً، لم أتمكن من الرد.',
                 actions: res.actions,
                 proposed_actions: res.proposed_actions,
+                messageId: res.message_id,
             });
         } catch (err) {
             let msg = 'حدث خطأ: ' + (err.message || 'تعذّر الاتصال بالمساعد');
@@ -423,7 +433,11 @@ var forecastView = {
                 '<div class="flex flex-col items-center justify-center h-full text-center py-12">' +
                 '<div class="w-16 h-16 rounded-full bg-brand-100 flex items-center justify-center mb-3"><i class="fa-solid fa-robot text-2xl text-brand-700"></i></div>' +
                 '<p class="text-sm font-semibold text-slate-700 mb-1">أهلاً بك في المساعد الذكي</p>' +
-                '<p class="text-xs text-slate-400">اسألني عن مبيعاتك، عملائك، مخزونك، مورديك والمزيد</p></div>';
+                '<p class="text-xs text-slate-400 mb-4">اسألني عن مبيعاتك، عملائك، مخزونك، مورديك والمزيد</p>' +
+                '<button id="ai-chat-load-history" class="text-xs bg-white border border-slate-300 rounded-lg px-4 py-2 hover:bg-slate-50 transition-colors text-slate-600"><i class="fa-solid fa-clock-rotate-left ml-1"></i> تحميل المحادثات السابقة</button>' +
+                '</div>';
+            var histBtn = document.getElementById('ai-chat-load-history');
+            if (histBtn) histBtn.addEventListener('click', () => this.loadChatHistory());
             return;
         }
 
@@ -442,6 +456,15 @@ var forecastView = {
                         window.navigateTo(action.params);
                     }
                 } catch(e) {}
+            });
+        });
+
+        // Bind feedback buttons
+        msgArea.querySelectorAll('.ai-feedback-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                var msgId = btn.getAttribute('data-msg-id');
+                var rating = btn.getAttribute('data-rating');
+                this.sendFeedback(msgId, rating, btn);
             });
         });
 
@@ -470,10 +493,18 @@ var forecastView = {
             ).join('');
         }
 
+        var feedbackHtml = '';
+        if (msg.messageId) {
+            feedbackHtml = '<div class="flex items-center gap-1 mt-2 pt-1 border-t border-slate-100">' +
+                '<button class="ai-feedback-btn text-slate-300 hover:text-emerald-600 transition-colors text-xs px-1.5 py-0.5 rounded" data-msg-id="' + msg.messageId + '" data-rating="positive"><i class="fa-solid fa-thumbs-up"></i></button>' +
+                '<button class="ai-feedback-btn text-slate-300 hover:text-red-500 transition-colors text-xs px-1.5 py-0.5 rounded" data-msg-id="' + msg.messageId + '" data-rating="negative"><i class="fa-solid fa-thumbs-down"></i></button>' +
+                '</div>';
+        }
+
         return '<div class="flex justify-start" data-msg-actions=\'' + (msg.actions ? this._esc(JSON.stringify(msg.actions)) : '') + '\'>' +
             '<div class="bg-white border border-slate-200 rounded-2xl rounded-tl-sm px-4 py-2.5 max-w-[75%] text-sm text-slate-700 shadow-sm">' +
             this._esc(msg.content).replace(/\n/g, '<br>') +
-            actionsHtml + proposeHtml +
+            actionsHtml + proposeHtml + feedbackHtml +
             '</div></div>';
     },
 
@@ -485,6 +516,308 @@ var forecastView = {
     _esc(str) {
         if (!str) return '';
         return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    },
+
+    // ── AI Goals ────────────────────────────────────────────────────────────
+    async loadGoals() {
+        const loading = document.getElementById('goals-loading');
+        const content = document.getElementById('goals-content');
+        if (loading) loading.classList.remove('hidden');
+        if (content) content.innerHTML = '';
+
+        try {
+            const goals = await window.apiFetch('/api/ai-assistant/goals', { method: 'GET' });
+            this.goalsLoaded = true;
+            this.renderGoals(goals);
+            this.bindGoalEvents();
+        } catch (err) {
+            console.error('[AI Goals] Error:', err);
+            if (content) content.innerHTML = '<div class="p-6 text-center text-slate-400 text-sm"><i class="fa-solid fa-circle-exclamation text-2xl mb-2 block"></i>تعذّر تحميل الأهداف</div>';
+        } finally {
+            if (loading) loading.classList.add('hidden');
+        }
+    },
+
+    renderGoals(goals) {
+        const content = document.getElementById('goals-content');
+        if (!content) return;
+
+        // Show create form for managers/admins
+        var role = (window.GpackUser && window.GpackUser.role || '').toLowerCase();
+        var canManage = role === 'admin' || role === 'manager';
+        var createPanel = document.getElementById('goals-create-panel');
+        if (createPanel) createPanel.classList.toggle('hidden', !canManage);
+
+        if (!goals || goals.length === 0) {
+            content.innerHTML = '<div class="p-6 text-center text-slate-400 text-sm"><i class="fa-solid fa-bullseye text-3xl mb-2 block text-slate-300"></i>لا توجد أهداف نشطة حالياً' + (canManage ? ' — أنشئ هدفاً جديداً من النموذج بالأسفل' : '') + '</div>';
+            return;
+        }
+
+        var typeLabels = { sales: 'مبيعات', production: 'إنتاج', quotes: 'عروض أسعار', new_clients: 'عملاء جدد' };
+        var typeIcons  = { sales: 'fa-chart-line', production: 'fa-industry', quotes: 'fa-file-lines', new_clients: 'fa-user-plus' };
+        var typeColors = { sales: 'emerald', production: 'violet', quotes: 'amber', new_clients: 'blue' };
+
+        content.innerHTML = goals.map(g => {
+            var pct = g.target_value > 0 ? Math.min(100, Math.round((g.current_value || 0) / g.target_value * 100)) : 0;
+            var daysLeft = Math.ceil((new Date(g.end_date) - new Date()) / (1000 * 60 * 60 * 24));
+            var daysClass = daysLeft < 0 ? 'text-red-600' : daysLeft <= 7 ? 'text-orange-600' : 'text-slate-500';
+            var daysText = daysLeft < 0 ? 'انتهى ' + Math.abs(daysLeft) + ' يوم' : daysLeft + ' يوم متبقي';
+            var tc = typeColors[g.goal_type] || 'blue';
+            var gradMap = { emerald: 'from-emerald-50 to-teal-50', violet: 'from-violet-50 to-purple-50', amber: 'from-amber-50 to-yellow-50', blue: 'from-blue-50 to-cyan-50' };
+            var barMap  = { emerald: 'bg-emerald-500', violet: 'bg-violet-500', amber: 'bg-amber-500', blue: 'bg-blue-500' };
+            var textMap = { emerald: 'text-emerald-700', violet: 'text-violet-700', amber: 'text-amber-700', blue: 'text-blue-700' };
+
+            return '<div class="bg-gradient-to-br ' + (gradMap[tc] || gradMap.blue) + ' rounded-xl p-4 border border-slate-200">' +
+                '<div class="flex items-center justify-between mb-3">' +
+                '<div class="flex items-center gap-2"><i class="fa-solid ' + (typeIcons[g.goal_type] || 'fa-bullseye') + ' ' + (textMap[tc] || '') + '"></i>' +
+                '<span class="font-bold text-sm text-slate-800">' + this._esc(g.title) + '</span></div>' +
+                '<span class="text-xs ' + daysClass + ' font-medium">' + daysText + '</span></div>' +
+                (g.description ? '<p class="text-xs text-slate-500 mb-3">' + this._esc(g.description) + '</p>' : '') +
+                '<div class="flex items-center justify-between mb-2">' +
+                '<span class="text-xs ' + (textMap[tc] || '') + ' font-medium">' + (typeLabels[g.goal_type] || g.goal_type) + '</span>' +
+                '<span class="text-sm font-bold text-slate-800">' + Number(g.current_value || 0).toLocaleString() + ' / ' + Number(g.target_value).toLocaleString() + ' ' + this._esc(g.unit || '') + '</span></div>' +
+                '<div class="w-full bg-white/60 rounded-full h-2.5 overflow-hidden">' +
+                '<div class="' + (barMap[tc] || barMap.blue) + ' h-full rounded-full transition-all" style="width:' + pct + '%"></div></div>' +
+                '<div class="flex items-center justify-between mt-2">' +
+                '<span class="text-xs font-bold ' + (textMap[tc] || '') + '">' + pct + '%</span>' +
+                (canManage ? '<button class="text-[11px] text-slate-400 hover:text-red-500 transition-colors" onclick="forecastView.completeGoal(' + g.id + ')"><i class="fa-solid fa-check ml-1"></i>إنهاء</button>' : '') +
+                '</div></div>';
+        }).join('');
+    },
+
+    bindGoalEvents() {
+        var createBtn = document.getElementById('goal-create-btn');
+        if (createBtn) createBtn.addEventListener('click', () => this.createGoal());
+        var refreshBtn = document.getElementById('goals-refresh');
+        if (refreshBtn) refreshBtn.addEventListener('click', () => { this.goalsLoaded = false; this.loadGoals(); });
+    },
+
+    async createGoal() {
+        var type = document.getElementById('goal-type').value;
+        var title = document.getElementById('goal-title').value.trim();
+        var target = parseFloat(document.getElementById('goal-target').value) || 0;
+        var unit = document.getElementById('goal-unit').value.trim() || 'ر.س';
+        var endDate = document.getElementById('goal-end-date').value;
+        var desc = document.getElementById('goal-description').value.trim();
+
+        if (!title || !target || !endDate) {
+            if (window.showToast) window.showToast('يرجى ملء الحقول المطلوبة', 'warning');
+            return;
+        }
+
+        try {
+            await window.apiFetch('/api/ai-assistant/goals', {
+                method: 'POST',
+                body: { goal_type: type, title: title, description: desc, target_value: target, unit: unit, period: 'month', end_date: endDate },
+            });
+            if (window.showToast) window.showToast('تم إنشاء الهدف بنجاح', 'success');
+            document.getElementById('goal-title').value = '';
+            document.getElementById('goal-target').value = '';
+            document.getElementById('goal-description').value = '';
+            this.goalsLoaded = false;
+            this.loadGoals();
+        } catch (err) {
+            if (window.showToast) window.showToast('فشل إنشاء الهدف: ' + (err.message || ''), 'error');
+        }
+    },
+
+    async completeGoal(id) {
+        try {
+            await window.apiFetch('/api/ai-assistant/goals/' + id, {
+                method: 'PUT',
+                body: { status: 'completed' },
+            });
+            if (window.showToast) window.showToast('تم إنهاء الهدف', 'success');
+            this.goalsLoaded = false;
+            this.loadGoals();
+        } catch (err) {
+            if (window.showToast) window.showToast('فشل إنهاء الهدف', 'error');
+        }
+    },
+
+    // ── Price Advisor ───────────────────────────────────────────────────────
+    bindPricingEvents() {
+        this.pricingBound = true;
+        var searchBtn = document.getElementById('price-search-btn');
+        if (searchBtn) searchBtn.addEventListener('click', () => this.searchPrice());
+        var input = document.getElementById('price-product-name');
+        if (input) input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') this.searchPrice();
+        });
+    },
+
+    async searchPrice() {
+        var name = document.getElementById('price-product-name').value.trim();
+        var margin = parseFloat(document.getElementById('price-target-margin').value) || 20;
+        var statusEl = document.getElementById('price-status');
+        var resultsEl = document.getElementById('price-results');
+        var tbody = document.getElementById('price-table-body');
+
+        if (!name) {
+            if (statusEl) { statusEl.textContent = 'اكتب اسم المنتج أولاً'; statusEl.className = 'mb-4 rounded-lg p-4 text-sm bg-amber-50 text-amber-700 border border-amber-200'; statusEl.classList.remove('hidden'); }
+            return;
+        }
+
+        if (statusEl) { statusEl.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin ml-1"></i> جارٍ البحث...'; statusEl.className = 'mb-4 rounded-lg p-4 text-sm bg-purple-50 text-purple-700 border border-purple-200'; statusEl.classList.remove('hidden'); }
+        if (resultsEl) resultsEl.classList.add('hidden');
+
+        try {
+            var data = await window.apiFetch('/api/ai-assistant/suggest-price?product_name=' + encodeURIComponent(name) + '&target_margin=' + margin, { method: 'GET' });
+            var suggestions = data.suggestions || [];
+
+            if (suggestions.length === 0) {
+                if (statusEl) { statusEl.textContent = data.message || 'لم يتم العثور على منتجات مطابقة'; statusEl.className = 'mb-4 rounded-lg p-4 text-sm bg-slate-50 text-slate-600 border border-slate-200'; }
+                return;
+            }
+
+            if (statusEl) statusEl.classList.add('hidden');
+            if (tbody) {
+                tbody.innerHTML = suggestions.map(s => {
+                    var marginCls = s.current_margin_percent >= margin ? 'text-emerald-600 font-bold' : 'text-orange-600 font-bold';
+                    var suggestedCls = s.suggested_price > s.current_selling_price ? 'text-orange-600 font-bold' : 'text-emerald-600 font-bold';
+                    return '<tr class="hover:bg-slate-50 transition-colors">' +
+                        '<td class="px-4 py-3 text-slate-800 font-medium">' + this._esc(s.product_name) + '</td>' +
+                        '<td class="px-4 py-3 text-slate-600">' + this._esc(s.size_name || '—') + '</td>' +
+                        '<td class="px-4 py-3 text-slate-600">' + Number(s.cost_price).toLocaleString() + '</td>' +
+                        '<td class="px-4 py-3 text-slate-800">' + Number(s.current_selling_price).toLocaleString() + '</td>' +
+                        '<td class="px-4 py-3 ' + marginCls + '">' + s.current_margin_percent + '%</td>' +
+                        '<td class="px-4 py-3 text-slate-600">' + (s.avg_historical_price > 0 ? Number(s.avg_historical_price).toLocaleString() : '—') + '</td>' +
+                        '<td class="px-4 py-3 ' + suggestedCls + '">' + Number(s.suggested_price).toLocaleString() + '</td>' +
+                        '<td class="px-4 py-3 text-slate-500">' + s.times_sold + '</td>' +
+                        '</tr>';
+                }).join('');
+            }
+            if (resultsEl) resultsEl.classList.remove('hidden');
+        } catch (err) {
+            if (statusEl) { statusEl.textContent = 'خطأ: ' + (err.message || ''); statusEl.className = 'mb-4 rounded-lg p-4 text-sm bg-red-50 text-red-700 border border-red-200'; }
+        }
+    },
+
+    // ── Action Proposals ────────────────────────────────────────────────────
+    async loadActions() {
+        var loading = document.getElementById('actions-loading');
+        var content = document.getElementById('actions-content');
+        if (loading) loading.classList.remove('hidden');
+        if (content) content.innerHTML = '';
+
+        try {
+            var data = await window.apiFetch('/api/ai-assistant/ai_action_log?status=proposed', { method: 'GET' });
+            this.actionsLoaded = true;
+            var actions = Array.isArray(data) ? data : (data.actions || data.rows || []);
+            this.renderActions(actions);
+            this.bindActionEvents();
+        } catch (err) {
+            // Endpoint might not exist — show empty state
+            this.actionsLoaded = true;
+            if (content) content.innerHTML = '<div class="p-6 text-center text-slate-400 text-sm"><i class="fa-solid fa-wand-magic-sparkles text-3xl mb-2 block text-slate-300"></i>لا توجد إجراءات مقترحة حالياً. الإجراءات تظهر عندما يقترح المساعد الذكي إجراءً في المحادثة.</div>';
+        } finally {
+            if (loading) loading.classList.add('hidden');
+        }
+    },
+
+    renderActions(actions) {
+        var content = document.getElementById('actions-content');
+        if (!content) return;
+
+        if (!actions || actions.length === 0) {
+            content.innerHTML = '<div class="p-6 text-center text-slate-400 text-sm"><i class="fa-solid fa-wand-magic-sparkles text-3xl mb-2 block text-slate-300"></i>لا توجد إجراءات مقترحة حالياً. الإجراءات تظهر عندما يقترح المساعد الذكي إجراءً في المحادثة.</div>';
+            return;
+        }
+
+        content.innerHTML = actions.map(a => {
+            var summary = a.proposal || a.summary || {};
+            var summaryText = typeof summary === 'string' ? summary : JSON.stringify(summary, null, 2);
+            var statusCls = a.status === 'proposed' ? 'bg-violet-100 text-violet-700' : a.status === 'executed' ? 'bg-emerald-100 text-emerald-700' : a.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600';
+            return '<div class="bg-white border border-slate-200 rounded-xl p-4 hover:shadow-md transition-shadow" data-action-id="' + a.id + '">' +
+                '<div class="flex items-center justify-between mb-2">' +
+                '<span class="text-xs font-bold text-slate-700"><i class="fa-solid fa-wand-magic-sparkles ml-1 text-violet-500"></i> ' + this._esc(a.action_type || 'إجراء') + '</span>' +
+                '<span class="text-[10px] px-2 py-0.5 rounded-full ' + statusCls + '">' + this._esc(a.status) + '</span></div>' +
+                '<pre class="text-xs text-slate-600 bg-slate-50 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap">' + this._esc(summaryText) + '</pre>' +
+                (a.status === 'proposed' ?
+                    '<div class="flex gap-2 mt-3">' +
+                    '<button class="ai-action-execute text-xs px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors" data-id="' + a.id + '"><i class="fa-solid fa-check ml-1"></i> تنفيذ</button>' +
+                    '<button class="ai-action-reject text-xs px-3 py-1.5 rounded-lg bg-white border border-red-300 text-red-600 hover:bg-red-50 transition-colors" data-id="' + a.id + '"><i class="fa-solid fa-xmark ml-1"></i> رفض</button>' +
+                    '</div>' : '') +
+                '</div>';
+        }).join('');
+    },
+
+    bindActionEvents() {
+        var refreshBtn = document.getElementById('actions-refresh');
+        if (refreshBtn) refreshBtn.addEventListener('click', () => { this.actionsLoaded = false; this.loadActions(); });
+
+        document.querySelectorAll('.ai-action-execute').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                var id = btn.getAttribute('data-id');
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin ml-1"></i> جارٍ...';
+                try {
+                    await window.apiFetch('/api/ai-assistant/execute-action', { method: 'POST', body: { action_id: id } });
+                    if (window.showToast) window.showToast('تم تنفيذ الإجراء بنجاح', 'success');
+                    this.actionsLoaded = false;
+                    this.loadActions();
+                } catch (err) {
+                    if (window.showToast) window.showToast('فشل التنفيذ: ' + (err.message || ''), 'error');
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fa-solid fa-check ml-1"></i> تنفيذ';
+                }
+            });
+        });
+
+        document.querySelectorAll('.ai-action-reject').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                var id = btn.getAttribute('data-id');
+                btn.disabled = true;
+                try {
+                    await window.apiFetch('/api/ai-assistant/reject-action', { method: 'POST', body: { action_id: id } });
+                    if (window.showToast) window.showToast('تم رفض الإجراء', 'success');
+                    this.actionsLoaded = false;
+                    this.loadActions();
+                } catch (err) {
+                    if (window.showToast) window.showToast('فشل الرفض: ' + (err.message || ''), 'error');
+                    btn.disabled = false;
+                }
+            });
+        });
+    },
+
+    // ── Chat Feedback (👍/👎) ───────────────────────────────────────────────
+    async sendFeedback(messageId, rating, btnEl) {
+        try {
+            await window.apiFetch('/api/ai-assistant/feedback', {
+                method: 'POST',
+                body: { message_id: messageId, rating: rating },
+            });
+            // Update UI
+            var container = btnEl.parentElement;
+            container.querySelectorAll('button').forEach(b => {
+                b.classList.remove('text-brand-700', 'bg-brand-100');
+                b.classList.add('text-slate-400');
+            });
+            btnEl.classList.remove('text-slate-400');
+            btnEl.classList.add(rating === 'positive' ? 'text-emerald-600' : 'text-red-500');
+            if (window.showToast) window.showToast('شكراً على تقييمك', 'success');
+        } catch (err) {
+            // Silent fail — feedback is optional
+            console.error('[AI Feedback] Error:', err);
+        }
+    },
+
+    // ── Chat History ────────────────────────────────────────────────────────
+    async loadChatHistory() {
+        try {
+            var data = await window.apiFetch('/api/ai-assistant/history', { method: 'GET' });
+            var messages = data.messages || [];
+            if (messages.length === 0) return;
+            this.chatMessages = messages.map(m => ({
+                role: m.role,
+                content: m.content,
+                messageId: m.id,
+            }));
+            this.renderChatMessages();
+        } catch (err) {
+            console.error('[AI Chat History] Error:', err);
+        }
     },
 
     bindEvents() {
