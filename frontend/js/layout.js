@@ -41,7 +41,7 @@ var NAV_ITEMS = [ // var allows re-declaration if script loads more than once in
     { view: 'quotations',       label: 'عروض الأسعار',     icon: 'fa-file-lines',    permission: 'quotations' }, // ✅ quotations.html
     { view: 'production_orders', label: 'أوامر التشغيل',    icon: 'fa-industry',      permission: 'production_orders' }, // ✅ production_orders.html
     { view: 'designer',          label: 'المصمم',           icon: 'fa-pen-ruler',     permission: 'designer' }, // ✅ designer.html
-    { view: 'forecast',            label: 'مركز الذكاء (AI)',  icon: 'fa-brain',         permission: 'forecast' }, // ✅ forecast.html
+    { view: 'forecast',            label: 'مركز الذكاء الاصطناعي',  icon: 'fa-brain',         permission: 'forecast' }, // ✅ forecast.html
 
     // ─────────────────────────────────────────────────────────────────────────────
     // 3. المشتريات

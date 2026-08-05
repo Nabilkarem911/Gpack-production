@@ -12,9 +12,110 @@
     <p class="text-slate-500 text-sm mt-1">تحليلات ذكية لمساعدتك في اتخاذ القرارات: تصنيف العملاء، التنبيهات، والتوقعات</p>
 </div>
 
+<!-- Tab Navigation -->
+<div class="flex items-center gap-1 mb-6 border-b border-slate-200 overflow-x-auto">
+    <button class="ai-tab-btn active px-4 py-2.5 text-sm font-semibold text-brand-700 border-b-2 border-brand-700 whitespace-nowrap" data-tab="briefing">
+        <i class="fa-solid fa-newspaper ml-1"></i> ملخص اليوم
+    </button>
+    <button class="ai-tab-btn px-4 py-2.5 text-sm font-semibold text-slate-500 border-b-2 border-transparent hover:text-brand-600 whitespace-nowrap" data-tab="chat">
+        <i class="fa-solid fa-comments ml-1"></i> محادثة ذكية
+    </button>
+    <button class="ai-tab-btn px-4 py-2.5 text-sm font-semibold text-slate-500 border-b-2 border-transparent hover:text-brand-600 whitespace-nowrap" data-tab="rfm">
+        <i class="fa-solid fa-users-viewfinder ml-1"></i> تصنيف العملاء
+    </button>
+    <button class="ai-tab-btn px-4 py-2.5 text-sm font-semibold text-slate-500 border-b-2 border-transparent hover:text-brand-600 whitespace-nowrap" data-tab="churn">
+        <i class="fa-solid fa-bell ml-1"></i> تنبيهات التقاعس
+    </button>
+    <button class="ai-tab-btn px-4 py-2.5 text-sm font-semibold text-slate-500 border-b-2 border-transparent hover:text-brand-600 whitespace-nowrap" data-tab="forecast">
+        <i class="fa-solid fa-chart-line ml-1"></i> توقع الطلب
+    </button>
+</div>
+
 <!-- ================================================================ -->
-<!-- SECTION 1: RFM Customer Segmentation -->
+<!-- TAB: Daily Briefing -->
 <!-- ================================================================ -->
+<div id="tab-briefing" class="ai-tab-panel">
+    <div id="briefing-loading" class="p-12 text-center text-slate-400">
+        <i class="fa-solid fa-circle-notch fa-spin text-3xl mb-3 block"></i>
+        <p class="text-sm">جارٍ تحميل الملخص اليومي...</p>
+    </div>
+    <div id="briefing-content" class="hidden space-y-6">
+        <!-- AI Summary -->
+        <div class="bg-gradient-to-br from-brand-50 to-purple-50 rounded-xl border border-brand-200 p-5">
+            <div class="flex items-center gap-2 mb-3">
+                <i class="fa-solid fa-sun text-amber-500"></i>
+                <h2 class="text-base font-bold text-slate-800">ملخص اليوم الذكي</h2>
+                <span id="briefing-date" class="text-xs text-slate-400"></span>
+            </div>
+            <p id="briefing-summary" class="text-sm text-slate-600 leading-relaxed"></p>
+        </div>
+
+        <!-- Stats Cards -->
+        <div id="briefing-stats" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"></div>
+
+        <!-- Alerts -->
+        <div id="briefing-alerts" class="space-y-2"></div>
+
+        <!-- Refresh button -->
+        <div class="text-center">
+            <button id="briefing-refresh" class="text-xs bg-white border border-slate-300 rounded-lg px-4 py-2 hover:bg-slate-50 transition-colors">
+                <i class="fa-solid fa-rotate ml-1"></i> تحديث الملخص
+            </button>
+        </div>
+    </div>
+    <div id="briefing-error" class="hidden p-8 text-center">
+        <i class="fa-solid fa-circle-exclamation text-3xl text-slate-300 mb-3 block"></i>
+        <p class="text-sm text-slate-500 mb-3">تعذّر تحميل الملخص اليومي</p>
+        <button id="briefing-retry" class="text-xs bg-brand-700 text-white rounded-lg px-4 py-2 hover:bg-brand-800 transition-colors">إعادة المحاولة</button>
+    </div>
+</div>
+
+<!-- ================================================================ -->
+<!-- TAB: AI Chat -->
+<!-- ================================================================ -->
+<div id="tab-chat" class="ai-tab-panel hidden">
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col" style="height: calc(100vh - 220px); min-height: 400px;">
+        <!-- Chat header -->
+        <div class="flex items-center justify-between px-5 py-3 border-b border-slate-200 bg-gradient-to-r from-brand-50 to-purple-50 rounded-t-xl">
+            <div class="flex items-center gap-2">
+                <i class="fa-solid fa-robot text-brand-700"></i>
+                <span class="font-semibold text-sm text-slate-800">المساعد الذكي</span>
+                <span id="ai-chat-status" class="text-xs text-slate-400">جارٍ التحقق...</span>
+            </div>
+            <button id="ai-chat-clear" class="text-xs text-slate-400 hover:text-red-500 transition-colors">
+                <i class="fa-solid fa-trash ml-1"></i> محادثة جديدة
+            </button>
+        </div>
+
+        <!-- Messages area -->
+        <div id="ai-page-chat-messages" class="flex-1 overflow-y-auto px-5 py-4 space-y-3 bg-slate-50"></div>
+
+        <!-- Suggestion chips -->
+        <div id="ai-page-chat-suggestions" class="px-5 py-2 border-t border-slate-100 bg-white flex flex-wrap gap-1.5"></div>
+
+        <!-- Input area -->
+        <div class="px-5 py-3 border-t border-slate-200 bg-white rounded-b-xl">
+            <div class="flex items-center gap-2">
+                <input id="ai-page-chat-input" type="text"
+                    class="flex-1 px-4 py-2.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                    placeholder="اكتب سؤالك هنا..." autocomplete="off" />
+                <button id="ai-page-chat-mic"
+                    class="w-10 h-10 rounded-lg bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors flex items-center justify-center flex-shrink-0">
+                    <i class="fa-solid fa-microphone text-sm"></i>
+                </button>
+                <button id="ai-page-chat-send"
+                    class="w-10 h-10 rounded-lg bg-brand-700 text-white hover:bg-brand-800 transition-colors flex items-center justify-center flex-shrink-0">
+                    <i class="fa-solid fa-paper-plane text-sm"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ================================================================ -->
+<!-- TAB: RFM Customer Segmentation -->
+<!-- ================================================================ -->
+<div id="tab-rfm" class="ai-tab-panel hidden">
 <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mb-6">
     <div class="px-5 py-4 border-b border-slate-200 bg-gradient-to-r from-purple-50 to-indigo-50 flex justify-between items-center">
         <div>
@@ -93,9 +194,13 @@
     </div>
 </div>
 
+</div>
+</div>
+
 <!-- ================================================================ -->
-<!-- SECTION 2: Churn Alerts -->
+<!-- TAB: Churn Alerts -->
 <!-- ================================================================ -->
+<div id="tab-churn" class="ai-tab-panel hidden">
 <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mb-6">
     <div class="px-5 py-4 border-b border-slate-200 bg-gradient-to-r from-red-50 to-rose-50 flex justify-between items-center">
         <div>
@@ -136,9 +241,13 @@
     </div>
 </div>
 
+</div>
+</div>
+
 <!-- ================================================================ -->
-<!-- SECTION 3: Demand Forecast -->
+<!-- TAB: Demand Forecast -->
 <!-- ================================================================ -->
+<div id="tab-forecast" class="ai-tab-panel hidden">
 <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mb-6">
     <div class="px-5 py-4 border-b border-slate-200 bg-gradient-to-r from-blue-50 to-indigo-50">
         <h2 class="text-base font-bold text-slate-800"><i class="fa-solid fa-chart-line ml-1 text-blue-600"></i> توقع الطلب</h2>
@@ -227,5 +336,6 @@
         </div>
     </div>
 </div>
+</div>
 
-<script src="/js/views/forecast.js?v=20260729a"></script>
+<script src="/js/views/forecast.js?v=20260805a"></script>
