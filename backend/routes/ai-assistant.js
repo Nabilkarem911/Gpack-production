@@ -849,10 +849,13 @@ router.post('/chat', async (req, res) => {
              ORDER BY created_at DESC LIMIT 10`,
             [req.user.id, sessionId]
         );
-        const recentMessages = historyResult.rows.reverse().map(m => ({
-            role: m.role === 'assistant' ? 'assistant' : 'user',
-            content: m.content,
-        }));
+        const recentMessages = historyResult.rows
+            .reverse()
+            .filter(m => m.content && m.content.trim())
+            .map(m => ({
+                role: m.role === 'assistant' ? 'assistant' : 'user',
+                content: m.content,
+            }));
 
         // ── 2. Save user message to both tables ──────────────────────────────
         await db.query(
@@ -909,7 +912,12 @@ router.post('/chat', async (req, res) => {
             loopCount++;
 
             // Add the assistant's function-call message to the conversation
-            messages.push(assistantMessage);
+            // Ensure content is a string (OpenAI returns null when tool_calls are present)
+            messages.push({
+                role: 'assistant',
+                content: assistantMessage.content || '',
+                tool_calls: assistantMessage.tool_calls,
+            });
 
             // Execute each tool call
             for (const toolCall of assistantMessage.tool_calls) {
