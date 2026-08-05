@@ -19,8 +19,19 @@ var forecastView = {
     init() {
         this.bindTabEvents();
         this.bindEvents();
+        this.bindBriefingEvents();
         // Load briefing immediately (active tab on page open)
         this.loadBriefing();
+    },
+
+    bindBriefingEvents() {
+        const refreshBtn = document.getElementById('briefing-refresh');
+        if (refreshBtn) refreshBtn.addEventListener('click', () => {
+            this.briefingLoaded = false;
+            this.loadBriefing();
+        });
+        const retryBtn = document.getElementById('briefing-retry');
+        if (retryBtn) retryBtn.addEventListener('click', () => this.loadBriefing());
     },
 
     // ── Tab Switching ────────────────────────────────────────────────────────
@@ -96,55 +107,47 @@ var forecastView = {
         const dateEl = document.getElementById('briefing-date');
         if (dateEl) dateEl.textContent = data.date || new Date().toISOString().split('T')[0];
 
-        // Summary
+        // Summary — build from available data since backend doesn't provide a text summary
         const summaryEl = document.getElementById('briefing-summary');
-        if (summaryEl) summaryEl.textContent = data.summary || 'لا يوجد ملخص متاح.';
+        if (summaryEl) {
+            var parts = [];
+            if (data.today_invoice_count > 0) parts.push('عدد فواتير اليوم: ' + data.today_invoice_count + ' بإجمالي ' + Number(data.today_sales).toLocaleString() + ' ر.س');
+            if (data.pending_quotes > 0) parts.push('لديك ' + data.pending_quotes + ' عرض سعر معلق');
+            if (data.low_stock_count > 0) parts.push(data.low_stock_count + ' صنف قارب على النفاد');
+            if (data.outstanding_count > 0) parts.push('مستحقات معلقة على ' + data.outstanding_count + ' فاتورة بقيمة ' + Number(data.total_outstanding).toLocaleString() + ' ر.س');
+            if (data.overdue_tasks > 0) parts.push(data.overdue_tasks + ' مهمة متأخرة');
+            if (data.active_production > 0) parts.push(data.active_production + ' أمر تشغيل جاري');
+            if (data.pending_deliveries > 0) parts.push(data.pending_deliveries + ' سند تسليم معلق');
+            summaryEl.textContent = parts.length > 0 ? parts.join('، ') + '.' : 'لا توجد بيانات بارزة اليوم.';
+        }
 
-        // Stats cards
+        // Stats cards — match backend response field names
         const statsEl = document.getElementById('briefing-stats');
         if (statsEl) {
             const cards = [];
-            const stats = data.stats || {};
 
-            if (stats.today_orders !== undefined) {
-                cards.push(this._statCard('مبيعات اليوم', stats.today_orders + ' طلب', stats.today_sales !== undefined ? stats.today_sales + ' ر.س' : '', 'emerald', 'fa-chart-line'));
-            }
-            if (stats.month_sales !== undefined) {
-                const pct = stats.month_change_pct >= 0 ? '+' + stats.month_change_pct + '%' : stats.month_change_pct + '%';
-                cards.push(this._statCard('مبيعات الشهر', stats.month_sales + ' ر.س', pct, 'blue', 'fa-calendar'));
-            }
-            if (data.pending_quotes > 0) {
-                cards.push(this._statCard('عروض معلقة', data.pending_quotes, 'في انتظار الرد', 'amber', 'fa-file-lines'));
-            }
-            if (data.low_stock_count > 0) {
-                cards.push(this._statCard('أصناف قاربت النفاد', data.low_stock_count, 'تحتاج إعادة طلب', 'orange', 'fa-boxes-stacked'));
-            }
-            if (data.outstanding_count > 0) {
-                cards.push(this._statCard('مستحقات معلقة', data.total_outstanding ? Number(data.total_outstanding).toLocaleString() + ' ر.س' : data.outstanding_count, 'على العملاء', 'rose', 'fa-hand-holding-dollar'));
-            }
-            if (data.overdue_tasks > 0) {
-                cards.push(this._statCard('مهام متأخرة', data.overdue_tasks, 'تحتاج متابعة', 'red', 'fa-clock'));
-            }
-            if (data.active_production > 0) {
-                cards.push(this._statCard('أوامر تشغيل جارية', data.active_production, 'في الإنتاج', 'violet', 'fa-industry'));
-            }
-            if (data.pending_deliveries > 0) {
-                cards.push(this._statCard('سندات تسليم معلقة', data.pending_deliveries, 'للتسليم', 'cyan', 'fa-truck'));
-            }
+            cards.push(this._statCard('مبيعات اليوم', data.today_invoice_count + ' فاتورة', Number(data.today_sales).toLocaleString() + ' ر.س', 'emerald', 'fa-chart-line'));
+            cards.push(this._statCard('عروض معلقة', data.pending_quotes, 'في انتظار الرد', 'amber', 'fa-file-lines'));
+            cards.push(this._statCard('أصناف قاربت النفاد', data.low_stock_count, 'تحتاج إعادة طلب', 'orange', 'fa-boxes-stacked'));
+            cards.push(this._statCard('مستحقات معلقة', Number(data.total_outstanding).toLocaleString() + ' ر.س', data.outstanding_count + ' فاتورة', 'rose', 'fa-hand-holding-dollar'));
+            cards.push(this._statCard('مهام متأخرة', data.overdue_tasks, 'تحتاج متابعة', 'red', 'fa-clock'));
+            cards.push(this._statCard('أوامر تشغيل جارية', data.active_production, 'في الإنتاج', 'violet', 'fa-industry'));
+            cards.push(this._statCard('سندات تسليم معلقة', data.pending_deliveries, 'للتسليم', 'cyan', 'fa-truck'));
 
-            if (cards.length === 0) {
-                statsEl.innerHTML = '<div class="col-span-full text-center py-6 text-slate-400 text-sm"><i class="fa-solid fa-check-circle text-2xl mb-2 block text-emerald-400"></i>لا توجد إحصائيات بارزة اليوم</div>';
-            } else {
-                statsEl.innerHTML = cards.join('');
-            }
+            statsEl.innerHTML = cards.join('');
         }
 
-        // Alerts
+        // Alerts — build from data since backend returns alert_count, not alerts array
         const alertsEl = document.getElementById('briefing-alerts');
         if (alertsEl) {
-            const alerts = data.alerts || [];
+            const alerts = [];
+            if (data.low_stock_count > 0) alerts.push({ severity: 'critical', message: data.low_stock_count + ' صنف قارب على النفاد ويحتاج إعادة طلب' });
+            if (data.overdue_tasks > 0) alerts.push({ severity: 'warning', message: data.overdue_tasks + ' مهمة متأخرة تحتاج متابعة' });
+            if (data.pending_quotes > 5) alerts.push({ severity: 'warning', message: data.pending_quotes + ' عرض سعر معلق — أكثر من 5 عروض تحتاج متابعة' });
+            if (data.outstanding_count > 10) alerts.push({ severity: 'warning', message: data.outstanding_count + ' فاتورة بمستحقات معلقة — أكثر من 10 فواتير' });
+
             if (alerts.length === 0) {
-                alertsEl.innerHTML = '<div class="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-center text-sm text-emerald-600"><i class="fa-solid fa-shield-check ml-1"></i> لا توجد تنبيهات حرجة اليوم</div>';
+                alertsEl.innerHTML = '<div class="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-center text-sm text-emerald-600"><i class="fa-solid fa-shield-halved ml-1"></i> لا توجد تنبيهات حرجة اليوم</div>';
             } else {
                 alertsEl.innerHTML = alerts.map(a => {
                     const color = a.severity === 'critical' ? 'border-red-300 bg-red-50 text-red-700'
@@ -158,21 +161,21 @@ var forecastView = {
 
     _statCard(label, value, sub, color, icon) {
         const colors = {
-            emerald: 'from-emerald-50 to-teal-50 border-emerald-200 text-emerald-900 text-emerald-600',
-            blue: 'from-blue-50 to-cyan-50 border-blue-200 text-blue-900 text-blue-600',
-            amber: 'from-amber-50 to-yellow-50 border-amber-200 text-amber-900 text-amber-600',
-            orange: 'from-orange-50 to-amber-50 border-orange-200 text-orange-900 text-orange-600',
-            rose: 'from-rose-50 to-red-50 border-rose-200 text-rose-900 text-rose-600',
-            red: 'from-red-50 to-rose-50 border-red-200 text-red-900 text-red-600',
-            violet: 'from-violet-50 to-purple-50 border-violet-200 text-violet-900 text-violet-600',
-            cyan: 'from-cyan-50 to-blue-50 border-cyan-200 text-cyan-900 text-cyan-600',
+            emerald: { grad: 'from-emerald-50 to-teal-50', border: 'border-emerald-200', value: 'text-emerald-900', label: 'text-emerald-600', icon: 'text-emerald-500' },
+            blue:    { grad: 'from-blue-50 to-cyan-50',    border: 'border-blue-200',    value: 'text-blue-900',    label: 'text-blue-600',    icon: 'text-blue-500' },
+            amber:   { grad: 'from-amber-50 to-yellow-50', border: 'border-amber-200',   value: 'text-amber-900',   label: 'text-amber-600',   icon: 'text-amber-500' },
+            orange:  { grad: 'from-orange-50 to-amber-50', border: 'border-orange-200',  value: 'text-orange-900',  label: 'text-orange-600',  icon: 'text-orange-500' },
+            rose:    { grad: 'from-rose-50 to-red-50',     border: 'border-rose-200',    value: 'text-rose-900',    label: 'text-rose-600',    icon: 'text-rose-500' },
+            red:     { grad: 'from-red-50 to-rose-50',     border: 'border-red-200',     value: 'text-red-900',     label: 'text-red-600',     icon: 'text-red-500' },
+            violet:  { grad: 'from-violet-50 to-purple-50', border: 'border-violet-200', value: 'text-violet-900',  label: 'text-violet-600',  icon: 'text-violet-500' },
+            cyan:    { grad: 'from-cyan-50 to-blue-50',    border: 'border-cyan-200',    value: 'text-cyan-900',    label: 'text-cyan-600',    icon: 'text-cyan-500' },
         };
         const c = colors[color] || colors.blue;
-        return '<div class="bg-gradient-to-br ' + c.split(' ')[0] + ' ' + c.split(' ')[1] + ' rounded-xl p-4 border ' + c.split(' ')[2] + '">' +
-            '<div class="flex items-center justify-between mb-1"><span class="text-xs font-medium ' + c.split(' ')[4] + '">' + label + '</span>' +
-            '<i class="fa-solid ' + icon + ' ' + c.split(' ')[5] + '"></i></div>' +
-            '<p class="text-xl font-bold ' + c.split(' ')[3] + '">' + value + '</p>' +
-            (sub ? '<p class="text-xs ' + c.split(' ')[4] + ' mt-0.5">' + sub + '</p>' : '') +
+        return '<div class="bg-gradient-to-br ' + c.grad + ' rounded-xl p-4 border ' + c.border + '">' +
+            '<div class="flex items-center justify-between mb-1"><span class="text-xs font-medium ' + c.label + '">' + label + '</span>' +
+            '<i class="fa-solid ' + icon + ' ' + c.icon + '"></i></div>' +
+            '<p class="text-xl font-bold ' + c.value + '">' + value + '</p>' +
+            (sub ? '<p class="text-xs ' + c.label + ' mt-0.5">' + sub + '</p>' : '') +
             '</div>';
     },
 
@@ -252,15 +255,6 @@ var forecastView = {
             this.chatSessionId = null;
             this.renderChatMessages();
         });
-
-        const refreshBtn = document.getElementById('briefing-refresh');
-        if (refreshBtn) refreshBtn.addEventListener('click', () => {
-            this.briefingLoaded = false;
-            this.loadBriefing();
-        });
-
-        const retryBtn = document.getElementById('briefing-retry');
-        if (retryBtn) retryBtn.addEventListener('click', () => this.loadBriefing());
 
         // Voice input
         const micBtn = document.getElementById('ai-page-chat-mic');
@@ -493,6 +487,17 @@ var forecastView = {
         return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     },
 
+    bindEvents() {
+        const forecastBtn = document.getElementById('forecast-btn');
+        if (forecastBtn) forecastBtn.addEventListener('click', () => this.runForecast());
+        const exportBtn = document.getElementById('forecast-export');
+        if (exportBtn) exportBtn.addEventListener('click', () => this.exportCSV());
+        const rfmRefresh = document.getElementById('rfm-refresh');
+        if (rfmRefresh) rfmRefresh.addEventListener('click', () => this.loadRFM());
+        const churnRefresh = document.getElementById('churn-refresh');
+        if (churnRefresh) churnRefresh.addEventListener('click', () => this.loadChurn());
+    },
+
     async loadClients() {
         const select = document.getElementById('forecast-client');
         if (!select) return;
@@ -673,7 +678,7 @@ var forecastView = {
             tbody.innerHTML = '<tr><td colspan="4" class="px-4 py-4 text-center text-slate-400 text-sm">لا يوجد عملاء في هذه الفئة</td></tr>';
         } else {
             tbody.innerHTML = clients.map(c => `
-                <tr class="hover:bg-slate-50 transition-colors cursor-pointer" onclick="window.navigateTo('client-profile?id=${c.id}')">
+                <tr class="hover:bg-slate-50 transition-colors cursor-pointer" onclick="window._cpClientId=${c.id};window.navigateTo('client-profile')">
                     <td class="px-4 py-2 text-slate-800 font-medium">${c.name}</td>
                     <td class="px-4 py-2 text-slate-600">${c.last_order || '—'}</td>
                     <td class="px-4 py-2 text-slate-600">${c.frequency}</td>
@@ -721,7 +726,7 @@ var forecastView = {
         tbody.innerHTML = clients.map(c => {
             const daysClass = c.inactive_days > 60 ? 'text-red-600 font-bold' : (c.inactive_days > 45 ? 'text-orange-600 font-bold' : 'text-slate-700');
             return `
-                <tr class="hover:bg-slate-50 transition-colors cursor-pointer" onclick="window.navigateTo('client-profile?id=${c.id}')">
+                <tr class="hover:bg-slate-50 transition-colors cursor-pointer" onclick="window._cpClientId=${c.id};window.navigateTo('client-profile')">
                     <td class="px-4 py-3 text-slate-800 font-medium">${c.name}</td>
                     <td class="px-4 py-3 text-slate-600">${c.last_order || '—'}</td>
                     <td class="px-4 py-3 ${daysClass}">${c.inactive_days === 999 ? 'لم يسبق له الطلب' : c.inactive_days + ' يوم'}</td>
