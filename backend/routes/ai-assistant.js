@@ -319,22 +319,33 @@ router.get('/briefing', async (req, res) => {
 // =============================================================================
 router.get('/suggest-price', async (req, res) => {
     try {
-        const productName = req.query.product_name;
+        const productName = (req.query.product_name || '').trim();
         const targetMargin = parseFloat(req.query.target_margin) || 20;
 
+        // If product_name is empty, return ALL active products
+        let variantsRes;
         if (!productName) {
-            return res.status(400).json({ error: 'اسم المنتج مطلوب' });
+            variantsRes = await db.query(
+                `SELECT p.name as product_name, pv.id as variant_id, pv.size_name,
+                        pv.selling_price, pv.cost_price, pv.sku
+                 FROM products p
+                 JOIN product_variants pv ON pv.product_id = p.id
+                 WHERE pv.status = 'active'
+                 ORDER BY p.name ASC
+                 LIMIT 100`,
+            );
+        } else {
+            variantsRes = await db.query(
+                `SELECT p.name as product_name, pv.id as variant_id, pv.size_name,
+                        pv.selling_price, pv.cost_price, pv.sku
+                 FROM products p
+                 JOIN product_variants pv ON pv.product_id = p.id
+                 WHERE p.name ILIKE $1 AND pv.status = 'active'
+                 ORDER BY p.name ASC
+                 LIMIT 50`,
+                [`%${productName}%`]
+            );
         }
-
-        const variantsRes = await db.query(
-            `SELECT p.name as product_name, pv.id as variant_id, pv.size_name,
-                    pv.selling_price, pv.cost_price, pv.sku
-             FROM products p
-             JOIN product_variants pv ON pv.product_id = p.id
-             WHERE p.name ILIKE $1 AND pv.status = 'active'
-             LIMIT 10`,
-            [`%${productName}%`]
-        );
 
         if (variantsRes.rows.length === 0) {
             return res.json({ suggestions: [], message: 'لم يتم العثور على المنتج' });

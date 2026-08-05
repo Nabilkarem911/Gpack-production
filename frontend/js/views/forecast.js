@@ -653,16 +653,13 @@ var forecastView = {
         var resultsEl = document.getElementById('price-results');
         var tbody = document.getElementById('price-table-body');
 
-        if (!name) {
-            if (statusEl) { statusEl.textContent = 'اكتب اسم المنتج أولاً'; statusEl.className = 'mb-4 rounded-lg p-4 text-sm bg-amber-50 text-amber-700 border border-amber-200'; statusEl.classList.remove('hidden'); }
-            return;
-        }
-
         if (statusEl) { statusEl.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin ml-1"></i> جارٍ البحث...'; statusEl.className = 'mb-4 rounded-lg p-4 text-sm bg-purple-50 text-purple-700 border border-purple-200'; statusEl.classList.remove('hidden'); }
         if (resultsEl) resultsEl.classList.add('hidden');
 
         try {
-            var data = await window.apiFetch('/api/ai-assistant/suggest-price?product_name=' + encodeURIComponent(name) + '&target_margin=' + margin, { method: 'GET' });
+            var url = '/api/ai-assistant/suggest-price?target_margin=' + margin;
+            if (name) url += '&product_name=' + encodeURIComponent(name);
+            var data = await window.apiFetch(url, { method: 'GET' });
             var suggestions = data.suggestions || [];
 
             if (suggestions.length === 0) {
