@@ -121,11 +121,14 @@ window.apiFetch = async function (endpoint, options = {}) {
 
     // 401 — session expired or invalid token
     if (response.status === 401) {
-        localStorage.removeItem('gpack_user');
-        window.GpackUser    = null;
-        window.GpackPerms   = {};
-        window.showLoginView();
-        window.showToast('انتهت جلستك. يرجى تسجيل الدخول مجدداً.', 'warning');
+        if (!window._handling401) {
+            window._handling401 = true;
+            localStorage.removeItem('gpack_user');
+            window.GpackUser    = null;
+            window.GpackPerms   = {};
+            window.showLoginView();
+            window.showToast('انتهت جلستك. يرجى تسجيل الدخول مجدداً.', 'warning');
+        }
         throw new Error('Unauthorized');
     }
 

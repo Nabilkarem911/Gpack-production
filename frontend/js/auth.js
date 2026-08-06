@@ -114,6 +114,7 @@ async function _handleLoginSubmit(event) {
         }
 
         window.showToast(`مرحباً، ${data.user.name} 👋`, 'success');
+        window._handling401 = false;
 
     } catch (err) {
         _showLoginError(err.message || 'فشل تسجيل الدخول. يرجى المحاولة مرة أخرى.');
@@ -143,6 +144,10 @@ function _showLoginError(message) {
 // Exported to window so layout.js can call it from the sidebar button.
 // =============================================================================
 window.logout = function () {
+    // Prevent 401 handler from showing duplicate "session expired" toast
+    const wasSessionExpired = window._handling401 || false;
+    window._handling401 = true;
+
     // Call backend to clear the HttpOnly cookie
     window.apiFetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
 
@@ -156,7 +161,15 @@ window.logout = function () {
 
     window.showLoginView();
     _renderLoginView();
-    window.showToast('تم تسجيل الخروج بنجاح.', 'info');
+
+    // Only show "logged out" toast if session wasn't already expired
+    // (if it was, the 401 handler already showed "session expired" toast)
+    if (!wasSessionExpired) {
+        window.showToast('تم تسجيل الخروج بنجاح.', 'info');
+    }
+
+    // Reset the flag so future logins work normally
+    setTimeout(() => { window._handling401 = false; }, 2000);
 };
 
 // =============================================================================
