@@ -885,6 +885,9 @@
         const downPaymentEl = document.getElementById('quote-down-payment');
         if (downPaymentEl) downPaymentEl.value = '';
 
+        const dpAutoCheckbox = document.getElementById('quote-auto-down-payment');
+        if (dpAutoCheckbox) dpAutoCheckbox.checked = true;
+
         // Clear items container
         const container = document.getElementById('quote-items-container');
         if (container) container.innerHTML = '';
@@ -943,6 +946,26 @@
         if (subEl)  subEl.textContent  = _fmt(subtotal);
         if (taxEl)  taxEl.textContent  = _fmt(tax);
         if (gtEl)   gtEl.textContent   = _fmt(grandTotal);
+
+        // ── Auto down payment calculation ───────────────────────────────────
+        // Rules:
+        //   - If grand total < 2000 → 100%
+        //   - If grand total >= 2000 → 60%, rounded to nearest 1000
+        //   - Only when #quote-auto-down-payment checkbox is checked
+        const autoDpCheckbox = document.getElementById('quote-auto-down-payment');
+        const dpInput = document.getElementById('quote-down-payment');
+        if (autoDpCheckbox && dpInput && autoDpCheckbox.checked) {
+            let dp = 0;
+            if (grandTotal > 0) {
+                if (grandTotal < 2000) {
+                    dp = grandTotal;
+                } else {
+                    const raw = grandTotal * 0.60;
+                    dp = Math.round(raw / 1000) * 1000;
+                }
+            }
+            dpInput.value = dp > 0 ? dp.toFixed(2) : '';
+        }
     };
 
     // ==========================================================================
@@ -1444,6 +1467,9 @@
 
             const downPaymentEl = document.getElementById('quote-down-payment');
             if (downPaymentEl) downPaymentEl.value = order.down_payment_required || '';
+
+            const dpAutoCheckbox = document.getElementById('quote-auto-down-payment');
+            if (dpAutoCheckbox) dpAutoCheckbox.checked = false;
 
             if (numLabel) {
                 numLabel.textContent = `#${order.order_number}`;
@@ -3341,6 +3367,20 @@
 
         const addItemBtn = document.getElementById('add-item-row-btn');
         if (addItemBtn) addItemBtn.addEventListener('click', () => window.addQuoteItemRow());
+
+        // Down payment: manual edit unchecks auto-calc
+        const dpInput = document.getElementById('quote-down-payment');
+        const dpAuto  = document.getElementById('quote-auto-down-payment');
+        if (dpInput) {
+            dpInput.addEventListener('input', () => {
+                if (dpAuto) dpAuto.checked = false;
+            });
+        }
+        if (dpAuto) {
+            dpAuto.addEventListener('change', () => {
+                if (dpAuto.checked) window.calculateOrderTotals();
+            });
+        }
 
         const quickClientBtn = document.getElementById('quick-add-client-btn');
         if (quickClientBtn) quickClientBtn.addEventListener('click', _openQuickClientModal);
