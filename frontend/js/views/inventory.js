@@ -178,7 +178,7 @@ window.inventoryView = {
                 clients = res.data || [];
             }
             clients.forEach(c => {
-                sel.innerHTML += `<option value="${c.id}">${c.name}</option>`;
+                sel.innerHTML += `<option value="${c.id}">${c.parent_name ? c.name + ' — ' + c.parent_name : c.name}</option>`;
             });
             if (window.makeSelectSearchable) {
                 window.makeSelectSearchable(sel, '🔍 ابحث عن عميل...');

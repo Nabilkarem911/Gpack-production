@@ -40,7 +40,7 @@
             });
 
             // Cache for searchable dropdowns
-            _allClients   = (clientsRes.data || []).map(c => ({ id: c.id, label: c.name }));
+            _allClients   = (clientsRes.data || []).map(c => ({ id: c.id, label: c.parent_name ? (c.name + ' — ' + c.parent_name) : c.name }));
             _allSuppliers = (suppliersRes.data || []).map(s => ({ id: s.id, label: s.company_name || s.name }));
 
         } catch (_) {}

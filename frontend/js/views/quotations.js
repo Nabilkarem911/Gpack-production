@@ -323,7 +323,7 @@
         _clients.forEach(c => {
             const opt       = document.createElement('option');
             opt.value       = c.id;
-            opt.textContent = c.name;
+            opt.textContent = c.parent_name ? (c.name + ' — ' + c.parent_name) : c.name;
             sel.appendChild(opt);
         });
         if (selectedId) sel.value = selectedId;
@@ -610,7 +610,8 @@
                 seen.add(q.client_id);
                 const opt = document.createElement('option');
                 opt.value = q.client_id;
-                opt.textContent = q.client_name || q.client_id;
+                const cli = _clients.find(c => c.id === q.client_id);
+                opt.textContent = (cli && cli.parent_name) ? (cli.name + ' — ' + cli.parent_name) : (q.client_name || q.client_id);
                 sel.appendChild(opt);
             }
         });

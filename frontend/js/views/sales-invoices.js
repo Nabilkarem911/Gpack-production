@@ -31,7 +31,7 @@
                 _clients.forEach(c => {
                     const opt = document.createElement('option');
                     opt.value = c.id;
-                    opt.textContent = c.name;
+                    opt.textContent = c.parent_name ? (c.name + ' — ' + c.parent_name) : c.name;
                     sel.appendChild(opt);
                 });
                 if (window.makeSelectSearchable) {
