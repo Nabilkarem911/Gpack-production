@@ -500,7 +500,7 @@ router.post('/:id([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/
             // Record inventory transaction
             await client.query(`
                 INSERT INTO inventory_transactions (
-                    warehouse_id, variant_id, transaction_type, quantity,
+                    warehouse_to, variant_id, transaction_type, quantity,
                     reference_type, reference_id, notes, created_by
                 ) VALUES ($1, $2, 'receipt', $3, 'direct_receipt', $4, $5, $6)
             `, [
