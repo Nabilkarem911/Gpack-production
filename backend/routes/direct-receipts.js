@@ -382,7 +382,7 @@ router.post('/:id([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/
             SELECT dr.*, s.company_name AS supplier_name
             FROM direct_receipts dr
             LEFT JOIN suppliers s ON s.id = dr.supplier_id
-            WHERE dr.id = $1 FOR UPDATE
+            WHERE dr.id = $1 FOR UPDATE OF dr
         `, [id]);
 
         if (!receiptRes.rows.length) {
