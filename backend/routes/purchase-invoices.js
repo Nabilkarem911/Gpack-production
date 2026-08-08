@@ -102,6 +102,7 @@ router.get('/', async (req, res) => {
                    pi.status, pi.has_supplier_invoice, pi.notes, pi.created_at,
                    pi.merged_into_invoice_id,
                    (EXISTS(SELECT 1 FROM purchase_invoice_mo_links WHERE purchase_invoice_id = pi.id)) AS is_consolidated,
+                   (EXISTS(SELECT 1 FROM direct_receipts WHERE purchase_invoice_id = pi.id)) AS is_from_direct_receipt,
                    s.id AS supplier_id, s.company_name AS supplier_name,
                    mo.id AS mo_id, mo.mo_number,
                    c.id AS client_id, c.name AS client_name
@@ -909,6 +910,116 @@ router.post('/:id/edit', restrictEdit, async (req, res) => {
         await client.query('ROLLBACK');
         console.error('[PurchaseInvoices] POST /:id/edit error:', err.message);
         return res.status(400).json({ error: err.message || 'Internal server error.' });
+    } finally {
+        client.release();
+    }
+});
+
+// =============================================================================
+// POST /api/purchase-invoices/:id/revert-to-receipt
+// Revert a draft purchase invoice (created from a direct receipt) back to
+// the direct receipt in pending_review status.
+// - Invoice must be 'draft'
+// - Invoice must have been created from a direct_receipt (notes contain 'محول من استلام مؤقت')
+// - Removes stock quantities that were added during conversion
+// - Deletes inventory_transactions created during conversion
+// - Deletes the purchase invoice and its items
+// - Resets the direct receipt to pending_review
+// =============================================================================
+router.post('/:id([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/revert-to-receipt',
+    restrictEdit,
+    async (req, res) => {
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+
+        const { id } = req.params;
+
+        // 1. Lock the invoice and verify it's draft + from direct receipt
+        const invRes = await client.query(`
+            SELECT pi.id, pi.status, pi.notes, dr.id AS direct_receipt_id, dr.warehouse_id
+            FROM purchase_invoices pi
+            LEFT JOIN direct_receipts dr ON dr.purchase_invoice_id = pi.id
+            WHERE pi.id = $1 FOR UPDATE OF pi
+        `, [id]);
+
+        if (!invRes.rows.length) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'الفاتورة غير موجودة' });
+        }
+
+        const inv = invRes.rows[0];
+
+        if (inv.status !== 'draft') {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'لا يمكن التراجع — الفاتورة معتمدة بالفعل' });
+        }
+
+        if (!inv.direct_receipt_id) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'هذه الفاتورة لم تُنشأ من استلام مؤقت' });
+        }
+
+        const directReceiptId = inv.direct_receipt_id;
+        const warehouseId     = inv.warehouse_id;
+
+        // 2. Get invoice items to revert stock
+        const itemsRes = await client.query(`
+            SELECT variant_id, quantity
+            FROM purchase_invoice_items
+            WHERE purchase_invoice_id = $1
+        `, [id]);
+
+        // 3. Revert warehouse_stock (subtract quantities added during conversion)
+        for (const item of itemsRes.rows) {
+            const qty = parseFloat(item.quantity) || 0;
+
+            const stockRes = await client.query(`
+                SELECT id, quantity FROM warehouse_stock
+                WHERE warehouse_id = $1 AND variant_id = $2 AND client_id IS NULL
+                FOR UPDATE
+            `, [warehouseId, item.variant_id]);
+
+            if (stockRes.rows.length) {
+                const newQty = parseFloat(stockRes.rows[0].quantity) - qty;
+                if (newQty <= 0) {
+                    await client.query(`DELETE FROM warehouse_stock WHERE id = $1`, [stockRes.rows[0].id]);
+                } else {
+                    await client.query(`
+                        UPDATE warehouse_stock SET quantity = $1, last_updated = NOW() WHERE id = $2
+                    `, [newQty, stockRes.rows[0].id]);
+                }
+            }
+        }
+
+        // 4. Delete inventory_transactions created during conversion
+        await client.query(`
+            DELETE FROM inventory_transactions
+            WHERE reference_type = 'direct_receipt' AND reference_id = $1
+        `, [directReceiptId]);
+
+        // 5. Delete purchase invoice items and the invoice itself
+        await client.query(`DELETE FROM purchase_invoice_items WHERE purchase_invoice_id = $1`, [id]);
+        await client.query(`DELETE FROM purchase_invoices WHERE id = $1`, [id]);
+
+        // 6. Reset direct receipt to pending_review
+        await client.query(`
+            UPDATE direct_receipts
+            SET status = 'pending_review', converted_at = NULL,
+                purchase_invoice_id = NULL, converted_by = NULL, updated_at = NOW()
+            WHERE id = $1
+        `, [directReceiptId]);
+
+        await client.query('COMMIT');
+
+        return res.json({
+            message: 'تم التراجع — الفاتورة أُرجعت للاستلام المؤقت',
+            data: { direct_receipt_id: directReceiptId }
+        });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('[PurchaseInvoices] POST /:id/revert-to-receipt error:', err.message);
+        return res.status(500).json({ error: 'Internal server error.' });
     } finally {
         client.release();
     }

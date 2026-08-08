@@ -110,10 +110,17 @@
                     <span class="px-2 py-1 rounded-lg text-xs font-bold bg-blue-100 text-blue-700"><i class="fa-solid fa-clock ml-1"></i> بانتظار الاعتماد</span>
                 </td>
                 <td class="py-3 px-4 text-center">
-                    <button onclick="window.piOpenApproveModal('${esc(inv.id)}')"
-                        class="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 transition-all">
-                        <i class="fa-solid fa-check-double ml-1"></i> اعتماد
-                    </button>
+                    <div class="flex items-center justify-center gap-1">
+                        <button onclick="window.piOpenApproveModal('${esc(inv.id)}')"
+                            class="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 transition-all">
+                            <i class="fa-solid fa-check-double ml-1"></i> اعتماد
+                        </button>
+                        ${inv.is_from_direct_receipt ? `
+                        <button onclick="window.piRevertToReceipt('${esc(inv.id)}')"
+                            class="w-8 h-8 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition-all" title="تراجع — إرجاع للاستلام المؤقت">
+                            <i class="fa-solid fa-rotate-left text-xs"></i>
+                        </button>` : ''}
+                    </div>
                 </td>
             </tr>`;
         }).join('');
@@ -269,6 +276,18 @@
     window.piArcFilterChange = function() {
         clearTimeout(window._piArcDebounce);
         window._piArcDebounce = setTimeout(() => _loadArchive(0), 300);
+    };
+
+    // ── Revert to Direct Receipt ──────────────────────────────────────────────
+    window.piRevertToReceipt = async function(invId) {
+        if (!confirm('هل تريد التراجع؟ سيتم حذف الفاتورة وإرجاع الاستلام المؤقت لحالة المراجعة.')) return;
+        try {
+            const res = await window.apiFetch(`/api/purchase-invoices/${invId}/revert-to-receipt`, { method: 'POST' });
+            window.showToast(res.message || 'تم التراجع بنجاح', 'success');
+            await _loadInvoices(0);
+        } catch (err) {
+            window.showToast(err.message || 'فشل التراجع', 'error');
+        }
     };
 
     // ── Approve Modal ─────────────────────────────────────────────────────────

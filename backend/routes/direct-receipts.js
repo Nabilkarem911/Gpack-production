@@ -440,7 +440,7 @@ router.post('/:id([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/
                 supplier_id, invoice_number, invoice_date,
                 supplier_invoice_ref, subtotal, tax_rate, tax_amount, grand_total,
                 status, has_supplier_invoice, notes, created_by
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'unpaid', $9, $10, $11)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'draft', $9, $10, $11)
             RETURNING id, invoice_number
         `, [
             receipt.supplier_id,

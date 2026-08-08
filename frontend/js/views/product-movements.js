@@ -216,7 +216,7 @@
             const q = parseFloat(r.quantity || 0);
             if (r.transaction_type === 'receipt') {
                 totalIn += q;
-                const sname = r.supplier_name || '—';
+                const sname = r.supplier_name || r.dr_supplier_name || r.pi_supplier_name || '—';
                 supplierTotals[sname] = (supplierTotals[sname] || 0) + q;
             } else if (r.transaction_type === 'return') {
                 totalOut -= q;
@@ -288,7 +288,7 @@
                 ? parseFloat(r.mo_unit_cost  || r.cost_price    || 0)
                 : parseFloat(r.sale_unit_price || r.selling_price || 0);
             const total      = unitPrice * parseFloat(r.quantity || 0);
-            const counterpart = isIncoming ? (r.supplier_name || r.dn_client_name || r.client_name || '—') : (r.dn_client_name || r.client_name || '—');
+            const counterpart = isIncoming ? (r.supplier_name || r.dr_supplier_name || r.pi_supplier_name || r.dn_client_name || r.client_name || '—') : (r.dn_client_name || r.client_name || '—');
             const ref         = isIncoming
                 ? (r.mo_number ? `<span class="font-mono text-xs text-slate-500">${esc(r.mo_number)}</span>` : (r.delivery_note_number ? `<span class="font-mono text-xs text-slate-500">DN-${r.delivery_note_number}</span>` : '—'))
                 : (r.delivery_note_number ? `<span class="font-mono text-xs text-slate-500">DN-${r.delivery_note_number}</span>` : '—');
@@ -391,7 +391,7 @@
             const isReceipt = r.transaction_type === 'receipt';
             const up  = isReceipt ? parseFloat(r.mo_unit_cost || r.cost_price || 0) : parseFloat(r.sale_unit_price || r.selling_price || 0);
             const tot = up * parseFloat(r.quantity || 0);
-            const counterpart = isReceipt ? (r.supplier_name || '') : (r.dn_client_name || r.client_name || '');
+            const counterpart = isReceipt ? (r.supplier_name || r.dr_supplier_name || r.pi_supplier_name || '') : (r.dn_client_name || r.client_name || '');
             const ref = isReceipt ? (r.mo_number || '') : (r.delivery_note_number ? `DN-${r.delivery_note_number}` : '');
             csvRows.push([
                 date(r.created_at), isReceipt ? 'استلام' : 'تسليم',

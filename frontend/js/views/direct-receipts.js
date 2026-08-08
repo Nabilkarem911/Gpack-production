@@ -537,7 +537,11 @@
             const res = await window.apiFetch(`/api/direct-receipts/${_currentReceipt.id}/convert`, { method: 'POST' });
             window.showToast(`تم التحويل لفاتورة مشتريات #${res.data.invoice_number}`, 'success');
             _closeReviewModal();
-            await _loadList();
+            if (typeof window.navigateTo === 'function') {
+                window.navigateTo('purchase-invoices');
+            } else {
+                await _loadList();
+            }
         } catch (err) {
             window.showToast(err.message || 'فشل التحويل', 'error');
         } finally {

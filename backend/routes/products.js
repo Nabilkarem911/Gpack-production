@@ -185,7 +185,11 @@ router.get('/movements', async (req, res) => {
         }
         if (supplier_id) {
             params.push(supplier_id);
-            conditions.push(`(it.transaction_type = 'receipt' AND mo.manufacturer_id = $${params.length})`);
+            conditions.push(`(it.transaction_type = 'receipt' AND (
+                mo.manufacturer_id = $${params.length}
+                OR dr.supplier_id = $${params.length}
+                OR pi.supplier_id = $${params.length}
+            ))`);
         }
         if (from) {
             params.push(from);
@@ -206,6 +210,10 @@ router.get('/movements', async (req, res) => {
              LEFT JOIN categories cat ON cat.id = p.category_id
              LEFT JOIN manufacturer_orders mo
                 ON mo.id = it.reference_id AND it.reference_type = 'manufacturer_order'
+             LEFT JOIN direct_receipts dr
+                ON dr.id = it.reference_id AND it.reference_type = 'direct_receipt'
+             LEFT JOIN purchase_invoices pi
+                ON pi.id = dr.purchase_invoice_id
              LEFT JOIN delivery_notes dn
                 ON dn.id = it.reference_id AND it.reference_type = 'delivery_note'
              LEFT JOIN clients dn_c ON dn_c.id = dn.client_id
@@ -243,6 +251,8 @@ router.get('/movements', async (req, res) => {
                 mo.manufacturer_id AS mo_supplier_id,
                 moi_cost.unit_cost AS mo_unit_cost,
                 s.company_name     AS supplier_name,
+                dr_s.company_name  AS dr_supplier_name,
+                pi_s.company_name  AS pi_supplier_name,
                 dn.note_number AS delivery_note_number,
                 dn.delivery_date,
                 dn_c.name      AS dn_client_name,
@@ -256,12 +266,18 @@ router.get('/movements', async (req, res) => {
              LEFT JOIN clients c      ON c.id   = it.client_id
              LEFT JOIN manufacturer_orders mo
                 ON mo.id = it.reference_id AND it.reference_type = 'manufacturer_order'
+             LEFT JOIN direct_receipts dr
+                ON dr.id = it.reference_id AND it.reference_type = 'direct_receipt'
+             LEFT JOIN purchase_invoices pi
+                ON pi.id = dr.purchase_invoice_id
              LEFT JOIN LATERAL (
                 SELECT unit_cost FROM manufacturer_order_items
                 WHERE manufacturer_order_id = mo.id AND variant_id = pv.id
                 LIMIT 1
              ) moi_cost ON true
              LEFT JOIN suppliers s ON s.id = mo.manufacturer_id
+             LEFT JOIN suppliers dr_s ON dr_s.id = dr.supplier_id
+             LEFT JOIN suppliers pi_s ON pi_s.id = pi.supplier_id
              LEFT JOIN delivery_notes dn
                 ON dn.id = it.reference_id AND it.reference_type = 'delivery_note'
              LEFT JOIN clients dn_c ON dn_c.id = dn.client_id
