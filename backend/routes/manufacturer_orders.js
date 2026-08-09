@@ -516,15 +516,16 @@ router.post('/', restrictWrite, validateBody(manufacturerOrderCreate), async (re
 
                 const itemResult = await client.query(
                     `INSERT INTO manufacturer_order_items (
-                        manufacturer_order_id, order_item_id, mo_quantity, design_status, design_id, created_at
-                    ) VALUES ($1, $2, $3, $4, $5, NOW())
+                        manufacturer_order_id, order_item_id, mo_quantity, design_status, design_id, pantone_color, created_at
+                    ) VALUES ($1, $2, $3, $4, $5, $6, NOW())
                     RETURNING *`,
                     [
                         manufacturerOrder.id,
                         item.order_item_id,
                         item.quantity,
                         item.design_status || 'new',
-                        item.design_id || null
+                        item.design_id || null,
+                        item.pantone_color || null
                     ]
                 );
                 insertedItems.push(itemResult.rows[0]);

@@ -731,7 +731,7 @@
     }
 
     // ── Assign supplier modal ──────────────────────────────────────────────────
-    function _openAssignModal(orderItemId, itemName, qty, assigned) {
+    async function _openAssignModal(orderItemId, itemName, qty, assigned) {
         const available = qty - assigned;
         const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
         const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
@@ -752,6 +752,22 @@
             sel.innerHTML = '<option value="">— اختر المورد —</option>' +
                 _suppliers.map(s => `<option value="${s.id}">${s.company_name || s.name}</option>`).join('');
         }
+
+        // Load client Pantone colors
+        const pantoneSel = document.getElementById('assign-pantone-select');
+        if (pantoneSel) {
+            pantoneSel.innerHTML = '<option value="">— بدون —</option>';
+            if (_hubOrder && _hubOrder.client_id) {
+                try {
+                    const res = await window.apiFetch(`/api/client-pantone-colors?client_id=${_hubOrder.client_id}`);
+                    const colors = (res && res.data) ? res.data : [];
+                    pantoneSel.innerHTML += colors.map(c =>
+                        `<option value="${c.color_code.replace(/"/g, '&quot;')}">${c.color_code}${c.color_name ? ' — ' + c.color_name : ''}</option>`
+                    ).join('');
+                } catch (e) { /* ignore */ }
+            }
+        }
+
         _showModal('po-assign-modal');
     }
 
@@ -763,6 +779,7 @@
         const unitCost    = parseFloat((document.getElementById('assign-unit-cost') || {}).value) || 0;
         const expDelivery = (document.getElementById('assign-expected-delivery') || {}).value;
         const notes       = (document.getElementById('assign-notes') || {}).value;
+        const pantoneColor = (document.getElementById('assign-pantone-select') || {}).value;
 
         if (!supplierId) { _toast('اختر المورد', 'error'); return; }
         if (!qty || qty <= 0) { _toast('أدخل كمية صحيحة', 'error'); return; }
@@ -773,7 +790,7 @@
                 body: {
                     order_id: orderId,
                     supplier_id: supplierId,
-                    items: [{ order_item_id: orderItemId, quantity: qty, unit_cost: unitCost }],
+                    items: [{ order_item_id: orderItemId, quantity: qty, unit_cost: unitCost, pantone_color: pantoneColor || null }],
                     expected_delivery: expDelivery || null,
                     notes: notes || null,
                 },
@@ -1186,7 +1203,13 @@
                 body: {
                     order_id:  _hubOrderId,
                     client_id: _hubOrder.client_id,
-                    items,
+                    items: items.map(item => ({
+                        order_item_id: item.variant_id,
+                        quantity:      item.quantity,
+                        design_status: 'pending',
+                        design_id:     null,
+                        unit_cost:     0,
+                    })),
                     notes,
                 },
             });
