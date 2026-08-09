@@ -159,6 +159,29 @@ function fmtFileSize(bytes) {
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
+function safeDecodeName(name) {
+    if (!name) return '';
+    if (typeof name !== 'string') name = String(name);
+    if (name.includes('%')) {
+        try { return decodeURIComponent(name); } catch (e) { /* ignore */ }
+    }
+    if ([...name].every(c => c.charCodeAt(0) <= 255)) {
+        try { return decodeURIComponent(escape(name)); } catch (e) { /* ignore */ }
+    }
+    return name;
+}
+
+function escapeHtml(str) {
+    return String(str ?? '').replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function escapeAttr(str) {
+    return String(str ?? '').replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;');
+}
+
 let moData = null;
 
 (async () => {
@@ -221,11 +244,12 @@ function renderMO({ order, items }) {
     // Design files
     const designsContainer = document.getElementById('mo-designs');
     const designsHtml = items.map((item, idx) => {
-        const files = Array.isArray(item.design_files) ? item.design_files : [];
+        const files = (Array.isArray(item.design_files) ? item.design_files : [])
+            .filter(f => f.file_type !== 'thumbnail' && !/thumbnail/i.test(f.name || ''));
         const hasThumb = !!item.design_thumbnail;
         if (files.length === 0 && !hasThumb) return '';
 
-        // If no files but has thumbnail, create synthetic entry
+        // If no source files but has thumbnail, create synthetic entry
         const allFiles = files.length > 0 ? files : [{
             path: item.design_thumbnail,
             name: item.design_name || 'تصميم',
@@ -236,7 +260,7 @@ function renderMO({ order, items }) {
         const fileSections = allFiles.map((f, fIdx) => {
             const normUrl = normalizeUrl(f.path);
             const absUrl = normUrl.startsWith('http') ? normUrl : window.location.origin + normUrl;
-            const ext = getExt(f.name || f.path || '');
+            const ext = getExt(f.path || f.name || '');
             const isImage = IMAGE_EXTS.has(ext);
             const isPdf = PDF_EXTS.has(ext);
 
@@ -251,21 +275,22 @@ function renderMO({ order, items }) {
 
             const staticImg = isImage ? absUrl : (genPreviewAbs || (thumbIsImage ? thumbAbs : ''));
 
+            const fileName = escapeHtml(safeDecodeName(f.name || item.design_name || `تصميم-${idx + 1}-${fIdx + 1}`));
+            const fileNameAttr = escapeAttr(safeDecodeName(f.name || item.design_name || `تصميم-${idx + 1}-${fIdx + 1}`));
+
             let previewHtml = '';
             if (staticImg) {
-                previewHtml = `<img src="${staticImg}" alt="${f.name || 'تصميم'}" class="design-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
+                previewHtml = `<img src="${encodeURI(staticImg)}" alt="${fileNameAttr}" class="design-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" loading="lazy">
                 <div style="display:none;flex-direction:column;align-items:center;justify-content:center;padding:40px;background:#f8fafc;border-radius:12px;">
                     <div style="width:64px;height:64px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:18px;color:${isPdf ? '#dc2626' : '#475569'};background:${isPdf ? '#fee2e2' : '#f1f5f9'};">${(ext || 'FILE').toUpperCase()}</div>
-                    <p style="font-size:12px;color:#94a3b8;margin-top:10px;">${f.name || 'تصميم'}</p>
+                    <p style="font-size:12px;color:#94a3b8;margin-top:10px;">${fileName}</p>
                 </div>`;
             } else {
                 previewHtml = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;background:#f8fafc;border-radius:12px;">
                     <div style="width:64px;height:64px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:18px;color:${isPdf ? '#dc2626' : '#475569'};background:${isPdf ? '#fee2e2' : '#f1f5f9'};">${(ext || 'FILE').toUpperCase()}</div>
-                    <p style="font-size:12px;color:#94a3b8;margin-top:10px;">${f.name || 'تصميم'}</p>
+                    <p style="font-size:12px;color:#94a3b8;margin-top:10px;">${fileName}</p>
                 </div>`;
             }
-
-            const fileName = f.name || item.design_name || `تصميم-${idx + 1}-${fIdx + 1}`;
             const fileSize = fmtFileSize(f.size);
 
             return `<div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
@@ -280,7 +305,7 @@ function renderMO({ order, items }) {
                         <div class="space-y-2 text-xs">
                             <div>
                                 <span class="text-slate-400 block mb-1">اسم الملف</span>
-                                <span class="font-bold text-slate-700 break-words">${fileName}</span>
+                                <span class="font-bold text-slate-700 break-words" dir="auto">${fileName}</span>
                             </div>
                             <div>
                                 <span class="text-slate-400 block mb-1">الحجم</span>
@@ -288,10 +313,10 @@ function renderMO({ order, items }) {
                             </div>
                         </div>
                         <div class="mt-4 space-y-2">
-                            <a href="${absUrl}" target="_blank" class="block w-full text-center py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-colors">
+                            <a href="${encodeURI(absUrl)}" target="_blank" class="block w-full text-center py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-colors">
                                 <i class="fa-solid fa-up-right-from-square ml-1"></i> فتح في تبويب
                             </a>
-                            <a href="${absUrl}" download class="block w-full text-center py-2 bg-purple-700 hover:bg-purple-800 text-white rounded-lg text-xs font-bold transition-colors">
+                            <a href="${encodeURI(absUrl)}" download="${fileNameAttr}" class="block w-full text-center py-2 bg-purple-700 hover:bg-purple-800 text-white rounded-lg text-xs font-bold transition-colors">
                                 <i class="fa-solid fa-download ml-1"></i> تحميل الملف
                             </a>
                         </div>

@@ -22,6 +22,29 @@ const { authenticate } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
+// ── Helper: decode original_name stored as percent-encoded or Latin-1 mojibake
+function _safeDecodeFileName(name) {
+    if (!name || typeof name !== 'string') return name;
+    if (/^[\x00-\x7F]*$/.test(name)) return name;
+
+    // Plain percent-encoded
+    if (name.includes('%')) {
+        try { return decodeURIComponent(name); } catch (e) { /* ignore */ }
+    }
+
+    // Latin-1 mojibake of UTF-8 bytes (all chars <= 255)
+    const isLatin1 = [...name].every(c => c.charCodeAt(0) <= 255);
+    if (isLatin1) {
+        try {
+            const decoded = decodeURIComponent(escape(name));
+            // Only accept if it produced fewer unusual Latin-1 characters
+            if (decoded && decoded.length > 0) return decoded;
+        } catch (e) { /* ignore */ }
+    }
+
+    return name;
+}
+
 // ── Helper: build a formatted WhatsApp message for the supplier ──────────────
 function _buildWhatsAppMessage(mo, items, shareUrl) {
     const lines = [];
@@ -278,6 +301,7 @@ router.get('/manufacturer-order/:token', async (req, res) => {
                         'id', cdfx.id,
                         'path', cdfx.file_path,
                         'name', cdfx.original_name,
+                        'file_type', cdfx.file_type,
                         'size', cdfx.file_size,
                         'mime_type', cdfx.mime_type,
                         'uploaded_at', cdfx.uploaded_at
@@ -285,6 +309,7 @@ router.get('/manufacturer-order/:token', async (req, res) => {
                 ) AS files
                 FROM client_design_files cdfx
                 WHERE cdfx.design_id = moi.design_id
+                  AND cdfx.file_type <> 'thumbnail'
              ) df ON true
              WHERE moi.manufacturer_order_id = $1
              ORDER BY moi.id ASC`,
@@ -294,6 +319,17 @@ router.get('/manufacturer-order/:token', async (req, res) => {
         const items = itemsResult.rows;
 
         // Generate PDF thumbnails for all design files
+        items.forEach(item => {
+            if (item.design_name) {
+                item.design_name = _safeDecodeFileName(item.design_name);
+            }
+            const files = Array.isArray(item.design_files) ? item.design_files : [];
+            files.forEach(f => {
+                if (f.name) f.name = _safeDecodeFileName(f.name);
+                if (f.original_name) f.original_name = _safeDecodeFileName(f.original_name);
+            });
+        });
+
         await Promise.all(items.map(async (item) => {
             if (item.design_thumbnail) {
                 const generated = await ensurePdfThumbnail(item.design_thumbnail);
