@@ -400,11 +400,15 @@
                 window.apiFetch(`/api/manufacturer-orders/by-order/${orderId}`),
             ]);
 
-            _hubOrder = orderRes?.data || null;
-            _hubItems = (_hubOrder?.items) || [];
-            _hubMOs   = (moRes?.data) || [];
+            // Normalize order payload whether API returns { order, items } or { data: { order, items } }
+            const orderPayload = (orderRes && orderRes.data) ? orderRes.data : (orderRes || {});
+            const orderObj = orderPayload.order ? orderPayload.order : orderPayload;
+            const orderItems = orderPayload.order ? orderPayload.items : (orderPayload.items || []);
+            _hubOrder = { ...orderObj, items: orderItems };
+            _hubItems = orderItems;
+            _hubMOs   = (moRes && (moRes.data || moRes)) ? (moRes.data || moRes) : [];
 
-            if (!_hubOrder) { _toast('تعذر تحميل بيانات الأمر', 'error'); return; }
+            if (!_hubOrder || !_hubOrder.id) { _toast('تعذر تحميل بيانات الأمر', 'error'); return; }
 
             _renderHubHeader();
             _switchHubTab('items');
@@ -1734,7 +1738,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
     }
 
     // ── Assign Supplier Modal ──────────────────────────────────────────────────
-    function _openAssignModal(orderItemId) {
+    async function _openAssignModal(orderItemId) {
         const item = _hubItems.find(i => i.id === orderItemId);
         if (!item) { _toast('الصنف غير موجود', 'error'); return; }
 
@@ -1814,6 +1818,25 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
                 window.makeSelectSearchable(sel, '🔍 ابحث عن مورد...');
             }
         }
+
+        // Load client Pantone colors
+        const pantoneSel = _el('assign-pantone-select');
+        if (pantoneSel) {
+            pantoneSel.innerHTML = '<option value="">— بدون —</option>';
+            const clientId = _hubOrder?.client_id || _hubOrder?.client?.id;
+            if (clientId) {
+                try {
+                    const res = await window.apiFetch(`/api/client-pantone-colors?client_id=${clientId}`);
+                    const colors = (res && res.data) ? res.data : [];
+                    if (colors.length) {
+                        pantoneSel.innerHTML += colors.map(c =>
+                            `<option value="${_escapeAttrValue(c.color_code)}">${_escapeHtml(c.color_code)}${c.color_name ? ' — ' + _escapeHtml(c.color_name) : ''}</option>`
+                        ).join('');
+                    }
+                } catch (e) { /* ignore */ }
+            }
+        }
+
         _showModal('po-assign-modal');
     }
 
@@ -1824,6 +1847,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         const qty         = parseFloat(_el('assign-qty')?.value);
         const expDelivery = _el('assign-expected-delivery')?.value;
         const notes       = _el('assign-notes')?.value;
+        const pantoneColor = _el('assign-pantone-select')?.value;
 
         // Get selected design status from radio buttons
         const designStatusRadio = document.querySelector('input[name="assign-design-status"]:checked');
@@ -1849,7 +1873,8 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
                         order_item_id: orderItemId,
                         quantity: qty,
                         design_status: selectedDesignStatus,
-                        design_id: designId
+                        design_id: designId,
+                        pantone_color: pantoneColor || null
                     }],
                     expected_delivery: expDelivery || null,
                     notes:             notes       || null,
