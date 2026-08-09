@@ -179,11 +179,16 @@
                 window.apiFetch(`/api/orders/${orderId}`),
                 window.apiFetch(`/api/manufacturer-orders/by-order/${orderId}`),
             ]);
-            _hubOrder = orderRes && orderRes.data;
-            _hubItems = (_hubOrder && _hubOrder.items) ? _hubOrder.items : [];
-            _hubMOs   = (moRes && moRes.data) ? moRes.data : [];
 
-            if (!_hubOrder) throw new Error('لم يتم إيجاد الأمر');
+            // Normalize order payload whether API returns { order, items } or { data: { order, items } } or order object with items
+            const orderPayload = (orderRes && orderRes.data) ? orderRes.data : (orderRes || {});
+            const orderObj = orderPayload.order ? orderPayload.order : orderPayload;
+            const orderItems = orderPayload.order ? orderPayload.items : (orderPayload.items || []);
+            _hubOrder = { ...orderObj, items: orderItems };
+            _hubItems = orderItems;
+            _hubMOs   = (moRes && (moRes.data || moRes)) ? (moRes.data || moRes) : [];
+
+            if (!_hubOrder || !_hubOrder.id) throw new Error('لم يتم إيجاد الأمر');
 
             _renderHubHeader();
             _restoreHubContent();
