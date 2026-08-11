@@ -538,6 +538,15 @@
                             ${item.size_name ? `<span class="text-xs text-slate-400 mr-1">${item.size_name}</span>` : ''}
                         </td>
                         <td class="py-2.5 px-4 text-center text-sm font-bold text-slate-700">${qty}</td>
+                        <td class="py-2.5 px-4 text-center text-sm hidden lg:table-cell">
+                            <span class="text-emerald-600 font-bold">${_fmt(item.unit_price)}</span>
+                            <span class="text-xs text-slate-400"> ر.س</span>
+                        </td>
+                        <td class="py-2.5 px-4 text-center text-sm hidden lg:table-cell">
+                            ${item.last_purchase_price
+                                ? `<span class="text-orange-600 font-bold">${_fmt(item.last_purchase_price)}</span><span class="text-xs text-slate-400"> ر.س</span>`
+                                : '<span class="text-slate-300 text-xs">—</span>'}
+                        </td>
                         <td class="py-2.5 px-4 text-center text-sm hidden sm:table-cell">
                             <span class="${assigned > 0 ? 'text-blue-600 font-bold' : 'text-slate-300'}">${assigned || '—'}</span>
                         </td>
@@ -554,7 +563,7 @@
                         </td>
                     </tr>`;
                 }).join('')
-                : '<tr><td colspan="6" class="py-8 text-center text-slate-400 text-xs">لا توجد بنود في هذا الأمر</td></tr>';
+                : '<tr><td colspan="8" class="py-8 text-center text-slate-400 text-xs">لا توجد بنود في هذا الأمر</td></tr>';
         }
 
         // MO list

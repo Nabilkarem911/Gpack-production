@@ -666,6 +666,16 @@ router.get('/:id', async (req, res) => {
                 u.abbreviation     AS unit_abbreviation,
                 oi.quantity,
                 oi.unit_price,
+                pv.selling_price,
+                COALESCE(
+                    (SELECT mi.unit_cost FROM manufacturer_order_items mi
+                     JOIN order_items oi2 ON oi2.id = mi.order_item_id
+                     WHERE oi2.variant_id = oi.variant_id
+                     ORDER BY mi.created_at DESC LIMIT 1),
+                    (SELECT pii.unit_cost FROM purchase_invoice_items pii
+                     WHERE pii.variant_id = oi.variant_id
+                     ORDER BY pii.created_at DESC LIMIT 1)
+                ) AS last_purchase_price,
                 oi.line_total,
                 oi.manufacturer_po_qty,
                 oi.wh_received_qty,
