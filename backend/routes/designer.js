@@ -896,7 +896,7 @@ router.post('/item/:orderId/:itemId/send-to-client', authorize(['admin', 'manage
         const rawToken = crypto.randomBytes(32).toString('hex');
         const tokenHash = safeHashToken(rawToken);
 
-        const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+        const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
 
         await client.query(
             `UPDATE order_items SET
@@ -1001,7 +1001,7 @@ router.post('/item/:orderId/:itemId/resend-review', authorize(['admin', 'manager
         const rawToken = crypto.randomBytes(32).toString('hex');
         const tokenHash = safeHashToken(rawToken);
 
-        const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+        const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
 
         await client.query(
             `UPDATE order_items SET
@@ -1118,7 +1118,7 @@ router.post('/send-to-client/:orderId', authorize(['admin', 'manager', 'super_ad
             shareUrl = `${req.protocol}://${req.get('host')}/public-design.html?token=${plainToken}`;
         }
 
-        const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+        const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
 
         const noDesignCount = await db.query(
             `SELECT COUNT(*) as count FROM order_items

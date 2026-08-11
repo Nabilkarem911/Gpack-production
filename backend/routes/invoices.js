@@ -182,7 +182,7 @@ router.get('/:id', async (req, res) => {
 router.post('/:id/share', authenticate, validateBody(invoiceShare), async (req, res) => {
     try {
         const { id } = req.params;
-        const expiresDays = req.validatedBody.expires_days || 30;
+        const expiresDays = req.validatedBody.expires_days || 90;
 
         const plainToken = crypto.randomBytes(32).toString('hex');
         let tokenHash;

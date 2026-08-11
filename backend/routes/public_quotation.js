@@ -44,11 +44,11 @@ const upload = multer({
 // =============================================================================
 // POST /api/public/quotations/:id/share
 // Generates a share token for a quote. Requires authentication (internal call).
-// Body: { expires_days } — default 7 days
+// Body: { expires_days } — default 90 days
 // =============================================================================
 router.post('/quotations/:id/share', require('../middleware/authMiddleware').authenticate, async (req, res) => {
     const { id } = req.params;
-    const expiresDays = parseInt(req.body.expires_days || 7);
+    const expiresDays = parseInt(req.body.expires_days || 90);
 
     try {
         const check = await db.query(

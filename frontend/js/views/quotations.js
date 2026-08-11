@@ -3489,7 +3489,7 @@
             if (!tokenStillValid) {
                 const shareRes = await window.apiFetch(`/api/public/quotations/${orderId}/share`, {
                     method: 'POST',
-                    body: { expires_days: 7 },
+                    body: { expires_days: 90 },
                 });
                 token   = shareRes?.data?.token;
                 expires = shareRes?.data?.expires_at;

@@ -2521,7 +2521,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
             _toast('جاري إنشاء الرابط...', 'info');
             const res = await window.apiFetch(`/api/invoices/${invoiceId}/share`, {
                 method: 'POST',
-                body: JSON.stringify({ expires_days: 30 })
+                body: JSON.stringify({ expires_days: 90 })
             });
             if (!res?.url) throw new Error('تعذّر إنشاء الرابط');
             await navigator.clipboard.writeText(res.url);
