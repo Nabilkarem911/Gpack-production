@@ -19,6 +19,7 @@
     let _invoicePrevPaid = 0;
     let _bulkSelected = {}; // { [itemId]: { id, name, qty, assigned, designId, designName, designThumb, designStatus, variantId } }
     let _bulkDesignTargetId = null;
+    let _assignPantoneColors = [];
 
     const DESIGN_IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'svg', 'gif', 'webp', 'bmp', 'tif', 'tiff']);
     const DESIGN_PDF_EXTENSIONS   = new Set(['pdf']);
@@ -613,6 +614,12 @@
                 const remQty = Math.max(0, moQty - recQty);
                 const pct    = moQty > 0 ? Math.round((recQty / moQty) * 100) : 0;
                 const barColor = pct >= 100 ? 'bg-emerald-500' : pct > 0 ? 'bg-blue-500' : 'bg-slate-200';
+                const pColors = Array.isArray(i.pantone_colors) && i.pantone_colors.length
+                    ? i.pantone_colors
+                    : (i.pantone_color ? [i.pantone_color] : []);
+                const pBadges = pColors.length
+                    ? `<div class="flex flex-wrap gap-1 mb-1">${pColors.map(c => `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded text-[10px] font-bold">🎨 ${_escapeHtml(c)}</span>`).join('')}</div>`
+                    : '';
                 return `<div class="bg-white/70 rounded-lg px-3 py-2">
                     <div class="flex justify-between text-xs mb-1">
                         <span class="text-slate-600 font-semibold">${i.product_name || ''} ${i.size_name || ''}</span>
@@ -621,6 +628,7 @@
                             ${remQty > 0 ? `<span class="text-orange-500 mr-1">(متبقي ${remQty})</span>` : '<span class="text-emerald-500 mr-1">✓ مكتمل</span>'}
                         </span>
                     </div>
+                    ${pBadges}
                     <div class="w-full bg-slate-200 rounded-full h-1.5">
                         <div class="${barColor} h-1.5 rounded-full transition-all" style="width:${pct}%"></div>
                     </div>
@@ -924,7 +932,13 @@
             _setVal('assign-qty', moDetails.items?.[0]?.mo_quantity || moDetails.items?.[0]?.po_quantity || '');
             _setVal('assign-expected-delivery', mo.expected_delivery || '');
             _setVal('assign-notes', mo.notes || '');
-            
+
+            // Load existing Pantone colors
+            const clientId = _hubOrder?.client_id || _hubOrder?.client?.id;
+            const existingPantone = moDetails.items?.[0]?.pantone_colors ||
+                (moDetails.items?.[0]?.pantone_color ? [moDetails.items?.[0]?.pantone_color] : []);
+            await _loadPantoneColors(clientId, existingPantone);
+
             // Show modal
             _showModal('po-assign-modal');
             
@@ -1820,24 +1834,82 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         }
 
         // Load client Pantone colors
-        const pantoneSel = _el('assign-pantone-select');
-        if (pantoneSel) {
-            pantoneSel.innerHTML = '<option value="">— بدون —</option>';
-            const clientId = _hubOrder?.client_id || _hubOrder?.client?.id;
-            if (clientId) {
-                try {
-                    const res = await window.apiFetch(`/api/client-pantone-colors?client_id=${clientId}`);
-                    const colors = (res && res.data) ? res.data : [];
-                    if (colors.length) {
-                        pantoneSel.innerHTML += colors.map(c =>
-                            `<option value="${_escapeAttrValue(c.color_code)}">${_escapeHtml(c.color_code)}${c.color_name ? ' — ' + _escapeHtml(c.color_name) : ''}</option>`
-                        ).join('');
-                    }
-                } catch (e) { /* ignore */ }
-            }
-        }
+        const clientId = _hubOrder?.client_id || _hubOrder?.client?.id;
+        await _loadPantoneColors(clientId);
 
         _showModal('po-assign-modal');
+    }
+
+    async function _loadPantoneColors(clientId, selected) {
+        const list = _el('assign-pantone-list');
+        const search = _el('assign-pantone-search');
+        if (!list) return;
+
+        _assignPantoneColors = [];
+        list.innerHTML = '<p class="text-xs text-slate-400">جاري التحميل...</p>';
+        if (search) search.value = '';
+
+        if (!clientId) {
+            list.innerHTML = '<p class="text-xs text-slate-400">لا يوجد عميل مرتبط</p>';
+            return;
+        }
+
+        try {
+            const res = await window.apiFetch(`/api/client-pantone-colors?client_id=${clientId}`);
+            _assignPantoneColors = (res && res.data) ? res.data : [];
+        } catch (err) {
+            _assignPantoneColors = [];
+        }
+
+        _renderPantoneColors(_assignPantoneColors, selected || []);
+
+        if (search) {
+            search.oninput = function () {
+                _renderPantoneColors(_assignPantoneColors, _getSelectedPantoneColors(), (search.value || '').trim());
+            };
+        }
+    }
+
+    function _renderPantoneColors(colors, selected, filter) {
+        const list = _el('assign-pantone-list');
+        if (!list) return;
+
+        if (!colors.length) {
+            list.innerHTML = '<p class="text-xs text-slate-400">لا توجد ألوان بانتون مسجلة للعميل</p>';
+            return;
+        }
+
+        const q = (filter || '').toLowerCase();
+        const selectedSet = new Set(selected || []);
+
+        const html = colors.map(c => {
+            const code = c.color_code || '';
+            const name = c.color_name || '';
+            const term = `${code} ${name}`.toLowerCase();
+            if (q && !term.includes(q)) return '';
+            const checked = selectedSet.has(code) ? 'checked' : '';
+            const hex = c.hex_value || '#cccccc';
+            return `
+                <label class="pantone-option flex items-center gap-2 p-2 bg-white border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors">
+                    <input type="checkbox" value="${_escapeHtml(code)}" ${checked}
+                           class="w-4 h-4 rounded text-brand-600 accent-brand-600 cursor-pointer">
+                    <span class="w-4 h-4 rounded-full border border-slate-300 shrink-0" style="background:${_escapeHtml(hex)}"></span>
+                    <span class="text-xs text-slate-700 select-none">${_escapeHtml(code)}${name ? ' — ' + _escapeHtml(name) : ''}</span>
+                </label>
+            `;
+        }).join('');
+
+        list.innerHTML = html || '<p class="text-xs text-slate-400">لا توجد نتائج</p>';
+    }
+
+    function _getSelectedPantoneColors() {
+        const list = _el('assign-pantone-list');
+        if (!list) return [];
+        return Array.from(list.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.value);
+    }
+
+    function _syncPantoneSelection() {
+        // Placeholder for any future selected-summary UI; kept for checkbox onchange binding
     }
 
     async function _saveAssignment() {
@@ -1847,7 +1919,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         const qty         = parseFloat(_el('assign-qty')?.value);
         const expDelivery = _el('assign-expected-delivery')?.value;
         const notes       = _el('assign-notes')?.value;
-        const pantoneColor = _el('assign-pantone-select')?.value;
+        const pantoneColors = _getSelectedPantoneColors();
 
         // Get selected design status from radio buttons
         const designStatusRadio = document.querySelector('input[name="assign-design-status"]:checked');
@@ -1874,7 +1946,8 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
                         quantity: qty,
                         design_status: selectedDesignStatus,
                         design_id: designId,
-                        pantone_color: pantoneColor || null
+                        pantone_color: pantoneColors[0] || null,
+                        pantone_colors: pantoneColors.length ? pantoneColors : null
                     }],
                     expected_delivery: expDelivery || null,
                     notes:             notes       || null,

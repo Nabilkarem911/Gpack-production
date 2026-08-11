@@ -11,6 +11,16 @@ const eventBus = require('../utils/event-bus');
 
 const router = express.Router();
 
+// Ensure the JSONB column for multiple Pantone colors exists
+async function ensurePantoneColorsColumn() {
+    try {
+        await db.query(`ALTER TABLE manufacturer_order_items ADD COLUMN IF NOT EXISTS pantone_colors JSONB DEFAULT '[]'::jsonb`);
+    } catch (err) {
+        console.error('[ManufacturerOrders] ensure pantone_colors column error:', err.message);
+    }
+}
+ensurePantoneColorsColumn();
+
 // Allow both production_orders and receiving roles to view manufacturer orders
 // (warehouse staff need to see MOs to receive goods against them)
 router.use((req, res, next) => {
@@ -207,7 +217,9 @@ router.get('/', async (req, res) => {
                 moi.received_qty,
                 moi.unit_cost,
                 p.name AS product_name,
-                pv.size_name
+                pv.size_name,
+                moi.pantone_color,
+                moi.pantone_colors
              FROM manufacturer_order_items moi
              LEFT JOIN order_items oi ON oi.id = moi.order_item_id
              LEFT JOIN product_variants pv ON pv.id = oi.variant_id
@@ -284,7 +296,9 @@ router.get('/by-order/:orderId', async (req, res) => {
                 oi.wh_received_qty,
                 moi.unit_cost,
                 p.name AS product_name,
-                pv.size_name
+                pv.size_name,
+                moi.pantone_color,
+                moi.pantone_colors
              FROM manufacturer_order_items moi
              LEFT JOIN order_items oi ON oi.id = moi.order_item_id
              LEFT JOIN product_variants pv ON pv.id = oi.variant_id
@@ -367,6 +381,8 @@ router.get('/:id', async (req, res) => {
                 oi.wh_received_qty,
                 moi.design_status,
                 moi.design_id,
+                moi.pantone_color,
+                moi.pantone_colors,
                 cd.design_name,
                 cd.design_number,
                 cdf.file_path AS design_thumbnail,
@@ -514,10 +530,15 @@ router.post('/', restrictWrite, validateBody(manufacturerOrderCreate), async (re
             for (const item of items) {
                 if (!item.order_item_id || !item.quantity) continue;
 
+                const pantoneColors = Array.isArray(item.pantone_colors)
+                    ? item.pantone_colors.filter(c => c && String(c).trim())
+                    : (item.pantone_color ? [item.pantone_color] : []);
+                const singlePantone = pantoneColors[0] || item.pantone_color || null;
+
                 const itemResult = await client.query(
                     `INSERT INTO manufacturer_order_items (
-                        manufacturer_order_id, order_item_id, mo_quantity, design_status, design_id, pantone_color, created_at
-                    ) VALUES ($1, $2, $3, $4, $5, $6, NOW())
+                        manufacturer_order_id, order_item_id, mo_quantity, design_status, design_id, pantone_color, pantone_colors, created_at
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
                     RETURNING *`,
                     [
                         manufacturerOrder.id,
@@ -525,7 +546,8 @@ router.post('/', restrictWrite, validateBody(manufacturerOrderCreate), async (re
                         item.quantity,
                         item.design_status || 'new',
                         item.design_id || null,
-                        item.pantone_color || null
+                        singlePantone,
+                        JSON.stringify(pantoneColors)
                     ]
                 );
                 insertedItems.push(itemResult.rows[0]);

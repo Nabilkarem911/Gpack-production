@@ -231,7 +231,7 @@ function renderMO({ order, items }) {
             <td class="py-3 px-4">
                 <p class="font-semibold text-slate-800 text-sm">${i.product_name || '—'}</p>
                 ${i.design_name ? `<p class="text-xs text-slate-400">${i.design_name}</p>` : ''}
-                ${i.pantone_color ? `<p class="text-xs font-bold text-purple-600">🎨 ${i.pantone_color}</p>` : ''}
+                ${(Array.isArray(i.pantone_colors) ? i.pantone_colors : (i.pantone_color ? [i.pantone_color] : [])).map(c => `<p class="text-xs font-bold text-purple-600">🎨 ${escapeHtml(c)}</p>`).join('')}
             </td>
             <td class="py-3 px-4 text-center text-slate-600 text-sm">${i.size_name || '—'}</td>
             <td class="py-3 px-4 text-center font-bold text-slate-800">${qty.toLocaleString('en-US')}</td>

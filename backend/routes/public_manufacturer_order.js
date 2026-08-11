@@ -278,6 +278,7 @@ router.get('/manufacturer-order/:token', async (req, res) => {
                 moi.design_status,
                 moi.design_id,
                 moi.pantone_color,
+                moi.pantone_colors,
                 pv.size_name,
                 p.name AS product_name,
                 u.name AS unit_name,
