@@ -15,6 +15,7 @@
     const esc  = (s) => String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     const fmtD = (d) => d ? new Date(d).toLocaleDateString('ar-SA-u-nu-latn') : '—';
     const _el  = (id) => document.getElementById(id);
+    const _clientDisplay = (dn) => dn.parent_client_name ? `${dn.parent_client_name} — ${dn.client_name}` : (dn.client_name || '—');
 
     // ── Logo loader for print templates ───────────────────────────────────────
     let _logoBase64Cache;
@@ -99,19 +100,28 @@
                     <span class="text-xs font-mono text-slate-500 bg-slate-100 px-2 py-1 rounded">سند #${esc(String(dn.note_number || '—'))}</span>
                 </div>
                 <div>
-                    <p class="font-bold text-slate-800">${esc(dn.client_name || '—')}</p>
+                    <p class="font-bold text-slate-800">${esc(_clientDisplay(dn))}</p>
                     <p class="text-xs text-slate-400 mt-0.5">${dn.item_count || 0} أصناف — طلب #${esc(String(dn.order_number || '—'))}</p>
                     <p class="text-xs text-slate-400">${fmtD(dn.created_at)}</p>
                 </div>
                 <div class="flex gap-2 mt-auto pt-2 border-t border-slate-100">
                     <button onclick="window.dvOpenDispatchModal('${esc(dn.id)}')"
                             class="flex-1 py-2 bg-amber-50 hover:bg-amber-100 text-amber-700 text-sm font-bold rounded-xl transition-colors">
-                        <i class="fa-solid fa-truck ml-1 text-xs"></i>تسليم جديد
+                        <i class="fa-solid fa-truck ml-1 text-xs"></i>تأكيد التسليم
                     </button>
                     ${dn.status === 'pending'
                         ? `<button onclick="window.dvOpenEditModal('${esc(dn.id)}')"
                                 class="w-10 flex items-center justify-center bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-xl transition-colors">
                             <i class="fa-solid fa-pen text-sm"></i>
+                        </button>
+                        <button onclick="window.dvDeleteNote('${esc(dn.id)}')"
+                                class="w-10 flex items-center justify-center bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition-colors">
+                            <i class="fa-solid fa-trash text-sm"></i>
+                        </button>` : ''}
+                    ${dn.status === 'partial'
+                        ? `<button onclick="window.dvReverseDispatch('${esc(dn.id)}')"
+                                class="w-10 flex items-center justify-center bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition-colors" title="تراجع عن التسليم">
+                            <i class="fa-solid fa-rotate-left text-sm"></i>
                         </button>` : ''}
                     <button onclick="window.dvPrintNote('${esc(dn.id)}')"
                             class="w-10 flex items-center justify-center bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl transition-colors">
@@ -131,7 +141,7 @@
             if (!_currentDN) { window.showToast('فشل تحميل السند', 'error'); return; }
             const dn  = _currentDN;
             const sub = _el('dv-modal-subtitle');
-            if (sub) sub.textContent = `سند #${dn.note_number || '—'} — ${dn.client_name || '—'} — طلب #${dn.order_number || '—'}`;
+            if (sub) sub.textContent = `سند #${dn.note_number || '—'} — ${_clientDisplay(dn)} — طلب #${dn.order_number || '—'}`;
             const container = _el('dv-modal-items');
             if (container) {
                 container.innerHTML = (dn.items || []).map(item => {
@@ -194,7 +204,7 @@
             }
             const dn = _editDN;
             const sub = _el('dv-edit-modal-subtitle');
-            if (sub) sub.textContent = `سند تسليم #${dn.note_number || '—'} — ${dn.client_name || '—'} — طلب #${dn.order_number || '—'}`;
+            if (sub) sub.textContent = `سند تسليم #${dn.note_number || '—'} — ${_clientDisplay(dn)} — طلب #${dn.order_number || '—'}`;
             const container = _el('dv-edit-modal-items');
             if (container) {
                 container.innerHTML = (dn.items || []).map(item => {
@@ -235,6 +245,19 @@
             await window.dvLoadArchive();
         } catch (e) {
             window.showToast(e.message || 'فشل التراجع عن التسليم', 'error');
+        }
+    };
+
+    // ── Delete delivery note (only if pending) ───────────────────────────────
+    window.dvDeleteNote = async function(dnId) {
+        if (!confirm('هل أنت متأكد من حذف سند التسليم؟ لا يمكن التراجع عن هذا الإجراء.')) return;
+        try {
+            await window.apiFetch('/api/delivery-notes/' + dnId, { method: 'DELETE' });
+            window.showToast('تم حذف سند التسليم بنجاح ✅');
+            await window.dvInit();
+            await window.dvLoadArchive();
+        } catch (e) {
+            window.showToast(e.message || 'فشل حذف سند التسليم', 'error');
         }
     };
 
@@ -567,6 +590,7 @@
             if (statusF) notes = notes.filter(dn => dn.status === statusF);
             if (searchF)  notes = notes.filter(dn =>
                 (dn.client_name || '').toLowerCase().includes(searchF) ||
+                (dn.parent_client_name || '').toLowerCase().includes(searchF) ||
                 String(dn.note_number || '').includes(searchF) ||
                 String(dn.order_number || '').includes(searchF));
             hideEl('dv-archive-loading');
@@ -606,7 +630,7 @@
                             <div class="flex items-center gap-2 flex-wrap">${stBadge}
                                 <span class="text-sm font-black text-slate-800">سند تسليم #${esc(String(dn.note_number || '—'))}</span>
                             </div>
-                            <p class="text-xs text-slate-500 mt-1 font-bold">${esc(dn.client_name || '—')}</p>
+                            <p class="text-xs text-slate-500 mt-1 font-bold">${esc(_clientDisplay(dn))}</p>
                             <p class="text-xs text-slate-400">${dn.item_count || 0} أصناف — طلب #${esc(String(dn.order_number || '—'))} — ${fmtD(dn.created_at)}</p>
                         </div>
                         <div class="flex gap-2 flex-shrink-0">
@@ -614,6 +638,11 @@
                                 ? `<button onclick="window.dvOpenEditModal('${esc(dn.id)}')"
                                           class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-blue-700 border border-blue-200 rounded-xl hover:bg-blue-50 transition-colors">
                                        <i class="fa-solid fa-pen"></i>تعديل
+                                   </button>` : ''}
+                            ${dn.status === 'pending'
+                                ? `<button onclick="window.dvDeleteNote('${esc(dn.id)}')"
+                                          class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-red-700 border border-red-200 rounded-xl hover:bg-red-50 transition-colors">
+                                       <i class="fa-solid fa-trash"></i>حذف
                                    </button>` : ''}
                             ${dn.status !== 'pending'
                                 ? `<button onclick="window.dvReverseDispatch('${esc(dn.id)}')"
@@ -623,7 +652,7 @@
                             ${dn.status !== 'completed'
                                 ? `<button onclick="window.dvOpenDispatchModal('${esc(dn.id)}')"
                                           class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-amber-700 border border-amber-200 rounded-xl hover:bg-amber-50 transition-colors">
-                                       <i class="fa-solid fa-truck"></i>تسليم جديد
+                                       <i class="fa-solid fa-truck"></i>تأكيد التسليم
                                    </button>` : ''}
                             <button onclick="window.dvShowDispatches('${esc(dn.id)}')"
                                     class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-emerald-700 border border-emerald-200 rounded-xl hover:bg-emerald-50 transition-colors">
@@ -777,7 +806,7 @@ table.items tbody tr:hover{background:#f3e8ff}
     </div>
 </div>
 <div class="info-grid">
-    <div class="info-item"><label>العميل</label><span>${esc(d.client_name || '—')}</span></div>
+    <div class="info-item"><label>العميل</label><span>${esc(d.parent_client_name ? d.parent_client_name + ' — ' + d.client_name : (d.client_name || '—'))}</span></div>
     <div class="info-item"><label>رقم الطلب</label><span>#${d.order_number || '—'}</span></div>
     <div class="info-item"><label>التاريخ</label><span>${new Date(d.created_at).toLocaleDateString('en-GB')}</span></div>
     <div class="info-item"><label>السائق</label><span>${esc(d.driver_name || '—')}</span></div>
@@ -889,7 +918,7 @@ table.items tbody tr:hover{background:#f3e8ff}
     </div>
 </div>
 <div class="info-grid">
-    <div class="info-item"><label>العميل</label><span>${esc(dn.client_name || '—')}</span></div>
+    <div class="info-item"><label>العميل</label><span>${esc(_clientDisplay(dn))}</span></div>
     <div class="info-item"><label>رقم الطلب</label><span>#${dn.order_number || '—'}</span></div>
     <div class="info-item"><label>التاريخ</label><span>${new Date(dn.created_at).toLocaleDateString('en-GB')}</span></div>
     <div class="info-item"><label>الحالة</label><span>${dn.status === 'completed' ? 'مكتمل' : dn.status === 'partial' ? 'جزئي' : 'معلق'}</span></div>

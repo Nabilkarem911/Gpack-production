@@ -46,6 +46,7 @@ router.get('/', async (req, res) => {
                 o.order_number,
                 dn.client_id,
                 c.name AS client_name,
+                pc.name AS parent_client_name,
                 dn.status,
                 dn.notes,
                 dn.created_at,
@@ -54,6 +55,7 @@ router.get('/', async (req, res) => {
             FROM delivery_notes dn
             LEFT JOIN orders o ON o.id = dn.order_id
             LEFT JOIN clients c ON c.id = dn.client_id
+            LEFT JOIN clients pc ON pc.id = c.parent_id
             LEFT JOIN delivery_note_items dni ON dni.delivery_note_id = dn.id
             WHERE 1=1
         `;
@@ -76,7 +78,7 @@ router.get('/', async (req, res) => {
             params.push(order_id);
         }
         
-        query += ` GROUP BY dn.id, dn.note_number, dn.order_id, o.order_number, dn.client_id, c.name, dn.status, dn.notes, dn.created_at, dn.updated_at`;
+        query += ` GROUP BY dn.id, dn.note_number, dn.order_id, o.order_number, dn.client_id, c.name, pc.name, dn.status, dn.notes, dn.created_at, dn.updated_at`;
         query += ` ORDER BY dn.created_at DESC`;
         
         const result = await db.query(query, params);
@@ -216,6 +218,7 @@ router.get('/:id', async (req, res) => {
                 o.order_number,
                 dn.client_id,
                 c.name AS client_name,
+                pc.name AS parent_client_name,
                 dn.status,
                 dn.notes,
                 dn.driver_name,
@@ -225,6 +228,7 @@ router.get('/:id', async (req, res) => {
              FROM delivery_notes dn
              LEFT JOIN orders o ON o.id = dn.order_id
              LEFT JOIN clients c ON c.id = dn.client_id
+             LEFT JOIN clients pc ON pc.id = c.parent_id
              WHERE dn.id = $1`,
             [id]
         );
@@ -462,12 +466,13 @@ router.get('/:id/dispatches/:dispatchId', async (req, res) => {
 
         const dnRes = await db.query(
             `SELECT dn.id, dn.note_number, dn.driver_name, dn.vehicle_number,
-                    dn.client_id, c.name AS client_name,
+                    dn.client_id, c.name AS client_name, pc.name AS parent_client_name,
                     dn.order_id, o.order_number,
                     dn.status, dn.created_at
              FROM delivery_notes dn
              LEFT JOIN orders o ON o.id = dn.order_id
              LEFT JOIN clients c ON c.id = dn.client_id
+             LEFT JOIN clients pc ON pc.id = c.parent_id
              WHERE dn.id = $1`,
             [id]
         );
