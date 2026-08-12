@@ -380,7 +380,7 @@
                     <div class="flex items-center justify-between mt-1">
                         ${statusHtml}
                         <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button onclick="window._cpReplaceDesign('${designId}')" title="استبدال الملفات"
+                            <button onclick="window._cpReplaceDesign('${designId}', '${esc(d.product_name || '')}', '${esc(d.size_name || '')}')" title="استبدال الملفات"
                                     class="w-7 h-7 flex items-center justify-center rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 transition-colors">
                                 <i class="fa-solid fa-arrows-rotate text-xs"></i>
                             </button>
@@ -1533,9 +1533,24 @@ ${paymentsInv.length ? `
     };
 
     // ── Replace Design Files ──────────────────────────────────────────────────
-    window._cpReplaceDesign = function(designId) {
+    window._cpReplaceDesign = function(designId, productName, sizeName) {
         const modal = document.getElementById('cp-replace-design-modal');
         if (!modal) return;
+
+        // Show item reminder
+        const itemLabel = ((productName || '') + ' ' + (sizeName || '')).trim();
+        const reminderEl = document.getElementById('cp-replace-item-reminder');
+        const reminderName = document.getElementById('cp-replace-item-name');
+        if (reminderEl && reminderName) {
+            if (itemLabel) {
+                reminderName.textContent = itemLabel;
+                reminderEl.classList.remove('hidden');
+                reminderEl.classList.add('flex');
+            } else {
+                reminderEl.classList.add('hidden');
+                reminderEl.classList.remove('flex');
+            }
+        }
 
         // Reset
         const fileInput = document.getElementById('cp-replace-file-input');

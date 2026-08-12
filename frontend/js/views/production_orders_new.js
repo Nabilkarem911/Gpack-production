@@ -2132,6 +2132,8 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         _setVal('upload-design-client-id', _currentAssignItem.client_id);
         _setVal('upload-design-name', '');
         _clearDesignFile();
+        const itemName = ((_currentAssignItem.product_name || '') + ' ' + (_currentAssignItem.size_name || '')).trim();
+        _showDesignUploadReminder(itemName);
         _showModal('po-design-upload-modal');
     }
 
@@ -3390,7 +3392,23 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         _setVal('upload-design-client-id', clientId);
         _setVal('upload-design-name', '');
         _clearDesignFile();
+        _showDesignUploadReminder(item.name || '');
         _showModal('po-design-upload-modal');
+    }
+
+    function _showDesignUploadReminder(itemName) {
+        const reminder = _el('upload-design-item-reminder');
+        const nameEl = _el('upload-design-item-name');
+        if (reminder && nameEl) {
+            if (itemName) {
+                nameEl.textContent = itemName;
+                reminder.classList.remove('hidden');
+                reminder.classList.add('flex');
+            } else {
+                reminder.classList.add('hidden');
+                reminder.classList.remove('flex');
+            }
+        }
     }
 
     function _bulkOnDesignUploaded(designId, designName, thumbnailUrl) {

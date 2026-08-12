@@ -3132,6 +3132,25 @@
         // Store current row for callback
         window._currentDesignUploadRow = row;
         
+        // Show item name reminder
+        const productSel = row?.querySelector('select.row-product');
+        const variantSel = row?.querySelector('select.row-variant');
+        const productName = productSel?.selectedOptions?.[0]?.text || '';
+        const variantName = variantSel?.selectedOptions?.[0]?.text || '';
+        const itemLabel = ((productName || '').replace(/^.*?—\s*/, '') + ' ' + (variantName || '').replace(/^.*?—\s*/, '')).trim();
+        const reminder = document.getElementById('design-upload-item-reminder');
+        const nameEl = document.getElementById('design-upload-item-name');
+        if (reminder && nameEl) {
+            if (itemLabel && itemLabel !== '—') {
+                nameEl.textContent = itemLabel;
+                reminder.classList.remove('hidden');
+                reminder.classList.add('flex');
+            } else {
+                reminder.classList.add('hidden');
+                reminder.classList.remove('flex');
+            }
+        }
+        
         // Reset form
         const form = document.getElementById('design-upload-form');
         if (form) form.reset();

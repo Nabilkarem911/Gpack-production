@@ -1319,6 +1319,14 @@
         <!-- Modal Body -->
         <div class="px-5 py-5 space-y-4">
             <form id="design-upload-form" onsubmit="event.preventDefault(); window.uploadDesign();">
+                <!-- Item Reminder -->
+                <div id="design-upload-item-reminder" class="hidden items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+                    <i class="fa-solid fa-tag text-amber-500 text-sm"></i>
+                    <div class="flex-1 min-w-0">
+                        <span class="text-xs text-amber-600 font-bold">رفع تصميم للصنف:</span>
+                        <span id="design-upload-item-name" class="text-sm font-bold text-amber-800 mr-1"></span>
+                    </div>
+                </div>
                 <!-- Design Name -->
                 <div>
                     <label class="block text-xs font-semibold text-slate-600 mb-1.5">اسم التصميم (اختياري)</label>
