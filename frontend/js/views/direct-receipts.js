@@ -76,7 +76,8 @@
     async function _loadClients() {
         try {
             const res = await window.apiFetch('/api/clients?limit=200');
-            _clients = res.data || res || [];
+            const all = res.data || res || [];
+            _clients = all.filter(c => !c.parent_id);
         } catch (_e) {}
     }
 
