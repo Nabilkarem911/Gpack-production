@@ -428,7 +428,14 @@
         const rem = Math.max(0, gt - pd);
         const sar = (v) => `${_fmt(v)} ر.س`;
 
-        _setText('hub-client',            o.client_name  || '—');
+        const clientEl = _el('hub-client');
+        if (clientEl) {
+            _setText('hub-client', o.client_name || '—');
+            if (o.client_id) {
+                clientEl.style.cursor = 'pointer';
+                clientEl.onclick = () => window.openClientProfile(o.client_id);
+            }
+        }
         _setText('hub-order-num',         `#${o.order_number}`);
         _setHTML('hub-status-badge',      _badge(o.status, STATUS_CFG));
         _setText('hub-grand-total',       sar(gt));
