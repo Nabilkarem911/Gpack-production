@@ -3218,9 +3218,14 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
                             <i class="fa-solid fa-chevron-down text-[10px] transition-transform" id="bulk-pantone-chevron-${i.id}"></i>
                         </button>
                         <div id="bulk-pantone-section-${i.id}" class="hidden mt-2">
-                            <input type="text" placeholder="🔍 ابحث..." autocomplete="off"
-                                   oninput="window.poView._filterBulkPantone('${i.id}', this.value)"
-                                   class="w-full px-2 py-1.5 mb-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:border-purple-500 transition-all">
+                            <div class="flex items-center justify-between mb-1.5">
+                                <input type="text" placeholder="🔍 ابحث..." autocomplete="off"
+                                       oninput="window.poView._filterBulkPantone('${i.id}', this.value)"
+                                       class="flex-1 px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:border-purple-500 transition-all">
+                                <button onclick="window.poView.openQuickPantoneModal('${i.id}')" class="text-[11px] font-bold text-purple-600 hover:text-purple-700 transition-colors flex items-center gap-1 mr-1.5 whitespace-nowrap">
+                                    <i class="fa-solid fa-plus-circle"></i> لون جديد
+                                </button>
+                            </div>
                             <div id="bulk-pantone-list-${i.id}" class="max-h-28 overflow-y-auto border border-slate-200 rounded-lg p-1.5 bg-slate-50 space-y-1"></div>
                         </div>
                     </div>
@@ -3507,6 +3512,162 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         }
     }
 
+    // ── Quick Add Pantone Color ───────────────────────────────────────────────
+    let _qpType = 'C';
+    let _qpSelected = null;
+    let _qpBulkTargetId = null;
+
+    function _openQuickPantoneModal(bulkItemId) {
+        _qpSelected = null;
+        _qpType = 'C';
+        _qpBulkTargetId = bulkItemId || null;
+        _setVal('qp-search', '');
+        _setVal('qp-code', '');
+        _setVal('qp-name', '');
+        _setVal('qp-hex', '#cccccc');
+        _setVal('qp-hex-text', '');
+        const preview = _el('qp-preview');
+        if (preview) preview.style.background = '#cccccc';
+        const selCode = _el('qp-selected-code');
+        const selHex = _el('qp-selected-hex');
+        if (selCode) selCode.textContent = 'لم يتم اختيار لون';
+        if (selHex) selHex.textContent = '';
+        _el('qp-results')?.classList.add('hidden');
+        const tabC = _el('qp-tab-c');
+        const tabU = _el('qp-tab-u');
+        if (tabC) { tabC.classList.add('bg-white', 'text-purple-600', 'shadow-sm'); tabC.classList.remove('text-slate-400'); }
+        if (tabU) { tabU.classList.remove('bg-white', 'text-purple-600', 'shadow-sm'); tabU.classList.add('text-slate-400'); }
+        _showModal('po-quick-pantone-modal');
+        setTimeout(() => _el('qp-search')?.focus(), 250);
+    }
+
+    function _setQuickPantoneType(type) {
+        _qpType = type;
+        _qpSelected = null;
+        const tabC = _el('qp-tab-c');
+        const tabU = _el('qp-tab-u');
+        if (type === 'C') {
+            if (tabC) { tabC.classList.add('bg-white', 'text-purple-600', 'shadow-sm'); tabC.classList.remove('text-slate-400'); }
+            if (tabU) { tabU.classList.remove('bg-white', 'text-purple-600', 'shadow-sm'); tabU.classList.add('text-slate-400'); }
+        } else {
+            if (tabU) { tabU.classList.add('bg-white', 'text-purple-600', 'shadow-sm'); tabU.classList.remove('text-slate-400'); }
+            if (tabC) { tabC.classList.remove('bg-white', 'text-purple-600', 'shadow-sm'); tabC.classList.add('text-slate-400'); }
+        }
+        _setVal('qp-search', '');
+        _setVal('qp-code', '');
+        _setVal('qp-name', '');
+        _setVal('qp-hex', '#cccccc');
+        _setVal('qp-hex-text', '');
+        const preview = _el('qp-preview');
+        if (preview) preview.style.background = '#cccccc';
+        const selCode = _el('qp-selected-code');
+        const selHex = _el('qp-selected-hex');
+        if (selCode) selCode.textContent = 'لم يتم اختيار لون';
+        if (selHex) selHex.textContent = '';
+        _el('qp-results')?.classList.add('hidden');
+    }
+
+    function _searchQuickPantone(query) {
+        const resultsEl = _el('qp-results');
+        if (!resultsEl) return;
+        const q = (query || '').trim().toLowerCase();
+        if (!q || q.length < 2) { resultsEl.classList.add('hidden'); return; }
+        const db = (_qpType === 'U' ? window.PANTONE_COLORS_U : window.PANTONE_COLORS) || [];
+        const matches = db.filter(c =>
+            c.code.toLowerCase().includes(q) || c.name.toLowerCase().includes(q)
+        ).slice(0, 15);
+        if (!matches.length) {
+            resultsEl.innerHTML = '<div class="px-4 py-3 text-xs text-slate-400 text-center">لا نتائج — يمكنك الإدخال اليدوي أدناه</div>';
+        } else {
+            resultsEl.innerHTML = matches.map(c => `
+                <div onclick="window.poView._selectQuickPantone('${c.code.replace(/'/g, "\\'")}')"
+                     class="flex items-center gap-3 px-3 py-2 hover:bg-purple-50 cursor-pointer border-b border-slate-50 last:border-0 transition-colors">
+                    <div class="w-7 h-7 rounded-lg shrink-0 border border-slate-200" style="background:${c.hex}"></div>
+                    <div class="min-w-0">
+                        <p class="text-xs font-bold text-slate-800 truncate">${c.code}</p>
+                        <p class="text-[11px] text-slate-500 truncate">${c.name} <span class="font-mono text-slate-400">${c.hex}</span></p>
+                    </div>
+                </div>`).join('');
+        }
+        resultsEl.classList.remove('hidden');
+    }
+
+    function _selectQuickPantone(code) {
+        const db = (_qpType === 'U' ? window.PANTONE_COLORS_U : window.PANTONE_COLORS) || [];
+        const c = db.find(x => x.code === code);
+        if (!c) return;
+        _qpSelected = c;
+        _setVal('qp-code', c.code);
+        _setVal('qp-name', c.name);
+        _setVal('qp-hex', c.hex);
+        _setVal('qp-hex-text', c.hex);
+        const preview = _el('qp-preview');
+        if (preview) preview.style.background = c.hex;
+        const selCode = _el('qp-selected-code');
+        const selHex = _el('qp-selected-hex');
+        if (selCode) selCode.textContent = c.code;
+        if (selHex) selHex.textContent = c.hex;
+        _setVal('qp-search', c.code);
+        _el('qp-results')?.classList.add('hidden');
+    }
+
+    async function _saveQuickPantone() {
+        const clientId = _hubOrder?.client_id || _hubOrder?.client?.id;
+        if (!clientId) { _toast('لا يوجد عميل مرتبط', 'error'); return; }
+
+        let code, name, hex;
+        if (_qpSelected) {
+            code = _qpSelected.code;
+            name = _qpSelected.name;
+            hex  = _qpSelected.hex;
+            const manCode = _el('qp-code')?.value?.trim();
+            const manName = _el('qp-name')?.value?.trim();
+            if (manCode) code = manCode;
+            if (manName) name = manName;
+        } else {
+            code = _el('qp-code')?.value?.trim();
+            name = _el('qp-name')?.value?.trim();
+            const hexTxt = _el('qp-hex-text')?.value?.trim();
+            const hexPicker = _el('qp-hex')?.value || '';
+            hex = hexTxt && /^#[0-9A-Fa-f]{6}$/.test(hexTxt.startsWith('#') ? hexTxt : '#' + hexTxt)
+                ? (hexTxt.startsWith('#') ? hexTxt : '#' + hexTxt)
+                : (hexPicker !== '#cccccc' ? hexPicker : null);
+        }
+
+        if (!code) { _toast('كود اللون مطلوب', 'error'); _el('qp-code')?.focus(); return; }
+
+        const btn = _el('qp-save-btn');
+        if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin ml-1"></i> جاري الحفظ...'; }
+
+        try {
+            await window.apiFetch('/api/client-pantone-colors', {
+                method: 'POST',
+                body: { client_id: clientId, color_code: code, color_name: name || null, hex_value: hex || null }
+            });
+
+            _toast('تم إضافة اللون بنجاح');
+            _hideModal('po-quick-pantone-modal');
+
+            // Reload pantone colors in the assign modal
+            const existingSelected = _getSelectedPantoneColors();
+            await _loadPantoneColors(clientId, [...existingSelected, code]);
+
+            // Reload bulk pantone colors and auto-select the new color for the target item
+            await _loadBulkPantoneColors(clientId);
+            if (_qpBulkTargetId && _bulkSelected[_qpBulkTargetId]) {
+                if (!_bulkSelected[_qpBulkTargetId].pantoneColors) _bulkSelected[_qpBulkTargetId].pantoneColors = [];
+                if (!_bulkSelected[_qpBulkTargetId].pantoneColors.includes(code)) {
+                    _bulkSelected[_qpBulkTargetId].pantoneColors.push(code);
+                }
+                _renderBulkPantoneList(_qpBulkTargetId);
+            }
+        } catch (err) {
+            _toast(err.message || 'فشل إضافة اللون', 'error');
+        } finally {
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-check ml-1"></i> حفظ اللون'; }
+        }
+    }
+
     // ── Public API ─────────────────────────────────────────────────────────────
     window.poView = {
         reload:             _loadOrders,
@@ -3576,6 +3737,13 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         openQuickSupplierModal:  _openQuickSupplierModal,
         closeQuickSupplierModal: () => _hideModal('po-quick-supplier-modal'),
         saveQuickSupplier:       _saveQuickSupplier,
+        // Quick add pantone color
+        openQuickPantoneModal:   _openQuickPantoneModal,
+        closeQuickPantoneModal:  () => _hideModal('po-quick-pantone-modal'),
+        saveQuickPantone:        _saveQuickPantone,
+        _setQuickPantoneType:    _setQuickPantoneType,
+        _searchQuickPantone:     _searchQuickPantone,
+        _selectQuickPantone:     _selectQuickPantone,
     };
 
     // ── Share MO with supplier (global functions) ─────────────────────────────
