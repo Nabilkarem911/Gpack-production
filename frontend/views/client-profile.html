@@ -500,7 +500,15 @@
         <div class="space-y-4">
             <!-- Pantone Search -->
             <div class="relative">
-                <label class="block text-xs font-bold text-slate-500 mb-1">ابحث في دليل البانتون</label>
+                <div class="flex items-center justify-between mb-1">
+                    <label class="block text-xs font-bold text-slate-500">ابحث في دليل البانتون</label>
+                    <div class="flex bg-slate-100 rounded-lg p-0.5">
+                        <button id="cp-pantone-tab-c" onclick="window._cpSetPantoneType('C')"
+                                class="px-2.5 py-1 text-[11px] font-bold rounded-md bg-white text-purple-600 shadow-sm transition-all">C</button>
+                        <button id="cp-pantone-tab-u" onclick="window._cpSetPantoneType('U')"
+                                class="px-2.5 py-1 text-[11px] font-bold rounded-md text-slate-400 transition-all">U</button>
+                    </div>
+                </div>
                 <div class="relative">
                     <i class="fa-solid fa-magnifying-glass absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
                     <input id="cp-pantone-search" type="text"
@@ -624,6 +632,7 @@
 </div>
 
 <script src="/js/data/pantone-colors.js"></script>
+<script src="/js/data/pantone-colors-u.js"></script>
 <script src="/js/views/client-profile.js?v=20260727h"></script>
 
 <!-- ── Replace Design Modal ──────────────────────────────────────────────── -->

@@ -689,6 +689,41 @@
 
     // selected pantone from library
     let _cpSelectedPantone = null;
+    let _cpPantoneType = 'C';
+
+    window._cpSetPantoneType = function(type) {
+        _cpPantoneType = type;
+        const tabC = document.getElementById('cp-pantone-tab-c');
+        const tabU = document.getElementById('cp-pantone-tab-u');
+        if (type === 'C') {
+            if (tabC) { tabC.classList.add('bg-white', 'text-purple-600', 'shadow-sm'); tabC.classList.remove('text-slate-400'); }
+            if (tabU) { tabU.classList.remove('bg-white', 'text-purple-600', 'shadow-sm'); tabU.classList.add('text-slate-400'); }
+        } else {
+            if (tabU) { tabU.classList.add('bg-white', 'text-purple-600', 'shadow-sm'); tabU.classList.remove('text-slate-400'); }
+            if (tabC) { tabC.classList.remove('bg-white', 'text-purple-600', 'shadow-sm'); tabC.classList.add('text-slate-400'); }
+        }
+        _cpSelectedPantone = null;
+        const searchEl = document.getElementById('cp-pantone-search');
+        if (searchEl) { searchEl.value = ''; }
+        const resultsEl = document.getElementById('cp-pantone-results');
+        if (resultsEl) { resultsEl.classList.add('hidden'); }
+        const preview = document.getElementById('cp-color-preview');
+        const selCode = document.getElementById('cp-color-selected-code');
+        const selName = document.getElementById('cp-color-selected-name');
+        const selHex  = document.getElementById('cp-color-selected-hex');
+        if (preview) preview.style.background = '#cccccc';
+        if (selCode) selCode.textContent = 'لم يتم اختيار لون';
+        if (selName) selName.textContent = 'ابحث واختر من القائمة أو أدخل يدوياً';
+        if (selHex)  selHex.textContent  = '';
+        const codeEl = document.getElementById('cp-color-code');
+        const nameEl = document.getElementById('cp-color-name');
+        const hexEl  = document.getElementById('cp-color-hex');
+        const hexTxt = document.getElementById('cp-color-hex-text');
+        if (codeEl) codeEl.value = '';
+        if (nameEl) nameEl.value = '';
+        if (hexEl)  hexEl.value  = '#cccccc';
+        if (hexTxt) hexTxt.value = '';
+    };
 
     window._cpSearchPantone = function(query) {
         const resultsEl = document.getElementById('cp-pantone-results');
@@ -696,7 +731,7 @@
         const q = (query || '').trim().toLowerCase();
         if (!q || q.length < 2) { resultsEl.classList.add('hidden'); return; }
 
-        const db = window.PANTONE_COLORS || [];
+        const db = (_cpPantoneType === 'U' ? window.PANTONE_COLORS_U : window.PANTONE_COLORS) || [];
         const matches = db.filter(c =>
             c.code.toLowerCase().includes(q) ||
             c.name.toLowerCase().includes(q)
@@ -720,7 +755,7 @@
     };
 
     window._cpSelectPantone = function(code) {
-        const db = window.PANTONE_COLORS || [];
+        const db = (_cpPantoneType === 'U' ? window.PANTONE_COLORS_U : window.PANTONE_COLORS) || [];
         const c = db.find(x => x.code === code);
         if (!c) return;
         _cpSelectedPantone = c;
@@ -755,6 +790,13 @@
         const modal = document.getElementById('cp-color-modal');
         if (!modal) return;
         _cpSelectedPantone = null;
+        _cpPantoneType = 'C';
+
+        // Reset toggle to C
+        const tabC = document.getElementById('cp-pantone-tab-c');
+        const tabU = document.getElementById('cp-pantone-tab-u');
+        if (tabC) { tabC.classList.add('bg-white', 'text-purple-600', 'shadow-sm'); tabC.classList.remove('text-slate-400'); }
+        if (tabU) { tabU.classList.remove('bg-white', 'text-purple-600', 'shadow-sm'); tabU.classList.add('text-slate-400'); }
 
         // Reset all fields
         ['cp-color-code','cp-color-name','cp-color-notes','cp-pantone-search'].forEach(id => {
