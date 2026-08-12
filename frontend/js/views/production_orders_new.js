@@ -433,7 +433,10 @@
             _setText('hub-client', o.client_name || '—');
             if (o.client_id) {
                 clientEl.style.cursor = 'pointer';
-                clientEl.onclick = () => window.openClientProfile(o.client_id);
+                clientEl.onclick = () => {
+                    window._cpClientId = o.client_id;
+                    window.navigateTo('client-profile');
+                };
             }
         }
         _setText('hub-order-num',         `#${o.order_number}`);
