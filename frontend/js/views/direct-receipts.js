@@ -411,9 +411,12 @@
                             </select>
                         </td>
                         <td class="py-2 px-3">
-                            <select class="dr-review-client w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:border-purple-500 transition-all">
-                                ${_buildClientOptions(item.client_id)}
-                            </select>
+                            <input type="text" class="dr-review-client-search w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:border-purple-500 transition-all"
+                                   placeholder="ابحث عن عميل..."
+                                   value="${item.client_name ? _esc(item.client_name) : ''}"
+                                   oninput="window.drOnClientSearch(this)"
+                                   data-client-id="${item.client_id || ''}">
+                            <div class="dr-client-suggestions hidden mt-1 bg-white border border-slate-200 rounded-lg max-h-32 overflow-y-auto text-xs"></div>
                         </td>
                         <td class="py-2 px-3">
                             <input type="number" class="dr-review-qty w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none text-center"
@@ -490,6 +493,52 @@
         }
     }
 
+    // ── Client search (local filter, no API call needed) ─────────────────────
+    let _clientSearchTimer = null;
+    function _onClientSearch(input) {
+        clearTimeout(_clientSearchTimer);
+        const query = input.value.trim().toLowerCase();
+        const sugBox = input.parentElement.querySelector('.dr-client-suggestions');
+
+        // Clear client_id when user types — must re-select
+        if (input.dataset.clientId) {
+            input.dataset.clientId = '';
+        }
+
+        if (!query || query.length < 1) {
+            if (sugBox) sugBox.classList.add('hidden');
+            return;
+        }
+
+        _clientSearchTimer = setTimeout(() => {
+            const matches = _clients.filter(c =>
+                (c.name || '').toLowerCase().includes(query)
+            ).slice(0, 10);
+
+            if (!matches.length || !sugBox) {
+                if (sugBox) sugBox.classList.add('hidden');
+                return;
+            }
+
+            sugBox.innerHTML = matches.map(c =>
+                `<div onclick="window.drSelectClient(this, '${c.id}', '${_esc(c.name).replace(/'/g, "\\'")}')"
+                      class="px-2 py-1.5 hover:bg-purple-50 cursor-pointer text-xs text-slate-700">${_esc(c.name)}</div>`
+            ).join('');
+            sugBox.classList.remove('hidden');
+        }, 200);
+    }
+
+    function _selectClient(el, clientId, clientName) {
+        const tr = el.closest('tr');
+        const input = tr.querySelector('.dr-review-client-search');
+        if (input) {
+            input.value = clientName;
+            input.dataset.clientId = clientId;
+        }
+        const sugBox = tr.querySelector('.dr-client-suggestions');
+        if (sugBox) sugBox.classList.add('hidden');
+    }
+
     async function _saveReview() {
         if (!_currentReceipt) return;
         const supplierId = (_el('dr-review-supplier') || {}).value;
@@ -507,7 +556,7 @@
             const variantId = variantInput?.dataset.variantId || '';
             const unitSel = row.querySelector('.dr-review-unit');
             const unitId = unitSel?.disabled ? (variantInput?.dataset.unitId || null) : (unitSel?.value || null);
-            const clientId = row.querySelector('.dr-review-client')?.value || null;
+            const clientId = row.querySelector('.dr-review-client-search')?.dataset.clientId || null;
             const qty = parseFloat(row.querySelector('.dr-review-qty')?.value) || 0;
             const cost = parseFloat(row.querySelector('.dr-review-cost')?.value) || 0;
 
@@ -886,6 +935,8 @@
     window.drCloseReviewModal = _closeReviewModal;
     window.drOnVariantSearch = _onVariantSearch;
     window.drSelectVariant = _selectVariant;
+    window.drOnClientSearch = _onClientSearch;
+    window.drSelectClient = _selectClient;
     window.drSaveReview = _saveReview;
     window.drConvert = _convert;
     window.drCancelReceipt = _cancelReceipt;
