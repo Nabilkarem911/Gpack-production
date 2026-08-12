@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>بوابة المورد | G.PACK</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <style>
+        * { font-family: 'Cairo', sans-serif; }
+        .design-img { max-width: 100%; height: auto; border-radius: 12px; }
+        .fade-in { animation: fadeIn 0.3s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen">
+
+<!-- Loading -->
+<div id="loading" class="fixed inset-0 bg-white flex flex-col items-center justify-center z-50">
+    <div class="w-14 h-14 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+    <p class="text-slate-500 text-sm">جاري تحميل بوابة المورد...</p>
+</div>
+
+<!-- Error State -->
+<div id="error-state" class="hidden fixed inset-0 bg-slate-100 flex flex-col items-center justify-center p-6">
+    <div class="bg-white rounded-2xl shadow-lg p-10 max-w-md w-full text-center">
+        <div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <i class="fa-solid fa-link-slash text-2xl text-red-500"></i>
+        </div>
+        <h2 class="text-xl font-bold text-slate-800 mb-2">الرابط غير صالح</h2>
+        <p id="error-msg" class="text-slate-500 text-sm">هذا الرابط غير صحيح أو المورد غير نشط.</p>
+    </div>
+</div>
+
+<!-- Main Content -->
+<div id="main-content" class="hidden max-w-5xl mx-auto py-6 px-4">
+
+    <!-- Header -->
+    <div class="bg-gradient-to-l from-emerald-700 to-emerald-900 rounded-2xl p-6 text-white mb-6 shadow-lg">
+        <div class="flex items-center justify-between flex-wrap gap-4">
+            <div class="flex items-center gap-4">
+                <img src="/images/logo.png" alt="G.PACK" class="h-14 w-auto bg-white rounded-xl p-1" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />
+                <div style="display:none;width:56px;height:56px;background:#fbbf24;border-radius:12px;align-items:center;justify-content:center;">
+                    <i class="fa-solid fa-industry text-2xl text-emerald-900"></i>
+                </div>
+                <div>
+                    <h1 class="text-2xl font-extrabold">G.PACK</h1>
+                    <p class="text-emerald-200 text-sm">بوابة المورد — متابعة أوامر التشغيل</p>
+                </div>
+            </div>
+            <div class="text-left">
+                <p class="text-emerald-200 text-xs">المورد</p>
+                <p id="supplier-name" class="text-lg font-bold"></p>
+                <p id="supplier-contact" class="text-emerald-200 text-xs mt-0.5"></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Orders List View -->
+    <div id="orders-list-view">
+        <!-- Filter Bar -->
+        <div class="bg-white rounded-xl shadow-sm p-4 mb-4 flex flex-wrap items-center gap-3">
+            <div class="flex items-center gap-2">
+                <i class="fa-solid fa-filter text-slate-400 text-sm"></i>
+                <span class="text-sm font-bold text-slate-600">تصفية:</span>
+            </div>
+            <div class="flex flex-wrap gap-2" id="status-filters">
+                <button data-status="all" class="filter-btn px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white transition-colors">الكل</button>
+                <button data-status="pending" class="filter-btn px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">بانتظار الإرسال</button>
+                <button data-status="sent" class="filter-btn px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">قيد التصنيع</button>
+                <button data-status="partially_received" class="filter-btn px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">استلام جزئي</button>
+                <button data-status="received" class="filter-btn px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">تم التسليم</button>
+            </div>
+            <div class="flex-1"></div>
+            <div class="text-xs text-slate-400">
+                <span id="orders-count">0</span> طلب
+            </div>
+        </div>
+
+        <!-- Orders Table -->
+        <div class="bg-white rounded-xl shadow-sm overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="w-full">
+                    <thead>
+                        <tr class="bg-slate-50 border-b border-slate-200">
+                            <th class="py-3 px-4 text-right text-xs font-bold text-slate-500">رقم الأمر</th>
+                            <th class="py-3 px-4 text-right text-xs font-bold text-slate-500">رقم الطلب</th>
+                            <th class="py-3 px-4 text-right text-xs font-bold text-slate-500">العميل</th>
+                            <th class="py-3 px-4 text-right text-xs font-bold text-slate-500">عدد الأصناف</th>
+                            <th class="py-3 px-4 text-right text-xs font-bold text-slate-500">الكمية</th>
+                            <th class="py-3 px-4 text-right text-xs font-bold text-slate-500">تاريخ التسليم</th>
+                            <th class="py-3 px-4 text-right text-xs font-bold text-slate-500">الحالة</th>
+                            <th class="py-3 px-4 text-center text-xs font-bold text-slate-500">إجراء</th>
+                        </tr>
+                    </thead>
+                    <tbody id="orders-tbody">
+                        <!-- Filled by JS -->
+                    </tbody>
+                </table>
+            </div>
+            <div id="no-orders" class="hidden p-10 text-center">
+                <i class="fa-solid fa-box-open text-4xl text-slate-300 mb-3"></i>
+                <p class="text-slate-400 text-sm">لا توجد أوامر تشغيل حالياً</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Order Detail View -->
+    <div id="order-detail-view" class="hidden">
+        <!-- Back Button -->
+        <button onclick="window._backToList()" class="mb-4 flex items-center gap-2 text-sm font-bold text-emerald-700 hover:text-emerald-800 transition-colors">
+            <i class="fa-solid fa-arrow-right"></i>
+            العودة للقائمة
+        </button>
+
+        <!-- Order Header -->
+        <div id="order-detail-header" class="bg-white rounded-xl shadow-sm p-5 mb-4">
+            <!-- Filled by JS -->
+        </div>
+
+        <!-- Status Update Bar -->
+        <div id="status-update-bar" class="bg-white rounded-xl shadow-sm p-4 mb-4">
+            <div class="flex items-center justify-between flex-wrap gap-3">
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-circle-info text-emerald-500"></i>
+                    <span class="text-sm font-bold text-slate-600">تحديث حالة الإنتاج:</span>
+                </div>
+                <div class="flex flex-wrap gap-2" id="status-buttons">
+                    <!-- Filled by JS -->
+                </div>
+            </div>
+            <div id="status-update-msg" class="hidden mt-3 px-3 py-2 rounded-lg text-xs font-bold"></div>
+        </div>
+
+        <!-- Items -->
+        <div id="order-items-container" class="space-y-4">
+            <!-- Filled by JS -->
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    'use strict';
+
+    const API_BASE = window.location.origin + '/api';
+    let _token = null;
+    let _allOrders = [];
+    let _currentFilter = 'all';
+
+    // ── Init ────────────────────────────────────────────────────────────────
+    async function init() {
+        const params = new URLSearchParams(window.location.search);
+        _token = params.get('token');
+
+        if (!_token) {
+            showError('لا يوجد token في الرابط.');
+            return;
+        }
+
+        try {
+            const res = await fetch(`${API_BASE}/public/supplier-portal/${_token}`);
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                showError(data.error || 'الرابط غير صالح.');
+                return;
+            }
+
+            const data = await res.json();
+            const { supplier, orders } = data.data || data;
+
+            document.getElementById('supplier-name').textContent = supplier.company_name || '—';
+            const contactParts = [
+                supplier.contact_person,
+                supplier.phone
+            ].filter(Boolean);
+            document.getElementById('supplier-contact').textContent = contactParts.join(' • ');
+
+            _allOrders = orders || [];
+            renderOrders();
+
+            document.getElementById('loading').classList.add('hidden');
+            document.getElementById('main-content').classList.remove('hidden');
+        } catch (err) {
+            console.error('[Portal] Init error:', err);
+            showError('تعذّر تحميل البيانات. حاول مرة أخرى لاحقاً.');
+        }
+    }
+
+    // ── Show Error ───────────────────────────────────────────────────────────
+    function showError(msg) {
+        document.getElementById('loading').classList.add('hidden');
+        document.getElementById('error-msg').textContent = msg;
+        document.getElementById('error-state').classList.remove('hidden');
+    }
+
+    // ── Render Orders List ──────────────────────────────────────────────────
+    function renderOrders() {
+        const tbody = document.getElementById('orders-tbody');
+        const noOrders = document.getElementById('no-orders');
+
+        let filtered = _allOrders;
+        if (_currentFilter !== 'all') {
+            filtered = _allOrders.filter(o => o.status === _currentFilter);
+        }
+
+        document.getElementById('orders-count').textContent = filtered.length;
+
+        if (filtered.length === 0) {
+            tbody.innerHTML = '';
+            noOrders.classList.remove('hidden');
+            return;
+        }
+
+        noOrders.classList.add('hidden');
+
+        tbody.innerHTML = filtered.map(o => {
+            const deliveryDate = o.expected_delivery_date
+                ? new Date(o.expected_delivery_date).toLocaleDateString('ar-EG')
+                : '—';
+            const isOverdue = o.expected_delivery_date && new Date(o.expected_delivery_date) < new Date() && o.status !== 'received';
+            const dateClass = isOverdue ? 'text-red-600 font-bold' : 'text-slate-600';
+
+            return `
+                <tr class="border-b border-slate-50 hover:bg-slate-50/50 transition-colors cursor-pointer" onclick="window._openOrder('${o.id}')">
+                    <td class="py-3 px-4 text-sm font-bold text-slate-800">#${o.mo_number || '—'}</td>
+                    <td class="py-3 px-4 text-sm text-slate-600">${o.order_number || '—'}</td>
+                    <td class="py-3 px-4 text-sm text-slate-600">${o.client_name || '—'}</td>
+                    <td class="py-3 px-4 text-sm text-slate-600">${o.item_count || 0}</td>
+                    <td class="py-3 px-4 text-sm text-slate-600">${parseFloat(o.total_qty || 0).toLocaleString('en-US')}</td>
+                    <td class="py-3 px-4 text-sm ${dateClass}">${deliveryDate}</td>
+                    <td class="py-3 px-4">
+                        <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ${o.status_color}">
+                            ${o.status_label}
+                        </span>
+                    </td>
+                    <td class="py-3 px-4 text-center">
+                        <button class="text-emerald-600 hover:text-emerald-800 transition-colors">
+                            <i class="fa-solid fa-eye"></i>
+                        </button>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    // ── Open Order Detail ───────────────────────────────────────────────────
+    window._openOrder = async function(moId) {
+        document.getElementById('orders-list-view').classList.add('hidden');
+        document.getElementById('order-detail-view').classList.remove('hidden');
+        document.getElementById('order-detail-view').classList.add('fade-in');
+
+        try {
+            const res = await fetch(`${API_BASE}/public/supplier-portal/${_token}/orders/${moId}`);
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                alert(data.error || 'تعذّر تحميل تفاصيل الأمر.');
+                window._backToList();
+                return;
+            }
+
+            const data = await res.json();
+            const { order, items } = data.data || data;
+            renderOrderDetail(order, items);
+        } catch (err) {
+            console.error('[Portal] Open order error:', err);
+            alert('تعذّر تحميل تفاصيل الأمر.');
+            window._backToList();
+        }
+    };
+
+    // ── Render Order Detail ─────────────────────────────────────────────────
+    function renderOrderDetail(order, items) {
+        // Header
+        const headerEl = document.getElementById('order-detail-header');
+        const deliveryDate = order.expected_delivery_date
+            ? new Date(order.expected_delivery_date).toLocaleDateString('ar-EG')
+            : '—';
+
+        headerEl.innerHTML = `
+            <div class="flex items-start justify-between flex-wrap gap-4">
+                <div>
+                    <h2 class="text-xl font-extrabold text-slate-800 mb-1">أمر تشغيل #${order.mo_number}</h2>
+                    <div class="flex flex-wrap gap-4 text-sm text-slate-500">
+                        <span><i class="fa-solid fa-user ml-1 text-slate-400"></i>${order.client_name || '—'}</span>
+                        <span><i class="fa-solid fa-hashtag ml-1 text-slate-400"></i>طلب: ${order.order_number || '—'}</span>
+                        <span><i class="fa-solid fa-calendar ml-1 text-slate-400"></i>تاريخ التسليم: ${deliveryDate}</span>
+                    </div>
+                    ${order.notes ? `<p class="text-xs text-slate-500 mt-2 bg-slate-50 rounded-lg p-2"><i class="fa-solid fa-sticky-note ml-1"></i>${order.notes}</p>` : ''}
+                </div>
+                <span class="inline-flex items-center px-3 py-1.5 rounded-full text-sm font-bold ${order.status_color}">
+                    ${order.status_label}
+                </span>
+            </div>
+        `;
+
+        // Status buttons
+        const statuses = [
+            { value: 'sent', label: 'بدء التصنيع', icon: 'fa-play', color: 'bg-blue-600 hover:bg-blue-700' },
+            { value: 'partially_received', label: 'استلام جزئي', icon: 'fa-circle-half-stroke', color: 'bg-amber-500 hover:bg-amber-600' },
+            { value: 'received', label: 'تم التسليم', icon: 'fa-check-double', color: 'bg-emerald-600 hover:bg-emerald-700' },
+        ];
+
+        const statusBtnsEl = document.getElementById('status-buttons');
+        statusBtnsEl.innerHTML = statuses.map(s => {
+            const isCurrent = order.status === s.value;
+            return `
+                <button onclick="window._updateStatus('${order.id}', '${s.value}')"
+                        class="px-3 py-2 rounded-lg text-xs font-bold text-white transition-colors ${s.color} ${isCurrent ? 'ring-2 ring-offset-2 ring-emerald-400' : ''} ${isCurrent ? 'cursor-default' : 'cursor-pointer'}"
+                        ${isCurrent ? 'disabled' : ''}>
+                    <i class="fa-solid ${s.icon} ml-1"></i>${s.label}
+                </button>
+            `;
+        }).join('');
+
+        // Hide status bar if already received or cancelled
+        const statusBar = document.getElementById('status-update-bar');
+        if (order.status === 'received' || order.status === 'cancelled') {
+            statusBar.classList.add('hidden');
+        } else {
+            statusBar.classList.remove('hidden');
+        }
+
+        // Items
+        const itemsEl = document.getElementById('order-items-container');
+        itemsEl.innerHTML = items.map(item => {
+            const qty = parseFloat(item.mo_quantity || 0).toLocaleString('en-US');
+            const designFiles = Array.isArray(item.design_files) ? item.design_files : [];
+            const thumbUrl = item.design_thumbnail_image || item.design_thumbnail || '';
+            const pantoneDetails = Array.isArray(item.pantone_colors_details) ? item.pantone_colors_details : [];
+
+            // Design preview
+            let designPreview = '';
+            if (thumbUrl) {
+                const ext = thumbUrl.split('.').pop().toLowerCase();
+                if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'].includes(ext)) {
+                    designPreview = `<img src="${thumbUrl}" alt="${item.design_name || ''}" class="design-img" onerror="this.style.display='none'">`;
+                } else if (ext === 'pdf') {
+                    designPreview = `<object data="${thumbUrl}#toolbar=0&navpanes=0" type="application/pdf" class="w-full h-64 border-0 rounded-xl bg-white"></object>`;
+                } else {
+                    designPreview = `<div class="w-full h-32 flex items-center justify-center bg-slate-800 text-white rounded-xl"><i class="fa-solid fa-file text-3xl"></i><span class="ml-2 text-sm">${ext.toUpperCase()}</span></div>`;
+                }
+            }
+
+            // Pantone colors
+            let pantoneHtml = '';
+            if (pantoneDetails.length > 0) {
+                pantoneHtml = `
+                    <div class="flex flex-wrap gap-2 mt-2">
+                        <span class="text-xs font-bold text-slate-500">ألوان البانتون:</span>
+                        ${pantoneDetails.map(p => `
+                            <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs bg-slate-100 border border-slate-200">
+                                <span class="w-3 h-3 rounded-full border border-slate-300" style="background:${p.hex || '#ccc'}"></span>
+                                <span class="font-bold text-slate-700">${p.code}</span>
+                                ${p.name ? `<span class="text-slate-400">${p.name}</span>` : ''}
+                            </span>
+                        `).join('')}
+                    </div>
+                `;
+            }
+
+            // Design files list
+            let filesHtml = '';
+            if (designFiles.length > 0) {
+                filesHtml = `
+                    <div class="mt-3 border-t border-slate-100 pt-3">
+                        <p class="text-xs font-bold text-slate-500 mb-2">ملفات التصميم (${designFiles.length}):</p>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            ${designFiles.map(f => {
+                                const fileExt = (f.path || '').split('.').pop().toLowerCase();
+                                const fileUrl = f.path || '';
+                                const fileName = f.name || fileUrl.split('/').pop() || 'ملف';
+                                const fileSize = f.size ? (f.size / 1024 / 1024).toFixed(2) + ' MB' : '';
+                                const isImage = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'].includes(fileExt);
+                                const isPdf = fileExt === 'pdf';
+
+                                return `
+                                    <a href="${fileUrl}" target="_blank" class="flex items-center gap-3 p-2.5 bg-slate-50 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 rounded-lg transition-colors group">
+                                        <div class="w-10 h-10 rounded-lg bg-white border border-slate-200 flex items-center justify-center shrink-0 overflow-hidden">
+                                            ${isImage && f.preview_image ? `<img src="${f.preview_image}" class="w-full h-full object-cover">` :
+                                              isPdf && f.preview_image ? `<img src="${f.preview_image}" class="w-full h-full object-cover">` :
+                                              `<i class="fa-solid ${isPdf ? 'fa-file-pdf text-red-500' : ['ai','eps','ps','psd'].includes(fileExt) ? 'fa-bezier-curve text-orange-500' : 'fa-file text-slate-400'} text-lg"></i>`}
+                                        </div>
+                                        <div class="flex-1 min-w-0">
+                                            <p class="text-xs font-bold text-slate-700 truncate">${fileName}</p>
+                                            <p class="text-[10px] text-slate-400">${fileExt.toUpperCase()} ${fileSize}</p>
+                                        </div>
+                                        <i class="fa-solid fa-download text-slate-300 group-hover:text-emerald-600 transition-colors"></i>
+                                    </a>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+
+            return `
+                <div class="bg-white rounded-xl shadow-sm p-5">
+                    <div class="flex items-start justify-between gap-4 mb-3">
+                        <div>
+                            <h3 class="font-bold text-slate-800 text-sm">${item.product_name || 'صنف'} ${item.size_name ? `— ${item.size_name}` : ''}</h3>
+                            <p class="text-xs text-slate-400 mt-0.5">الكمية: ${qty} ${item.unit_name || 'قطعة'}</p>
+                        </div>
+                        <span class="text-xs font-bold px-2 py-1 rounded-full ${item.design_status === 'reprint' || item.design_status === 'redesign' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}">
+                            ${item.design_status === 'reprint' || item.design_status === 'redesign' ? 'إعادة طباعة' : 'تصميم جديد'}
+                        </span>
+                    </div>
+
+                    ${designPreview ? `<div class="mb-3">${designPreview}</div>` : ''}
+                    ${pantoneHtml}
+                    ${filesHtml}
+                </div>
+            `;
+        }).join('');
+    }
+
+    // ── Update Status ───────────────────────────────────────────────────────
+    window._updateStatus = async function(moId, newStatus) {
+        const msgEl = document.getElementById('status-update-msg');
+        msgEl.classList.add('hidden');
+
+        const labels = {
+            sent: 'بدء التصنيع',
+            partially_received: 'استلام جزئي',
+            received: 'تم التسليم',
+        };
+
+        if (!confirm(`هل أنت متأكد من تحديث الحالة إلى "${labels[newStatus] || newStatus}"؟`)) return;
+
+        try {
+            const res = await fetch(`${API_BASE}/public/supplier-portal/${_token}/orders/${moId}/status`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: newStatus }),
+            });
+
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                msgEl.className = 'mt-3 px-3 py-2 rounded-lg text-xs font-bold bg-red-50 text-red-600';
+                msgEl.textContent = data.error || 'فشل تحديث الحالة.';
+                msgEl.classList.remove('hidden');
+                return;
+            }
+
+            msgEl.className = 'mt-3 px-3 py-2 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-600';
+            msgEl.textContent = 'تم تحديث الحالة بنجاح.';
+            msgEl.classList.remove('hidden');
+
+            // Reload the order detail and the orders list
+            setTimeout(async () => {
+                await _refreshOrdersList();
+                window._openOrder(moId);
+            }, 800);
+        } catch (err) {
+            console.error('[Portal] Status update error:', err);
+            msgEl.className = 'mt-3 px-3 py-2 rounded-lg text-xs font-bold bg-red-50 text-red-600';
+            msgEl.textContent = 'فشل تحديث الحالة.';
+            msgEl.classList.remove('hidden');
+        }
+    };
+
+    // ── Refresh Orders List (silent) ────────────────────────────────────────
+    async function _refreshOrdersList() {
+        try {
+            const res = await fetch(`${API_BASE}/public/supplier-portal/${_token}`);
+            if (res.ok) {
+                const data = await res.json();
+                _allOrders = data.data?.orders || data.orders || [];
+            }
+        } catch (_e) { /* silent */ }
+    }
+
+    // ── Back to List ────────────────────────────────────────────────────────
+    window._backToList = function() {
+        document.getElementById('order-detail-view').classList.add('hidden');
+        document.getElementById('orders-list-view').classList.remove('hidden');
+        document.getElementById('orders-list-view').classList.add('fade-in');
+        renderOrders();
+    };
+
+    // ── Filter Buttons ──────────────────────────────────────────────────────
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            _currentFilter = this.dataset.status;
+            document.querySelectorAll('.filter-btn').forEach(b => {
+                b.className = 'filter-btn px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors';
+            });
+            this.className = 'filter-btn px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white transition-colors';
+            renderOrders();
+        });
+    });
+
+    // ── Start ───────────────────────────────────────────────────────────────
+    init();
+})();
+</script>
+
+</body>
+</html>

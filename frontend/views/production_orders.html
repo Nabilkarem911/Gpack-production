@@ -1115,6 +1115,65 @@
     </div>
 </div>
 
+<!-- ============================================================
+     SUPPLIER PORTAL MODAL — Permanent link for supplier to view all orders
+============================================================ -->
+<div id="supplier-portal-modal"
+     style="display:none; opacity:0; z-index:9999; transition: opacity 0.2s;"
+     class="fixed inset-0 items-center justify-center p-4 bg-black/60"
+     onclick="if(event.target===this) window.closeSupplierPortalModal()">
+    <div class="bg-white w-full max-w-md rounded-2xl shadow-2xl p-6">
+        <div class="flex items-center justify-between mb-5">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center">
+                    <i class="fa-solid fa-up-right-from-square text-emerald-600"></i>
+                </div>
+                <div>
+                    <h3 class="text-base font-bold text-slate-800">بوابة المورد</h3>
+                    <p class="text-xs text-slate-400">رابط دائم — يعرض كل أوامر التشغيل للمورد</p>
+                </div>
+            </div>
+            <button onclick="window.closeSupplierPortalModal()" class="text-slate-400 hover:text-slate-600 text-xl">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <div class="space-y-3">
+            <div class="flex items-center gap-2 text-sm">
+                <span class="text-xs font-bold text-slate-500">المورد:</span>
+                <span id="supplier-portal-name" class="font-bold text-slate-800"></span>
+            </div>
+            <label class="block text-xs font-bold text-slate-600 mb-1">رابط البوابة (دائم — لا ينتهي)</label>
+            <div class="flex gap-2">
+                <input id="supplier-portal-link" type="text" readonly
+                       class="flex-1 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 outline-none select-all"
+                       onclick="this.select()" />
+                <button id="copy-portal-link-btn" onclick="window.copySupplierPortalLink()"
+                        class="bg-emerald-600 text-white px-4 py-2.5 rounded-xl text-xs font-bold hover:bg-emerald-700 transition-colors whitespace-nowrap">
+                    <i class="fa-solid fa-copy"></i> نسخ
+                </button>
+            </div>
+        </div>
+
+        <!-- WhatsApp Button -->
+        <button onclick="window.shareSupplierPortalWhatsApp()"
+                class="w-full mt-4 py-3 bg-green-500 hover:bg-green-600 text-white rounded-xl text-sm font-bold transition-colors flex items-center justify-center gap-2">
+            <i class="fa-brands fa-whatsapp text-lg"></i> إرسال عبر واتساب
+        </button>
+
+        <div class="mt-4 p-3 bg-emerald-50 border border-emerald-100 rounded-xl">
+            <p class="text-xs text-emerald-700">
+                <i class="fa-solid fa-circle-info ml-1"></i>
+                الرابط دائم ولا ينتهي. المورد يفتحه في أي وقت ليرى كل أوامره ويحدّث حالات الإنتاج.
+            </p>
+        </div>
+
+        <button onclick="window.closeSupplierPortalModal()" class="w-full mt-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-sm font-bold transition-colors">
+            إغلاق
+        </button>
+    </div>
+</div>
+
 <!-- ═══════════════════════ QUICK ADD PANTONE MODAL ═══════════════════════ -->
 <div id="po-quick-pantone-modal" class="fixed inset-0 z-[70] hidden">
     <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onclick="window.poView.closeQuickPantoneModal()"></div>

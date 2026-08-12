@@ -311,6 +311,7 @@ _mountRoute('/public',              publicLimiter, require('./routes/public-stat
 _mountRoute('/public/invoice',      publicLimiter, require('./routes/public-invoice'));   // No auth required
 _mountRoute('/public/design',       publicLimiter, require('./routes/public-design'));    // No auth required
 _mountRoute('/public',              publicLimiter, require('./routes/public_manufacturer_order')); // No auth required — supplier share
+_mountRoute('/public',              publicLimiter, require('./routes/public-supplier-portal'));    // No auth required — supplier portal
 
 // Static files for uploads — serve with proper headers
 const uploadsDir = path.join(__dirname, 'uploads');

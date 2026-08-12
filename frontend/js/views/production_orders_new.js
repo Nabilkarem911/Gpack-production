@@ -671,6 +671,11 @@
                                 class="px-3 py-1.5 bg-purple-100 hover:bg-purple-200 text-purple-700 text-xs font-bold rounded-lg transition-all flex items-center gap-1">
                             <i class="fa-solid fa-share-nodes"></i> مشاركة مع المورد
                         </button>
+                        <button onclick="window.poView.openSupplierPortal('${mo.supplier_id}')"
+                                class="px-3 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 text-xs font-bold rounded-lg transition-all flex items-center gap-1"
+                                title="رابط بوابة المورد — يفتح كل أوامر المورد في صفحة واحدة">
+                            <i class="fa-solid fa-up-right-from-square"></i> بوابة المورد
+                        </button>
                         ${canEditMO
                             ? `<button onclick="window.poView.editMO('${mo.id}')"
                                        class="px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-700 text-xs font-bold rounded-lg transition-all flex items-center gap-1" title="تعديل الكمية والتصميم والمورد">
@@ -3762,7 +3767,42 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         _setQuickPantoneType:    _setQuickPantoneType,
         _searchQuickPantone:     _searchQuickPantone,
         _selectQuickPantone:     _selectQuickPantone,
+        // Supplier portal link
+        openSupplierPortal:      _openSupplierPortal,
     };
+
+    // ── Supplier Portal Link ──────────────────────────────────────────────────
+    async function _openSupplierPortal(supplierId) {
+        if (!supplierId) {
+            _toast('لا يوجد مورد مرتبط بأمر التشغيل', 'error');
+            return;
+        }
+
+        const modal    = document.getElementById('supplier-portal-modal');
+        const linkEl   = document.getElementById('supplier-portal-link');
+        const nameEl   = document.getElementById('supplier-portal-name');
+        if (!modal) return;
+
+        linkEl.value = 'جاري التحميل...';
+        if (nameEl) nameEl.textContent = '';
+        modal.style.display = 'flex';
+        setTimeout(() => { modal.style.opacity = '1'; }, 10);
+
+        try {
+            const res = await window.apiFetch('/api/public/supplier-portal/generate', {
+                method: 'POST',
+                body: JSON.stringify({ supplier_id: supplierId })
+            });
+            const data = res?.data;
+            if (!data) throw new Error('فشل إنشاء الرابط.');
+
+            linkEl.value = data.portal_url;
+            if (nameEl) nameEl.textContent = data.supplier_name || '';
+        } catch (err) {
+            console.error('[poView] openSupplierPortal:', err);
+            linkEl.value = 'حدث خطأ: ' + (err.message || 'فشل إنشاء الرابط');
+        }
+    }
 
     // ── Share MO with supplier (global functions) ─────────────────────────────
     let _currentMOShareData = null;
@@ -3843,6 +3883,34 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
 
     window.closeShareMO = function() {
         const modal = document.getElementById('share-mo-modal');
+        if (modal) { modal.style.opacity = '0'; setTimeout(() => { modal.style.display = 'none'; }, 200); }
+    };
+
+    // ── Supplier Portal modal helpers ──────────────────────────────────────────
+    window.copySupplierPortalLink = function() {
+        const linkEl = document.getElementById('supplier-portal-link');
+        if (!linkEl || !linkEl.value || linkEl.value.startsWith('جاري') || linkEl.value.startsWith('حدث')) return;
+        navigator.clipboard.writeText(linkEl.value).then(() => {
+            const btn = document.getElementById('copy-portal-link-btn');
+            if (btn) {
+                btn.innerHTML = '<i class="fa-solid fa-check"></i> تم النسخ!';
+                setTimeout(() => { btn.innerHTML = '<i class="fa-solid fa-copy"></i> نسخ'; }, 2000);
+            }
+            _toast('تم نسخ رابط البوابة', 'success');
+        });
+    };
+
+    window.shareSupplierPortalWhatsApp = function() {
+        const linkEl = document.getElementById('supplier-portal-link');
+        const nameEl = document.getElementById('supplier-portal-name');
+        if (!linkEl || !linkEl.value || linkEl.value.startsWith('جاري') || linkEl.value.startsWith('حدث')) return;
+        const supplierName = nameEl?.textContent || '';
+        const msg = `مرحباً ${supplierName}،\nهذا رابط بوابتكم لمتابعة جميع أوامر التشغيل:\n${linkEl.value}`;
+        window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+    };
+
+    window.closeSupplierPortalModal = function() {
+        const modal = document.getElementById('supplier-portal-modal');
         if (modal) { modal.style.opacity = '0'; setTimeout(() => { modal.style.display = 'none'; }, 200); }
     };
 
