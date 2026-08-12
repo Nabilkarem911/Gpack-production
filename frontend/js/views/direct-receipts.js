@@ -12,6 +12,7 @@
     let _warehouses = [];
     let _units = [];
     let _categories = [];
+    let _clients = [];
     let _currentReceipt = null;
     let _itemRowCounter = 0;
     let _activeReviewRow = null;
@@ -23,7 +24,7 @@
     // ── Init ──────────────────────────────────────────────────────────────────
     async function _init() {
         var token = window.getCurrentNavToken ? window.getCurrentNavToken() : 0;
-        await Promise.all([_loadList(), _loadSuppliers(), _loadWarehouses(), _loadUnits(), _loadCategories()]);
+        await Promise.all([_loadList(), _loadSuppliers(), _loadWarehouses(), _loadUnits(), _loadCategories(), _loadClients()]);
         if (window.isViewActive && !window.isViewActive(token)) return;
     }
 
@@ -70,6 +71,19 @@
             const res = await window.apiFetch('/api/categories?limit=100');
             _categories = res.data || res || [];
         } catch (_e) {}
+    }
+
+    async function _loadClients() {
+        try {
+            const res = await window.apiFetch('/api/clients?limit=200');
+            _clients = res.data || res || [];
+        } catch (_e) {}
+    }
+
+    function _buildClientOptions(selectedId) {
+        const opts = '<option value="">— مخزون عام (بدون عميل) —</option>' +
+            _clients.map(c => `<option value="${c.id}" ${selectedId === c.id ? 'selected' : ''}>${_esc(c.name)}</option>`).join('');
+        return opts;
     }
 
     function _buildUnitOptions() {
@@ -396,6 +410,11 @@
                             </select>
                         </td>
                         <td class="py-2 px-3">
+                            <select class="dr-review-client w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:border-purple-500 transition-all">
+                                ${_buildClientOptions(item.client_id)}
+                            </select>
+                        </td>
+                        <td class="py-2 px-3">
                             <input type="number" class="dr-review-qty w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none text-center"
                                    value="${_fmtQty(item.confirmed_quantity || item.quantity)}" min="0" step="any">
                         </td>
@@ -487,11 +506,12 @@
             const variantId = variantInput?.dataset.variantId || '';
             const unitSel = row.querySelector('.dr-review-unit');
             const unitId = unitSel?.disabled ? (variantInput?.dataset.unitId || null) : (unitSel?.value || null);
+            const clientId = row.querySelector('.dr-review-client')?.value || null;
             const qty = parseFloat(row.querySelector('.dr-review-qty')?.value) || 0;
             const cost = parseFloat(row.querySelector('.dr-review-cost')?.value) || 0;
 
             if (!variantId) { window.showToast('كل صنف يجب ربطه بمنتج', 'error'); return; }
-            items.push({ id: itemId, variant_id: variantId, unit_id: unitId, confirmed_quantity: qty, unit_cost: cost });
+            items.push({ id: itemId, variant_id: variantId, unit_id: unitId, client_id: clientId, confirmed_quantity: qty, unit_cost: cost });
         });
 
         if (!items.length) return;
@@ -597,6 +617,7 @@
                                 <tr>
                                     <th class="py-2 px-3 text-right text-xs font-bold text-slate-500">الصنف</th>
                                     <th class="py-2 px-3 text-right text-xs font-bold text-slate-500">الوحدة</th>
+                                    <th class="py-2 px-3 text-right text-xs font-bold text-slate-500">العميل</th>
                                     <th class="py-2 px-3 text-center text-xs font-bold text-slate-500">الكمية</th>
                                     <th class="py-2 px-3 text-center text-xs font-bold text-slate-500">التكلفة</th>
                                 </tr>
@@ -609,6 +630,7 @@
                                         ${it.product_photo_url ? `<a href="${it.product_photo_url}" target="_blank" class="text-brand-600 text-xs hover:underline"><i class="fa-solid fa-image"></i></a>` : ''}
                                     </td>
                                     <td class="py-2 px-3 text-slate-600">${_esc(it.unit_name)}${it.matched_unit_name ? ' / ' + _esc(it.matched_unit_name) : ''}</td>
+                                    <td class="py-2 px-3 text-slate-600">${it.client_name ? _esc(it.client_name) : '<span class="text-slate-400">عام</span>'}</td>
                                     <td class="py-2 px-3 text-center font-bold">${_fmtQty(it.confirmed_quantity || it.quantity)}</td>
                                     <td class="py-2 px-3 text-center">${it.unit_cost ? parseFloat(it.unit_cost).toFixed(2) : '—'}</td>
                                 </tr>`).join('')}

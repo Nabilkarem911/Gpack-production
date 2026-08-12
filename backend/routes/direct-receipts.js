@@ -160,11 +160,13 @@ router.get('/:id([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})',
 
         const itemsRes = await db.query(`
             SELECT dri.*, pv.size_name, p.name AS matched_product_name,
-                   u.name AS matched_unit_name
+                   u.name AS matched_unit_name,
+                   c.name AS client_name
             FROM direct_receipt_items dri
             LEFT JOIN product_variants pv ON pv.id = dri.variant_id
             LEFT JOIN products p ON p.id = pv.product_id
             LEFT JOIN units u ON u.id = dri.unit_id
+            LEFT JOIN clients c ON c.id = dri.client_id
             WHERE dri.direct_receipt_id = $1
             ORDER BY dri.sort_order
         `, [id]);
@@ -340,13 +342,14 @@ router.put('/:id([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/r
             }
             await client.query(`
                 UPDATE direct_receipt_items
-                SET variant_id = $1, unit_id = $2, confirmed_quantity = $3, unit_cost = $4
-                WHERE id = $5 AND direct_receipt_id = $6
+                SET variant_id = $1, unit_id = $2, confirmed_quantity = $3, unit_cost = $4, client_id = $5
+                WHERE id = $6 AND direct_receipt_id = $7
             `, [
                 item.variant_id,
                 item.unit_id || null,
                 parseFloat(item.confirmed_quantity) || 0,
                 parseFloat(item.unit_cost) || 0,
+                item.client_id || null,
                 item.id,
                 id,
             ]);
@@ -476,13 +479,14 @@ router.post('/:id([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/
                 item.product_name,
             ]);
 
-            // Update warehouse_stock (upsert — client_id is NULL for direct receipts)
-            // PostgreSQL: ON CONFLICT doesn't match NULL values, so we use a manual merge
+            // Update warehouse_stock — use item.client_id (NULL = general stock)
+            const stockClientId = item.client_id || null;
             const stockRes = await client.query(`
                 SELECT id, quantity FROM warehouse_stock
-                WHERE warehouse_id = $1 AND variant_id = $2 AND client_id IS NULL
+                WHERE warehouse_id = $1 AND variant_id = $2
+                  AND (client_id IS NOT DISTINCT FROM $3)
                 FOR UPDATE
-            `, [receipt.warehouse_id, item.variant_id]);
+            `, [receipt.warehouse_id, item.variant_id, stockClientId]);
 
             if (stockRes.rows.length) {
                 await client.query(`
@@ -493,19 +497,20 @@ router.post('/:id([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/
             } else {
                 await client.query(`
                     INSERT INTO warehouse_stock (warehouse_id, variant_id, client_id, quantity)
-                    VALUES ($1, $2, NULL, $3)
-                `, [receipt.warehouse_id, item.variant_id, qty]);
+                    VALUES ($1, $2, $3, $4)
+                `, [receipt.warehouse_id, item.variant_id, stockClientId, qty]);
             }
 
             // Record inventory transaction
             await client.query(`
                 INSERT INTO inventory_transactions (
-                    warehouse_to, variant_id, transaction_type, quantity,
+                    warehouse_to, variant_id, client_id, transaction_type, quantity,
                     reference_type, reference_id, notes, created_by
-                ) VALUES ($1, $2, 'receipt', $3, 'direct_receipt', $4, $5, $6)
+                ) VALUES ($1, $2, $3, 'receipt', $4, 'direct_receipt', $5, $6, $7)
             `, [
                 receipt.warehouse_id,
                 item.variant_id,
+                stockClientId,
                 qty,
                 id,
                 `استلام مؤقت #${receipt.receipt_number}`,
