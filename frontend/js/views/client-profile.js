@@ -853,7 +853,7 @@
         }
     };
 
-    window._cpSaveColor = async function() {
+    window._cpSaveColor = async function(keepOpen) {
         const clientId = window._cpClientId;
         if (!clientId) return;
 
@@ -894,7 +894,7 @@
         }
 
         try {
-            const btn = document.getElementById('cp-color-save-btn');
+            const btn = document.getElementById(keepOpen ? 'cp-color-save-another-btn' : 'cp-color-save-btn');
             if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin ml-1"></i> جاري الحفظ...'; }
 
             await window.apiFetch('/api/client-pantone-colors', {
@@ -903,13 +903,39 @@
             });
 
             if (window.showToast) window.showToast('تم إضافة اللون بنجاح', 'success');
-            window._cpCloseColorModal();
             await _loadColors(clientId);
+
+            if (keepOpen) {
+                // Reset form for next color — keep modal open
+                _cpSelectedPantone = null;
+                ['cp-color-code','cp-color-name','cp-color-notes','cp-pantone-search'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.value = '';
+                });
+                const hexEl = document.getElementById('cp-color-hex');
+                const hexTxtEl = document.getElementById('cp-color-hex-text');
+                const preview = document.getElementById('cp-color-preview');
+                if (hexEl)   hexEl.value = '#cccccc';
+                if (hexTxtEl) hexTxtEl.value = '';
+                if (preview) preview.style.background = '#cccccc';
+                const selCode = document.getElementById('cp-color-selected-code');
+                const selName = document.getElementById('cp-color-selected-name');
+                const selHex  = document.getElementById('cp-color-selected-hex');
+                if (selCode) selCode.textContent = 'لم يتم اختيار لون';
+                if (selName) selName.textContent = 'ابحث واختر من القائمة أو أدخل يدوياً';
+                if (selHex)  selHex.textContent  = '';
+                document.getElementById('cp-pantone-results')?.classList.add('hidden');
+                document.getElementById('cp-pantone-search')?.focus();
+            } else {
+                window._cpCloseColorModal();
+            }
         } catch (err) {
             if (window.showToast) window.showToast(err.message || 'فشل الحفظ', 'error');
         } finally {
-            const btn = document.getElementById('cp-color-save-btn');
-            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-check ml-1"></i> حفظ'; }
+            const btn1 = document.getElementById('cp-color-save-btn');
+            const btn2 = document.getElementById('cp-color-save-another-btn');
+            if (btn1) { btn1.disabled = false; btn1.innerHTML = '<i class="fa-solid fa-check ml-1"></i> حفظ'; }
+            if (btn2) { btn2.disabled = false; btn2.innerHTML = '<i class="fa-solid fa-plus ml-1"></i> حفظ وإضافة آخر'; }
         }
     };
 
