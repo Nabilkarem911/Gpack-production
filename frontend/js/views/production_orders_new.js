@@ -672,7 +672,7 @@
                             <i class="fa-solid fa-share-nodes"></i> مشاركة مع المورد
                         </button>
                         <button onclick="window.poView.openSupplierPortal('${mo.supplier_id}')"
-                                class="px-3 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 text-xs font-bold rounded-lg transition-all flex items-center gap-1"
+                                class="px-3 py-1.5 bg-purple-100 hover:bg-purple-200 text-purple-700 text-xs font-bold rounded-lg transition-all flex items-center gap-1"
                                 title="رابط بوابة المورد — يفتح كل أوامر المورد في صفحة واحدة">
                             <i class="fa-solid fa-up-right-from-square"></i> بوابة المورد
                         </button>

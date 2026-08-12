@@ -23,6 +23,23 @@ const { authenticate } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
+// ── Helper: decode original_name stored as percent-encoded or Latin-1 mojibake
+function _safeDecodeFileName(name) {
+    if (!name || typeof name !== 'string') return name;
+    if (/^[\x00-\x7F]*$/.test(name)) return name;
+    if (name.includes('%')) {
+        try { return decodeURIComponent(name); } catch (e) { /* ignore */ }
+    }
+    const isLatin1 = [...name].every(c => c.charCodeAt(0) <= 255);
+    if (isLatin1) {
+        try {
+            const decoded = decodeURIComponent(escape(name));
+            if (decoded && decoded.length > 0) return decoded;
+        } catch (e) { /* ignore */ }
+    }
+    return name;
+}
+
 // ── Allowed statuses the supplier can set ───────────────────────────────────
 const ALLOWED_SUPPLIER_STATUSES = ['pending', 'sent', 'partially_received', 'received', 'cancelled'];
 
@@ -324,7 +341,17 @@ router.get('/supplier-portal/:token/orders/:moId', async (req, res) => {
             }
         }
 
-        // Generate PDF thumbnails for design files
+        // Decode file names and generate PDF thumbnails for design files
+        items.forEach(item => {
+            if (item.design_name) {
+                item.design_name = _safeDecodeFileName(item.design_name);
+            }
+            const files = Array.isArray(item.design_files) ? item.design_files : [];
+            files.forEach(f => {
+                if (f.name) f.name = _safeDecodeFileName(f.name);
+            });
+        });
+
         await Promise.all(items.map(async (item) => {
             if (item.design_thumbnail) {
                 const generated = await ensurePdfThumbnail(item.design_thumbnail);

@@ -18,7 +18,7 @@
 
 <!-- Loading -->
 <div id="loading" class="fixed inset-0 bg-white flex flex-col items-center justify-center z-50">
-    <div class="w-14 h-14 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+    <div class="w-14 h-14 border-4 border-purple-600 border-t-transparent rounded-full animate-spin mb-4"></div>
     <p class="text-slate-500 text-sm">جاري تحميل بوابة المورد...</p>
 </div>
 
@@ -37,22 +37,22 @@
 <div id="main-content" class="hidden max-w-5xl mx-auto py-6 px-4">
 
     <!-- Header -->
-    <div class="bg-gradient-to-l from-emerald-700 to-emerald-900 rounded-2xl p-6 text-white mb-6 shadow-lg">
+    <div class="bg-gradient-to-l from-purple-700 to-purple-900 rounded-2xl p-6 text-white mb-6 shadow-lg">
         <div class="flex items-center justify-between flex-wrap gap-4">
             <div class="flex items-center gap-4">
                 <img src="/images/logo.png" alt="G.PACK" class="h-14 w-auto bg-white rounded-xl p-1" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />
                 <div style="display:none;width:56px;height:56px;background:#fbbf24;border-radius:12px;align-items:center;justify-content:center;">
-                    <i class="fa-solid fa-industry text-2xl text-emerald-900"></i>
+                    <i class="fa-solid fa-industry text-2xl text-purple-900"></i>
                 </div>
                 <div>
                     <h1 class="text-2xl font-extrabold">G.PACK</h1>
-                    <p class="text-emerald-200 text-sm">بوابة المورد — متابعة أوامر التشغيل</p>
+                    <p class="text-purple-200 text-sm">بوابة المورد — متابعة أوامر التشغيل</p>
                 </div>
             </div>
             <div class="text-left">
-                <p class="text-emerald-200 text-xs">المورد</p>
+                <p class="text-purple-200 text-xs">المورد</p>
                 <p id="supplier-name" class="text-lg font-bold"></p>
-                <p id="supplier-contact" class="text-emerald-200 text-xs mt-0.5"></p>
+                <p id="supplier-contact" class="text-purple-200 text-xs mt-0.5"></p>
             </div>
         </div>
     </div>
@@ -66,7 +66,7 @@
                 <span class="text-sm font-bold text-slate-600">تصفية:</span>
             </div>
             <div class="flex flex-wrap gap-2" id="status-filters">
-                <button data-status="all" class="filter-btn px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white transition-colors">الكل</button>
+                <button data-status="all" class="filter-btn px-3 py-1.5 rounded-lg text-xs font-bold bg-purple-700 text-white transition-colors">الكل</button>
                 <button data-status="pending" class="filter-btn px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">بانتظار الإرسال</button>
                 <button data-status="sent" class="filter-btn px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">قيد التصنيع</button>
                 <button data-status="partially_received" class="filter-btn px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">استلام جزئي</button>
@@ -109,10 +109,16 @@
     <!-- Order Detail View -->
     <div id="order-detail-view" class="hidden">
         <!-- Back Button -->
-        <button onclick="window._backToList()" class="mb-4 flex items-center gap-2 text-sm font-bold text-emerald-700 hover:text-emerald-800 transition-colors">
+        <button onclick="window._backToList()" class="mb-4 flex items-center gap-2 text-sm font-bold text-purple-700 hover:text-purple-800 transition-colors">
             <i class="fa-solid fa-arrow-right"></i>
             العودة للقائمة
         </button>
+
+        <!-- Detail Loading -->
+        <div id="detail-loading" class="hidden bg-white rounded-xl shadow-sm p-10 text-center">
+            <div class="w-10 h-10 border-4 border-purple-600 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+            <p class="text-slate-500 text-sm">جاري تحميل تفاصيل الأمر...</p>
+        </div>
 
         <!-- Order Header -->
         <div id="order-detail-header" class="bg-white rounded-xl shadow-sm p-5 mb-4">
@@ -123,7 +129,7 @@
         <div id="status-update-bar" class="bg-white rounded-xl shadow-sm p-4 mb-4">
             <div class="flex items-center justify-between flex-wrap gap-3">
                 <div class="flex items-center gap-2">
-                    <i class="fa-solid fa-circle-info text-emerald-500"></i>
+                    <i class="fa-solid fa-circle-info text-purple-500"></i>
                     <span class="text-sm font-bold text-slate-600">تحديث حالة الإنتاج:</span>
                 </div>
                 <div class="flex flex-wrap gap-2" id="status-buttons">
@@ -145,9 +151,56 @@
     'use strict';
 
     const API_BASE = window.location.origin + '/api';
+    const IMAGE_EXTS = new Set(['png','jpg','jpeg','svg','gif','webp','bmp','tif','tiff']);
+    const PDF_EXTS = new Set(['pdf']);
+
     let _token = null;
     let _allOrders = [];
     let _currentFilter = 'all';
+
+    // ── Utility functions ─────────────────────────────────────────────────────
+    function getExt(url) {
+        if (!url) return '';
+        const clean = url.split('?')[0].split('#')[0];
+        const idx = clean.lastIndexOf('.');
+        return idx === -1 ? '' : clean.substring(idx + 1).toLowerCase();
+    }
+
+    function normalizeUrl(url) {
+        if (!url) return '';
+        if (url.startsWith('http') || url.startsWith('/') || url.startsWith('data:')) return url;
+        return '/' + url;
+    }
+
+    function escapeHtml(str) {
+        return String(str ?? '').replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    function escapeAttr(str) {
+        return String(str ?? '').replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;');
+    }
+
+    function safeDecodeName(name) {
+        if (!name) return '';
+        if (typeof name !== 'string') name = String(name);
+        if (name.includes('%')) {
+            try { return decodeURIComponent(name); } catch (e) { /* ignore */ }
+        }
+        if ([...name].every(c => c.charCodeAt(0) <= 255)) {
+            try { return decodeURIComponent(escape(name)); } catch (e) { /* ignore */ }
+        }
+        return name;
+    }
+
+    function fmtFileSize(bytes) {
+        if (!bytes) return '—';
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
 
     // ── Init ────────────────────────────────────────────────────────────────
     async function init() {
@@ -236,7 +289,7 @@
                         </span>
                     </td>
                     <td class="py-3 px-4 text-center">
-                        <button class="text-emerald-600 hover:text-emerald-800 transition-colors">
+                        <button class="text-purple-600 hover:text-purple-800 transition-colors">
                             <i class="fa-solid fa-eye"></i>
                         </button>
                     </td>
@@ -245,11 +298,27 @@
         }).join('');
     }
 
+    // ── Clear Detail View ────────────────────────────────────────────────────
+    function _clearDetailView() {
+        document.getElementById('order-detail-header').innerHTML = '';
+        document.getElementById('status-buttons').innerHTML = '';
+        document.getElementById('order-items-container').innerHTML = '';
+        document.getElementById('status-update-msg').classList.add('hidden');
+    }
+
     // ── Open Order Detail ───────────────────────────────────────────────────
     window._openOrder = async function(moId) {
+        // Switch to detail view immediately
         document.getElementById('orders-list-view').classList.add('hidden');
         document.getElementById('order-detail-view').classList.remove('hidden');
         document.getElementById('order-detail-view').classList.add('fade-in');
+
+        // Clear old content immediately and show loading
+        _clearDetailView();
+        document.getElementById('detail-loading').classList.remove('hidden');
+        document.getElementById('order-detail-header').classList.add('hidden');
+        document.getElementById('status-update-bar').classList.add('hidden');
+        document.getElementById('order-items-container').classList.add('hidden');
 
         try {
             const res = await fetch(`${API_BASE}/public/supplier-portal/${_token}/orders/${moId}`);
@@ -262,6 +331,12 @@
 
             const data = await res.json();
             const { order, items } = data.data || data;
+
+            // Hide loading, show content
+            document.getElementById('detail-loading').classList.add('hidden');
+            document.getElementById('order-detail-header').classList.remove('hidden');
+            document.getElementById('order-items-container').classList.remove('hidden');
+
             renderOrderDetail(order, items);
         } catch (err) {
             console.error('[Portal] Open order error:', err);
@@ -283,11 +358,11 @@
                 <div>
                     <h2 class="text-xl font-extrabold text-slate-800 mb-1">أمر تشغيل #${order.mo_number}</h2>
                     <div class="flex flex-wrap gap-4 text-sm text-slate-500">
-                        <span><i class="fa-solid fa-user ml-1 text-slate-400"></i>${order.client_name || '—'}</span>
+                        <span><i class="fa-solid fa-user ml-1 text-slate-400"></i>${escapeHtml(order.client_name || '—')}</span>
                         <span><i class="fa-solid fa-hashtag ml-1 text-slate-400"></i>طلب: ${order.order_number || '—'}</span>
                         <span><i class="fa-solid fa-calendar ml-1 text-slate-400"></i>تاريخ التسليم: ${deliveryDate}</span>
                     </div>
-                    ${order.notes ? `<p class="text-xs text-slate-500 mt-2 bg-slate-50 rounded-lg p-2"><i class="fa-solid fa-sticky-note ml-1"></i>${order.notes}</p>` : ''}
+                    ${order.notes ? `<p class="text-xs text-slate-500 mt-2 bg-slate-50 rounded-lg p-2"><i class="fa-solid fa-sticky-note ml-1"></i>${escapeHtml(order.notes)}</p>` : ''}
                 </div>
                 <span class="inline-flex items-center px-3 py-1.5 rounded-full text-sm font-bold ${order.status_color}">
                     ${order.status_label}
@@ -307,7 +382,7 @@
             const isCurrent = order.status === s.value;
             return `
                 <button onclick="window._updateStatus('${order.id}', '${s.value}')"
-                        class="px-3 py-2 rounded-lg text-xs font-bold text-white transition-colors ${s.color} ${isCurrent ? 'ring-2 ring-offset-2 ring-emerald-400' : ''} ${isCurrent ? 'cursor-default' : 'cursor-pointer'}"
+                        class="px-3 py-2 rounded-lg text-xs font-bold text-white transition-colors ${s.color} ${isCurrent ? 'ring-2 ring-offset-2 ring-purple-400' : ''} ${isCurrent ? 'cursor-default' : 'cursor-pointer'}"
                         ${isCurrent ? 'disabled' : ''}>
                     <i class="fa-solid ${s.icon} ml-1"></i>${s.label}
                 </button>
@@ -324,20 +399,32 @@
 
         // Items
         const itemsEl = document.getElementById('order-items-container');
-        itemsEl.innerHTML = items.map(item => {
+        itemsEl.innerHTML = items.map((item, idx) => {
             const qty = parseFloat(item.mo_quantity || 0).toLocaleString('en-US');
-            const designFiles = Array.isArray(item.design_files) ? item.design_files : [];
-            const thumbUrl = item.design_thumbnail_image || item.design_thumbnail || '';
+            const rawFiles = Array.isArray(item.design_files) ? item.design_files : [];
+            // Filter out thumbnails from file list
+            const designFiles = rawFiles.filter(f => f.file_type !== 'thumbnail' && !/thumbnail/i.test(f.name || ''));
+            const hasThumb = !!item.design_thumbnail;
             const pantoneDetails = Array.isArray(item.pantone_colors_details) ? item.pantone_colors_details : [];
+
+            // If no source files but has thumbnail, create synthetic download entry
+            const allFiles = (designFiles.length > 0) ? designFiles : (hasThumb ? [{
+                path: item.design_thumbnail,
+                name: item.design_name || 'تصميم',
+                size: null,
+                uploaded_at: null
+            }] : []);
 
             // Design preview
             let designPreview = '';
+            const thumbUrl = item.design_thumbnail_image || item.design_thumbnail || '';
             if (thumbUrl) {
-                const ext = thumbUrl.split('.').pop().toLowerCase();
-                if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'].includes(ext)) {
-                    designPreview = `<img src="${thumbUrl}" alt="${item.design_name || ''}" class="design-img" onerror="this.style.display='none'">`;
-                } else if (ext === 'pdf') {
-                    designPreview = `<object data="${thumbUrl}#toolbar=0&navpanes=0" type="application/pdf" class="w-full h-64 border-0 rounded-xl bg-white"></object>`;
+                const normThumb = normalizeUrl(thumbUrl);
+                const ext = getExt(normThumb);
+                if (IMAGE_EXTS.has(ext)) {
+                    designPreview = `<img src="${encodeURI(normThumb)}" alt="${escapeAttr(item.design_name || '')}" class="design-img" onerror="this.style.display='none'">`;
+                } else if (PDF_EXTS.has(ext)) {
+                    designPreview = `<object data="${encodeURI(normThumb)}#toolbar=0&navpanes=0" type="application/pdf" class="w-full h-64 border-0 rounded-xl bg-white"></object>`;
                 } else {
                     designPreview = `<div class="w-full h-32 flex items-center justify-center bg-slate-800 text-white rounded-xl"><i class="fa-solid fa-file text-3xl"></i><span class="ml-2 text-sm">${ext.toUpperCase()}</span></div>`;
                 }
@@ -347,46 +434,75 @@
             let pantoneHtml = '';
             if (pantoneDetails.length > 0) {
                 pantoneHtml = `
-                    <div class="flex flex-wrap gap-2 mt-2">
-                        <span class="text-xs font-bold text-slate-500">ألوان البانتون:</span>
-                        ${pantoneDetails.map(p => `
-                            <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs bg-slate-100 border border-slate-200">
-                                <span class="w-3 h-3 rounded-full border border-slate-300" style="background:${p.hex || '#ccc'}"></span>
-                                <span class="font-bold text-slate-700">${p.code}</span>
-                                ${p.name ? `<span class="text-slate-400">${p.name}</span>` : ''}
-                            </span>
-                        `).join('')}
+                    <div class="mt-4">
+                        <div class="flex items-center gap-2 mb-2">
+                            <div class="w-7 h-7 rounded-lg bg-purple-100 flex items-center justify-center text-xs">🎨</div>
+                            <span class="text-xs font-bold text-purple-700">ألوان البانتون المطلوبة</span>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                            ${pantoneDetails.map(p => `
+                                <div class="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl p-2" style="min-width:160px;">
+                                    <div class="w-8 h-8 rounded-lg border-2 border-slate-200 shrink-0" style="background:${escapeHtml(p.hex || '#ccc')}"></div>
+                                    <div>
+                                        <div class="text-xs font-bold text-slate-800">${escapeHtml(p.code)}</div>
+                                        ${p.name ? `<div class="text-[10px] text-slate-500">${escapeHtml(p.name)}</div>` : ''}
+                                        ${p.hex ? `<div class="text-[9px] text-slate-400 font-mono">${escapeHtml(p.hex)}</div>` : ''}
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
                     </div>
                 `;
             }
 
-            // Design files list
+            // Design files list with download links
             let filesHtml = '';
-            if (designFiles.length > 0) {
+            if (allFiles.length > 0) {
                 filesHtml = `
                     <div class="mt-3 border-t border-slate-100 pt-3">
-                        <p class="text-xs font-bold text-slate-500 mb-2">ملفات التصميم (${designFiles.length}):</p>
+                        <p class="text-xs font-bold text-slate-500 mb-2">ملفات التصميم (${allFiles.length}):</p>
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            ${designFiles.map(f => {
-                                const fileExt = (f.path || '').split('.').pop().toLowerCase();
-                                const fileUrl = f.path || '';
-                                const fileName = f.name || fileUrl.split('/').pop() || 'ملف';
-                                const fileSize = f.size ? (f.size / 1024 / 1024).toFixed(2) + ' MB' : '';
-                                const isImage = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'].includes(fileExt);
-                                const isPdf = fileExt === 'pdf';
+                            ${allFiles.map((f, fIdx) => {
+                                const fileExt = getExt(f.path || f.name || '');
+                                const normFileUrl = normalizeUrl(f.path || '');
+                                const absFileUrl = normFileUrl.startsWith('http') ? normFileUrl : window.location.origin + normFileUrl;
+                                const rawFileName = safeDecodeName(f.name || item.design_name || `تصميم-${idx + 1}-${fIdx + 1}`);
+                                const fileName = escapeHtml(rawFileName);
+                                const fileNameAttr = escapeAttr(rawFileName);
+                                const fileSize = fmtFileSize(f.size);
+
+                                // Preview image
+                                const genPreview = f.preview_image || '';
+                                const genPreviewUrl = genPreview ? normalizeUrl(genPreview) : '';
+                                const genPreviewAbs = genPreviewUrl ? (genPreviewUrl.startsWith('http') ? genPreviewUrl : window.location.origin + genPreviewUrl) : '';
+                                const isImage = IMAGE_EXTS.has(fileExt);
+                                const isPdf = PDF_EXTS.has(fileExt);
+                                const staticImg = isImage ? absFileUrl : (genPreviewAbs || '');
+
+                                let thumbIconHtml = '';
+                                if (staticImg) {
+                                    thumbIconHtml = `<img src="${encodeURI(staticImg)}" class="w-full h-full object-cover">`;
+                                } else if (isPdf) {
+                                    thumbIconHtml = `<i class="fa-solid fa-file-pdf text-red-500 text-lg"></i>`;
+                                } else if (['ai','eps','ps','psd'].includes(fileExt)) {
+                                    thumbIconHtml = `<i class="fa-solid fa-bezier-curve text-orange-500 text-lg"></i>`;
+                                } else {
+                                    thumbIconHtml = `<i class="fa-solid fa-file text-slate-400 text-lg"></i>`;
+                                }
 
                                 return `
-                                    <a href="${fileUrl}" target="_blank" class="flex items-center gap-3 p-2.5 bg-slate-50 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 rounded-lg transition-colors group">
+                                    <a href="${encodeURI(absFileUrl)}" download="${fileNameAttr}" target="_blank" class="flex items-center gap-3 p-2.5 bg-slate-50 hover:bg-purple-50 border border-slate-200 hover:border-purple-300 rounded-lg transition-colors group">
                                         <div class="w-10 h-10 rounded-lg bg-white border border-slate-200 flex items-center justify-center shrink-0 overflow-hidden">
-                                            ${isImage && f.preview_image ? `<img src="${f.preview_image}" class="w-full h-full object-cover">` :
-                                              isPdf && f.preview_image ? `<img src="${f.preview_image}" class="w-full h-full object-cover">` :
-                                              `<i class="fa-solid ${isPdf ? 'fa-file-pdf text-red-500' : ['ai','eps','ps','psd'].includes(fileExt) ? 'fa-bezier-curve text-orange-500' : 'fa-file text-slate-400'} text-lg"></i>`}
+                                            ${thumbIconHtml}
                                         </div>
                                         <div class="flex-1 min-w-0">
-                                            <p class="text-xs font-bold text-slate-700 truncate">${fileName}</p>
-                                            <p class="text-[10px] text-slate-400">${fileExt.toUpperCase()} ${fileSize}</p>
+                                            <p class="text-xs font-bold text-slate-700 truncate" dir="auto">${fileName}</p>
+                                            <p class="text-[10px] text-slate-400">${fileExt.toUpperCase()} • ${fileSize}</p>
                                         </div>
-                                        <i class="fa-solid fa-download text-slate-300 group-hover:text-emerald-600 transition-colors"></i>
+                                        <div class="flex items-center gap-1">
+                                            <i class="fa-solid fa-up-right-from-square text-slate-300 group-hover:text-purple-600 transition-colors text-xs"></i>
+                                            <i class="fa-solid fa-download text-slate-300 group-hover:text-purple-600 transition-colors"></i>
+                                        </div>
                                     </a>
                                 `;
                             }).join('')}
@@ -395,15 +511,21 @@
                 `;
             }
 
+            const isReprint = item.design_status === 'reprint' || item.design_status === 'redesign';
+
             return `
                 <div class="bg-white rounded-xl shadow-sm p-5">
                     <div class="flex items-start justify-between gap-4 mb-3">
-                        <div>
-                            <h3 class="font-bold text-slate-800 text-sm">${item.product_name || 'صنف'} ${item.size_name ? `— ${item.size_name}` : ''}</h3>
-                            <p class="text-xs text-slate-400 mt-0.5">الكمية: ${qty} ${item.unit_name || 'قطعة'}</p>
+                        <div class="flex items-center gap-3">
+                            <div class="w-9 h-9 bg-purple-700 text-amber-400 rounded-lg flex items-center justify-center font-extrabold text-xs shrink-0">${idx + 1}</div>
+                            <div>
+                                <h3 class="font-bold text-slate-800 text-sm">${escapeHtml(item.product_name || 'صنف')} ${item.size_name ? `— ${escapeHtml(item.size_name)}` : ''}</h3>
+                                <p class="text-xs text-slate-400 mt-0.5">الكمية: ${qty} ${escapeHtml(item.unit_name || 'قطعة')}</p>
+                                ${item.design_name ? `<p class="text-xs text-slate-400 mt-0.5">${escapeHtml(item.design_name)}</p>` : ''}
+                            </div>
                         </div>
-                        <span class="text-xs font-bold px-2 py-1 rounded-full ${item.design_status === 'reprint' || item.design_status === 'redesign' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}">
-                            ${item.design_status === 'reprint' || item.design_status === 'redesign' ? 'إعادة طباعة' : 'تصميم جديد'}
+                        <span class="text-xs font-bold px-2 py-1 rounded-full whitespace-nowrap ${isReprint ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}">
+                            ${isReprint ? 'إعادة طباعة' : 'تصميم جديد'}
                         </span>
                     </div>
 
@@ -443,7 +565,7 @@
                 return;
             }
 
-            msgEl.className = 'mt-3 px-3 py-2 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-600';
+            msgEl.className = 'mt-3 px-3 py-2 rounded-lg text-xs font-bold bg-purple-50 text-purple-600';
             msgEl.textContent = 'تم تحديث الحالة بنجاح.';
             msgEl.classList.remove('hidden');
 
@@ -473,6 +595,8 @@
 
     // ── Back to List ────────────────────────────────────────────────────────
     window._backToList = function() {
+        _clearDetailView();
+        document.getElementById('detail-loading').classList.add('hidden');
         document.getElementById('order-detail-view').classList.add('hidden');
         document.getElementById('orders-list-view').classList.remove('hidden');
         document.getElementById('orders-list-view').classList.add('fade-in');
@@ -486,7 +610,7 @@
             document.querySelectorAll('.filter-btn').forEach(b => {
                 b.className = 'filter-btn px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors';
             });
-            this.className = 'filter-btn px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white transition-colors';
+            this.className = 'filter-btn px-3 py-1.5 rounded-lg text-xs font-bold bg-purple-700 text-white transition-colors';
             renderOrders();
         });
     });
