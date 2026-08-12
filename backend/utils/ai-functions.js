@@ -1545,15 +1545,29 @@ const AI_FUNCTIONS = [
                 `SELECT it.id, it.transaction_type, it.quantity, it.created_at,
                         it.notes, it.reference_type,
                         pv.sku, p.name as product_name, pv.size_name,
-                        c.name as client_name, s.company_name as supplier_name,
-                        w.name as warehouse_name
+                        c.name as client_name,
+                        w.name as warehouse_name,
+                        CASE
+                            WHEN it.reference_type = 'purchase_invoice' THEN
+                                (SELECT s.company_name FROM purchase_invoices pi
+                                 JOIN suppliers s ON s.id = pi.supplier_id
+                                 WHERE pi.id = it.reference_id)
+                            WHEN it.reference_type = 'receiving_voucher' THEN
+                                (SELECT s.company_name FROM receiving_vouchers rv
+                                 JOIN suppliers s ON s.id = rv.supplier_id
+                                 WHERE rv.id = it.reference_id)
+                            WHEN it.reference_type = 'direct_receipt' THEN
+                                (SELECT s.company_name FROM direct_receipts dr
+                                 JOIN suppliers s ON s.id = dr.supplier_id
+                                 WHERE dr.id = it.reference_id)
+                            ELSE NULL
+                        END AS supplier_name
                  FROM inventory_transactions it
                  JOIN product_variants pv ON pv.id = it.variant_id
                  JOIN products p ON p.id = pv.product_id
                  LEFT JOIN warehouse_stock ws ON ws.id = it.stock_id
                  LEFT JOIN warehouses w ON w.id = ws.warehouse_id
                  LEFT JOIN clients c ON c.id = it.client_id
-                 LEFT JOIN suppliers s ON s.id = it.supplier_id
                  WHERE p.name ILIKE $1
                  ORDER BY it.created_at DESC
                  LIMIT $2`,
