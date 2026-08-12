@@ -259,14 +259,18 @@ router.get('/manufacturer-order/:token', async (req, res) => {
             return res.status(410).json({ error: 'انتهت صلاحية هذا الرابط.' });
         }
 
-        // Get client name
+        // Get client name and id
         let clientName = '—';
+        let clientId = null;
         if (mo.order_id) {
             const clientRes = await db.query(
-                `SELECT c.name FROM orders o JOIN clients c ON c.id = o.client_id WHERE o.id = $1`,
+                `SELECT c.name, c.id FROM orders o JOIN clients c ON c.id = o.client_id WHERE o.id = $1`,
                 [mo.order_id]
             );
-            if (clientRes.rowCount > 0) clientName = clientRes.rows[0].name;
+            if (clientRes.rowCount > 0) {
+                clientName = clientRes.rows[0].name;
+                clientId = clientRes.rows[0].id;
+            }
         }
         mo.client_name = clientName;
 
@@ -318,6 +322,38 @@ router.get('/manufacturer-order/:token', async (req, res) => {
         );
 
         const items = itemsResult.rows;
+
+        // ── Enrich pantone_colors with hex_value and color_name ──
+        if (clientId) {
+            const allCodes = new Set();
+            for (const item of items) {
+                const codes = Array.isArray(item.pantone_colors) && item.pantone_colors.length
+                    ? item.pantone_colors
+                    : (item.pantone_color ? [item.pantone_color] : []);
+                codes.forEach(c => allCodes.add(c));
+            }
+            if (allCodes.size > 0) {
+                const pantoneRes = await db.query(
+                    `SELECT color_code, color_name, hex_value FROM client_pantone_colors
+                     WHERE client_id = $1 AND color_code = ANY($2::text[])`,
+                    [clientId, Array.from(allCodes)]
+                );
+                const pantoneMap = {};
+                for (const row of pantoneRes.rows) {
+                    pantoneMap[row.color_code] = row;
+                }
+                for (const item of items) {
+                    const codes = Array.isArray(item.pantone_colors) && item.pantone_colors.length
+                        ? item.pantone_colors
+                        : (item.pantone_color ? [item.pantone_color] : []);
+                    item.pantone_colors_details = codes.map(c => ({
+                        code: c,
+                        name: pantoneMap[c]?.color_name || null,
+                        hex: pantoneMap[c]?.hex_value || null
+                    }));
+                }
+            }
+        }
 
         // Generate PDF thumbnails for all design files
         items.forEach(item => {

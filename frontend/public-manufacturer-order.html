@@ -327,6 +327,32 @@ function renderMO({ order, items }) {
 
         if (!fileSections) return '';
 
+        // ── Build Pantone color cards ──
+        const pDetails = Array.isArray(item.pantone_colors_details) && item.pantone_colors_details.length
+            ? item.pantone_colors_details
+            : [];
+        const pantoneCardsHTML = pDetails.length
+            ? `<div class="mt-5">
+                <div class="flex items-center gap-2 mb-3">
+                    <div class="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center text-sm">🎨</div>
+                    <h4 class="text-sm font-bold text-purple-700">ألوان البانتون المطلوبة</h4>
+                </div>
+                <div class="flex flex-wrap gap-3">
+                    ${pDetails.map(pc => {
+                        const hex = pc.hex || '#cccccc';
+                        return `<div class="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl p-3" style="min-width:200px;">
+                            <div class="w-11 h-11 rounded-xl border-2 border-slate-200 shadow-sm flex-shrink-0" style="background:${escapeHtml(hex)};"></div>
+                            <div>
+                                <div class="text-sm font-bold text-slate-800">${escapeHtml(pc.code)}</div>
+                                ${pc.name ? `<div class="text-xs text-slate-500">${escapeHtml(pc.name)}</div>` : ''}
+                                <div class="text-[10px] text-slate-400 font-mono">${escapeHtml(hex)}</div>
+                            </div>
+                        </div>`;
+                    }).join('')}
+                </div>
+            </div>`
+            : '';
+
         return `<div>
             <div class="flex items-center gap-3 mb-3">
                 <div class="w-10 h-10 bg-purple-700 text-amber-400 rounded-xl flex items-center justify-center font-extrabold text-sm">${idx + 1}</div>
@@ -336,6 +362,7 @@ function renderMO({ order, items }) {
                 </div>
             </div>
             ${fileSections}
+            ${pantoneCardsHTML}
         </div>`;
     }).join('');
 

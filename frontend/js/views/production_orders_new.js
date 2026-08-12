@@ -1228,6 +1228,33 @@
                         </div>`;
                 }).join('');
 
+                // ── Build Pantone color cards for this item ──
+                const pDetails = Array.isArray(i.pantone_colors_details) && i.pantone_colors_details.length
+                    ? i.pantone_colors_details
+                    : [];
+                const pantoneCardsHTML = pDetails.length
+                    ? `<div style="margin-top:24px;">
+                        <div style="font-size:13px;font-weight:800;color:#5d198e;margin-bottom:12px;display:flex;align-items:center;gap:8px;">
+                            <span style="width:28px;height:28px;border-radius:8px;background:#f3e8ff;display:flex;align-items:center;justify-content:center;font-size:14px;">🎨</span>
+                            ألوان البانتون المطلوبة
+                        </div>
+                        <div style="display:flex;flex-wrap:wrap;gap:12px;">
+                            ${pDetails.map(pc => {
+                                const hex = pc.hex || '#cccccc';
+                                const safeHex = _escapeHtml(hex);
+                                return `<div style="display:flex;align-items:center;gap:12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:10px 16px;min-width:180px;">
+                                    <div style="width:40px;height:40px;border-radius:10px;border:2px solid #e2e8f0;box-shadow:0 2px 6px rgba(0,0,0,0.1);background:${safeHex};flex-shrink:0;"></div>
+                                    <div>
+                                        <div style="font-size:13px;font-weight:800;color:#1e293b;">${_escapeHtml(pc.code)}</div>
+                                        ${pc.name ? `<div style="font-size:11px;color:#64748b;">${_escapeHtml(pc.name)}</div>` : ''}
+                                        <div style="font-size:10px;color:#94a3b8;font-family:monospace;">${safeHex}</div>
+                                    </div>
+                                </div>`;
+                            }).join('')}
+                        </div>
+                    </div>`
+                    : '';
+
                 return `<div style="page-break-before:always;padding:30px 40px;">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;padding-bottom:16px;border-bottom:2px solid #f1f5f9;">
                         <div style="display:flex;align-items:center;gap:14px;">
@@ -1246,6 +1273,7 @@
                         <span style="background:#5d198e;color:white;padding:8px 18px;border-radius:10px;font-size:13px;font-weight:900;">${mo.mo_number}</span>
                     </div>
                     ${fileSections}
+                    ${pantoneCardsHTML}
                 </div>`;
             }).join('');
 

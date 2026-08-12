@@ -339,6 +339,7 @@ router.get('/:id', async (req, res) => {
             `SELECT
                 mo.id,
                 mo.order_id,
+                o.client_id,
                 mo.manufacturer_id AS supplier_id,
                 s.company_name AS supplier_name,
                 s.contact_person AS supplier_contact,
@@ -354,6 +355,7 @@ router.get('/:id', async (req, res) => {
                 mo.updated_at
              FROM manufacturer_orders mo
              LEFT JOIN suppliers s ON s.id = mo.manufacturer_id
+             LEFT JOIN orders o ON o.id = mo.order_id
              WHERE mo.id = $1
              LIMIT 1`,
             [id]
@@ -419,6 +421,38 @@ router.get('/:id', async (req, res) => {
         );
 
         manufacturerOrder.items = itemsResult.rows;
+
+        // ── Enrich pantone_colors with hex_value and color_name ──
+        if (manufacturerOrder.client_id) {
+            const allCodes = new Set();
+            for (const item of manufacturerOrder.items) {
+                const codes = Array.isArray(item.pantone_colors) && item.pantone_colors.length
+                    ? item.pantone_colors
+                    : (item.pantone_color ? [item.pantone_color] : []);
+                codes.forEach(c => allCodes.add(c));
+            }
+            if (allCodes.size > 0) {
+                const pantoneRes = await db.query(
+                    `SELECT color_code, color_name, hex_value FROM client_pantone_colors
+                     WHERE client_id = $1 AND color_code = ANY($2::text[])`,
+                    [manufacturerOrder.client_id, Array.from(allCodes)]
+                );
+                const pantoneMap = {};
+                for (const row of pantoneRes.rows) {
+                    pantoneMap[row.color_code] = row;
+                }
+                for (const item of manufacturerOrder.items) {
+                    const codes = Array.isArray(item.pantone_colors) && item.pantone_colors.length
+                        ? item.pantone_colors
+                        : (item.pantone_color ? [item.pantone_color] : []);
+                    item.pantone_colors_details = codes.map(c => ({
+                        code: c,
+                        name: pantoneMap[c]?.color_name || null,
+                        hex: pantoneMap[c]?.hex_value || null
+                    }));
+                }
+            }
+        }
 
         // ── Generate real image thumbnails for PDF design files (first page render) ──
         // design_thumbnail / design_files entries often point to a PDF (the master file),
