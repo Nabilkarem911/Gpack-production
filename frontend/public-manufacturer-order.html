@@ -231,7 +231,6 @@ function renderMO({ order, items }) {
             <td class="py-3 px-4">
                 <p class="font-semibold text-slate-800 text-sm">${i.product_name || '—'}</p>
                 ${i.design_name ? `<p class="text-xs text-slate-400">${i.design_name}</p>` : ''}
-                ${(Array.isArray(i.pantone_colors) ? i.pantone_colors : (i.pantone_color ? [i.pantone_color] : [])).map(c => `<p class="text-xs font-bold text-purple-600">🎨 ${escapeHtml(c)}</p>`).join('')}
             </td>
             <td class="py-3 px-4 text-center text-slate-600 text-sm">${i.size_name || '—'}</td>
             <td class="py-3 px-4 text-center font-bold text-slate-800">${qty.toLocaleString('en-US')}</td>
@@ -247,17 +246,18 @@ function renderMO({ order, items }) {
         const files = (Array.isArray(item.design_files) ? item.design_files : [])
             .filter(f => f.file_type !== 'thumbnail' && !/thumbnail/i.test(f.name || ''));
         const hasThumb = !!item.design_thumbnail;
-        if (files.length === 0 && !hasThumb) return '';
+        const hasPantone = Array.isArray(item.pantone_colors_details) && item.pantone_colors_details.length > 0;
+        if (files.length === 0 && !hasThumb && !hasPantone) return '';
 
         // If no source files but has thumbnail, create synthetic entry
-        const allFiles = files.length > 0 ? files : [{
+        const allFiles = (files.length > 0 || hasThumb) ? (files.length > 0 ? files : [{
             path: item.design_thumbnail,
             name: item.design_name || 'تصميم',
             size: null,
             uploaded_at: null
-        }];
+        }]) : [];
 
-        const fileSections = allFiles.map((f, fIdx) => {
+        const fileSections = allFiles.length > 0 ? allFiles.map((f, fIdx) => {
             const normUrl = normalizeUrl(f.path);
             const absUrl = normUrl.startsWith('http') ? normUrl : window.location.origin + normUrl;
             const ext = getExt(f.path || f.name || '');
@@ -323,7 +323,7 @@ function renderMO({ order, items }) {
                     </div>
                 </div>
             </div>`;
-        }).join('');
+        }).join('') : '';
 
         if (!fileSections) return '';
 

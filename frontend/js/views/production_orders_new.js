@@ -1146,19 +1146,20 @@
                 </tr>`;
             }).join('');
 
-            // ── Group design files by item — include items that have thumbnail OR design files ──
+            // ── Group design files by item — include items that have thumbnail OR design files OR pantone colors ──
             const itemsWithFiles = {};
             (mo.items || []).forEach(i => {
                 const itemFiles = Array.isArray(i.design_files) ? i.design_files : [];
                 const hasThumb = !!i.design_thumbnail;
-                if (itemFiles.length === 0 && !hasThumb) return;
+                const hasPantone = Array.isArray(i.pantone_colors_details) && i.pantone_colors_details.length > 0;
+                if (itemFiles.length === 0 && !hasThumb && !hasPantone) return;
                 // If no files but has thumbnail, create a synthetic file entry from the thumbnail
-                const files = itemFiles.length > 0 ? itemFiles : [{
+                const files = (itemFiles.length > 0 || hasThumb) ? (itemFiles.length > 0 ? itemFiles : [{
                     path: i.design_thumbnail,
                     name: i.design_name || 'تصميم',
                     size: null,
                     uploaded_at: null
-                }];
+                }]) : [];
                 itemsWithFiles[i.id] = { item: i, files };
             });
 
