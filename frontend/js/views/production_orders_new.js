@@ -3212,6 +3212,18 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
                             </div>
                         </label>
                     </div>
+                    <div class="mt-2">
+                        <button onclick="window.poView._toggleBulkPantone('${i.id}')" class="flex items-center gap-1.5 text-xs font-bold text-purple-600 hover:text-purple-700 transition-colors">
+                            <i class="fa-solid fa-palette"></i> ألوان البانتون
+                            <i class="fa-solid fa-chevron-down text-[10px] transition-transform" id="bulk-pantone-chevron-${i.id}"></i>
+                        </button>
+                        <div id="bulk-pantone-section-${i.id}" class="hidden mt-2">
+                            <input type="text" placeholder="🔍 ابحث..." autocomplete="off"
+                                   oninput="window.poView._filterBulkPantone('${i.id}', this.value)"
+                                   class="w-full px-2 py-1.5 mb-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:border-purple-500 transition-all">
+                            <div id="bulk-pantone-list-${i.id}" class="max-h-28 overflow-y-auto border border-slate-200 rounded-lg p-1.5 bg-slate-50 space-y-1"></div>
+                        </div>
+                    </div>
                 </div>`;
             }).join('');
         }
@@ -3231,11 +3243,85 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         if (notesEl)    notesEl.value    = '';
 
         _showModal('po-bulk-assign-modal');
+
+        const clientId = _hubOrder?.client_id || _hubOrder?.client?.id;
+        _loadBulkPantoneColors(clientId);
     }
 
     function _bulkSetDesignStatus(itemId, status) {
         if (_bulkSelected[itemId]) {
             _bulkSelected[itemId].designStatus = status;
+        }
+    }
+
+    let _bulkPantoneColors = [];
+
+    async function _loadBulkPantoneColors(clientId) {
+        if (!clientId) return;
+        try {
+            const res = await window.apiFetch(`/api/client-pantone-colors?client_id=${clientId}`);
+            _bulkPantoneColors = (res && res.data) ? res.data : [];
+        } catch (err) {
+            _bulkPantoneColors = [];
+        }
+        for (const itemId of Object.keys(_bulkSelected)) {
+            _renderBulkPantoneList(itemId);
+        }
+    }
+
+    function _renderBulkPantoneList(itemId, filter) {
+        const listEl = _el(`bulk-pantone-list-${itemId}`);
+        if (!listEl) return;
+
+        if (!_bulkPantoneColors.length) {
+            listEl.innerHTML = '<p class="text-xs text-slate-400">لا توجد ألوان مسجلة</p>';
+            return;
+        }
+
+        const q = (filter || '').toLowerCase();
+        const selected = _bulkSelected[itemId]?.pantoneColors || [];
+        const selectedSet = new Set(selected);
+
+        const html = _bulkPantoneColors.map(c => {
+            const code = c.color_code || '';
+            const name = c.color_name || '';
+            const term = `${code} ${name}`.toLowerCase();
+            if (q && !term.includes(q)) return '';
+            const checked = selectedSet.has(code) ? 'checked' : '';
+            const hex = c.hex_value || '#cccccc';
+            return `<label class="flex items-center gap-1.5 p-1.5 bg-white border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors">
+                <input type="checkbox" value="${_escapeHtml(code)}" ${checked}
+                       onchange="window.poView._onBulkPantoneChange('${itemId}', this)"
+                       class="w-3.5 h-3.5 rounded accent-purple-600 cursor-pointer">
+                <span class="w-3.5 h-3.5 rounded-full border border-slate-300 shrink-0" style="background:${_escapeHtml(hex)}"></span>
+                <span class="text-[11px] text-slate-700 select-none truncate">${_escapeHtml(code)}${name ? ' — ' + _escapeHtml(name) : ''}</span>
+            </label>`;
+        }).join('');
+
+        listEl.innerHTML = html || '<p class="text-xs text-slate-400">لا توجد نتائج</p>';
+    }
+
+    function _toggleBulkPantone(itemId) {
+        const section = _el(`bulk-pantone-section-${itemId}`);
+        const chevron = _el(`bulk-pantone-chevron-${itemId}`);
+        if (section) section.classList.toggle('hidden');
+        if (chevron) chevron.style.transform = section?.classList.contains('hidden') ? '' : 'rotate(180deg)';
+    }
+
+    function _filterBulkPantone(itemId, value) {
+        _renderBulkPantoneList(itemId, value);
+    }
+
+    function _onBulkPantoneChange(itemId, cb) {
+        if (!_bulkSelected[itemId]) return;
+        if (!_bulkSelected[itemId].pantoneColors) _bulkSelected[itemId].pantoneColors = [];
+        const code = cb.value;
+        if (cb.checked) {
+            if (!_bulkSelected[itemId].pantoneColors.includes(code)) {
+                _bulkSelected[itemId].pantoneColors.push(code);
+            }
+        } else {
+            _bulkSelected[itemId].pantoneColors = _bulkSelected[itemId].pantoneColors.filter(c => c !== code);
         }
     }
 
@@ -3327,6 +3413,8 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
             quantity:      i.qty - i.assigned,
             design_status: i.designStatus || 'new',
             design_id:     i.designId || null,
+            pantone_color: (i.pantoneColors && i.pantoneColors[0]) || null,
+            pantone_colors: (i.pantoneColors && i.pantoneColors.length) ? i.pantoneColors : null,
         }));
 
         if (!items.length) { _toast('لا توجد أصناف محددة', 'error'); return; }
@@ -3453,6 +3541,9 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         bulkSelectDesign:     _bulkSelectDesign,
         bulkUploadDesign:     _bulkUploadDesign,
         _bulkSetDesignStatus: _bulkSetDesignStatus,
+        _toggleBulkPantone:   _toggleBulkPantone,
+        _filterBulkPantone:   _filterBulkPantone,
+        _onBulkPantoneChange: _onBulkPantoneChange,
         openInvoiceModal:   _openInvoiceModal,
         closeInvoiceModal:  () => { _resetInvoiceModal(); _hideModal('po-invoice-modal'); },
         onInvoiceTypeChange: _renderInvoiceItems,
