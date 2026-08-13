@@ -97,7 +97,7 @@ function _generateApprovalPDF(orderData, signatureBase64, outputPath) {
         doc.pipe(stream);
 
         // Header — G.PACK logo text
-        doc.fontSize(24).fillColor('#4f46e5').text('G.PACK', { align: 'center' });
+        doc.fontSize(24).fillColor('#563D5D').text('G.PACK', { align: 'center' });
         doc.fontSize(10).fillColor('#94a3b8').text('حلول التعبئة والتغليف — ينبع، المملكة العربية السعودية', { align: 'center' });
         doc.moveDown(1);
 

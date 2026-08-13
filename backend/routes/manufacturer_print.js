@@ -109,7 +109,7 @@ router.get('/:id/print-pdf', authenticate, async (req, res) => {
         doc.pipe(res);
 
         // ── Header Section ────────────────────────────────────────────────────
-        doc.fontSize(20).font('Helvetica-Bold')
+        doc.fontSize(20).font('Helvetica-Bold').fillColor('#563D5D')
            .text('G.PACK', 40, 40, { align: 'left' });
 
         doc.fontSize(10).font('Helvetica')
