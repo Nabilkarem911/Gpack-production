@@ -218,6 +218,7 @@ router.get('/manufacturer-order/:token', async (req, res) => {
         if (tokenHash) {
             result = await db.query(
                 `SELECT mo.id, mo.mo_number, mo.status, mo.notes,
+                        mo.created_at,
                         mo.token_expires_at, mo.expected_delivery_date,
                         mo.order_id,
                         s.company_name AS supplier_name,
@@ -236,6 +237,7 @@ router.get('/manufacturer-order/:token', async (req, res) => {
         if (!result || result.rowCount === 0) {
             result = await db.query(
                 `SELECT mo.id, mo.mo_number, mo.status, mo.notes,
+                        mo.created_at,
                         mo.token_expires_at, mo.expected_delivery_date,
                         mo.order_id,
                         s.company_name AS supplier_name,
