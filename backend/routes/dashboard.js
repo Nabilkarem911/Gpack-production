@@ -96,7 +96,7 @@ router.get('/stats', authenticate, async (req, res) => {
             `SELECT COUNT(*) as total_products FROM products WHERE status = 'active'`
         );
 
-        // 6. Manufacturer Orders Status
+        // 6. Manufacturer Orders Status + Pending Direct Receipts (استلام مؤقت)
         let moQuery = `SELECT
                 COUNT(*) FILTER (WHERE status = 'pending') as pending_mo,
                 COUNT(*) FILTER (WHERE status = 'sent') as sent_mo,
@@ -107,6 +107,18 @@ router.get('/stats', authenticate, async (req, res) => {
             moQuery = `SELECT 0 as pending_mo, 0 as sent_mo, 0 as received_mo, 0 as awaiting_receiving`;
         }
         const manufacturerOrdersResult = await db.query(moQuery, isSalesRep ? [] : []);
+
+        // Pending temporary receiving (direct receipts awaiting manager approval)
+        let pendingDirectReceipts = 0;
+        if (isAdmin || isWarehouse) {
+            const directReceiptsResult = await db.query(
+                `SELECT COUNT(*) as pending_count
+                 FROM direct_receipts
+                 WHERE status = 'pending_review'`,
+                []
+            );
+            pendingDirectReceipts = parseInt(directReceiptsResult.rows[0]?.pending_count || 0);
+        }
 
         // 7. Quotations Count
         const quotationsResult = await db.query(
@@ -137,7 +149,8 @@ router.get('/stats', authenticate, async (req, res) => {
                 sent: parseInt(manufacturerOrdersResult.rows[0]?.sent_mo || 0),
                 received: parseInt(manufacturerOrdersResult.rows[0]?.received_mo || 0),
                 awaiting_receiving: parseInt(manufacturerOrdersResult.rows[0]?.awaiting_receiving || 0)
-            }
+            },
+            pending_direct_receipts: pendingDirectReceipts
         };
 
         return success(res, stats);

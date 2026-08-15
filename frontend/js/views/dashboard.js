@@ -83,9 +83,9 @@ var dashboardView = {
             this._updateStat('stat-receivables', this._formatCurrency(data.outstanding_receivables || 0));
 
             const mo = data.manufacturer_orders || {};
-            const pendingReceiving = mo.awaiting_receiving ?? 0;
-            this._updateStat('stat-pending-receiving', pendingReceiving);
-            this._renderReceivingAlertBanner(pendingReceiving);
+            const pendingDirectReceipts = data.pending_direct_receipts ?? 0;
+            this._updateStat('stat-pending-receiving', pendingDirectReceipts);
+            this._renderReceivingAlertBanner(pendingDirectReceipts);
 
             console.log('[Dashboard] Stats loaded successfully');
         } catch (error) {
@@ -109,16 +109,16 @@ var dashboardView = {
                 <div class="flex items-center justify-between">
                     <div class="flex items-center gap-3">
                         <div class="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
-                            <i class="fa-solid fa-truck-ramp-box text-xl"></i>
+                            <i class="fa-solid fa-clipboard-check text-xl"></i>
                         </div>
                         <div>
-                            <h4 class="font-bold text-lg">${pendingCount} طلب بانتظار الاستلام</h4>
-                            <p class="text-white/80 text-sm">يوجد بضاعة مرسلة للموردين بانتظار اعتماد الاستلام</p>
+                            <h4 class="font-bold text-lg">${pendingCount} استلام مؤقت بانتظار اعتماد</h4>
+                            <p class="text-white/80 text-sm">يوجد استلامات مؤقتة سجلها أمين المستوداد بحاجة اعتماد المدير</p>
                         </div>
                     </div>
-                    <button onclick="window.navigateTo('receiving-vouchers')"
+                    <button onclick="window.navigateTo('direct-receipts')"
                             class="px-4 py-2 bg-white text-slate-800 rounded-lg font-medium hover:bg-slate-100 transition-colors">
-                        استلام البضاعة
+                        مراجعة الاستلامات
                     </button>
                 </div>
             </div>
