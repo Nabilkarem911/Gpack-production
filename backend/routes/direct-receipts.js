@@ -355,6 +355,23 @@ router.put('/:id([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/r
             ]);
         }
 
+        // Calculate header totals after manager review
+        const totalsRes = await client.query(`
+            SELECT COALESCE(SUM(confirmed_quantity * unit_cost), 0) AS subtotal
+            FROM direct_receipt_items
+            WHERE direct_receipt_id = $1
+        `, [id]);
+        const subtotal = parseFloat(totalsRes.rows[0].subtotal) || 0;
+        const taxRate = await getVatRate();
+        const taxAmount = subtotal * taxRate;
+        const grandTotal = subtotal + taxAmount;
+
+        await client.query(`
+            UPDATE direct_receipts
+            SET subtotal = $1, tax_rate = $2, tax_amount = $3, grand_total = $4
+            WHERE id = $5
+        `, [subtotal, taxRate, taxAmount, grandTotal, id]);
+
         await client.query('COMMIT');
 
         res.json({ message: 'Review saved successfully' });
