@@ -168,6 +168,7 @@
                 </tr>
               </thead>
               <tbody id="det-stock-table" class="divide-y divide-slate-100"></tbody>
+              <tfoot id="det-stock-tfoot" class="hidden bg-slate-50 border-t-2 border-slate-200"></tfoot>
             </table>
           </div>
           <div id="det-stock-empty" class="hidden py-10 text-center text-slate-300">
@@ -262,6 +263,7 @@
               </tr>
             </thead>
             <tbody id="stock-table" class="divide-y divide-slate-100"></tbody>
+            <tfoot id="stock-tfoot" class="hidden bg-slate-50 border-t-2 border-slate-200"></tfoot>
           </table>
         </div>
         <div id="stock-empty" class="hidden text-center py-12 text-slate-300">
@@ -781,9 +783,11 @@ function renderDetailStock() {
 
   const tbody = document.getElementById('det-stock-table');
   const empty = document.getElementById('det-stock-empty');
+  const tfoot = document.getElementById('det-stock-tfoot');
   if (!rows.length) {
     if (tbody) tbody.innerHTML = '';
     if (empty) empty.classList.remove('hidden');
+    if (tfoot) tfoot.classList.add('hidden');
     return;
   }
   if (empty) empty.classList.add('hidden');
@@ -829,6 +833,22 @@ function renderDetailStock() {
         '<td class="px-4 py-2.5 text-center"><button onclick="openItemMovements(\'' + (s.variant_id || '') + '\',\'' + escAttr(s.product_name || '') + '\',\'' + escAttr(vSize || '') + '\')" class="px-2.5 py-1 text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg font-bold transition-colors"><i class="fa-solid fa-clock-rotate-left"></i></button></td>' +
       '</tr>';
     }).join('');
+  }
+
+  // Footer with grand totals
+  if (tfoot && !_requestMode) {
+    var grandQty = rows.reduce(function(acc, s) { return acc + parseFloat(s.available_qty || 0); }, 0);
+    var grandCost = rows.reduce(function(acc, s) { return acc + (parseFloat(s.available_qty || 0) * parseFloat(s.cost_price || 0)); }, 0);
+    tfoot.classList.remove('hidden');
+    tfoot.innerHTML = '<tr>' +
+      '<td class="px-4 py-3 text-right font-bold text-slate-700">الإجمالي</td>' +
+      '<td class="px-4 py-3 hidden md:table-cell"></td>' +
+      '<td class="px-4 py-3 text-center text-lg font-black text-blue-700">' + Math.round(grandQty) + '</td>' +
+      '<td class="px-4 py-3 text-center text-base font-black text-purple-700">' + formatMoney(grandCost) + '</td>' +
+      '<td class="px-4 py-3"></td>' +
+    '</tr>';
+  } else if (tfoot) {
+    tfoot.classList.add('hidden');
   }
 }
 
@@ -908,9 +928,11 @@ function renderStock() {
 
   const tbody = document.getElementById('stock-table');
   const empty = document.getElementById('stock-empty');
+  const tfoot = document.getElementById('stock-tfoot');
   if (!filtered.length) {
     if (tbody) tbody.innerHTML = '';
     if (empty) empty.classList.remove('hidden');
+    if (tfoot) tfoot.classList.add('hidden');
     return;
   }
   if (empty) empty.classList.add('hidden');
@@ -938,6 +960,21 @@ function renderStock() {
         '<td class="px-4 py-3 text-center"><button onclick="openItemMovements(\'' + (s.variant_id || '') + '\',\'' + escAttr(s.product_name || '') + '\',\'' + escAttr(vSize || '') + '\')" class="px-2.5 py-1 text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg font-bold transition-colors"><i class="fa-solid fa-clock-rotate-left"></i></button></td>' +
       '</tr>';
     }).join('');
+  }
+
+  // Footer with grand totals
+  if (tfoot) {
+    var grandQty = filtered.reduce(function(acc, s) { return acc + parseFloat(s.available_qty || 0); }, 0);
+    var grandCost = filtered.reduce(function(acc, s) { return acc + (parseFloat(s.available_qty || 0) * parseFloat(s.cost_price || 0)); }, 0);
+    tfoot.classList.remove('hidden');
+    tfoot.innerHTML = '<tr>' +
+      '<td class="px-4 py-3 text-right font-bold text-slate-700">الإجمالي</td>' +
+      '<td class="px-4 py-3 hidden md:table-cell"></td>' +
+      '<td class="px-4 py-3 text-slate-400 hidden sm:table-cell"></td>' +
+      '<td class="px-4 py-3 text-center text-lg font-black text-blue-700">' + Math.round(grandQty) + '</td>' +
+      '<td class="px-4 py-3 text-center text-base font-black text-purple-700">' + formatMoney(grandCost) + '</td>' +
+      '<td class="px-4 py-3"></td>' +
+    '</tr>';
   }
 }
 
