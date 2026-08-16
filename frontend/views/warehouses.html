@@ -111,7 +111,7 @@
         </div>
 
         <!-- Detail Stats -->
-        <div class="grid grid-cols-3 gap-0 divide-x divide-x-reverse border-b border-slate-100">
+        <div class="grid grid-cols-4 gap-0 divide-x divide-x-reverse border-b border-slate-100">
           <div class="px-5 py-3 text-center">
             <p class="text-xl font-black text-emerald-600" id="wh-detail-stat-items">0</p>
             <p class="text-xs text-slate-400">صنف</p>
@@ -123,6 +123,10 @@
           <div class="px-5 py-3 text-center">
             <p class="text-xl font-black text-amber-600" id="wh-detail-stat-low">0</p>
             <p class="text-xs text-slate-400">رصيد منخفض</p>
+          </div>
+          <div class="px-5 py-3 text-center">
+            <p class="text-xl font-black text-purple-600" id="wh-detail-stat-cost">0</p>
+            <p class="text-xs text-slate-400">إجمالي التكلفة</p>
           </div>
         </div>
 
@@ -630,6 +634,7 @@ function openWarehouseDetail(whId) {
 
   // Stats
   const totalQty = _detStockData.reduce((s, x) => s + parseFloat(x.available_qty || 0), 0);
+  const totalCost = _detStockData.reduce((s, x) => s + (parseFloat(x.available_qty || 0) * parseFloat(x.cost_price || 0)), 0);
   const itemCount = [...new Set(_detStockData.map(s => s.variant_id))].length;
   const lowCount  = _detStockData.filter(s => {
     const a = parseFloat(s.available_qty || 0);
@@ -639,6 +644,7 @@ function openWarehouseDetail(whId) {
   document.getElementById('wh-detail-stat-items').textContent = itemCount;
   document.getElementById('wh-detail-stat-qty').textContent   = Math.round(totalQty);
   document.getElementById('wh-detail-stat-low').textContent   = lowCount;
+  document.getElementById('wh-detail-stat-cost').textContent  = formatMoney(totalCost);
 
   // Pre-select warehouse in stock modal
   const mwh = document.getElementById('modal-warehouse');
