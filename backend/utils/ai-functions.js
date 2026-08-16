@@ -1734,8 +1734,8 @@ const AI_FUNCTIONS = [
         async execute(args, user) {
             const { client_name } = args;
             const clientRes = await db.query(
-                `SELECT id, name, phone, email, address, tax_number, payment_terms,
-                        credit_limit, status, parent_id, created_at
+                `SELECT id, name, phone, email, address, tax_id, credit_limit,
+                        status, parent_id, created_at
                  FROM clients WHERE name ILIKE $1 LIMIT 1`,
                 [`%${client_name}%`]
             );
