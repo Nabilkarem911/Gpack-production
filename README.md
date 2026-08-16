@@ -1,6 +1,71 @@
 # G.PACK ERP 2.0
 
-نظام إدارة المستودعات والمبيعات — مبني على Node.js + Express + PostgreSQL + Docker.
+نظام إدارة متكامل للمستودعات والمبيعات والتصنيع — مبني على Node.js + Express + PostgreSQL + Docker.
+
+نظام VMI (Vendor-Managed Inventory) مع قدرات Franchise، سير عمل تصميم كامل (Design Workflow)، نظام إشعارات WhatsApp تلقائي، ومساعد ذكي (AI Assistant).
+
+---
+
+## ✨ الخصائص الرئيسية
+
+### الإدارة والمبيعات
+- **إدارة العملاء (Clients)** — مع تسلسل Franchise (Parent/Branch)
+- **إدارة المنتجات (Products)** — منتجات ومتغيرات (Variants) عامة غير مرتبطة بعميل
+- **المخزون (Inventory)** — مرتبط بـ `client_id` للسماح بصرف من Parent إلى Branch
+- **عروض الأسعار (Quotations)** — تحويل تلقائي إلى أمر إنتاج
+- **الفواتير (Sales Invoices)** — مع مشاركة عامة عبر رمز مشفّر
+- **أوامر الإنتاج (Production Orders)** — مع سير عمل كامل
+
+### التصنيع والموردين
+- **أوامر التصنيع (Manufacturer Orders)** — مع رابط عام للموردين + PDF
+- **الفواتير المجمّعة (Consolidated Purchase Invoices)** — دمج عدة أوامر تصنيع في فاتورة واحدة
+- **استلام مباشر (Direct Receipts)** — استلام مؤقت + مراجعة مدير + تحويل لفاتورة شراء
+- **بوابة الموردين (Supplier Portal)** — رابط دائم لكل مورد لعرض كل أوامره وتحديث الحالات
+
+### سير عمل التصميم (Design Workflow)
+- **تخصيص مصمم لكل صنف** — مصمم مختلف لكل item في نفس الطلب
+- **State Machine كامل** — `waiting_design` → `in_progress` → `manager_review` → `client_review` → `approved`
+- **مراجعة العميل العامة** — رابط مشفّر للعميل لمراجعة التصميم وطلب تعديلات
+- **الاعتماد الإلكتروني (Design Approvals)** — توقيع إلكتروني + شهادة اعتماد + QR + PDF
+- **سجل نشاط غير قابل للتعديل (Immutable Activity Log)** — منع UPDATE/DELETE عبر triggers
+- **إصدارات التصميم (Design Versioning)** — تتبع دورات التعديل
+
+### الإشعارات (Notification System)
+- **طابور إشعارات (Notification Queue)** — مع إعادة محاولة تلقائية (Exponential Backoff)
+- **مراسلة WhatsApp تلقائية** — عبر WAHA عند اعتماد التصميم وإرسال للعميل
+- **مركز إشعارات داخلي (Notification Center)** — إشعارات داخل التطبيق لكل مستخدم
+- **Dead Letter Queue** — للرسائل الفاشلة نهائياً
+- **Outbox Pattern** — ضمان عدم فقدان أي رسالة حتى لو السيرفر توقف
+- **قوالب إشعارات (Templates)** — قوالب عربية قابلة للتخصيص
+
+### المساعد الذكي (AI Assistant)
+- **محادثة ذكية** — مع تذكر سياق المحادثة (Conversation Context)
+- **اقتراح إجراءات (Action Proposals)** — إنشاء عروض، تحويل طلبات، إضافة دفعات
+- **تنفيذ جماعي (Batch Execute)** — تنفيذ عدة إجراءات دفعة واحدة
+- **سياسات إجراءات (Action Policies)** — قواعد عمل تُطبق قبل تنفيذ أي إجراء
+- **ملخص يومي (Morning Briefing)** — ملخص تلقائي يومي للمستخدم
+- **تقييم الاقتراحات (Feedback)** — أزرار 👍/👎 تحت كل رد
+- **ميزة Flags** — تفعيل/تعطيل ميزات AI لكل بيئة
+- **أهداف عمل (Goals Engine)** — تتبع أهداف العمل و progress
+- **تنبؤ بالطلب (Demand Forecasting)** — خدمة Python FastAPI منفصلة
+
+### المحاسبة (Accounting)
+- **قيود مجلة (Journal Entries)** — نظام قيد مزدوج (Double-Entry)
+- **قيود غير قابلة للتعديل (Immutable Vouchers)** — التعديل يتطلب Revert & Recreate
+- **حسابات (Chart of Accounts)** — مع تصنيف هرمي
+- **كاش بوكس (Cash Boxes)** و **POS Terminals**
+- **مدفوعات (Payment Vouchers)**
+
+### إدارة المهام (Tasks)
+- **مهام ومهام فرعية (Tasks & Subtasks)**
+- **تعليقات (Comments)** و **إشعارات (Notifications)**
+- **تخصيص وتتبع**
+
+### تقارير ولوحات تحكم
+- **Dashboard** — مؤشرات أداء رئيسية
+- **Business Events** — سجل موحد لكل أنشطة الشركة
+- **حركة المنتجات (Product Movements)**
+- **كشف حساب (Account Statement)**
 
 ---
 
@@ -9,7 +74,7 @@
 - Docker (إصدار 20+ على VPS / Docker Desktop محلياً)
 - Git
 - VPS بـ Ubuntu 20+ (للإنتاج)
-- Dokploy مُثبّت على الـ VPS
+- Dokploy مُثبّت على الـ VPS (للإنتاج)
 
 ---
 
@@ -17,16 +82,49 @@
 
 انسخ `.env.example` إلى `.env` واملأ القيم التالية:
 
+### أساسية (مطلوبة)
+
 | المتغير | الوصف | مثال |
 |---------|-------|-------|
 | `DATABASE_HOST` | Dokploy Internal Host للداتابيز | `gpackerp-gpackerppostgres-u0f2ho` |
+| `DATABASE_PORT` | منفذ قاعدة البيانات | `5432` |
 | `DATABASE_NAME` | اسم قاعدة البيانات | `erp_gpack` |
 | `DATABASE_USER` | مستخدم قاعدة البيانات | `postgres` |
 | `DATABASE_PASSWORD` | كلمة سر قاعدة البيانات | `AS123df456` |
 | `JWT_SECRET` | مفتاح تشفير JWT (32 حرف على الأقل) | `MySuperSecretJWTKey2024GpackERP!!` |
 | `SHARE_TOKEN_SECRET` | مفتاح تشفير روابط المشاركة (32 حرف على الأقل) | `MyShareTokenSecret2024GpackERP!!` |
 | `CORS_ORIGIN` | رابط الدومين (للإنتاج) | `https://gpack.yourdomain.com` |
+| `BASE_URL` | الرابط الأساسي للروابط العامة | `https://erp.gpacksa.com` |
 | `NODE_ENV` | بيئة التشغيل | `production` |
+
+### ذكاء اصطناعي (اختياري)
+
+| المتغير | الوصف | افتراضي |
+|---------|-------|---------|
+| `OPENAI_API_KEY` | مفتاح OpenAI أو أي مزود متوافق | — |
+| `OPENAI_MODEL` | اسم النموذج | `gpt-4o-mini` |
+| `OPENAI_BASE_URL` | رابط الـ API (يدعم OpenRouter, Groq, Ollama, إلخ) | `https://api.openai.com/v1` |
+| `AI_ASSISTANT_ENABLED` | تفعيل/تعطيل المساعد الذكي | `true` |
+| `VOICE_PROVIDER` | مزود التعرف الصوتي (`whisper` أو `vosk`) | `whisper` |
+
+### WhatsApp (اختياري)
+
+| المتغير | الوصف | افتراضي |
+|---------|-------|---------|
+| `WHATSAPP_PROVIDER` | المزود (`waha`, `meta`, `twilio`, `evolution`) | `waha` |
+| `WAHA_URL` | رابط خادم WAHA | — |
+| `WAHA_SESSION` | اسم الجلسة | `default` |
+| `WAHA_API_KEY` | مفتاح WAHA (إن وجد) | — |
+| `WAHA_ADMIN_CHAT_ID` | معرف الأدمن للإشعارات | — |
+| `WAHA_WEBHOOK_SECRET` | سر الـ Webhook | — |
+| `WHATSAPP_NUMBER` | رقم الواتساب الظاهر للعملاء | — |
+
+### إضافية
+
+| المتغير | الوصف | افتراضي |
+|---------|-------|---------|
+| `CACHEBUST` | رقم لبناء الـ frontend (زد للتحديث) | `1` |
+| `LOG_LEVEL` | مستوى السجلات | `info` |
 
 ---
 
@@ -146,12 +244,16 @@ docker exec <dokploy_postgres_container> psql -U postgres erp_gpack -f /tmp/back
 
 > استبدل `<dokploy_postgres_container>` باسم container الداتابيز من Dokploy (تجده في تبويب Logs أو General).
 
-### الـ Migrations (تلقائية)
+### الـ Migrations (تلقائية بالكامل)
 
-- عند أول تشغيل للـ backend، الـ migration runner بيشتغل تلقائياً.
-- ملف `000_init_schema.sql` (نسخة من `init.sql`) بيُنشئ كل الجداول والبيانات الأولية.
-- بعدها، أي ملف `.sql` جديد في `backend/migrations/` يشتغل تلقائياً عند كل restart بترتيب رقمي.
-- الـ migrations آمنة (idempotent) — تستخدم `IF NOT EXISTS` فلا تتكرر.
+- عند تشغيل الـ backend، الـ migration runner بيشتغل تلقائياً **قبل** بدء الـ Express server.
+- ملف `000_init_schema.sql` بيُنشئ كل الجداول والبيانات الأولية (admin user، accounts، cash boxes، POS terminals).
+- بعدها، كل ملفات `.sql` في `backend/migrations/` (70+ ملف) تشتغل بالترتيب الرقمي.
+- **تتبع تلقائي:** جدول `schema_migrations` يسجّل كل ملف تم تطبيقه — الملفات المطبّقة تتخطى تلقائياً.
+- **Dollar-Quote Aware:** الـ splitter بيتعامل صح مع `DO $$ ... $$` blocks و `$tag$ ... $tag$` و single-quoted strings.
+- **آمن للإنتاج:** لو الـ migration سجل في `schema_migrations`، يتخطى تماماً — لا يُعاد تطبيقه.
+- **آمن للاستضافة الجديدة:** على database جديد، كل الـ migrations تشتغل من الصفر وتُنشئ الـ schema كامل.
+- **Idempotent:** كل ملف يستخدم `IF NOT EXISTS` / `ON CONFLICT DO NOTHING` — آمن لإعادة التشغيل.
 - **لا تحتاج تنفيذ `init.sql` يدوياً** — الـ backend بيعمل كل حاجة تلقائياً.
 
 ---
@@ -177,7 +279,7 @@ git push origin main
 | الحقل | القيمة |
 |-------|--------|
 | البريد | `admin@gpack.com` |
-| كلمة السر | `Admin@2024!` |
+| كلمة السر | `password` |
 
 > **مهم:** غيّر كلمة السر فوراً بعد أول تسجيل دخول من صفحة الإعدادات.
 
@@ -194,17 +296,17 @@ git push origin main
 │   ├── db.js             # PostgreSQL connection pool
 │   └── server.js         # Entry point
 ├── frontend/             # Vanilla JS + HTML + Tailwind CSS (SPA)
-│   ├── views/            # HTML views (27 صفحة)
+│   ├── views/            # HTML views (33 صفحة)
 │   ├── js/               # Core modules + view controllers
 │   │   ├── api.js        # Centralized API layer
 │   │   ├── auth.js       # Authentication module
 │   │   ├── layout.js     # SPA router + sidebar
 │   │   └── app.js        # Bootstrap
 │   └── index.html        # Main HTML
-├── database/             # init.sql (يُنفّذ مرة واحدة عند أول تشغيل)
+├── database/             # init.sql (نسخة مرجعية — الـ migrations تلقائية)
 ├── nginx/                # إعدادات الـ reverse proxy + security headers
-├── ai-service/           # Python AI service (demand forecasting)
-├── mcp-server/           # MCP server
+├── ai-service/           # Python FastAPI (demand forecasting + RFM + voice)
+├── mcp-server/           # MCP server (AI-to-DB bridge)
 ├── docker-compose.yml    # تعريف الـ services
 ├── .env.example          # نموذج متغيرات البيئة
 └── README.md
@@ -217,12 +319,15 @@ git push origin main
 | Service | الوصف | Port |
 |---------|-------|------|
 | **PostgreSQL** | قاعدة بيانات (Dokploy-managed) | 5432 (داخلي) |
-| `backend` | Node.js Express API | 3003 → 3000 |
+| `backend` | Node.js Express API + Migration Runner | 3000 (داخلي) |
+| `notification-worker` | معالج طابور الإشعارات (WhatsApp/Email) | — |
 | `frontend` | Nginx يقدّم الـ SPA + reverse proxy | 80 |
-| `ai-service` | خدمة الذكاء الاصطناعي (Python) | 3004 → 8000 |
-| `mcp-server` | MCP server | 3001 |
+| `ai-service` | Python FastAPI (تنبؤ + RFM + تعرف صوتي) | 8000 (داخلي) |
+| `mcp-server` | MCP server (AI-to-DB bridge) | 3001 (داخلي) |
 
 > **PostgreSQL** يتم إنشاؤها كـ Database Service منفصل في Dokploy، وليست جزءاً من `docker-compose.yml`.
+>
+> **notification-worker** يستخدم نفس صورة الـ backend لكن يشغل `services/notification-worker.js` — يبدأ تلقائياً بعد الـ backend.
 
 ---
 
@@ -269,8 +374,10 @@ docker exec <dokploy_postgres_container> psql -U postgres erp_gpack -c \
 
 ## 📝 ملاحظات مهمة
 
-- **الـ Migrations تلقائية:** أي ملف `.sql` في `backend/migrations/` يشتغل تلقائياً عند الـ startup بترتيب رقمي (بدءاً من `000_init_schema.sql`).
+- **الـ Migrations تلقائية بالكامل:** 70+ ملف `.sql` في `backend/migrations/` تشتغل تلقائياً عند الـ startup. جدول `schema_migrations` يمنع إعادة التطبيق. الـ splitter بيتعامل صح مع `DO $$ ... $$` blocks.
 - **البيانات محفوظة:** الـ redeploy لا يمسح الداتابيز (محفوظة في Dokploy Database Service منفصل).
 - **SSL تلقائي:** Dokploy يفعّل Let's Encrypt تلقائياً عند ربط الدومين.
 - **النسخ الاحتياطي:** اعمل backup يدوي قبل أي تحديث كبير عبر أوامر `pg_dump`.
 - **الأمان:** استخدم كلمات سر قوية وفريدة لكل من `JWT_SECRET` و `SHARE_TOKEN_SECRET` و `DATABASE_PASSWORD`.
+- **البيع لعملاء جدد:** النظام جاهز للتثبيت على سيرفر جديد — `docker compose up -d` والـ migrations تشتغل تلقائياً وتُنشئ كل شيء من الصفر.
+- **بيانات الدخول الافتراضية:** `admin@gpack.com` / `password` — غيّرها فوراً بعد أول تسجيل دخول.
