@@ -385,7 +385,7 @@ router.post('/stock/adjust', restrictEdit, validateBody(stockAdjust), async (req
             const results = [];
             
             for (const item of items) {
-                const { warehouse_id, variant_id, quantity, adjustment_type } = item;
+                const { warehouse_id, variant_id, quantity, adjustment_type, unit_cost } = item;
                 
                 if (!warehouse_id || !variant_id || !quantity) {
                     continue;
@@ -437,10 +437,11 @@ router.post('/stock/adjust', restrictEdit, validateBody(stockAdjust), async (req
                 // Create inventory transaction record
                 // For decrease adjustments, record as 'dispense' with positive quantity
                 const transactionType = (adjustment_type === 'decrease') ? 'dispense' : 'receipt';
+                const itemUnitCost = parseFloat(unit_cost) || 0;
                 await db.query(
-                    `INSERT INTO inventory_transactions (stock_id, transaction_type, quantity, notes, created_by, created_at)
-                     VALUES ($1, $2, $3, $4, $5, NOW())`,
-                    [stockId, transactionType, quantity, reason || 'تسوية يدوية', req.user?.id]
+                    `INSERT INTO inventory_transactions (stock_id, transaction_type, quantity, unit_cost, notes, created_by, created_at)
+                     VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+                    [stockId, transactionType, quantity, itemUnitCost, reason || 'تسوية يدوية', req.user?.id]
                 );
                 
                 results.push({ stock_id: stockId, quantity });
@@ -514,6 +515,7 @@ router.get('/transactions', async (req, res) => {
                 it.id,
                 it.transaction_type,
                 it.quantity,
+                it.unit_cost,
                 it.notes,
                 it.created_at,
                 ws.warehouse_id,

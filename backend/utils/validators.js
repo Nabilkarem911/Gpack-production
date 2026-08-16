@@ -628,6 +628,7 @@ const stockAdjust = z.object({
         quantity: z.coerce.number().optional(),
         adjustment_type: z.string().max(50).optional(),
         client_id: z.string().uuid().optional().nullable(),
+        unit_cost: z.coerce.number().optional(),
     }).passthrough()).optional(),
 }).passthrough();
 
