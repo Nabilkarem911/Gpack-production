@@ -797,7 +797,7 @@ ON CONFLICT (code) DO NOTHING;
 -- =============================================================================
 -- SEED DATA: Default Admin User
 -- Email:    admin@gpack.com
--- Password: Admin@2024!
+-- Password: password
 -- Hash is bcrypt with 12 salt rounds.
 -- IMPORTANT: Change this password immediately after first login.
 -- =============================================================================

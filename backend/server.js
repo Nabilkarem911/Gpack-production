@@ -16,6 +16,88 @@ const log = require('./utils/logger');
 const metrics = require('./utils/metrics');
 
 // =============================================================================
+// SQL STATEMENT SPLITTER
+// Splits raw SQL into individual statements while respecting:
+//   - Dollar-quoted strings ($$ ... $$ or $tag$ ... $tag$)
+//   - Single-quoted strings ('...')
+//   - Line comments (-- ...)
+// This prevents splitting inside DO $$ ... $$ blocks, which was the root cause
+// of "unterminated dollar-quoted string" errors on demo/new installs.
+// =============================================================================
+function splitSqlStatements(rawSql) {
+    const statements = [];
+    let current = '';
+    let inDollarQuote = false;
+    let dollarTag = '';
+    let inSingleQuote = false;
+    let inLineComment = false;
+
+    for (let i = 0; i < rawSql.length; i++) {
+        const ch = rawSql[i];
+        const next = rawSql[i + 1];
+
+        // Handle line comments (-- ... until newline)
+        if (inLineComment) {
+            current += ch;
+            if (ch === '\n') inLineComment = false;
+            continue;
+        }
+        if (!inDollarQuote && !inSingleQuote && ch === '-' && next === '-') {
+            inLineComment = true;
+            current += ch;
+            continue;
+        }
+
+        // Handle single-quoted strings (skip when inside dollar quotes)
+        if (!inDollarQuote) {
+            if (ch === "'" && !inLineComment) {
+                inSingleQuote = !inSingleQuote;
+                current += ch;
+                continue;
+            }
+        }
+
+        // Detect dollar-quote start: $$ or $tag$
+        if (!inSingleQuote && !inDollarQuote) {
+            const dollarMatch = rawSql.substring(i).match(/^\$([A-Za-z_]*)\$/);
+            if (dollarMatch) {
+                dollarTag = dollarMatch[0];
+                inDollarQuote = true;
+                current += dollarTag;
+                i += dollarTag.length - 1;
+                continue;
+            }
+        }
+
+        // Detect dollar-quote end
+        if (inDollarQuote && rawSql.startsWith(dollarTag, i)) {
+            current += dollarTag;
+            i += dollarTag.length - 1;
+            inDollarQuote = false;
+            dollarTag = '';
+            continue;
+        }
+
+        // Split on ';' when not inside any quote or comment
+        if (!inDollarQuote && !inSingleQuote && !inLineComment && ch === ';') {
+            if (!next || next === '\n' || next === '\r' || next === ' ' || next === '\t') {
+                const trimmed = current.trim();
+                if (trimmed.length > 0) statements.push(trimmed);
+                current = '';
+                continue;
+            }
+        }
+
+        current += ch;
+    }
+
+    const trimmed = current.trim();
+    if (trimmed.length > 0) statements.push(trimmed);
+
+    return statements;
+}
+
+// =============================================================================
 // MIGRATION RUNNER
 // Runs any new .sql files in /migrations that haven't been applied yet.
 // Tracks applied migrations in the `schema_migrations` table.
@@ -61,13 +143,10 @@ async function runMigrations() {
             console.log(`[Migrate] Applying: ${file}`);
             const rawSql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
 
-            // Split SQL into individual statements so that one failure doesn't
-            // rollback the entire migration (e.g. "column already exists" on one
-            // ALTER shouldn't prevent the rest of the ALTERs from running).
-            const statements = rawSql
-                .split(/;[ \t]*\r?\n/)
-                .map(s => s.trim())
-                .filter(s => s.length > 0);
+            // Split SQL into individual statements using dollar-quote-aware
+            // splitter. This prevents breaking DO $$ ... $$ blocks which was
+            // the root cause of "unterminated dollar-quoted string" errors.
+            const statements = splitSqlStatements(rawSql);
 
             let skippedAny = false;
             let failedAny = false;
