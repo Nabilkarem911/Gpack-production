@@ -1375,6 +1375,7 @@
         const cancelBtn   = document.getElementById('quote-modal-cancel-btn');
         const addItemBtn  = document.getElementById('add-item-row-btn');
         const backBtn     = document.getElementById('view-mode-back-btn');
+        const editBtn     = document.getElementById('view-mode-edit-btn');
         const cloneBtn    = document.getElementById('view-mode-clone-btn');
         const printBtn    = document.getElementById('view-mode-print-btn');
         const shareBtn    = document.getElementById('view-mode-share-btn');
@@ -1394,6 +1395,7 @@
 
             // Show / hide view-mode buttons
             if (backBtn)  backBtn.classList.toggle('hidden', !enable);
+            if (editBtn)  editBtn.classList.toggle('hidden', !enable);
             if (cloneBtn) cloneBtn.classList.toggle('hidden', !enable);
             if (shareBtn) shareBtn.classList.toggle('hidden', !enable);
             if (printBtn) printBtn.classList.toggle('hidden', !enable);
@@ -2200,11 +2202,20 @@
 
         // View-mode buttons
         const vmBackBtn  = document.getElementById('view-mode-back-btn');
+        const vmEditBtn  = document.getElementById('view-mode-edit-btn');
         const vmCloneBtn = document.getElementById('view-mode-clone-btn');
 
         if (vmBackBtn) {
             vmBackBtn.addEventListener('click', () => {
                 _closeModal();
+            });
+        }
+
+        if (vmEditBtn) {
+            vmEditBtn.addEventListener('click', () => {
+                if (_viewingOrderId) {
+                    window.openQuoteModal(_viewingOrderId, false);
+                }
             });
         }
 
