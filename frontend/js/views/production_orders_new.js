@@ -212,7 +212,7 @@
 
     const STATUS_FLOW = {
         production: [{ s: 'processing', label: 'بدء التنفيذ (يدوي)',  cls: 'bg-blue-600 hover:bg-blue-700 text-white' }],
-        processing: [{ s: 'completed',  label: 'تم الإكمال (يدوي)',   cls: 'bg-emerald-600 hover:bg-emerald-700 text-white' }],
+        processing: [],
         completed:  [{ s: 'delivered',  label: 'تم التسليم',   cls: 'bg-purple-600 hover:bg-purple-700 text-white' }],
     };
 
@@ -311,7 +311,8 @@
         let orders = (_allOrders[_activeTab] || []).filter(o => {
             if (!search) return true;
             return String(o.order_number).includes(search) ||
-                   (o.client_name || '').toLowerCase().includes(search);
+                   (o.client_name || '').toLowerCase().includes(search) ||
+                   (o.supplier_names || '').toLowerCase().includes(search);
         });
 
         const tbody  = _el('po-tbody');
@@ -348,6 +349,12 @@
                     <span class="font-mono font-bold text-slate-800">#${o.order_number}</span>
                 </td>
                 <td class="py-3 px-4 text-sm text-slate-700 font-semibold">${o.client_name || '—'}</td>
+                <td class="py-3 px-4 hidden md:table-cell">
+                    ${o.supplier_names
+                        ? `<span class="text-xs font-semibold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-lg">${o.supplier_names}</span>`
+                        : `<span class="text-xs text-slate-300">—</span>`
+                    }
+                </td>
                 <td class="py-3 px-4 text-xs text-slate-400 hidden sm:table-cell">${_fmtDate(o.order_date)}</td>
                 <td class="py-3 px-4 text-sm font-bold text-slate-800 hidden md:table-cell">${_fmt(gt)} ر.س</td>
                 <td class="py-3 px-4 text-sm hidden md:table-cell">
