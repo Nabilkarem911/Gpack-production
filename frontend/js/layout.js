@@ -75,7 +75,13 @@ var NAV_ITEMS = [ // var allows re-declaration if script loads more than once in
     { view: 'direct-receipts',    label: 'استلام مؤقت',         icon: 'fa-truck-ramp-box',  permission: 'receiving' }, // ✅ direct-receipts.html
 
     // ─────────────────────────────────────────────────────────────────────────────
-    // 6. الإدارة
+    // 6. التقارير
+    // ─────────────────────────────────────────────────────────────────────────────
+    { section: 'التقارير' },
+    { view: 'reports',      label: 'التقارير والتحليلات', icon: 'fa-chart-pie',     permission: 'reports'  }, // ✅ reports.html
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // 7. الإدارة
     // ─────────────────────────────────────────────────────────────────────────────
     { section: 'الإدارة' },
     { view: 'users',         label: 'المستخدمون',       icon: 'fa-user-gear',     permission: 'users'    }, // ✅ users.html

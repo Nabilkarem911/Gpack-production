@@ -383,6 +383,7 @@ _mountRoute('/accounts',            authenticate, require('./routes/accounts'));
 _mountRoute('/journal-entries',     authenticate, require('./routes/journal-entries'));
 _mountRoute('/tasks',               authenticate, require('./routes/tasks'));
 _mountRoute('/forecast',            authenticate, require('./routes/forecast'));
+_mountRoute('/reports',             authenticate, require('./routes/reports'));
 _mountRoute('/ai-assistant',        authenticate, require('./routes/ai-assistant'));
 _mountRoute('/designer',            authenticate, require('./routes/designer'));
 _mountRoute('/notifications',       authenticate, require('./routes/notifications'));
