@@ -107,8 +107,8 @@ function _hasPermission(permKey) {
     if (window.GpackPerms && window.GpackPerms.all_access === true) return true;
     const mod = window.GpackPerms && window.GpackPerms[permKey];
     if (!mod) return false;
-    // New CRUD format: { view: true, create: true, ... }
-    if (typeof mod === 'object') return mod.view === true;
+    // New CRUD format: { view: true, create: true, ... } or { read: true, ... }
+    if (typeof mod === 'object') return mod.view === true || mod.read === true;
     // Legacy boolean format
     return !!mod;
 }

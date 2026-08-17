@@ -35,6 +35,8 @@ var usersView = (() => {
         { key: 'products',           label: 'الأصناف' },
         { key: 'vmi_dispatch',       label: 'سندات التسليم' },
         { key: 'receiving',          label: 'سندات الاستلام' },
+        // ── التقارير ───────────────────────────────────
+        { key: 'reports',            label: 'التقارير والتحليلات' },
         // ── الإدارة ───────────────────────────────────
         { key: 'tasks',              label: 'المهام' },
         { key: 'users',              label: 'المستخدمين' },

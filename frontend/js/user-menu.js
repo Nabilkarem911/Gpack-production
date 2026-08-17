@@ -43,7 +43,7 @@
         if (window.GpackPerms && window.GpackPerms.all_access === true) return true;
         const mod = window.GpackPerms && window.GpackPerms[permKey];
         if (!mod) return false;
-        if (typeof mod === 'object') return mod.view === true;
+        if (typeof mod === 'object') return mod.view === true || mod.read === true;
         return !!mod;
     }
 
