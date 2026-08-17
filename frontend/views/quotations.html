@@ -403,11 +403,11 @@
         </div>
 
         <!-- ── Footer: Totals + Submit ── -->
-        <div class="flex-shrink-0 border-t border-slate-100 bg-slate-50/80 px-6 py-4">
-            <div class="flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4">
+        <div class="flex-shrink-0 border-t border-slate-100 bg-slate-50/80 px-6 py-4 overflow-x-hidden">
+            <div class="flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4 min-w-0">
 
                 <!-- Totals -->
-                <div class="w-full sm:w-72 space-y-2">
+                <div class="w-full sm:w-72 space-y-2 flex-shrink-0">
                     <div class="flex items-center justify-between text-sm">
                         <span class="text-slate-500 font-medium">المجموع قبل الضريبة</span>
                         <span id="quote-subtotal" class="font-bold text-slate-700 font-mono">0.00 ر.س</span>
@@ -424,7 +424,7 @@
                 </div>
 
                 <!-- Actions -->
-                <div class="flex items-center gap-3 w-full sm:w-auto">
+                <div class="flex flex-wrap items-center justify-end gap-2 w-full sm:w-auto min-w-0">
                     <button id="quote-modal-cancel-btn" type="button"
                             class="flex-1 sm:flex-none px-5 py-2.5 text-sm font-semibold text-slate-600
                                    bg-white border border-slate-200 rounded-xl hover:bg-slate-100 transition-colors">
@@ -439,37 +439,37 @@
                         <span>حفظ عرض السعر</span>
                     </button>
                     <button type="button" id="view-mode-back-btn"
-                            class="hidden flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2.5
+                            class="hidden flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5
                                    text-sm font-bold text-gray-800 bg-gray-200 hover:bg-gray-300
-                                   rounded-xl transition-all active:scale-[0.98]">
+                                   rounded-xl transition-all active:scale-[0.98] whitespace-nowrap">
                         <i class="fa-solid fa-xmark"></i>
                         <span>إغلاق</span>
                     </button>
                     <button type="button" id="view-mode-edit-btn"
-                            class="hidden flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2.5
+                            class="hidden flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5
                                    text-sm font-bold text-white bg-blue-600 hover:bg-blue-700
-                                   rounded-xl shadow-md shadow-blue-600/20 transition-all active:scale-[0.98]">
+                                   rounded-xl shadow-md shadow-blue-600/20 transition-all active:scale-[0.98] whitespace-nowrap">
                         <i class="fa-solid fa-pen-to-square"></i>
                         <span>تعديل</span>
                     </button>
                     <button type="button" id="view-mode-clone-btn"
-                            class="hidden flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2.5
+                            class="hidden flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5
                                    text-sm font-bold text-white bg-brand-600 hover:bg-brand-700
-                                   rounded-xl shadow-md shadow-brand-600/20 transition-all active:scale-[0.98]">
+                                   rounded-xl shadow-md shadow-brand-600/20 transition-all active:scale-[0.98] whitespace-nowrap">
                         <i class="fa-solid fa-copy"></i>
                         <span>نسخ لطلب جديد</span>
                     </button>
                     <button type="button" id="view-mode-share-btn"
-                            class="hidden flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2.5
+                            class="hidden flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5
                                    text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700
-                                   rounded-xl shadow-md shadow-emerald-600/20 transition-all active:scale-[0.98]">
+                                   rounded-xl shadow-md shadow-emerald-600/20 transition-all active:scale-[0.98] whitespace-nowrap">
                         <i class="fa-solid fa-share-nodes"></i>
                         <span>مشاركة مع العميل</span>
                     </button>
                     <button type="button" id="view-mode-print-btn"
-                            class="hidden flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2.5
+                            class="hidden flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5
                                    text-sm font-bold text-white bg-[#4b0082] hover:bg-[#5d198e]
-                                   rounded-xl shadow-md shadow-[#4b0082]/20 transition-all active:scale-[0.98]">
+                                   rounded-xl shadow-md shadow-[#4b0082]/20 transition-all active:scale-[0.98] whitespace-nowrap">
                         <i class="fa-solid fa-print"></i>
                         <span>طباعة العرض</span>
                     </button>
