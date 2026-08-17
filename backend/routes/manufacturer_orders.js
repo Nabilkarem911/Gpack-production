@@ -88,7 +88,7 @@ const restrictReverse = (req, res, next) => {
 // ── Auto-update order status based on aggregate MO statuses ──────────────────
 // Rules:
 //   production  → processing  : when any MO reaches 'sent' or beyond
-//   processing  → completed   : when ALL MOs are 'received'
+//   (completed is now triggered by delivery note finalization, not MO receipt)
 //   completed   → processing  : when a receipt is reversed and not all MOs are received
 // Does NOT touch orders in: delivered, cancelled, archived
 async function _autoUpdateOrderStatus(client, orderId) {
@@ -108,15 +108,13 @@ async function _autoUpdateOrderStatus(client, orderId) {
     if (!mosRes.rows.length) return;
 
     const moStatuses = mosRes.rows.map(r => r.status);
-    const allReceived = moStatuses.every(s => s === 'received');
     const anySentOrBeyond = moStatuses.some(s => ['sent', 'partially_received', 'received'].includes(s));
+    const allReceived = moStatuses.every(s => s === 'received');
 
     let newStatus = null;
 
     if (currentStatus === 'production' && anySentOrBeyond) {
         newStatus = 'processing';
-    } else if (currentStatus === 'processing' && allReceived) {
-        newStatus = 'completed';
     } else if (currentStatus === 'completed' && !allReceived && anySentOrBeyond) {
         newStatus = 'processing';
     }

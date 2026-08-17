@@ -41,7 +41,7 @@
     const STATUS_FLOW = {
         confirmed:  [{ s: 'production', label: 'تأكيد الدفعة وتحويل للإنتاج', cls: 'bg-violet-600 hover:bg-violet-700 text-white' }],
         production: [{ s: 'processing', label: 'بدء التنفيذ',  cls: 'bg-blue-600 hover:bg-blue-700 text-white' }],
-        processing: [{ s: 'completed',  label: 'تم الإكمال',   cls: 'bg-emerald-600 hover:bg-emerald-700 text-white' }],
+        processing: [],
         completed:  [{ s: 'delivered',  label: 'تم التسليم',   cls: 'bg-purple-600 hover:bg-purple-700 text-white' }],
     };
 
@@ -112,7 +112,8 @@
             const lq = q.toLowerCase();
             list = list.filter(o =>
                 String(o.order_number).includes(lq) ||
-                (o.client_name || '').toLowerCase().includes(lq)
+                (o.client_name || '').toLowerCase().includes(lq) ||
+                (o.supplier_names || '').toLowerCase().includes(lq)
             );
         }
 
@@ -132,6 +133,12 @@
                 </td>
                 <td class="py-3 px-4">
                     <span class="text-sm font-semibold text-slate-800">${o.client_name || '—'}</span>
+                </td>
+                <td class="py-3 px-4 hidden md:table-cell">
+                    ${o.supplier_names
+                        ? `<span class="text-xs font-semibold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-lg">${o.supplier_names}</span>`
+                        : `<span class="text-xs text-slate-300">—</span>`
+                    }
                 </td>
                 <td class="py-3 px-4 hidden sm:table-cell text-xs text-slate-500">${_fmtDate(o.order_date)}</td>
                 <td class="py-3 px-4 hidden md:table-cell text-sm font-semibold text-slate-700">${_fmt(o.grand_total)} ر.س</td>

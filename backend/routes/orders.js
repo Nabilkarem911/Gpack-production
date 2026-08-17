@@ -150,6 +150,7 @@ router.get('/', async (req, res) => {
                     WHEN mo_stats.total_received > 0 THEN 'partial'
                     ELSE 'ordered'
                 END AS receive_status,
+                COALESCE(sup_stats.supplier_names, '') AS supplier_names,
                 COUNT(*) OVER() AS total_count
              FROM orders o
              LEFT JOIN clients c  ON c.id = o.client_id
@@ -165,8 +166,15 @@ router.get('/', async (req, res) => {
                  WHERE mo.status NOT IN ('cancelled')
                  GROUP BY mo.order_id
              ) mo_stats ON mo_stats.order_id = o.id
+             LEFT JOIN (
+                 SELECT DISTINCT mo2.order_id, string_agg(DISTINCT s.company_name, ', ') AS supplier_names
+                 FROM manufacturer_orders mo2
+                 JOIN suppliers s ON s.id = mo2.manufacturer_id
+                 WHERE mo2.status NOT IN ('cancelled')
+                 GROUP BY mo2.order_id
+             ) sup_stats ON sup_stats.order_id = o.id
              ${whereClause}
-             GROUP BY o.id, c.name, o.paid_amount, o.pricing_status, o.pricing_notes, o.design_status, o.design_client_status, mo_stats.mo_count, mo_stats.total_mo_qty, mo_stats.total_received
+             GROUP BY o.id, c.name, o.paid_amount, o.pricing_status, o.pricing_notes, o.design_status, o.design_client_status, mo_stats.mo_count, mo_stats.total_mo_qty, mo_stats.total_received, sup_stats.supplier_names
              ORDER BY o.created_at DESC
              LIMIT $${limitParam} OFFSET $${offsetParam}`,
             params

@@ -10,6 +10,35 @@ const authorize = require('../middleware/authorize');
 const { validateBody, deliveryNoteCreate, deliveryNoteDispatch } = require('../utils/validators');
 const eventBus = require('../utils/event-bus');
 
+// ── Auto-complete order when all delivery notes are fully delivered ──────────
+// Called after a delivery note becomes 'completed'.
+// Checks if ALL delivery notes for the order are 'completed', and if so,
+// transitions the order to 'completed' (if currently in production/processing).
+async function _autoCompleteOrderOnDelivery(client, orderId) {
+    if (!orderId) return;
+    const orderRes = await client.query(
+        `SELECT status FROM orders WHERE id = $1`,
+        [orderId]
+    );
+    if (!orderRes.rows.length) return;
+    const currentStatus = orderRes.rows[0].status;
+    if (!['production', 'processing'].includes(currentStatus)) return;
+
+    const dnRes = await client.query(
+        `SELECT status FROM delivery_notes WHERE order_id = $1`,
+        [orderId]
+    );
+    if (!dnRes.rows.length) return;
+    const allCompleted = dnRes.rows.every(r => r.status === 'completed');
+    if (!allCompleted) return;
+
+    await client.query(
+        `UPDATE orders SET status = 'completed', updated_at = NOW() WHERE id = $1`,
+        [orderId]
+    );
+    console.log(`[autoStatus] Order ${orderId}: ${currentStatus} → completed (delivery finalized)`);
+}
+
 // View permission: 'vmi_dispatch' OR 'production_orders' view can access
 router.use((req, res, next) => {
     if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
@@ -408,6 +437,11 @@ router.post('/:id/dispatch', restrictWrite, validateBody(deliveryNoteDispatch), 
                 [newStatus, id]
             );
 
+            // Auto-complete parent order when all delivery notes are finalized
+            if (newStatus === 'completed' && dn.order_id) {
+                await _autoCompleteOrderOnDelivery(client, dn.order_id);
+            }
+
             return { status: newStatus, dispatch_id: dispatchId, dispatch_number: dispatchNumber };
         });
 
@@ -651,6 +685,11 @@ router.post('/:id/confirm', restrictWrite, validateBody(deliveryNoteDispatch), a
                 `UPDATE delivery_notes SET status = $1, notes = COALESCE($2, notes), updated_at = NOW() WHERE id = $3`,
                 [newStatus, deliveryNotes || null, id]
             );
+
+            // Auto-complete parent order when all delivery notes are finalized
+            if (newStatus === 'completed' && dn.order_id) {
+                await _autoCompleteOrderOnDelivery(client, dn.order_id);
+            }
         });
         
         return res.status(200).json({ message: 'تم تأكيد التسليم بنجاح.' });

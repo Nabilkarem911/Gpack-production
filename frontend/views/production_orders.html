@@ -78,7 +78,7 @@
         </span>
         <input type="text" id="po-search"
                oninput="window.poView.applySearch()"
-               placeholder="بحث برقم الأمر أو اسم العميل..."
+               placeholder="بحث برقم الأمر أو اسم العميل أو المورد..."
                class="w-full pr-10 pl-4 py-2 bg-white border border-slate-200 rounded-xl text-sm
                       text-slate-800 placeholder-slate-400 outline-none focus:border-brand-500
                       focus:ring-2 focus:ring-brand-500/20 transition-all" />
@@ -92,6 +92,7 @@
                 <tr class="bg-slate-50 border-b border-slate-100">
                     <th class="text-right py-3 px-4 text-xs font-bold text-slate-500">رقم الأمر</th>
                     <th class="text-right py-3 px-4 text-xs font-bold text-slate-500">العميل</th>
+                    <th class="text-right py-3 px-4 text-xs font-bold text-slate-500 hidden md:table-cell">المورد</th>
                     <th class="text-right py-3 px-4 text-xs font-bold text-slate-500 hidden sm:table-cell">التاريخ</th>
                     <th class="text-right py-3 px-4 text-xs font-bold text-slate-500 hidden md:table-cell">الإجمالي</th>
                     <th class="text-right py-3 px-4 text-xs font-bold text-slate-500 hidden md:table-cell">المدفوع</th>
@@ -102,7 +103,7 @@
                 </tr>
             </thead>
             <tbody id="po-tbody">
-                <tr><td colspan="9" class="py-12 text-center text-slate-400">
+                <tr><td colspan="10" class="py-12 text-center text-slate-400">
                     <i class="fa-solid fa-circle-notch fa-spin text-2xl"></i>
                 </td></tr>
             </tbody>
