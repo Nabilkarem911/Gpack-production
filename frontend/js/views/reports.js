@@ -1268,16 +1268,177 @@
 
     // ── Export Functions ───────────────────────────────────────────────────
 
+    function _getActivePanelId() {
+        var tabMap = {
+            kpis: 'kpi-content',
+            finance: _getActiveSubPanel('finance', ['pnl', 'profitability', 'cashflow', 'vat']),
+            sales: _getActiveSubPanel('sales', ['sales', 'quotations', 'clients']),
+            production: _getActiveSubPanel('prod', ['suppliers', 'status', 'cycle']),
+            inventory: _getActiveSubPanel('inv', ['value', 'movement', 'alerts']),
+            design: _getActiveSubPanel('design', ['designer', 'approval'])
+        };
+        return tabMap[_activeTab] || 'kpi-content';
+    }
+
+    function _getActiveSubPanel(prefix, subtabs) {
+        for (var i = 0; i < subtabs.length; i++) {
+            var panel = document.getElementById(prefix + '-' + subtabs[i]);
+            if (panel && !panel.classList.contains('hidden')) {
+                var content = panel.querySelector('[id$="-content"]');
+                if (content && !content.classList.contains('hidden')) return content.id;
+                return panel.id;
+            }
+        }
+        return prefix + '-' + subtabs[0];
+    }
+
+    function _getReportTitle() {
+        var titles = {
+            kpis: 'لوحة المؤشرات',
+            finance: 'التقارير المالية',
+            sales: 'تقارير المبيعات',
+            production: 'تقارير الإنتاج',
+            inventory: 'تقارير المخزون',
+            design: 'تقارير التصميم'
+        };
+        return titles[_activeTab] || 'تقرير';
+    }
+
     function _exportExcel() {
-        window.showToast('تصدير Excel سيتم تفعيله في المرحلة الثانية', 'info');
+        try {
+            if (typeof XLSX === 'undefined') {
+                window.showToast('مكتبة Excel غير محملة', 'error');
+                return;
+            }
+
+            var panelId = _getActivePanelId();
+            var panel = document.getElementById(panelId);
+            if (!panel) {
+                window.showToast('لا توجد بيانات للتصدير', 'warning');
+                return;
+            }
+
+            var tables = panel.querySelectorAll('table');
+            if (tables.length === 0) {
+                window.showToast('لا توجد جداول للتصدير في هذا التبويب', 'warning');
+                return;
+            }
+
+            var wb = XLSX.utils.book_new();
+            var range = _getDateRange();
+            var reportTitle = _getReportTitle();
+
+            tables.forEach(function (table, idx) {
+                var caption = table.querySelector('caption');
+                var sheetName = caption ? caption.textContent.trim() : (reportTitle + ' ' + (idx + 1));
+                sheetName = sheetName.substring(0, 31).replace(/[\\\/\?\*\[\]:]/g, '');
+
+                var ws = XLSX.utils.table_to_sheet(table, { raw: true });
+                XLSX.utils.book_append_sheet(wb, ws, sheetName || ('Sheet' + (idx + 1)));
+            });
+
+            var fileName = 'GPACK_' + reportTitle + '_' + range.from + '_to_' + range.to + '.xlsx';
+            XLSX.writeFile(wb, fileName);
+            window.showToast('تم تصدير Excel بنجاح', 'success');
+        } catch (err) {
+            console.error('[Reports] Excel export error:', err);
+            window.showToast('فشل تصدير Excel: ' + err.message, 'error');
+        }
     }
 
     function _exportPDF() {
-        window.showToast('تصدير PDF سيتم تفعيله في المرحلة الثانية', 'info');
+        try {
+            if (typeof window.jspdf === 'undefined' || typeof html2canvas === 'undefined') {
+                window.showToast('مكتبة PDF غير محملة', 'error');
+                return;
+            }
+
+            var panelId = _getActivePanelId();
+            var panel = document.getElementById(panelId);
+            if (!panel) {
+                window.showToast('لا توجد بيانات للتصدير', 'warning');
+                return;
+            }
+
+            window.showToast('جارٍ إنشاء ملف PDF...', 'info');
+
+            var range = _getDateRange();
+            var reportTitle = _getReportTitle();
+            var { jsPDF } = window.jspdf;
+
+            html2canvas(panel, {
+                scale: 2,
+                backgroundColor: '#ffffff',
+                useCORS: true,
+                logging: false
+            }).then(function (canvas) {
+                var imgWidth = 210 - 20;
+                var imgHeight = (canvas.height * imgWidth) / canvas.width;
+                var pdf = new jsPDF('p', 'mm', 'a4');
+                var imgData = canvas.toDataURL('image/png');
+
+                if (imgHeight <= 297 - 20) {
+                    pdf.addImage(imgData, 'PNG', 10, 10, imgWidth, imgHeight);
+                } else {
+                    var heightLeft = imgHeight;
+                    var position = 10;
+                    pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
+                    heightLeft -= (297 - 20);
+                    while (heightLeft > 0) {
+                        position = 10 - (imgHeight - heightLeft);
+                        pdf.addPage();
+                        pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
+                        heightLeft -= (297 - 20);
+                    }
+                }
+
+                var fileName = 'GPACK_' + reportTitle + '_' + range.from + '_to_' + range.to + '.pdf';
+                pdf.save(fileName);
+                window.showToast('تم تصدير PDF بنجاح', 'success');
+            }).catch(function (err) {
+                console.error('[Reports] PDF export error:', err);
+                window.showToast('فشل تصدير PDF: ' + err.message, 'error');
+            });
+        } catch (err) {
+            console.error('[Reports] PDF export error:', err);
+            window.showToast('فشل تصدير PDF: ' + err.message, 'error');
+        }
     }
 
     function _printReport() {
-        window.print();
+        var panelId = _getActivePanelId();
+        var panel = document.getElementById(panelId);
+        if (!panel) {
+            window.print();
+            return;
+        }
+
+        var reportTitle = _getReportTitle();
+        var range = _getDateRange();
+        var printWindow = window.open('', '_blank', 'width=900,height=700');
+        if (!printWindow) {
+            window.showToast('الرجاء السماح بالنوافذ المنبثقة للطباعة', 'warning');
+            return;
+        }
+
+        printWindow.document.write('<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8">');
+        printWindow.document.write('<title>' + reportTitle + '</title>');
+        printWindow.document.write('<link rel="stylesheet" href="https://cdn.tailwindcss.com">');
+        printWindow.document.write('<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">');
+        printWindow.document.write('<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">');
+        printWindow.document.write('<style>*{font-family:Cairo,sans-serif!important}body{padding:20px}.print-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;border-bottom:2px solid #563D5D;padding-bottom:10px}.print-header h1{font-size:20px;font-weight:800;color:#563D5D}.print-header .date{font-size:12px;color:#64748b}table{width:100%;border-collapse:collapse}th,td{padding:8px 12px;text-align:right;border-bottom:1px solid #e2e8f0;font-size:13px}th{background:#f8fafc;font-weight:700;color:#475569}</style>');
+        printWindow.document.write('</head><body>');
+        printWindow.document.write('<div class="print-header"><h1><i class="fa-solid fa-chart-pie"></i> G.PACK — ' + reportTitle + '</h1><span class="date">الفترة: ' + range.from + ' إلى ' + range.to + '</span></div>');
+        printWindow.document.write(panel.innerHTML);
+        printWindow.document.write('</body></html>');
+        printWindow.document.close();
+
+        printWindow.onload = function () {
+            setTimeout(function () {
+                printWindow.focus();
+                printWindow.print();
+            }, 500);
+        };
     }
 
     // ── Initialization ─────────────────────────────────────────────────────
