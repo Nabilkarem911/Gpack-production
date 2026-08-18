@@ -310,6 +310,11 @@
                         class="bg-purple-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold hover:bg-purple-800 transition-colors whitespace-nowrap">
                     <i class="fa-solid fa-copy"></i> نسخ
                 </button>
+                <button id="sp-open-portal-btn" onclick="window.spOpenPortalLink()"
+                        class="bg-slate-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold hover:bg-slate-800 transition-colors whitespace-nowrap"
+                        title="فتح البوابة في تبويب جديد">
+                    <i class="fa-solid fa-external-link-alt"></i> فتح
+                </button>
             </div>
         </div>
 
@@ -385,6 +390,15 @@ window.spSharePortalWhatsApp = function() {
     const supplierName = nameEl?.textContent || '';
     const msg = `مرحباً ${supplierName}،\nهذا رابط بوابتكم لمتابعة جميع أوامر التشغيل:\n${linkEl.value}`;
     window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+};
+
+window.spOpenPortalLink = function() {
+    const linkEl = document.getElementById('sp-portal-link');
+    if (!linkEl || !linkEl.value || linkEl.value.startsWith('جاري') || linkEl.value.startsWith('حدث')) {
+        if (window.showToast) window.showToast('الرابط غير جاهز بعد أو غير صالح.', 'warning');
+        return;
+    }
+    window.open(linkEl.value, '_blank');
 };
 </script>
 
