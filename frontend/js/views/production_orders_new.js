@@ -944,6 +944,7 @@
 
             // Load suppliers into dropdown
             const sel = _el('assign-supplier-select');
+            const selectedSupplier = suppliers.find(s => s.id === mo.manufacturer_id);
             if (sel) {
                 sel.innerHTML = '<option value="">— اختر المورد —</option>' +
                     suppliers.map(s => `<option value="${s.id}">${s.company_name || s.name}</option>`).join('');
@@ -960,6 +961,11 @@
             
             // Set existing values
             _setVal('assign-supplier-select', mo.manufacturer_id || '');
+            // Force the searchable input to display the selected supplier
+            const supplierInput = _el('assign-supplier-select_search');
+            if (supplierInput && selectedSupplier) {
+                supplierInput.value = selectedSupplier.company_name || selectedSupplier.name;
+            }
             _setVal('assign-qty', moDetails.items?.[0]?.mo_quantity || moDetails.items?.[0]?.po_quantity || '');
             _setVal('assign-expected-delivery', mo.expected_delivery || '');
             _setVal('assign-notes', mo.notes || '');
@@ -1820,6 +1826,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         const assigned  = parseFloat(item.manufacturer_po_qty || 0);
         const available = qty - assigned;
 
+        _setVal('assign-mo-id',         '');
         _setVal('assign-order-item-id', orderItemId);
         _setVal('assign-order-id',      _hubOrderId);
         _setText('assign-item-name',      `${item.product_name || '—'} ${item.size_name || ''}`);
@@ -1995,9 +2002,14 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         if (!supplierId) { _toast('اختر المورد', 'error'); return; }
         if (!qty || qty <= 0) { _toast('أدخل كمية صحيحة', 'error'); return; }
 
+        const moId = _el('assign-mo-id')?.value;
+        const method = moId ? 'PUT' : 'POST';
+        const url = moId ? `/api/manufacturer-orders/${moId}` : '/api/manufacturer-orders';
+        const msg = moId ? 'تم تعديل أمر التشغيل للمورد بنجاح' : 'تم إنشاء أمر التشغيل للمورد بنجاح';
+
         try {
-            await window.apiFetch('/api/manufacturer-orders', {
-                method: 'POST',
+            await window.apiFetch(url, {
+                method: method,
                 body: {
                     order_id:          orderId,
                     supplier_id:       supplierId,
@@ -2013,7 +2025,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
                     notes:             notes       || null,
                 },
             });
-            _toast('تم إنشاء أمر التشغيل للمورد بنجاح');
+            _toast(msg);
             _hideModal('po-assign-modal');
             // Refresh
             const [orderRes, moRes] = await Promise.all([

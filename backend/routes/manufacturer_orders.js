@@ -766,6 +766,126 @@ router.patch('/:id', restrictEdit, validateBody(manufacturerOrderUpdate), async 
 });
 
 // =============================================================================
+// PUT /api/manufacturer-orders/:id
+// Replaces a manufacturer order's items and details.
+// Allowed only while status is pending and no items have been received.
+// Atomically reverts old order_item quantities and inserts new items.
+// =============================================================================
+
+router.put('/:id', restrictEdit, validateBody(manufacturerOrderCreate), async (req, res) => {
+    const { id } = req.params;
+    const { order_id, supplier_id, expected_delivery, notes, items } = req.validatedBody;
+
+    try {
+        const result = await db.withTransaction(async (client) => {
+            // Lock and verify the MO
+            const moCheck = await client.query(
+                `SELECT mo.id, mo.order_id, mo.status, mo.mo_number,
+                        COALESCE(SUM(moi.received_qty), 0) as total_received
+                 FROM manufacturer_orders mo
+                 LEFT JOIN manufacturer_order_items moi ON moi.manufacturer_order_id = mo.id
+                 WHERE mo.id = $1
+                 GROUP BY mo.id`,
+                [id]
+            );
+            if (moCheck.rowCount === 0) {
+                throw new Error('أمر التشغيل غير موجود.');
+            }
+            const mo = moCheck.rows[0];
+            if (mo.status !== 'pending') {
+                throw new Error('لا يمكن التعديل إلا للأوامر المعلقة.');
+            }
+            if (parseFloat(mo.total_received) > 0) {
+                throw new Error('لا يمكن التعديل بعد بدء الاستلام.');
+            }
+            if (order_id && order_id !== mo.order_id) {
+                throw new Error('order_id لا يتوافق مع أمر التشغيل.');
+            }
+
+            // Revert order_item manufacturer_po_qty for old items
+            const oldItems = await client.query(
+                `SELECT order_item_id, mo_quantity
+                 FROM manufacturer_order_items
+                 WHERE manufacturer_order_id = $1`,
+                [id]
+            );
+            for (const it of oldItems.rows) {
+                if (it.order_item_id) {
+                    await client.query(
+                        `UPDATE order_items
+                         SET manufacturer_po_qty = GREATEST(0, COALESCE(manufacturer_po_qty, 0) - $1)
+                         WHERE id = $2`,
+                        [it.mo_quantity, it.order_item_id]
+                    );
+                }
+            }
+
+            // Delete old items
+            await client.query(
+                `DELETE FROM manufacturer_order_items WHERE manufacturer_order_id = $1`,
+                [id]
+            );
+
+            // Update MO header
+            const moResult = await client.query(
+                `UPDATE manufacturer_orders
+                 SET manufacturer_id = $1,
+                     expected_delivery_date = $2,
+                     notes = $3,
+                     updated_at = NOW()
+                 WHERE id = $4
+                 RETURNING *, mo_number AS po_number, manufacturer_id AS supplier_id`,
+                [supplier_id, expected_delivery || null, notes || null, id]
+            );
+            const manufacturerOrder = moResult.rows[0];
+
+            // Insert new items and update order_items manufacturer_po_qty
+            const insertedItems = [];
+            for (const item of items) {
+                if (!item.order_item_id || !item.quantity) continue;
+
+                const pantoneColors = Array.isArray(item.pantone_colors)
+                    ? item.pantone_colors.filter(c => c && String(c).trim())
+                    : (item.pantone_color ? [item.pantone_color] : []);
+                const singlePantone = pantoneColors[0] || item.pantone_color || null;
+
+                const itemResult = await client.query(
+                    `INSERT INTO manufacturer_order_items (
+                        manufacturer_order_id, order_item_id, mo_quantity, design_status, design_id, pantone_color, pantone_colors, created_at
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+                    RETURNING *`,
+                    [
+                        id,
+                        item.order_item_id,
+                        item.quantity,
+                        item.design_status || 'new',
+                        item.design_id || null,
+                        singlePantone,
+                        JSON.stringify(pantoneColors)
+                    ]
+                );
+                insertedItems.push(itemResult.rows[0]);
+
+                await client.query(
+                    `UPDATE order_items
+                     SET manufacturer_po_qty = COALESCE(manufacturer_po_qty, 0) + $1
+                     WHERE id = $2`,
+                    [item.quantity, item.order_item_id]
+                );
+            }
+
+            manufacturerOrder.items = insertedItems;
+            return manufacturerOrder;
+        });
+
+        return res.status(200).json({ data: result });
+    } catch (err) {
+        console.error('[ManufacturerOrders] PUT /:id error:', err.message);
+        return res.status(400).json({ error: err.message || 'Internal server error.' });
+    }
+});
+
+// =============================================================================
 // GET /api/manufacturer-orders/:id/receipts
 // Returns all receipt sessions for a manufacturer order (active + reversed).
 // =============================================================================
