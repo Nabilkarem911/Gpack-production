@@ -349,7 +349,13 @@
                 <td class="py-3 px-4">
                     <span class="font-mono font-bold text-slate-800">#${o.order_number}</span>
                 </td>
-                <td class="py-3 px-4 text-sm text-slate-700 font-semibold">${[o.parent_client_name, o.client_name].filter(Boolean).join(' — ') || '—'}</td>
+                <td class="py-3 px-4 text-sm text-slate-700">
+                    ${o.client_name
+                        ? `<div class="font-semibold text-slate-800">${o.client_name}</div>${o.parent_client_name
+                            ? `<div class="text-xs text-slate-500 mt-0.5">الأم: ${o.parent_client_name}</div>`
+                            : `<div class="text-xs text-slate-400 mt-0.5">عميل رئيسي</div>`}`
+                        : '—'}
+                </td>
                 <td class="py-3 px-4 hidden md:table-cell">
                     ${o.supplier_names
                         ? `<span class="text-xs font-semibold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-lg">${o.supplier_names}</span>`
