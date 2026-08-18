@@ -557,6 +557,7 @@ function renderWarehouses() {
     const isDedicated = !!w.client_id;
     const whStock     = stock.filter(s => s.warehouse_id === w.id);
     const totalQty    = whStock.reduce((s, x) => s + parseFloat(x.available_qty || 0), 0);
+    const totalCost   = whStock.reduce((s, x) => s + (parseFloat(x.available_qty || 0) * parseFloat(x.cost_price || 0)), 0);
     const itemCount   = [...new Set(whStock.map(s => s.variant_id))].length;
     const lowCount    = whStock.filter(s => {
       const a = parseFloat(s.available_qty || 0);
@@ -594,7 +595,7 @@ function renderWarehouses() {
         </div>
       </div>
 
-      <div class="grid grid-cols-3 gap-2 text-center">
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
         <div class="bg-slate-50 rounded-xl py-2">
           <p class="text-lg font-black text-emerald-600">${itemCount}</p>
           <p class="text-[10px] text-slate-400">صنف</p>
@@ -606,6 +607,10 @@ function renderWarehouses() {
         <div class="bg-slate-50 rounded-xl py-2">
           <p class="text-lg font-black ${lowCount > 0 ? 'text-red-500' : 'text-slate-300'}">${lowCount}</p>
           <p class="text-[10px] text-slate-400">منخفض</p>
+        </div>
+        <div class="bg-slate-50 rounded-xl py-2">
+          <p class="text-lg font-black text-purple-600">${formatMoney(totalCost)}</p>
+          <p class="text-[10px] text-slate-400">قيمة المخزون</p>
         </div>
       </div>
 
