@@ -961,14 +961,47 @@
             
             // Set existing values
             _setVal('assign-supplier-select', mo.manufacturer_id || '');
-            // Force the searchable input to display the selected supplier
             const supplierInput = _el('assign-supplier-select_search');
             if (supplierInput && selectedSupplier) {
                 supplierInput.value = selectedSupplier.company_name || selectedSupplier.name;
             }
+
             _setVal('assign-qty', moDetails.items?.[0]?.mo_quantity || moDetails.items?.[0]?.po_quantity || '');
             _setVal('assign-expected-delivery', mo.expected_delivery || '');
             _setVal('assign-notes', mo.notes || '');
+
+            // Set existing design status and design details
+            const moItem = moDetails.items?.[0] || {};
+            const designStatus = moItem.design_status === 'redesign' ? 'reprint' : (moItem.design_status || 'new');
+            document.querySelectorAll('input[name="assign-design-status"]').forEach(r => {
+                r.checked = r.value === designStatus;
+            });
+
+            const designId = moItem.design_id || '';
+            const designThumb = moItem.design_thumbnail || '';
+            const designName = moItem.design_name || (designId ? 'تصميم #' + designId.substring(0, 8) : '');
+            _setVal('assign-selected-design-id', designId);
+            _setText('assign-design-name', designName || '—');
+            _setText('assign-design-type-label', designStatus === 'new' ? 'تصميم جديد' : 'إعادة طباعة');
+            const statusBadge = _el('assign-design-status-badge');
+            if (statusBadge) {
+                statusBadge.textContent = designStatus === 'new' ? 'تصميم جديد' : 'إعادة طباعة';
+                statusBadge.className = `text-xs px-2 py-0.5 rounded-full ${designStatus === 'new' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`;
+                statusBadge.classList.remove('hidden');
+            }
+            const btnText = _el('assign-design-btn-text');
+            if (btnText) btnText.textContent = designId ? 'تغيير التصميم' : 'اختر تصميم';
+
+            const previewBox = _el('assign-design-preview-box');
+            const noDesignBox = _el('assign-no-design-box');
+            if (designId) {
+                if (previewBox) previewBox.classList.remove('hidden');
+                if (noDesignBox) noDesignBox.classList.add('hidden');
+                _setAssignPreviewMedia(designThumb, designName, designStatus === 'new' ? 'تصميم جديد' : 'إعادة طباعة', _getFileExt(designThumb));
+            } else {
+                if (previewBox) previewBox.classList.add('hidden');
+                if (noDesignBox) noDesignBox.classList.remove('hidden');
+            }
 
             // Load existing Pantone colors
             const clientId = _hubOrder?.client_id || _hubOrder?.client?.id;
