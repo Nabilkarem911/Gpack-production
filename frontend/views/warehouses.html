@@ -27,6 +27,10 @@
           <p class="text-2xl font-black text-blue-400" id="stat-total-qty">0</p>
           <p class="text-xs text-slate-400">إجمالي القطع</p>
         </div>
+        <div class="bg-white/10 rounded-xl px-4 py-2 text-center min-w-[70px]">
+          <p class="text-2xl font-black text-purple-400" id="stat-total-value">0</p>
+          <p class="text-xs text-slate-400">إجمالي المبالغ</p>
+        </div>
         <button onclick="openWarehouseModal()"
                 class="flex items-center gap-2 px-4 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold rounded-xl transition-colors shadow">
           <i class="fa-solid fa-plus"></i>
@@ -126,7 +130,7 @@
           </div>
           <div class="px-5 py-3 text-center">
             <p class="text-xl font-black text-purple-600" id="wh-detail-stat-cost">0</p>
-            <p class="text-xs text-slate-400">إجمالي التكلفة</p>
+            <p class="text-xs text-slate-400">اجمالي قيمة المخزون</p>
           </div>
         </div>
 
@@ -162,6 +166,8 @@
                 <tr id="det-stock-thead">
                   <th class="px-4 py-3 text-right font-semibold">الصنف / المقاس</th>
                   <th class="px-4 py-3 text-right font-semibold hidden md:table-cell">العميل</th>
+                  <th class="px-4 py-3 text-center font-semibold">الوحدة</th>
+                  <th class="px-4 py-3 text-center font-semibold">سعر الوحدة</th>
                   <th class="px-4 py-3 text-center font-semibold">الرصيد</th>
                   <th class="px-4 py-3 text-center font-semibold">التكلفة</th>
                   <th class="px-4 py-3 text-center font-semibold">حركات</th>
@@ -528,11 +534,13 @@ function renderAll() {
 // ── Header Stats ──────────────────────────────────────────────────────────
 function updateHeaderStats() {
   const totalQty = stock.reduce((s, x) => s + parseFloat(x.available_qty || 0), 0);
+  const totalValue = stock.reduce((s, x) => s + (parseFloat(x.available_qty || 0) * parseFloat(x.cost_price || 0)), 0);
   const el = id => document.getElementById(id);
   const set = (id, v) => { const e = el(id); if(e) e.textContent = v; };
   set('stat-warehouses', warehouses.length);
   set('stat-stock',      [...new Set(stock.map(s => s.variant_id))].length);
   set('stat-total-qty',  Math.round(totalQty).toLocaleString('ar-EG'));
+  set('stat-total-value', formatMoney(totalValue));
 }
 
 // ── Render Warehouses Grid ────────────────────────────────────────────────
@@ -720,6 +728,8 @@ function toggleRequestMode() {
     if (thead) thead.innerHTML =
       '<th class="px-4 py-3 text-right font-semibold">الصنف / المقاس</th>' +
       '<th class="px-4 py-3 text-right font-semibold hidden md:table-cell">العميل</th>' +
+      '<th class="px-4 py-3 text-center font-semibold">الوحدة</th>' +
+      '<th class="px-4 py-3 text-center font-semibold">سعر الوحدة</th>' +
       '<th class="px-4 py-3 text-center font-semibold">الرصيد</th>' +
       '<th class="px-4 py-3 text-center font-semibold">التكلفة</th>' +
       '<th class="px-4 py-3 text-center font-semibold">حركات</th>';
@@ -828,6 +838,8 @@ function renderDetailStock() {
       return '<tr class="hover:bg-slate-50/80">' +
         '<td class="px-4 py-2.5 font-medium text-slate-800">' + (s.product_name || '—') + vDisplay + '</td>' +
         '<td class="px-4 py-2.5 hidden md:table-cell">' + clientD + '</td>' +
+        '<td class="px-4 py-2.5 text-center text-sm text-slate-600">' + (s.unit_name || '—') + '</td>' +
+        '<td class="px-4 py-2.5 text-center text-sm font-semibold text-slate-600">' + (unitCost > 0 ? formatMoney(unitCost) : '<span class="text-slate-300">—</span>') + '</td>' +
         '<td class="px-4 py-2.5 text-center text-lg ' + qtyClass + '">' + qty + '</td>' +
         '<td class="px-4 py-2.5 text-center text-sm font-semibold text-slate-600">' + costDisplay + '</td>' +
         '<td class="px-4 py-2.5 text-center"><button onclick="openItemMovements(\'' + (s.variant_id || '') + '\',\'' + escAttr(s.product_name || '') + '\',\'' + escAttr(vSize || '') + '\')" class="px-2.5 py-1 text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg font-bold transition-colors"><i class="fa-solid fa-clock-rotate-left"></i></button></td>' +
@@ -843,6 +855,8 @@ function renderDetailStock() {
     tfoot.innerHTML = '<tr>' +
       '<td class="px-4 py-3 text-right font-bold text-slate-700">الإجمالي</td>' +
       '<td class="px-4 py-3 hidden md:table-cell"></td>' +
+      '<td class="px-4 py-3"></td>' +
+      '<td class="px-4 py-3"></td>' +
       '<td class="px-4 py-3 text-center text-lg font-black text-blue-700">' + Math.round(grandQty) + '</td>' +
       '<td class="px-4 py-3 text-center text-base font-black text-purple-700">' + formatMoney(grandCost) + '</td>' +
       '<td class="px-4 py-3"></td>' +
