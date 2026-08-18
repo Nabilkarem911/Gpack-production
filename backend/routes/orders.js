@@ -100,7 +100,7 @@ router.get('/', async (req, res) => {
             params.push(`%${search}%`);
             const idx = params.length;
             conditions.push(
-                `(c.name ILIKE $${idx} OR CAST(o.order_number AS TEXT) ILIKE $${idx})`
+                `(c.name ILIKE $${idx} OR p.name ILIKE $${idx} OR CAST(o.order_number AS TEXT) ILIKE $${idx})`
             );
         }
 
@@ -118,6 +118,7 @@ router.get('/', async (req, res) => {
                 o.status,
                 o.client_id,
                 c.name          AS client_name,
+                p.name          AS parent_client_name,
                 o.order_date,
                 o.valid_until,
                 o.subtotal,
@@ -154,6 +155,7 @@ router.get('/', async (req, res) => {
                 COUNT(*) OVER() AS total_count
              FROM orders o
              LEFT JOIN clients c  ON c.id = o.client_id
+             LEFT JOIN clients p  ON p.id = c.parent_id
              LEFT JOIN order_items oi ON oi.order_id = o.id
              LEFT JOIN (
                  SELECT
@@ -174,7 +176,7 @@ router.get('/', async (req, res) => {
                  GROUP BY mo2.order_id
              ) sup_stats ON sup_stats.order_id = o.id
              ${whereClause}
-             GROUP BY o.id, c.name, o.paid_amount, o.pricing_status, o.pricing_notes, o.design_status, o.design_client_status, mo_stats.mo_count, mo_stats.total_mo_qty, mo_stats.total_received, sup_stats.supplier_names
+             GROUP BY o.id, c.name, p.name, o.paid_amount, o.pricing_status, o.pricing_notes, o.design_status, o.design_client_status, mo_stats.mo_count, mo_stats.total_mo_qty, mo_stats.total_received, sup_stats.supplier_names
              ORDER BY o.created_at DESC
              LIMIT $${limitParam} OFFSET $${offsetParam}`,
             params
