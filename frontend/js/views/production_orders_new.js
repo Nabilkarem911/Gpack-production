@@ -3916,6 +3916,15 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
     };
 
+    window.openSupplierPortalLink = function() {
+        const linkEl = document.getElementById('supplier-portal-link');
+        if (!linkEl || !linkEl.value || linkEl.value.startsWith('جاري') || linkEl.value.startsWith('حدث')) {
+            _toast('الرابط غير جاهز بعد أو غير صالح.', 'warning');
+            return;
+        }
+        window.open(linkEl.value, '_blank');
+    };
+
     window.closeSupplierPortalModal = function() {
         const modal = document.getElementById('supplier-portal-modal');
         if (modal) { modal.style.opacity = '0'; setTimeout(() => { modal.style.display = 'none'; }, 200); }
