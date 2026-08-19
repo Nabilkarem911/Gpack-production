@@ -304,8 +304,9 @@
                 body: payload,
             });
 
-            const invoiceId = res.invoice?.id;
-            alert(`✅ تم إنشاء الفاتورة رقم #${res.invoice?.invoice_number}`);
+            const invoiceData = res?.data || res || {};
+            const invoiceId = invoiceData?.id;
+            alert(`✅ تم إنشاء الفاتورة رقم #${invoiceData?.invoice_number}`);
             window.siCloseModal();
             // Navigate to invoice detail
             if (invoiceId) {

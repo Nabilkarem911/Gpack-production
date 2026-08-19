@@ -58,14 +58,14 @@ const invoiceCreate = z.object({
     client_id: z.string().uuid(),
     order_id: z.string().uuid().optional().nullable(),
     invoice_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-    due_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    due_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
     tax_rate: z.coerce.number().min(0).max(1).optional().nullable(),
     additional_expenses: z.coerce.number().min(0).optional().default(0),
     additional_expense_label: z.string().max(120).optional().nullable(),
     discount_amount: z.coerce.number().min(0).optional().default(0),
     notes: z.string().max(2000).optional().nullable(),
     items: z.array(z.object({
-        variant_id: z.string().uuid(),
+        variant_id: z.string().uuid().optional().nullable(),
         quantity: z.coerce.number().positive(),
         unit_price: z.coerce.number().min(0),
         discount_percent: z.coerce.number().min(0).max(100).optional().default(0),
@@ -82,7 +82,7 @@ const invoiceUpdate = z.object({
     discount_amount: z.coerce.number().min(0).optional().default(0),
     notes: z.string().max(2000).optional().nullable(),
     items: z.array(z.object({
-        variant_id: z.string().uuid(),
+        variant_id: z.string().uuid().optional().nullable(),
         quantity: z.coerce.number().positive(),
         unit_price: z.coerce.number().min(0),
         discount_percent: z.coerce.number().min(0).max(100).optional().default(0),
@@ -111,10 +111,12 @@ function validateBody(schema) {
         if (!result.success) {
             const issues = result.error.errors || result.error.issues || [];
             const firstError = issues[0];
+            const errorPath = firstError?.path?.join('.') || 'unknown';
+            const errorMessage = firstError?.message || 'Invalid input';
             return res.status(400).json({
-                error: 'Validation failed',
-                field: firstError?.path?.join('.') || 'unknown',
-                message: firstError?.message || 'Invalid input',
+                error: `Validation failed: ${errorPath} — ${errorMessage}`,
+                field: errorPath,
+                message: errorMessage,
             });
         }
         req.validatedBody = result.data;
@@ -131,10 +133,12 @@ function validateQuery(schema) {
         if (!result.success) {
             const issues = result.error.errors || result.error.issues || [];
             const firstError = issues[0];
+            const errorPath = firstError?.path?.join('.') || 'unknown';
+            const errorMessage = firstError?.message || 'Invalid input';
             return res.status(400).json({
-                error: 'Validation failed',
-                field: firstError?.path?.join('.') || 'unknown',
-                message: firstError?.message || 'Invalid input',
+                error: `Validation failed: ${errorPath} — ${errorMessage}`,
+                field: errorPath,
+                message: errorMessage,
             });
         }
         req.validatedQuery = result.data;
