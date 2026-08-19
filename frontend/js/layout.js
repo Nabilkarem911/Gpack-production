@@ -37,7 +37,7 @@ var NAV_ITEMS = [ // var allows re-declaration if script loads more than once in
     { view: 'clients',          label: 'العملاء',          icon: 'fa-users',         permission: 'clients'  }, // ✅ clients.html
     { view: 'client-profile',   label: 'ملف العميل',       icon: 'fa-id-card',       permission: 'clients', hidden: true }, // ✅ client-profile.html
     { view: 'sales-invoices',   label: 'فواتير المبيعات',  icon: 'fa-file-invoice-dollar', permission: 'sales'   }, // ✅ sales-invoices.html
-    { view: 'sales-invoice-detail', label: 'تفاصيل الفاتورة', icon: 'fa-file-invoice', permission: 'sales', hidden: true }, // ✅ sales-invoice-detail.html
+    { view: 'sales-invoice-detail', label: 'تفاصيل الفاتورة', icon: 'fa-file-invoice', permission: null, hidden: true }, // ✅ sales-invoice-detail.html
     { view: 'quotations',       label: 'عروض الأسعار',     icon: 'fa-file-lines',    permission: 'quotations' }, // ✅ quotations.html
     { view: 'production_orders', label: 'أوامر التشغيل',    icon: 'fa-industry',      permission: 'production_orders' }, // ✅ production_orders.html
     { view: 'designer',          label: 'المصمم',           icon: 'fa-pen-ruler',     permission: 'designer' }, // ✅ designer.html
@@ -344,12 +344,19 @@ window.navigateTo = async function (viewName) {
     const mainContent = document.getElementById('main-content');
     if (!mainContent) return;
 
+    // Parse view name and query string (e.g., sales-invoice-detail?id=...)
+    const [view, ...queryParts] = viewName.split('?');
+    const cleanView = view;
+
+    // Update URL hash so views can read query params (e.g., id)
+    window.location.hash = '#/' + viewName;
+
     // Increment token — any in-flight navigation with a lower token is now stale
     const myToken = ++__layoutNavToken;
 
     // Find nav label for breadcrumb
-    const navItem = NAV_ITEMS.find(n => n.view === viewName);
-    const label   = navItem ? navItem.label : viewName;
+    const navItem = NAV_ITEMS.find(n => n.view === cleanView);
+    const label   = navItem ? navItem.label : cleanView;
 
     // Permission gate: block view if user lacks permission
     if (navItem && navItem.permission && !_hasPermission(navItem.permission)) {
@@ -369,14 +376,14 @@ window.navigateTo = async function (viewName) {
         return;
     }
 
-    _setActiveNavItem(viewName);
+    _setActiveNavItem(cleanView);
     _setBreadcrumb(label);
 
     // Loading state
     mainContent.classList.add('loading');
 
     try {
-        const res = await fetch(`/views/${viewName}.html?v=20260501`);
+        const res = await fetch(`/views/${cleanView}.html?v=20260501`);
         if (!res.ok) throw new Error(`View not found: ${viewName}`);
         const html = await res.text();
 

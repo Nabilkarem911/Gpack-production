@@ -39,9 +39,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         // Extract view name from hash and navigate
         const hash = window.location.hash;
-        const viewMatch = hash.replace('#/', '').split('?')[0];
-        if (viewMatch && typeof window.navigateTo === 'function') {
-            await window.navigateTo(viewMatch);
+        const viewTarget = hash.replace('#/', '');
+        if (viewTarget && typeof window.navigateTo === 'function') {
+            await window.navigateTo(viewTarget);
         }
         console.log('[G.PACK 2.0] Public page loaded.');
         return;
