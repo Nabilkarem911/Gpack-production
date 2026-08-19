@@ -352,7 +352,7 @@
                 <td class="py-3 px-4 text-sm text-slate-700">
                     ${o.client_name
                         ? `<div class="font-semibold text-slate-800">${o.client_name}</div>${o.parent_client_name
-                            ? `<div class="text-xs text-slate-500 mt-0.5">الأم: ${o.parent_client_name}</div>`
+                            ? `<div class="text-xs text-slate-500 mt-0.5">الفرع الرئيسي: ${o.parent_client_name}</div>`
                             : `<div class="text-xs text-slate-400 mt-0.5">عميل رئيسي</div>`}`
                         : '—'}
                 </td>

@@ -213,7 +213,13 @@
                 <td class="py-3.5 px-4">
                     <span class="font-mono font-bold text-slate-700 text-sm">#${q.order_number || '—'}</span>
                 </td>
-                <td class="py-3.5 px-4 text-sm font-semibold text-slate-800">${q.client_name || '—'}</td>
+                <td class="py-3.5 px-4 text-sm text-slate-700">
+                    ${q.client_name
+                        ? `<div class="font-semibold text-slate-800">${q.client_name}</div>${q.parent_client_name
+                            ? `<div class="text-xs text-slate-500 mt-0.5">الفرع الرئيسي: ${q.parent_client_name}</div>`
+                            : `<div class="text-xs text-slate-400 mt-0.5">عميل رئيسي</div>`}`
+                        : '—'}
+                </td>
                 <td class="py-3.5 px-4 text-sm text-slate-500 hidden sm:table-cell">${dateStr}</td>
                 <td class="py-3.5 px-4 text-sm hidden md:table-cell">
                     <span class="${isExpired ? 'text-red-500 font-semibold' : 'text-slate-500'}">${validStr}</span>${expiredBadge}
@@ -537,6 +543,7 @@
         if (searchQ) {
             list = list.filter(r =>
                 (r.client_name && r.client_name.toLowerCase().includes(searchQ)) ||
+                (r.parent_client_name && r.parent_client_name.toLowerCase().includes(searchQ)) ||
                 (r.order_number && String(r.order_number).includes(searchQ))
             );
         }
