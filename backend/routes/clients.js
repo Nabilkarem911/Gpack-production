@@ -181,13 +181,13 @@ router.get('/:id/profile', async (req, res) => {
             [id]
         );
 
-        // 4. Invoices (all invoices across all orders)
+        // 4. Invoices (only production-order invoices that affect the account statement)
         const invoicesRes = await db.query(
             `SELECT i.id, i.invoice_number, i.grand_total, i.status, i.created_at,
                     o.order_number
              FROM invoices i
              JOIN orders o ON o.id = i.order_id
-             WHERE i.client_id = $1
+             WHERE i.client_id = $1 AND i.source = 'orders'
              ORDER BY i.created_at DESC`,
             [id]
         );

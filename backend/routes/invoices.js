@@ -367,7 +367,11 @@ router.patch('/:id/mark-issued', restrictEdit, validateBody(invoiceMarkIssued), 
 
         await client.query('COMMIT');
 
-        return success(res, updated.rows[0], 'تم تسجيل إصدار الفاتورة.');
+        return res.status(200).json({
+            success: true,
+            data: updated.rows[0],
+            message: 'تم تسجيل إصدار الفاتورة.',
+        });
     } catch (err) {
         await client.query('ROLLBACK');
         console.error('[Invoices] PATCH /:id/mark-issued error:', err.message);
