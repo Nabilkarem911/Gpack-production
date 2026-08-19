@@ -26,10 +26,10 @@ const restrictWrite = authorize('sales', 'create');
 const restrictEdit  = authorize('sales', 'edit');
 
 // ── GET /api/invoices ───────────────────────────────────────────────────────
-// Query params: client_id, status, from, to, search, limit, offset
+// Query params: client_id, status, source, from, to, search, limit, offset
 router.get('/', async (req, res) => {
     try {
-        const { client_id, status, from, to, search, limit = 50, offset = 0 } = req.query;
+        const { client_id, status, source, from, to, search, limit = 50, offset = 0 } = req.query;
 
         let where = ['i.id IS NOT NULL']; // always true base
         const params = [];
@@ -49,6 +49,10 @@ router.get('/', async (req, res) => {
         if (status) {
             where.push(`i.status = $${paramIdx++}`);
             params.push(status);
+        }
+        if (source) {
+            where.push(`i.source = $${paramIdx++}`);
+            params.push(source);
         }
         if (from) {
             where.push(`i.invoice_date >= $${paramIdx++}`);

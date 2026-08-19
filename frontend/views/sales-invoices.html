@@ -1,10 +1,10 @@
 <!-- =============================================================================
-     G.PACK 2.0 — Sales Invoices View (Order-Based)
-     فواتير المبيعات مبنية على أوامر التشغيل
+     G.PACK 2.0 — Sales Invoices View
+     فواتير المبيعات: غير معتمدة / أرشيف / أوامر للفوترة
 ============================================================================= -->
 
 <!-- Header -->
-<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
     <div class="flex items-center gap-3">
         <button onclick="window.navigateTo('dashboard')"
                 class="w-9 h-9 flex items-center justify-center rounded-xl bg-white border border-slate-200
@@ -18,6 +18,22 @@
     </div>
 </div>
 
+<!-- ── Tabs ─────────────────────────────────────────────────────────────────── -->
+<div id="si-tabs" class="flex items-center gap-2 mb-5 border-b border-slate-200 pb-1">
+    <button id="si-tab-draft" onclick="window.siSwitchTab('draft')"
+            class="px-4 py-2 text-sm font-bold rounded-t-xl border-b-2 border-brand-600 text-brand-700 bg-white transition-all">
+        غير معتمدة
+    </button>
+    <button id="si-tab-archive" onclick="window.siSwitchTab('archive')"
+            class="px-4 py-2 text-sm font-bold rounded-t-xl border-b-2 border-transparent text-slate-500 hover:text-brand-600 transition-all">
+        أرشيف
+    </button>
+    <button id="si-tab-orders" onclick="window.siSwitchTab('orders')"
+            class="px-4 py-2 text-sm font-bold rounded-t-xl border-b-2 border-transparent text-slate-500 hover:text-brand-600 transition-all">
+        طلبات للفوترة
+    </button>
+</div>
+
 <!-- ── Filters ─────────────────────────────────────────────────────────────── -->
 <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 mb-5">
     <div class="flex flex-col sm:flex-row gap-3">
@@ -25,7 +41,7 @@
         <div class="flex-1">
             <div class="relative">
                 <i class="fa-solid fa-magnifying-glass absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
-                <input id="si-search" type="text" placeholder="بحث برقم الأمر أو العميل..."
+                <input id="si-search" type="text" placeholder="بحث..."
                        class="w-full pr-10 pl-3 py-2.5 border border-slate-200 rounded-xl text-sm
                               focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition-all"
                        oninput="window.siOnFilterChange()" />
@@ -47,15 +63,15 @@
 <!-- ── Stats Summary ────────────────────────────────────────────────────────── -->
 <div class="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-5">
     <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
-        <p class="text-xs text-slate-400 mb-1">أوامر جاهزة للفاتورة</p>
+        <p class="text-xs text-slate-400 mb-1" id="si-stat-label-1">—</p>
         <p class="text-2xl font-black text-slate-800" id="si-stat-total">0</p>
     </div>
     <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
-        <p class="text-xs text-slate-400 mb-1">إجمالي قيمة الفواتير المتوقعة</p>
+        <p class="text-xs text-slate-400 mb-1" id="si-stat-label-2">—</p>
         <p class="text-2xl font-black text-emerald-600" id="si-stat-amount">0.00</p>
     </div>
     <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
-        <p class="text-xs text-slate-400 mb-1">عدد الأصناف</p>
+        <p class="text-xs text-slate-400 mb-1" id="si-stat-label-3">—</p>
         <p class="text-2xl font-black text-blue-600" id="si-stat-items">0</p>
     </div>
 </div>
@@ -64,15 +80,8 @@
 <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
     <div class="overflow-x-auto">
         <table class="w-full text-sm">
-            <thead>
-                <tr class="bg-slate-50 text-xs text-slate-500 border-b border-slate-100">
-                    <th class="py-3 px-4 text-right font-semibold">رقم الأمر</th>
-                    <th class="py-3 px-4 text-right font-semibold">التاريخ</th>
-                    <th class="py-3 px-4 text-right font-semibold">العميل</th>
-                    <th class="py-3 px-4 text-center font-semibold">عدد الأصناف</th>
-                    <th class="py-3 px-4 text-right font-semibold">المبلغ المتوقع</th>
-                    <th class="py-3 px-4 text-center font-semibold w-32">إجراء</th>
-                </tr>
+            <thead id="si-thead" class="bg-slate-50 text-xs text-slate-500 border-b border-slate-100">
+                <tr></tr>
             </thead>
             <tbody id="si-tbody">
                 <tr>
@@ -110,8 +119,8 @@
     <div class="w-20 h-20 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
         <i class="fa-solid fa-clipboard-check text-3xl text-slate-300"></i>
     </div>
-    <p class="text-lg font-semibold text-slate-500 mb-1">لا توجد أوامر جاهزة للفاتورة</p>
-    <p class="text-sm text-slate-400">جميع أوامر التشغيل الحالية تم إنشاء فواتير لها أو قيد الانتظار</p>
+    <p id="si-empty-title" class="text-lg font-semibold text-slate-500 mb-1">لا توجد بيانات</p>
+    <p id="si-empty-sub" class="text-sm text-slate-400">—</p>
 </div>
 
 <!-- ── Create Invoice Modal ─────────────────────────────────────────────────── -->
@@ -234,4 +243,4 @@
     </div>
 </div>
 
-<script src="/js/views/sales-invoices.js?v=20260819c"></script>
+<script src="/js/views/sales-invoices.js?v=20260819g"></script>
