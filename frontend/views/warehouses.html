@@ -91,6 +91,10 @@
             </div>
           </div>
           <div class="flex gap-2">
+            <button onclick="printWarehouseStock()"
+                    class="flex items-center gap-2 px-3 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 text-sm font-bold rounded-xl transition-colors">
+              <i class="fa-solid fa-print"></i>طباعة المخزون
+            </button>
             <button onclick="openStockModal()"
                     class="flex items-center gap-2 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-sm font-bold rounded-xl transition-colors">
               <i class="fa-solid fa-plus-minus"></i>تسوية مخزون
@@ -871,6 +875,120 @@ function renderDetailStock() {
   }
 }
 
+// ── Print Warehouse Stock ─────────────────────────────────────────────────
+function printWarehouseStock() {
+  if (!_activeWhId) return;
+  var w = warehouses.find(function(x) { return x.id === _activeWhId; });
+  if (!w) return;
+
+  var search   = (document.getElementById('det-stock-search')?.value || '').toLowerCase();
+  var hideZero = document.getElementById('det-hide-zero')?.checked || false;
+
+  var rows = _detStockData.filter(function(s) {
+    var matchSearch = !search || (s.product_name || '').toLowerCase().includes(search) || (s.variant_size || s.size_name || '').toLowerCase().includes(search);
+    var matchZero   = !hideZero || parseFloat(s.available_qty || 0) > 0;
+    return matchSearch && matchZero;
+  });
+
+  if (!rows.length) {
+    showToast('لا يوجد مخزون للطباعة', 'error');
+    return;
+  }
+
+  var totalQty  = rows.reduce(function(acc, s) { return acc + parseFloat(s.available_qty || 0); }, 0);
+  var totalCost = rows.reduce(function(acc, s) { return acc + (parseFloat(s.available_qty || 0) * parseFloat(s.cost_price || 0)); }, 0);
+
+  var today = new Date().toLocaleDateString('ar-EG');
+  var warehouseMeta = w.client_name ? (w.client_name + ' — مستودع مخصص') : ('مستودع عام' + (w.code ? ' · ' + w.code : ''));
+
+  var printHtml = `
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+  <meta charset="UTF-8">
+  <title>كشف جرد المخزون - ${escHtml(w.name)}</title>
+  <style>
+    @page { size: A4; margin: 15mm; }
+    * { box-sizing: border-box; }
+    body { font-family: 'Segoe UI', Tahoma, Arial, sans-serif; font-size: 12px; color: #1e293b; margin: 0; padding: 0; }
+    .header { text-align: center; border-bottom: 2px solid #334155; padding-bottom: 10px; margin-bottom: 15px; }
+    .header h1 { font-size: 18px; margin: 0 0 5px; color: #0f172a; }
+    .header p { margin: 3px 0; color: #64748b; font-size: 11px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { border: 1px solid #cbd5e1; padding: 6px 8px; text-align: right; vertical-align: middle; }
+    th { background: #f1f5f9; font-weight: 700; color: #334155; font-size: 11px; white-space: nowrap; }
+    td { font-size: 11px; }
+    .text-center { text-align: center; }
+    .num { text-align: center; font-family: 'Courier New', monospace; font-weight: 600; }
+    .footer { display: flex; justify-content: space-between; margin-top: 15px; padding-top: 10px; border-top: 1px solid #e2e8f0; font-weight: 700; font-size: 12px; }
+    .signatures { display: flex; justify-content: space-between; margin-top: 60px; color: #64748b; font-size: 11px; }
+    .signatures div { width: 30%; border-top: 1px solid #94a3b8; padding-top: 5px; text-align: center; }
+    @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>كشف جرد المخزون</h1>
+    <p><strong>المستودع:</strong> ${escHtml(w.name)}</p>
+    <p>${escHtml(warehouseMeta)}</p>
+    <p><strong>تاريخ الطباعة:</strong> ${today}</p>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th class="text-center" style="width:35px">م</th>
+        <th>الصنف</th>
+        <th>المقاس</th>
+        <th class="text-center">الوحدة</th>
+        <th class="text-center">الرصيد النظامي</th>
+        <th class="text-center">العدد الفعلي</th>
+        <th class="text-center">ملاحظات</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rows.map(function(s, i) {
+        var vSize = s.variant_size || s.size_name || '';
+        return '<tr>' +
+          '<td class="num">' + (i + 1) + '</td>' +
+          '<td>' + escHtml(s.product_name || '—') + '</td>' +
+          '<td>' + (vSize && vSize !== '-' ? escHtml(vSize) : '—') + '</td>' +
+          '<td class="text-center">' + escHtml(s.unit_name || '—') + '</td>' +
+          '<td class="num">' + parseFloat(s.available_qty || 0).toLocaleString('ar-EG') + '</td>' +
+          '<td></td>' +
+          '<td></td>' +
+        '</tr>';
+      }).join('')}
+    </tbody>
+  </table>
+  <div class="footer">
+    <span>عدد الأصناف: ${rows.length.toLocaleString('ar-EG')}</span>
+    <span>إجمالي القطع: ${Math.round(totalQty).toLocaleString('ar-EG')}</span>
+    <span>إجمالي القيمة: ${formatMoney(totalCost)} ر.س</span>
+  </div>
+  <div class="signatures">
+    <div>المحاسب</div>
+    <div>مسؤول المستودع</div>
+    <div>المدير</div>
+  </div>
+</body>
+</html>`;
+
+  var printWin = window.open('', '_blank');
+  if (!printWin) {
+    showToast('تم حظر النافذة المنبثقة، يرجى السماح بالنوافذ المنبثقة', 'error');
+    return;
+  }
+  printWin.document.open();
+  printWin.document.write(printHtml);
+  printWin.document.close();
+
+  // Wait for styles to apply, then print
+  setTimeout(function() {
+    printWin.focus();
+    printWin.print();
+  }, 300);
+}
+
 // ── Load Detail History ───────────────────────────────────────────────────
 async function loadDetailHistory(whId) {
   try {
@@ -1459,7 +1577,21 @@ function showToast(msg, type) {
 
 // ── Escape attribute helper ───────────────────────────────────────────────
 function escAttr(s) {
-  return String(s || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+  return String(s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/'/g, "\\'")
+    .replace(/"/g, '&quot;');
+}
+
+// ── Escape HTML body text helper ───────────────────────────────────────────
+function escHtml(s) {
+  return String(s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 // ── Item Movements Modal ──────────────────────────────────────────────────
