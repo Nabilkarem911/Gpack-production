@@ -698,6 +698,10 @@ const invoiceStatusUpdate = z.object({
     status: z.enum(['issued', 'paid', 'overdue', 'cancelled', 'archived']),
 }).passthrough();
 
+const invoiceMarkIssued = z.object({
+    external_invoice_number: z.string().max(100).optional().nullable(),
+}).passthrough();
+
 // =============================================================================
 // Forecast
 // =============================================================================
@@ -817,6 +821,7 @@ module.exports = {
     orderRelease,
     invoiceShare,
     invoiceStatusUpdate,
+    invoiceMarkIssued,
     forecastQuery,
     pantoneColorCreate,
     pantoneColorUpdate,

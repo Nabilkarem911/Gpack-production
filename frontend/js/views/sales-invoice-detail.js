@@ -106,6 +106,7 @@
             draft: { bg: 'bg-slate-100', text: 'text-slate-600', label: 'مسودة' },
             proforma: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'صورية' },
             final: { bg: 'bg-emerald-100', text: 'text-emerald-700', label: 'نهائية' },
+            issued: { bg: 'bg-emerald-100', text: 'text-emerald-700', label: 'نهائية' },
             cancelled: { bg: 'bg-red-100', text: 'text-red-700', label: 'ملغية' },
         };
         const st = statusColors[inv.status] || statusColors.draft;
@@ -190,6 +191,41 @@
         // Footer
         _el('sid-created-by').textContent = esc(inv.created_by_name || '---');
         _el('sid-created-at').textContent = new Date(inv.created_at).toLocaleString('en-GB');
+
+        _renderExternal(inv);
+    }
+
+    // ── External (Onyx) section ─────────────────────────────────────────────────
+    function _renderExternal(inv) {
+        const section = _el('sid-external-section');
+        const form    = _el('sid-external-form');
+        const info    = _el('sid-external-info');
+        const title   = _el('sid-external-title');
+        const subtitle= _el('sid-external-subtitle');
+        const numInput= _el('sid-external-number');
+        const numDisplay = _el('sid-external-number-display');
+        const dateDisplay = _el('sid-external-date-display');
+
+        if (!section) return;
+        section.classList.add('hidden');
+
+        if (inv.source !== 'sales_invoices') return;
+
+        section.classList.remove('hidden');
+        if (title) title.textContent = 'فاتورة تذكير';
+        if (subtitle) subtitle.textContent = 'تُستخدم للمتابعة فقط — غير محسوبة في كشف الحساب';
+
+        if (inv.external_issued_at) {
+            if (form) form.classList.add('hidden');
+            if (info) info.classList.remove('hidden');
+            if (numDisplay) numDisplay.textContent = inv.external_invoice_number || 'تم الإصدار بدون رقم';
+            if (dateDisplay) dateDisplay.textContent = new Date(inv.external_issued_at).toLocaleString('en-GB');
+            if (subtitle) subtitle.textContent = 'تم إصدارها من Onyx';
+        } else {
+            if (form) form.classList.remove('hidden');
+            if (info) info.classList.add('hidden');
+            if (numInput) numInput.value = inv.external_invoice_number || '';
+        }
     }
 
     // ── View Order ──────────────────────────────────────────────────────────────
@@ -204,9 +240,9 @@
         const inv = _invoiceData;
         if (!inv) return;
 
-        const statusLabels = { draft: 'مسودة', proforma: 'صورية', final: 'نهائية', cancelled: 'ملغية' };
-        const statusColors = { draft: '#64748b', proforma: '#d97706', final: '#15803d', cancelled: '#dc2626' };
-        const statusBgs    = { draft: '#f1f5f9', proforma: '#fef3c7', final: '#dcfce7', cancelled: '#fee2e2' };
+        const statusLabels = { draft: 'مسودة', proforma: 'صورية', final: 'نهائية', issued: 'نهائية', cancelled: 'ملغية' };
+        const statusColors = { draft: '#64748b', proforma: '#d97706', final: '#15803d', issued: '#15803d', cancelled: '#dc2626' };
+        const statusBgs    = { draft: '#f1f5f9', proforma: '#fef3c7', final: '#dcfce7', issued: '#dcfce7', cancelled: '#fee2e2' };
         const statusText  = statusLabels[inv.status] || inv.status;
         const statusColor = statusColors[inv.status] || '#64748b';
         const statusBg    = statusBgs[inv.status] || '#f1f5f9';
@@ -353,6 +389,23 @@
         const w = window.open('', '_blank', 'width=900,height=700');
         w.document.write(html);
         w.document.close();
+    };
+
+    // ── Mark Issued in Onyx ─────────────────────────────────────────────────────
+    window.sidMarkIssued = async function() {
+        const numInput = _el('sid-external-number');
+        const externalNumber = (numInput?.value || '').trim();
+
+        try {
+            await window.apiFetch(`/api/invoices/${_invoiceId}/mark-issued`, {
+                method: 'PATCH',
+                body: { external_invoice_number: externalNumber },
+            });
+            alert('تم تسجيل إصدار الفاتورة.');
+            await _loadInvoice();
+        } catch (err) {
+            alert(`فشل التسجيل: ${err.message}`);
+        }
     };
 
     // ── Start ───────────────────────────────────────────────────────────────────

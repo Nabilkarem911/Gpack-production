@@ -16,7 +16,7 @@ const { authenticate } = require('../middleware/authMiddleware');
 const authorize = require('../middleware/authorize');
 const { getVatRate } = require('../utils/settings');
 const { hashToken, hasShareTokenSecret } = require('../utils/crypto');
-const { invoiceCreate, invoiceUpdate, invoiceShare, invoiceStatusUpdate, validateBody } = require('../utils/validators');
+const { invoiceCreate, invoiceUpdate, invoiceShare, invoiceStatusUpdate, invoiceMarkIssued, validateBody } = require('../utils/validators');
 
 // View permission: all authenticated users with 'sales' view can list/get
 router.use(authorize('sales', 'view'));
@@ -117,6 +117,7 @@ router.get('/:id', async (req, res) => {
                 i.id, i.invoice_number, i.invoice_date, i.due_date,
                 i.subtotal, i.tax_rate, i.tax_amount, i.additional_expenses, i.grand_total,
                 i.status, i.payment_terms, i.notes, i.created_at,
+                i.source, i.external_invoice_number, i.external_issued_at,
                 c.id AS client_id, c.name AS client_name, c.phone AS client_phone,
                 o.id AS order_id, o.order_number,
                 u.name AS created_by_name
@@ -272,17 +273,20 @@ router.post('/', restrictWrite, validateBody(invoiceCreate), async (req, res) =>
         const taxAmount = parseFloat((subtotal * effectiveTaxRate).toFixed(2));
         const grandTotal = parseFloat((subtotal + taxAmount + parseFloat(additional_expenses) - discount).toFixed(2));
 
+        const source = 'sales_invoices';
+        const status = 'draft';
+
         // Insert invoice
         const invRes = await client.query(`
             INSERT INTO invoices
                 (client_id, order_id, invoice_date, due_date, subtotal, tax_rate, tax_amount,
-                 additional_expenses, discount_amount, grand_total, status, notes, created_by)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'issued', $11, $12)
+                 additional_expenses, discount_amount, grand_total, status, source, notes, created_by)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
             RETURNING id, invoice_number
         `, [
             client_id, order_id, invoice_date || new Date().toISOString().split('T')[0],
             due_date, subtotal, effectiveTaxRate, taxAmount,
-            additional_expenses, discount, grandTotal, notes, userId,
+            additional_expenses, discount, grandTotal, status, source, notes, userId,
         ]);
 
         const invoiceId = invRes.rows[0].id;
@@ -307,14 +311,16 @@ router.post('/', restrictWrite, validateBody(invoiceCreate), async (req, res) =>
             `, [invoiceId, 'additional', label, additional_expenses]);
         }
 
-        // Client transaction record
-        await client.query(`
-            INSERT INTO client_transactions (client_id, invoice_id, type, amount, description, created_at)
-            VALUES ($1, $2, 'invoice', $3, $4, NOW())
-        `, [
-            client_id, invoiceId, grandTotal,
-            `فاتورة مبيعات رقم ${invoiceNumber}`,
-        ]);
+        // Client transaction record (only for invoices that affect the account statement)
+        if (source !== 'sales_invoices') {
+            await client.query(`
+                INSERT INTO client_transactions (client_id, invoice_id, type, amount, description, created_at)
+                VALUES ($1, $2, 'invoice', $3, $4, NOW())
+            `, [
+                client_id, invoiceId, grandTotal,
+                `فاتورة مبيعات رقم ${invoiceNumber}`,
+            ]);
+        }
 
         await client.query('COMMIT');
 
@@ -324,6 +330,49 @@ router.post('/', restrictWrite, validateBody(invoiceCreate), async (req, res) =>
         await client.query('ROLLBACK');
         console.error('[Invoices] POST / error:', err.message);
         res.status(500).json({ error: 'Internal server error.' });
+    } finally {
+        client.release();
+    }
+});
+
+// ── PATCH /api/invoices/:id/mark-issued ─────────────────────────────────────
+// Marks a sales-invoices-page invoice as issued in Onyx.
+// Does NOT post to the client account statement.
+router.patch('/:id/mark-issued', restrictEdit, validateBody(invoiceMarkIssued), async (req, res) => {
+    const { id } = req.params;
+    const { external_invoice_number } = req.validatedBody;
+
+    const client = await db.pool.connect();
+    try {
+        await client.query('BEGIN');
+
+        const invRes = await client.query(
+            `SELECT id, invoice_number, source, status FROM invoices WHERE id = $1 FOR UPDATE`,
+            [id]
+        );
+        if (invRes.rowCount === 0) throw new Error('الفاتورة غير موجودة.');
+        const inv = invRes.rows[0];
+        if (inv.source !== 'sales_invoices') {
+            throw new Error('لا يمكن اعتماد فاتورة أمر التشغيل من هنا.');
+        }
+
+        const updated = await client.query(`
+            UPDATE invoices
+            SET status = 'issued',
+                external_invoice_number = $1,
+                external_issued_at = NOW(),
+                updated_at = NOW()
+            WHERE id = $2
+            RETURNING id, invoice_number, status, external_invoice_number, external_issued_at
+        `, [external_invoice_number || null, id]);
+
+        await client.query('COMMIT');
+
+        return success(res, updated.rows[0], 'تم تسجيل إصدار الفاتورة.');
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('[Invoices] PATCH /:id/mark-issued error:', err.message);
+        return res.status(400).json({ error: err.message });
     } finally {
         client.release();
     }

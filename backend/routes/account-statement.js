@@ -61,7 +61,7 @@ router.get('/client/:clientId', async (req, res) => {
                     COALESCE(i.notes, '') as notes,
                     NULL as reference_id
                 FROM invoices i
-                WHERE i.client_id = $1 AND i.status != 'cancelled'
+                WHERE i.client_id = $1 AND i.source = 'orders' AND i.status = 'issued'
                     ${dateFilter.replace(/date/g, 'i.invoice_date')}
                 
                 UNION ALL
@@ -110,7 +110,7 @@ router.get('/client/:clientId', async (req, res) => {
             FROM (
                 SELECT 'invoice' as doc_type, grand_total as amount 
                 FROM invoices 
-                WHERE client_id = $1 AND status != 'cancelled' ${dateFilter.replace(/date/g, 'invoice_date')}
+                WHERE client_id = $1 AND source = 'orders' AND status = 'issued' ${dateFilter.replace(/date/g, 'invoice_date')}
                 UNION ALL
                 SELECT 'payment' as doc_type, avl.credit as amount
                 FROM accounting_vouchers av
