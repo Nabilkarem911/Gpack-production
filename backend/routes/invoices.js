@@ -360,8 +360,7 @@ router.patch('/:id/mark-issued', restrictEdit, validateBody(invoiceMarkIssued), 
             UPDATE invoices
             SET status = 'issued',
                 external_invoice_number = $1,
-                external_issued_at = NOW(),
-                updated_at = NOW()
+                external_issued_at = NOW()
             WHERE id = $2
             RETURNING id, invoice_number, status, external_invoice_number, external_issued_at
         `, [external_invoice_number || null, id]);
@@ -436,8 +435,7 @@ router.put('/:id', restrictEdit, validateBody(invoiceUpdate), async (req, res) =
             SET subtotal = $1, tax_rate = $2, tax_amount = $3,
                 additional_expenses = $4, discount_amount = $5, grand_total = $6,
                 notes = $7, due_date = $8,
-                invoice_date = COALESCE($9, invoice_date),
-                updated_at = NOW()
+                invoice_date = COALESCE($9, invoice_date)
             WHERE id = $10
         `, [subtotal, effectiveTaxRate, taxAmount, addExp, discount, grandTotal,
             notes || null, due_date || null, invoice_date || null, id]);
@@ -468,7 +466,7 @@ router.put('/:id', restrictEdit, validateBody(invoiceUpdate), async (req, res) =
         // Update client_transactions amount for this invoice
         await client.query(`
             UPDATE client_transactions
-            SET amount = $1, updated_at = NOW()
+            SET amount = $1
             WHERE invoice_id = $2 AND type = 'invoice'
         `, [grandTotal, id]);
 
@@ -529,7 +527,7 @@ router.patch('/:id/status', restrictEdit, validateBody(invoiceStatusUpdate), asy
 
         // Update status
         await client.query(`
-            UPDATE invoices SET status = $1, updated_at = NOW()
+            UPDATE invoices SET status = $1
             WHERE id = $2
         `, [status, id]);
 
