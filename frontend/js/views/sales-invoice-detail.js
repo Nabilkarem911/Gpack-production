@@ -402,7 +402,8 @@
                 body: { external_invoice_number: externalNumber },
             });
             alert('تم تسجيل إصدار الفاتورة.');
-            await _loadInvoice();
+            sessionStorage.setItem('si_after_issued', '1');
+            window.navigateTo('sales-invoices');
         } catch (err) {
             alert(`فشل التسجيل: ${err.message}`);
         }

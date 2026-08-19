@@ -1,8 +1,8 @@
 'use strict';
 
 // =============================================================================
-// G.PACK 2.0 — Sales Invoices View Controller
-// Tabs: غير معتمدة (draft sales invoices), أرشيف (issued), أوامر للفوترة
+// G.PACK 2.0 — Sales Invoices View Controller (2 tabs)
+// Tabs: الفواتير (draft) | الأرشيف (issued)
 // =============================================================================
 
 (function () {
@@ -10,10 +10,10 @@
     const PAGE_SIZE = 20;
     let _currentPage = 0;
     let _totalRows = 0;
-    let _currentTab = 'draft';
-    let _orders = [];
+    let _currentTab = 'invoices'; // invoices | archive
     let _invoices = [];
     let _clients = [];
+    let _readyOrders = [];
     let _orderItems = [];
 
     const fmt  = (v) => parseFloat(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -21,7 +21,7 @@
     const esc  = (s) => String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     const _el  = (id) => document.getElementById(id);
 
-    const _date  = (d) => d ? new Date(d).toLocaleDateString('ar-SA-u-nu-latn') : '—';
+    const _date = (d) => d ? new Date(d).toLocaleDateString('ar-SA-u-nu-latn') : '—';
 
     function _statusBadge(status) {
         const map = {
@@ -62,12 +62,12 @@
         _currentTab = tab;
         _currentPage = 0;
         _setActiveTab(tab);
-        _updateSearchPlaceholder();
-        _loadTab(tab, 0);
+        _loadInvoices(0);
     };
 
     function _setActiveTab(tab) {
-        ['draft','archive','orders'].forEach(t => {
+        const tabs = ['invoices','archive'];
+        tabs.forEach(t => {
             const btn = _el('si-tab-' + t);
             if (btn) {
                 const active = t === tab;
@@ -81,25 +81,7 @@
         });
     }
 
-    function _updateSearchPlaceholder() {
-        const search = _el('si-search');
-        if (!search) return;
-        if (_currentTab === 'orders') {
-            search.placeholder = 'بحث برقم الأمر أو العميل...';
-        } else {
-            search.placeholder = 'بحث برقم الفاتورة أو العميل...';
-        }
-    }
-
-    async function _loadTab(tab, page) {
-        if (tab === 'orders') {
-            await _loadOrders(page);
-        } else {
-            await _loadInvoices(page);
-        }
-    }
-
-    // ── Fetch invoices for the active sales tab ─────────────────────────────────
+    // ── Fetch invoices for active tab ───────────────────────────────────────────
     async function _loadInvoices(page = 0) {
         _currentPage = page;
         const status = _currentTab === 'archive' ? 'issued' : 'draft';
@@ -136,99 +118,7 @@
         }
     }
 
-    // ── Fetch orders ready for invoice ─────────────────────────────────────────
-    async function _loadOrders(page = 0) {
-        _currentPage = page;
-        const tbody = _el('si-tbody');
-        const empty = _el('si-empty');
-
-        if (tbody) tbody.innerHTML = `<tr><td colspan="6" class="py-12 text-center text-slate-400"><i class="fa-solid fa-circle-notch fa-spin text-xl"></i></td></tr>`;
-        if (empty) empty.classList.add('hidden');
-
-        const params = new URLSearchParams({
-            limit: PAGE_SIZE,
-            offset: page * PAGE_SIZE,
-        });
-
-        const search = _el('si-search')?.value?.trim();
-        const client = _el('si-client')?.value;
-
-        if (search) params.set('search', search);
-        if (client) params.set('client_id', client);
-
-        try {
-            const res = await window.apiFetch(`/api/orders/ready-for-invoice?${params}`);
-            _orders = res.data || [];
-            _totalRows = res.total || 0;
-
-            _renderOrders();
-            _renderStats();
-            _updatePagination();
-
-        } catch (err) {
-            if (tbody) tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-red-400 text-sm"><i class="fa-solid fa-triangle-exclamation ml-2"></i>${esc(err.message)}</td></tr>`;
-        }
-    }
-
-    // ── Render orders table ────────────────────────────────────────────────────
-    function _renderOrders() {
-        const tbody = _el('si-tbody');
-        const empty = _el('si-empty');
-        const thead = _el('si-thead');
-        if (!tbody) return;
-
-        if (thead) {
-            thead.innerHTML = `
-                <tr class="bg-slate-50 text-xs text-slate-500 border-b border-slate-100">
-                    <th class="py-3 px-4 text-right font-semibold">رقم الأمر</th>
-                    <th class="py-3 px-4 text-right font-semibold">التاريخ</th>
-                    <th class="py-3 px-4 text-right font-semibold">العميل</th>
-                    <th class="py-3 px-4 text-center font-semibold">عدد الأصناف</th>
-                    <th class="py-3 px-4 text-right font-semibold">المبلغ المتوقع</th>
-                    <th class="py-3 px-4 text-center font-semibold w-32">إجراء</th>
-                </tr>
-            `;
-        }
-
-        if (!_orders.length) {
-            tbody.innerHTML = '';
-            if (empty) {
-                empty.classList.remove('hidden');
-                const t = _el('si-empty-title');
-                const s = _el('si-empty-sub');
-                if (t) t.textContent = 'لا توجد أوامر جاهزة للفاتورة';
-                if (s) s.textContent = 'جميع أوامر التشغيل الحالية تم إنشاء فواتير لها أو قيد الانتظار';
-            }
-            return;
-        }
-
-        if (empty) empty.classList.add('hidden');
-
-        tbody.innerHTML = _orders.map(o => {
-            const clientName = esc(o.client_name || '—');
-            const orderDate = _date(o.order_date);
-
-            return `<tr class="border-b border-slate-100 hover:bg-blue-50/30 transition-colors">
-                <td class="py-3 px-4 font-bold font-mono text-slate-700">#${o.order_number}</td>
-                <td class="py-3 px-4 text-slate-600 text-xs">${orderDate}</td>
-                <td class="py-3 px-4 font-semibold text-slate-800">${clientName}</td>
-                <td class="py-3 px-4 text-center">
-                    <span class="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold bg-blue-100 text-blue-700">
-                        <i class="fa-solid fa-box-open"></i> ${o.items_count}
-                    </span>
-                </td>
-                <td class="py-3 px-4 font-bold font-mono text-emerald-600">${fmt(o.estimated_total)}</td>
-                <td class="py-3 px-4 text-center">
-                    <button onclick="window.siOpenCreateModal('${esc(o.id)}')"
-                            class="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-brand-600 text-white text-xs font-bold hover:bg-brand-700 transition-all">
-                        <i class="fa-solid fa-file-invoice"></i> إنشاء فاتورة
-                    </button>
-                </td>
-            </tr>`;
-        }).join('');
-    }
-
-    // ── Render invoices table (draft / archive) ─────────────────────────────────
+    // ── Render invoices table ─────────────────────────────────────────────────
     function _renderInvoices() {
         const tbody = _el('si-tbody');
         const empty = _el('si-empty');
@@ -255,7 +145,7 @@
                 const t = _el('si-empty-title');
                 const s = _el('si-empty-sub');
                 const label = _currentTab === 'archive' ? 'لا توجد فواتير معتمدة في الأرشيف' : 'لا توجد فواتير غير معتمدة';
-                const sub = _currentTab === 'archive' ? 'ستظهر هنا الفواتير التي تم اعتمادها' : 'إنشئ فاتورة جديدة من تبويب (طلبات للفوترة)';
+                const sub = _currentTab === 'archive' ? 'ستظهر هنا الفواتير التي تم اعتمادها' : 'اضغط (إنشاء فاتورة جديدة) لإضافة فاتورة';
                 if (t) t.textContent = label;
                 if (s) s.textContent = sub;
             }
@@ -267,10 +157,11 @@
         tbody.innerHTML = _invoices.map(i => {
             const clientName = esc(i.client_name || '—');
             const invoiceDate = _date(i.invoice_date);
-            const isDraft = _currentTab === 'draft';
-            const action = isDraft
-                ? `<button onclick="window.siViewInvoice('${esc(i.id)}')" class="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-brand-600 text-white text-xs font-bold hover:bg-brand-700 transition-all"><i class="fa-solid fa-eye"></i> عرض / اعتماد</button>`
-                : `<button onclick="window.siViewInvoice('${esc(i.id)}')" class="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-600 text-white text-xs font-bold hover:bg-slate-700 transition-all"><i class="fa-solid fa-eye"></i> عرض</button>`;
+            const isArchive = _currentTab === 'archive';
+
+            const action = isArchive
+                ? `<button onclick="window.siViewInvoice('${esc(i.id)}')" class="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-600 text-white text-xs font-bold hover:bg-slate-700 transition-all"><i class="fa-solid fa-eye"></i> عرض</button>`
+                : `<button onclick="window.siViewInvoice('${esc(i.id)}')" class="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-brand-600 text-white text-xs font-bold hover:bg-brand-700 transition-all"><i class="fa-solid fa-eye"></i> عرض / اعتماد</button>`;
 
             return `<tr class="border-b border-slate-100 hover:bg-blue-50/30 transition-colors">
                 <td class="py-3 px-4 font-bold font-mono text-slate-700">#${i.invoice_number}</td>
@@ -286,26 +177,17 @@
     // ── Stats ─────────────────────────────────────────────────────────────────
     function _renderStats() {
         const _s = (id, v) => { const el = _el(id); if (el) el.textContent = v; };
-        if (_currentTab === 'orders') {
-            const totalAmount = _orders.reduce((sum, o) => sum + parseFloat(o.estimated_total || 0), 0);
-            const totalItems = _orders.reduce((sum, o) => sum + parseInt(o.items_count || 0), 0);
-            _s('si-stat-label-1', 'أوامر جاهزة للفاتورة');
-            _s('si-stat-total',   _totalRows);
-            _s('si-stat-label-2', 'إجمالي قيمة الفواتير المتوقعة');
-            _s('si-stat-amount',  fmt(totalAmount));
-            _s('si-stat-label-3', 'عدد الأصناف');
-            _s('si-stat-items',   totalItems);
-        } else {
-            const totalAmount = _invoices.reduce((sum, i) => sum + parseFloat(i.grand_total || 0), 0);
-            const avg = _invoices.length ? (totalAmount / _invoices.length) : 0;
-            _s('si-stat-label-1', 'عدد الفواتير');
-            _s('si-stat-total',   _totalRows);
-            _s('si-stat-label-2', 'إجمالي قيمة الفواتير');
-            _s('si-stat-amount',  fmt(totalAmount));
-            _s('si-stat-label-3', 'متوسط قيمة الفاتورة');
-            _s('si-stat-items',   fmt(avg));
-        }
-        _s('si-showing', _currentTab === 'orders' ? _orders.length : _invoices.length);
+        const totalAmount = _invoices.reduce((sum, i) => sum + parseFloat(i.grand_total || 0), 0);
+        const avg = _invoices.length ? (totalAmount / _invoices.length) : 0;
+
+        _s('si-stat-label-1', 'عدد الفواتير');
+        _s('si-stat-total',   _totalRows);
+        _s('si-stat-label-2', 'إجمالي القيمة');
+        _s('si-stat-amount',  fmt(totalAmount));
+        _s('si-stat-label-3', 'متوسط القيمة');
+        _s('si-stat-items',   fmt(avg));
+
+        _s('si-showing', _invoices.length);
         _s('si-total',   _totalRows);
     }
 
@@ -321,18 +203,42 @@
     }
 
     window.siChangePage = function(dir) {
-        _loadTab(_currentTab, _currentPage + dir);
+        _loadInvoices(_currentPage + dir);
     };
 
     window.siOnFilterChange = function() {
         clearTimeout(window._siDebounce);
-        window._siDebounce = setTimeout(() => _loadTab(_currentTab, 0), 300);
+        window._siDebounce = setTimeout(() => _loadInvoices(0), 300);
     };
 
-    // ── Modal: Create Invoice from Order ─────────────────────────────────────
-    window.siOpenCreateModal = async function(orderId) {
-        const order = _orders.find(o => o.id === orderId);
-        if (!order) return;
+    // ── Create Invoice Modal ─────────────────────────────────────────────────
+    window.siCreateInvoice = async function() {
+        _resetModal();
+        _el('si-modal-overlay')?.classList.remove('hidden');
+        _el('si-modal')?.classList.remove('hidden');
+
+        try {
+            const res = await window.apiFetch('/api/orders/ready-for-invoice?limit=1000');
+            _readyOrders = res.data || [];
+
+            const sel = _el('si-m-order-select');
+            if (!sel) return;
+
+            sel.innerHTML = '<option value="">— اختر أمر التشغيل —</option>' +
+                _readyOrders.map(o => `<option value="${esc(o.id)}">#${esc(o.order_number)} - ${esc(o.client_name)}</option>`).join('');
+
+            if (window.makeSelectSearchable) {
+                window.makeSelectSearchable(sel, '🔍 ابحث عن الأمر...');
+            }
+        } catch (err) {
+            alert('❌ خطأ في تحميل أوامر التشغيل: ' + err.message);
+        }
+    };
+
+    window.siOnOrderSelected = async function(orderId) {
+        _resetItems();
+        const order = _readyOrders.find(o => o.id === orderId);
+        if (!orderId || !order) return;
 
         try {
             const res = await window.apiFetch(`/api/orders/${orderId}`);
@@ -360,13 +266,11 @@
             _el('si-m-date').value = new Date().toISOString().split('T')[0];
             _el('si-m-due').value = '';
             _el('si-m-tax').value = '15';
+            _el('si-m-discount').value = '0';
             _el('si-m-notes').value = '';
 
             _renderModalItems();
             _calcModalTotals();
-
-            _el('si-modal-overlay')?.classList.remove('hidden');
-            _el('si-modal')?.classList.remove('hidden');
 
         } catch (err) {
             alert('❌ خطأ في تحميل بيانات الأمر: ' + err.message);
@@ -376,8 +280,38 @@
     window.siCloseModal = function() {
         _el('si-modal-overlay')?.classList.add('hidden');
         _el('si-modal')?.classList.add('hidden');
-        _orderItems = [];
+        _resetModal();
     };
+
+    function _resetModal() {
+        _readyOrders = [];
+        _orderItems = [];
+        const sel = _el('si-m-order-select');
+        if (sel) sel.innerHTML = '<option value="">— اختر أمر التشغيل —</option>';
+        _el('si-m-order-id').value = '';
+        _el('si-m-client-id').value = '';
+        _el('si-m-order-num').textContent = '';
+        _el('si-m-client').value = '';
+        _el('si-m-date').value = '';
+        _el('si-m-due').value = '';
+        _el('si-m-tax').value = '15';
+        _el('si-m-discount').value = '0';
+        _el('si-m-notes').value = '';
+        const items = _el('si-m-items');
+        if (items) items.innerHTML = '';
+        _calcModalTotals();
+    }
+
+    function _resetItems() {
+        _orderItems = [];
+        const items = _el('si-m-items');
+        if (items) items.innerHTML = '';
+        _el('si-m-order-id').value = '';
+        _el('si-m-client-id').value = '';
+        _el('si-m-order-num').textContent = '';
+        _el('si-m-client').value = '';
+        _calcModalTotals();
+    }
 
     function _renderModalItems() {
         const tbody = _el('si-m-items');
@@ -449,11 +383,11 @@
         const clientId = _el('si-m-client-id')?.value;
 
         if (!orderId || !clientId) {
-            alert('بيانات الأمر غير مكتملة');
+            alert('اختر أمر التشغيل أولاً');
             return;
         }
 
-        const btn = document.querySelector('#si-modal button[onclick="window.siSaveInvoice()"]');
+        const btn = _el('si-m-save-btn');
         if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin ml-1"></i> جاري الحفظ...'; }
 
         try {
@@ -489,7 +423,7 @@
             if (invoiceId) {
                 window.navigateTo(`sales-invoice-detail?id=${invoiceId}`);
             } else {
-                _loadTab('draft', 0);
+                _loadInvoices(0);
             }
 
         } catch (err) {
@@ -507,9 +441,15 @@
     // ── Init ────────────────────────────────────────────────────────────────────
     async function _init() {
         await _loadData();
+
+        // If redirected here after marking issued, open archive tab
+        if (sessionStorage.getItem('si_after_issued') === '1') {
+            sessionStorage.removeItem('si_after_issued');
+            _currentTab = 'archive';
+        }
+
         _setActiveTab(_currentTab);
-        _updateSearchPlaceholder();
-        await _loadTab(_currentTab, 0);
+        await _loadInvoices(0);
     }
 
     _init();

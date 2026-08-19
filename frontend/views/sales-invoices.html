@@ -1,6 +1,6 @@
 <!-- =============================================================================
      G.PACK 2.0 — Sales Invoices View
-     فواتير المبيعات: غير معتمدة / أرشيف / أوامر للفوترة
+     فواتير المبيعات: الفواتير (مسودة) / الأرشيف (معتمدة)
 ============================================================================= -->
 
 <!-- Header -->
@@ -16,39 +16,38 @@
             <p class="text-slate-400 text-sm mt-0.5">فاتورة مسبقة الدفع - إنشاء فاتورة قبل تسليم البضاعة</p>
         </div>
     </div>
+    <button onclick="window.siCreateInvoice()"
+            class="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold bg-emerald-600 text-white
+                   hover:bg-emerald-700 shadow-sm transition-all">
+        <i class="fa-solid fa-plus"></i> إنشاء فاتورة جديدة
+    </button>
 </div>
 
 <!-- ── Tabs ─────────────────────────────────────────────────────────────────── -->
 <div id="si-tabs" class="flex items-center gap-2 mb-5 border-b border-slate-200 pb-1">
-    <button id="si-tab-draft" onclick="window.siSwitchTab('draft')"
+    <button id="si-tab-invoices" onclick="window.siSwitchTab('invoices')"
             class="px-4 py-2 text-sm font-bold rounded-t-xl border-b-2 border-brand-600 text-brand-700 bg-white transition-all">
-        غير معتمدة
+        الفواتير
     </button>
     <button id="si-tab-archive" onclick="window.siSwitchTab('archive')"
             class="px-4 py-2 text-sm font-bold rounded-t-xl border-b-2 border-transparent text-slate-500 hover:text-brand-600 transition-all">
-        أرشيف
-    </button>
-    <button id="si-tab-orders" onclick="window.siSwitchTab('orders')"
-            class="px-4 py-2 text-sm font-bold rounded-t-xl border-b-2 border-transparent text-slate-500 hover:text-brand-600 transition-all">
-        طلبات للفوترة
+        الأرشيف
     </button>
 </div>
 
 <!-- ── Filters ─────────────────────────────────────────────────────────────── -->
 <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 mb-5">
     <div class="flex flex-col sm:flex-row gap-3">
-        <!-- Search -->
         <div class="flex-1">
             <div class="relative">
                 <i class="fa-solid fa-magnifying-glass absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
-                <input id="si-search" type="text" placeholder="بحث..."
+                <input id="si-search" type="text" placeholder="بحث برقم الفاتورة أو العميل..."
                        class="w-full pr-10 pl-3 py-2.5 border border-slate-200 rounded-xl text-sm
                               focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition-all"
                        oninput="window.siOnFilterChange()" />
             </div>
         </div>
 
-        <!-- Client filter -->
         <div class="sm:w-48">
             <select id="si-client"
                     class="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-700
@@ -63,16 +62,16 @@
 <!-- ── Stats Summary ────────────────────────────────────────────────────────── -->
 <div class="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-5">
     <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
-        <p class="text-xs text-slate-400 mb-1" id="si-stat-label-1">—</p>
+        <p class="text-xs text-slate-400 mb-1" id="si-stat-label-1">عدد الفواتير</p>
         <p class="text-2xl font-black text-slate-800" id="si-stat-total">0</p>
     </div>
     <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
-        <p class="text-xs text-slate-400 mb-1" id="si-stat-label-2">—</p>
+        <p class="text-xs text-slate-400 mb-1" id="si-stat-label-2">إجمالي القيمة</p>
         <p class="text-2xl font-black text-emerald-600" id="si-stat-amount">0.00</p>
     </div>
     <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
-        <p class="text-xs text-slate-400 mb-1" id="si-stat-label-3">—</p>
-        <p class="text-2xl font-black text-blue-600" id="si-stat-items">0</p>
+        <p class="text-xs text-slate-400 mb-1" id="si-stat-label-3">متوسط القيمة</p>
+        <p class="text-2xl font-black text-blue-600" id="si-stat-items">0.00</p>
     </div>
 </div>
 
@@ -146,6 +145,17 @@
             <!-- Hidden order id -->
             <input type="hidden" id="si-m-order-id" />
             <input type="hidden" id="si-m-client-id" />
+
+            <!-- Order selector -->
+            <div class="mb-4">
+                <label class="block text-xs font-bold text-slate-500 mb-1.5">أمر التشغيل *</label>
+                <select id="si-m-order-select"
+                        class="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-700
+                               focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none bg-white transition-all"
+                        onchange="window.siOnOrderSelected(this.value)">
+                    <option value="">— اختر أمر التشغيل —</option>
+                </select>
+            </div>
 
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
                 <!-- Client (read-only) -->
@@ -236,6 +246,7 @@
                 إلغاء
             </button>
             <button onclick="window.siSaveInvoice()"
+                    id="si-m-save-btn"
                     class="px-5 py-2.5 rounded-xl text-sm font-bold bg-brand-600 text-white hover:bg-brand-700 transition-all">
                 <i class="fa-solid fa-file-invoice ml-1"></i> إنشاء الفاتورة
             </button>
@@ -243,4 +254,4 @@
     </div>
 </div>
 
-<script src="/js/views/sales-invoices.js?v=20260819g"></script>
+<script src="/js/views/sales-invoices.js?v=20260819h"></script>
