@@ -146,8 +146,9 @@
         _el('order-status-badge').innerHTML = _badge(order.derived_status || order.status);
         _el('order-status-text').textContent = `الحالة الحالية: ${_orderStateLabel(order)}`;
         _el('order-grand-total').textContent = _money(order.grand_total);
-        _el('order-paid').textContent = _money(order.paid_amount || data.paid_total || 0);
-        _el('order-remaining').textContent = _money(Math.max(0, parseFloat(order.grand_total || 0) - parseFloat(order.paid_amount || 0)));
+        const paidTotal = parseFloat(order.paid_total || data.paid_total || order.paid_amount || 0);
+        _el('order-paid').textContent = _money(paidTotal);
+        _el('order-remaining').textContent = _money(Math.max(0, parseFloat(order.grand_total || 0) - paidTotal));
         _el('order-items-count').textContent = String(order.item_count || items.length || 0);
         _el('order-wh-received').textContent = _money(order.wh_received_qty || 0);
         _el('order-released').textContent = _money(order.released_qty || 0);

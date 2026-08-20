@@ -256,6 +256,7 @@ router.get('/client-portal/:token', async (req, res) => {
                     COALESCE(SUM(CASE WHEN ct.type IN ('payment','receipt') THEN ct.amount ELSE 0 END), 0)::numeric AS paid_total,
                     MAX(ct.created_at) AS last_payment_at
                 FROM client_transactions ct
+                WHERE ct.type IN ('payment','receipt')
                 GROUP BY ct.order_id
             )
             SELECT
@@ -285,7 +286,11 @@ router.get('/client-portal/:token', async (req, res) => {
                 dn_stats.completed_delivery_at,
                 CASE
                     WHEN o.status = 'delivered' THEN 'delivered'
-                    WHEN COALESCE(oit.delivered_qty, 0) > 0 AND COALESCE(oit.total_qty, 0) > 0 AND COALESCE(oit.delivered_qty, 0) >= COALESCE(oit.total_qty, 0) THEN 'delivered'
+                    WHEN COALESCE(oit.delivered_qty, 0) > 0
+                         AND COALESCE(oit.total_qty, 0) > 0
+                         AND COALESCE(oit.delivered_qty, 0) >= COALESCE(oit.total_qty, 0)
+                         AND dn_stats.completed_delivery_at IS NOT NULL
+                         AND dn_stats.completed_delivery_at < DATE_TRUNC('day', NOW()) THEN 'delivered'
                     WHEN COALESCE(oit.released_qty, 0) > 0 AND COALESCE(oit.total_qty, 0) > 0 AND COALESCE(oit.released_qty, 0) >= COALESCE(oit.total_qty, 0) THEN 'shipped'
                     WHEN COALESCE(oit.wh_received_qty, 0) > 0 AND COALESCE(oit.total_qty, 0) > 0 AND COALESCE(oit.wh_received_qty, 0) >= COALESCE(oit.total_qty, 0) THEN 'completed'
                     WHEN COALESCE(oit.manufacturer_po_qty, 0) > 0 OR o.status IN ('production', 'processing') THEN 'production'
@@ -487,23 +492,26 @@ router.get('/client-portal/:token/orders/:id', async (req, res) => {
             [client.id, order.id]
         );
 
-        const timeline = _buildTimeline({
-            ...order,
-            ...itemsRes.rows.reduce((acc, item) => {
-                acc.total_qty = (parseFloat(acc.total_qty || 0) + parseFloat(item.quantity || 0)).toString();
-                acc.wh_received_qty = (parseFloat(acc.wh_received_qty || 0) + parseFloat(item.wh_received_qty || 0)).toString();
-                acc.released_qty = (parseFloat(acc.released_qty || 0) + parseFloat(item.released_qty || 0)).toString();
-                acc.delivered_qty = (parseFloat(acc.delivered_qty || 0) + parseFloat(item.delivered_qty || 0)).toString();
-                return acc;
-            }, { total_qty: 0, wh_received_qty: 0, released_qty: 0, delivered_qty: 0 }),
-        });
+        const orderTotals = itemsRes.rows.reduce((acc, item) => {
+            acc.total_qty = (parseFloat(acc.total_qty || 0) + parseFloat(item.quantity || 0)).toString();
+            acc.wh_received_qty = (parseFloat(acc.wh_received_qty || 0) + parseFloat(item.wh_received_qty || 0)).toString();
+            acc.released_qty = (parseFloat(acc.released_qty || 0) + parseFloat(item.released_qty || 0)).toString();
+            acc.delivered_qty = (parseFloat(acc.delivered_qty || 0) + parseFloat(item.delivered_qty || 0)).toString();
+            return acc;
+        }, { total_qty: 0, wh_received_qty: 0, released_qty: 0, delivered_qty: 0 });
 
         const derivedStatus = _deriveOrderStatus({
             ...order,
-            total_qty: itemsRes.rows.reduce((sum, item) => sum + parseFloat(item.quantity || 0), 0),
-            wh_received_qty: itemsRes.rows.reduce((sum, item) => sum + parseFloat(item.wh_received_qty || 0), 0),
-            released_qty: itemsRes.rows.reduce((sum, item) => sum + parseFloat(item.released_qty || 0), 0),
-            delivered_qty: itemsRes.rows.reduce((sum, item) => sum + parseFloat(item.delivered_qty || 0), 0),
+            total_qty: parseFloat(orderTotals.total_qty || 0),
+            wh_received_qty: parseFloat(orderTotals.wh_received_qty || 0),
+            released_qty: parseFloat(orderTotals.released_qty || 0),
+            delivered_qty: parseFloat(orderTotals.delivered_qty || 0),
+        });
+
+        const timeline = _buildTimeline({
+            ...order,
+            ...orderTotals,
+            derived_status: derivedStatus,
         });
 
         return success(res, {
