@@ -88,13 +88,13 @@
             );
 
             // Keep the matching accounts and all their ancestors
-            const map = Object.fromEntries(_allAccounts.map(a => [a.id, a]));
+            const allMap = Object.fromEntries(_allAccounts.map(a => [a.id, a]));
             const visibleIds = new Set();
             for (const a of matches) {
                 let cur = a;
-                while (cur) {
+                while (cur && !visibleIds.has(cur.id)) {
                     visibleIds.add(cur.id);
-                    cur = map[cur.parent_id];
+                    cur = _findParent(cur, allMap);
                 }
             }
 
@@ -110,6 +110,22 @@
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // Find the best parent using explicit parent_id or longest code prefix
+    // ─────────────────────────────────────────────────────────────────────────
+    function _findParent(a, map) {
+        if (!a) return null;
+        if (a.parent_id && map[a.parent_id]) return map[a.parent_id];
+
+        let best = null;
+        for (const p of Object.values(map)) {
+            if (p.id !== a.id && p.code.length < a.code.length && a.code.startsWith(p.code)) {
+                if (!best || p.code.length > best.code.length) best = p;
+            }
+        }
+        return best;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Build account hierarchy from a flat list
     // ─────────────────────────────────────────────────────────────────────────
     function _buildTree(accounts) {
@@ -118,11 +134,9 @@
 
         for (const a of accounts) {
             const node = map[a.id];
-            if (a.parent_id && map[a.parent_id]) {
-                map[a.parent_id].children.push(node);
-            } else {
-                roots.push(node);
-            }
+            const p = _findParent(a, map);
+            if (p) p.children.push(node);
+            else roots.push(node);
         }
 
         const sortChildren = (nodes) => {
@@ -160,7 +174,7 @@
 
             const el = document.createElement('div');
             el.className = 'coa-tree-row flex items-center gap-2 py-3 pr-4 pl-4 border-b border-slate-100 hover:bg-slate-50/60 transition-colors';
-            el.style.paddingRight = (16 + level * 24) + 'px';
+            el.style.paddingRight = (12 + level * 40) + 'px';
             el.style.cursor = 'pointer';
 
             const chevron = hasChildren
