@@ -1,7 +1,7 @@
 'use strict';
 
 // =============================================================================
-// G.PACK 2.0 - Chart of Accounts View Controller
+// G.PACK 2.0 - Chart of Accounts View Controller (Tree)
 // =============================================================================
 
 (function () {
@@ -27,18 +27,25 @@
     };
 
     let _allAccounts = [];
+    const _expandedIds = new Set();
 
     // ─────────────────────────────────────────────────────────────────────────
     // Load all accounts
     // ─────────────────────────────────────────────────────────────────────────
     async function _load() {
         _el('coa-loading')?.classList.remove('hidden');
-        _el('coa-table-wrap')?.classList.add('hidden');
+        _el('coa-tree-wrap')?.classList.add('hidden');
         _el('coa-empty')?.classList.add('hidden');
 
         try {
             const res = await window.apiFetch('/api/accounts');
             _allAccounts = res.data || [];
+
+            // Expand everything on first load so the user sees the tree
+            if (!_expandedIds.size) {
+                for (const a of _allAccounts) _expandedIds.add(a.id);
+            }
+
             _renderStats(_allAccounts);
             _applyFilter();
             _populateParentSelect(_allAccounts);
@@ -65,7 +72,7 @@
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Filter & Render Table
+    // Filter & Build Tree
     // ─────────────────────────────────────────────────────────────────────────
     function _applyFilter() {
         const search = (_el('coa-search')?.value || '').toLowerCase().trim();
@@ -75,60 +82,147 @@
         let filtered = _allAccounts;
 
         if (search) {
-            filtered = filtered.filter(a =>
+            const matches = filtered.filter(a =>
                 a.name.toLowerCase().includes(search) ||
                 a.code.toLowerCase().includes(search)
             );
+
+            // Keep the matching accounts and all their ancestors
+            const map = Object.fromEntries(_allAccounts.map(a => [a.id, a]));
+            const visibleIds = new Set();
+            for (const a of matches) {
+                let cur = a;
+                while (cur) {
+                    visibleIds.add(cur.id);
+                    cur = map[cur.parent_id];
+                }
+            }
+
+            filtered = _allAccounts.filter(a => visibleIds.has(a.id));
         }
+
         if (type)   filtered = filtered.filter(a => a.account_type === type);
         if (active !== undefined && active !== '')
             filtered = filtered.filter(a => String(a.is_active) === active);
 
-        _renderTable(filtered);
+        const roots = _buildTree(filtered);
+        _renderTree(roots);
     }
 
-    function _renderTable(accounts) {
-        const tbody = _el('coa-tbody');
-        if (!tbody) return;
+    // ─────────────────────────────────────────────────────────────────────────
+    // Build account hierarchy from a flat list
+    // ─────────────────────────────────────────────────────────────────────────
+    function _buildTree(accounts) {
+        const map = Object.fromEntries(accounts.map(a => [a.id, { ...a, children: [] }]));
+        const roots = [];
 
-        if (!accounts.length) {
-            _el('coa-table-wrap')?.classList.add('hidden');
-            _el('coa-empty')?.classList.remove('hidden');
+        for (const a of accounts) {
+            const node = map[a.id];
+            if (a.parent_id && map[a.parent_id]) {
+                map[a.parent_id].children.push(node);
+            } else {
+                roots.push(node);
+            }
+        }
+
+        const sortChildren = (nodes) => {
+            nodes.sort((a, b) => String(a.code).localeCompare(String(b.code)));
+            for (const n of nodes) sortChildren(n.children);
+        };
+        sortChildren(roots);
+
+        return roots;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Render expandable tree
+    // ─────────────────────────────────────────────────────────────────────────
+    function _renderTree(roots) {
+        const wrap = _el('coa-tree-wrap');
+        const tree = _el('coa-tree');
+        const empty = _el('coa-empty');
+
+        if (!wrap || !tree) return;
+
+        if (!roots.length) {
+            wrap.classList.add('hidden');
+            empty?.classList.remove('hidden');
             return;
         }
 
-        _el('coa-table-wrap')?.classList.remove('hidden');
-        _el('coa-empty')?.classList.add('hidden');
+        wrap.classList.remove('hidden');
+        empty?.classList.add('hidden');
+        tree.innerHTML = '';
 
-        tbody.innerHTML = accounts.map(a => {
-            const t     = TYPE_LABEL[a.account_type] || { label: a.account_type, cls: 'bg-slate-100 text-slate-500' };
-            const bal   = parseFloat(a.balance || 0);
+        const _row = (node, level) => {
+            const hasChildren = node.children && node.children.length;
+            const expanded = hasChildren ? _expandedIds.has(node.id) : false;
+
+            const el = document.createElement('div');
+            el.className = 'coa-tree-row flex items-center gap-2 py-3 pr-4 pl-4 border-b border-slate-100 hover:bg-slate-50/60 transition-colors';
+            el.style.paddingRight = (16 + level * 24) + 'px';
+            el.style.cursor = 'pointer';
+
+            const chevron = hasChildren
+                ? (expanded ? '<i class="fa-solid fa-chevron-down text-slate-600"></i>' : '<i class="fa-solid fa-chevron-left text-slate-600"></i>')
+                : '<i class="fa-solid fa-chevron-down text-transparent"></i>';
+
+            const t = TYPE_LABEL[node.account_type] || { label: node.account_type, cls: 'bg-slate-100 text-slate-500' };
+            const bal = parseFloat(node.balance || 0);
             const balCls = bal > 0 ? 'text-emerald-600' : bal < 0 ? 'text-red-500' : 'text-slate-400';
 
-            return `<tr class="border-b border-slate-100 hover:bg-slate-50/60 transition-colors cursor-pointer" onclick="window.coaOpenDetail('${a.id}')">
-                <td class="py-3 px-4 font-mono font-bold text-slate-600">${esc(a.code)}</td>
-                <td class="py-3 px-4 font-semibold text-slate-800">${esc(a.name)}</td>
-                <td class="py-3 px-4 hidden sm:table-cell">
+            el.innerHTML = `
+                <div class="coa-tree-toggle w-6 h-6 flex items-center justify-center rounded-md hover:bg-slate-100 text-slate-500 text-xs" ${hasChildren ? '' : 'style=\'pointer-events:none\''}>
+                    ${chevron}
+                </div>
+                <div class="w-20 font-mono font-bold text-slate-600 text-xs text-right">${esc(node.code)}</div>
+                <div class="flex-1 font-semibold text-slate-800 text-sm">${esc(node.name)}</div>
+                <div class="hidden sm:block">
                     <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${t.cls}">${t.label}</span>
-                </td>
-                <td class="py-3 px-4 text-slate-400 text-xs hidden md:table-cell">${a.parent_code ? `${a.parent_code} — ${esc(a.parent_name)}` : '—'}</td>
-                <td class="py-3 px-4 font-mono text-red-500 font-semibold">${fmt(a.total_debit)}</td>
-                <td class="py-3 px-4 font-mono text-emerald-600 font-semibold">${fmt(a.total_credit)}</td>
-                <td class="py-3 px-4 font-mono font-black ${balCls}">${fmt(bal)}</td>
-                <td class="py-3 px-4 hidden sm:table-cell">
-                    ${a.is_active
-                        ? `<span class="inline-flex items-center gap-1 text-xs font-bold text-emerald-600"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block"></span>نشط</span>`
-                        : `<span class="inline-flex items-center gap-1 text-xs font-bold text-slate-400"><span class="w-1.5 h-1.5 rounded-full bg-slate-300 inline-block"></span>موقوف</span>`
-                    }
-                </td>
-                <td class="py-3 px-4 text-center" onclick="event.stopPropagation()">
-                    <button onclick="window.coaOpenEdit('${a.id}')"
-                            class="px-2.5 py-1.5 bg-slate-50 hover:bg-brand-50 hover:text-brand-600 text-slate-600 text-xs font-bold rounded-lg transition-colors">
+                </div>
+                <div class="w-28 font-mono font-black ${balCls} text-sm text-left">${fmt(bal)}</div>
+                <div class="w-8 text-center">
+                    <button class="coa-edit-btn px-2.5 py-1.5 bg-slate-50 hover:bg-brand-50 hover:text-brand-600 text-slate-600 text-xs font-bold rounded-lg transition-colors">
                         <i class="fa-solid fa-pen-to-square"></i>
                     </button>
-                </td>
-            </tr>`;
-        }).join('');
+                </div>
+            `;
+
+            // Open ledger on row click, but not on toggle or edit button
+            el.addEventListener('click', (e) => {
+                if (e.target.closest('.coa-tree-toggle') || e.target.closest('.coa-edit-btn')) return;
+                window.coaOpenDetail(node.id);
+            });
+
+            // Toggle expand/collapse
+            const toggle = el.querySelector('.coa-tree-toggle');
+            if (hasChildren && toggle) {
+                toggle.addEventListener('click', () => _toggleExpand(node.id));
+            }
+
+            // Edit button
+            const editBtn = el.querySelector('.coa-edit-btn');
+            if (editBtn) {
+                editBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    window.coaOpenEdit(node.id);
+                });
+            }
+
+            tree.appendChild(el);
+
+            if (hasChildren && expanded) {
+                for (const child of node.children) _row(child, level + 1);
+            }
+        };
+
+        for (const r of roots) _row(r, 0);
+    }
+
+    function _toggleExpand(id) {
+        if (_expandedIds.has(id)) _expandedIds.delete(id);
+        else _expandedIds.add(id);
+        _applyFilter();
     }
 
     // ─────────────────────────────────────────────────────────────────────────

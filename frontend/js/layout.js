@@ -383,7 +383,7 @@ window.navigateTo = async function (viewName) {
     mainContent.classList.add('loading');
 
     try {
-        const res = await fetch(`/views/${cleanView}.html?v=20260819h`);
+        const res = await fetch(`/views/${cleanView}.html?v=20260820a`);
         if (!res.ok) throw new Error(`View not found: ${viewName}`);
         const html = await res.text();
 
