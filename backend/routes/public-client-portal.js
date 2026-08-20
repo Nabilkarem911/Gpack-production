@@ -449,6 +449,8 @@ router.get('/client-portal/:token/orders/:id', async (req, res) => {
             [client.id, order.id]
         );
 
+        const paidTotal = paymentsRes.rows.reduce((sum, payment) => sum + parseFloat(payment.amount || 0), 0);
+
         const invoicesRes = await db.query(
             `SELECT
                 i.id,
@@ -456,7 +458,6 @@ router.get('/client-portal/:token/orders/:id', async (req, res) => {
                 i.status,
                 i.created_at,
                 i.grand_total,
-                i.paid_amount,
                 i.tax_amount,
                 i.subtotal
              FROM invoices i
@@ -508,12 +509,14 @@ router.get('/client-portal/:token/orders/:id', async (req, res) => {
         return success(res, {
             order: {
                 ...order,
+                paid_total: paidTotal,
                 derived_status: derivedStatus,
                 status_label: _orderBadge(derivedStatus).label,
                 status_color: _orderBadge(derivedStatus).color,
             },
             items: itemsRes.rows,
             payments: paymentsRes.rows,
+            paid_total: paidTotal,
             invoices: invoicesRes.rows,
             delivery_notes: deliveryRes.rows,
             timeline,
