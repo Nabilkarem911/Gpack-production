@@ -1,6 +1,7 @@
 'use strict';
 
 const express = require('express');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const db = require('../db');
@@ -8,6 +9,7 @@ const { authenticate } = require('../middleware/authMiddleware');
 const authorize = require('../middleware/authorize');
 const { clientCreate, clientUpdate, validateBody } = require('../utils/validators');
 const eventBus = require('../utils/event-bus');
+const { encryptToken, hashToken } = require('../utils/crypto');
 
 const router = express.Router();
 
@@ -42,6 +44,25 @@ router.use((req, res, next) => {
 const restrictWrite  = authorize('clients', 'create');
 const restrictEdit   = authorize('clients', 'edit');
 const restrictDelete = authorize('clients', 'delete');
+
+function _createPermanentPortalToken() {
+    const plainToken = crypto.randomBytes(32).toString('hex');
+
+    try {
+        return {
+            plainToken,
+            storedToken: encryptToken(plainToken),
+            tokenHash: hashToken(plainToken),
+        };
+    } catch (err) {
+        console.warn('[Clients] Portal token crypto fallback:', err.message);
+        return {
+            plainToken,
+            storedToken: plainToken,
+            tokenHash: crypto.createHmac('sha256', plainToken).digest('hex'),
+        };
+    }
+}
 
 // =============================================================================
 // GET /api/clients
@@ -305,11 +326,14 @@ router.post('/', restrictWrite, validateBody(clientCreate), async (req, res) => 
             }
         }
 
+        const portalToken = _createPermanentPortalToken();
+
         const result = await db.query(
             `INSERT INTO clients
                 (name, parent_id, contact_person, phone, email, address, city,
-                 commercial_register, tax_id, credit_limit, status, created_by)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                 commercial_register, tax_id, credit_limit, status, created_by,
+                 portal_token, portal_token_hash)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
              RETURNING *`,
             [
                 name.trim(),
@@ -324,6 +348,8 @@ router.post('/', restrictWrite, validateBody(clientCreate), async (req, res) => 
                 credit_limit || 0,
                 status || 'active',
                 req.user.id,
+                portalToken.storedToken,
+                portalToken.tokenHash,
             ]
         );
 

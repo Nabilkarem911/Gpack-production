@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>بوابة العميل | G.PACK</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+    <style>
+        * { font-family: 'Cairo', sans-serif; }
+        .cp-tab { display:flex; align-items:center; gap:8px; padding:14px 20px; font-size:14px; font-weight:800; color:#64748b; border-bottom:2px solid transparent; white-space:nowrap; cursor:pointer; transition:all .15s; background:none; border-top:none; border-left:none; border-right:none; }
+        .cp-tab:hover { color:#563D5D; background:#faf5fb; }
+        .cp-tab.active { color:#563D5D; border-bottom-color:#563D5D; background:#fff; }
+        .cp-badge { font-size:10px; font-weight:900; padding:2px 7px; border-radius:999px; }
+        .fade-in { animation: fadeIn .25s ease-in; }
+        @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+        .status-dot { width:8px; height:8px; border-radius:999px; display:inline-block; }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen">
+
+<!-- Loading -->
+<div id="cp-loading" class="fixed inset-0 bg-white flex flex-col items-center justify-center z-50">
+    <div class="w-14 h-14 border-4 border-brand-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+    <p class="text-slate-500 text-sm">جاري تحميل بوابة العميل...</p>
+</div>
+
+<!-- Error -->
+<div id="cp-error" class="hidden fixed inset-0 bg-slate-100 flex flex-col items-center justify-center p-6">
+    <div class="bg-white rounded-2xl shadow-lg p-10 max-w-md w-full text-center">
+        <div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <i class="fa-solid fa-link-slash text-2xl text-red-500"></i>
+        </div>
+        <h2 class="text-xl font-bold text-slate-800 mb-2">الرابط غير صالح</h2>
+        <p id="cp-error-msg" class="text-slate-500 text-sm">هذا الرابط غير صحيح أو العميل غير نشط.</p>
+    </div>
+</div>
+
+<!-- Main -->
+<div id="cp-main" class="hidden max-w-6xl mx-auto py-6 px-4">
+    <!-- Header -->
+    <div class="bg-gradient-to-l from-[#563D5D] to-[#3D2A43] rounded-2xl p-6 text-white mb-6 shadow-lg">
+        <div class="flex items-center justify-between flex-wrap gap-4">
+            <div class="flex items-center gap-4">
+                <img src="/images/logo.png" alt="G.PACK" class="h-14 w-auto bg-white rounded-xl p-1" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />
+                <div style="display:none;width:56px;height:56px;background:#fbbf24;border-radius:12px;align-items:center;justify-content:center;">
+                    <i class="fa-solid fa-industry text-2xl text-[#3D2A43]"></i>
+                </div>
+                <div>
+                    <h1 class="text-2xl font-extrabold">G.PACK</h1>
+                    <p class="text-purple-200 text-sm" style="color:#c9b8cc">بوابة العميل — متابعة الطلبات والدفعات</p>
+                </div>
+            </div>
+            <div class="text-left">
+                <p class="text-purple-200 text-xs" style="color:#c9b8cc">العميل</p>
+                <p id="client-name" class="text-lg font-bold"></p>
+                <p id="client-contact" class="text-xs mt-0.5" style="color:#c9b8cc"></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+        <div class="flex border-b border-slate-100 overflow-x-auto">
+            <button onclick="cpTab('orders')" id="tab-orders" class="cp-tab active">
+                <i class="fa-solid fa-cart-shopping"></i>
+                <span>الطلبات</span>
+                <span id="orders-badge" class="cp-badge bg-brand-100 text-brand-700">0</span>
+            </button>
+            <button onclick="cpTab('designs')" id="tab-designs" class="cp-tab">
+                <i class="fa-solid fa-palette"></i>
+                <span>التصميم</span>
+                <span class="cp-badge bg-slate-100 text-slate-500">قريباً</span>
+            </button>
+        </div>
+
+        <!-- Orders Tab -->
+        <div id="panel-orders" class="cp-panel p-4 md:p-6">
+            <div class="flex flex-col lg:flex-row lg:items-center gap-3 mb-4">
+                <div class="flex items-center gap-2 text-slate-500 text-sm">
+                    <i class="fa-solid fa-circle-info text-brand-500"></i>
+                    <span>اضغط على أي طلب لعرض تفاصيله وسجل الدفعات وحالة التنفيذ.</span>
+                </div>
+                <div class="flex-1"></div>
+                <div class="text-xs text-slate-400"><span id="orders-count">0</span> طلب</div>
+            </div>
+
+            <div class="overflow-x-auto rounded-xl border border-slate-200">
+                <table class="w-full text-sm">
+                    <thead class="bg-slate-50 text-slate-500 text-xs">
+                        <tr>
+                            <th class="py-3 px-4 text-right font-bold">رقم الطلب</th>
+                            <th class="py-3 px-4 text-right font-bold">الحالة</th>
+                            <th class="py-3 px-4 text-right font-bold hidden sm:table-cell">التاريخ</th>
+                            <th class="py-3 px-4 text-right font-bold hidden md:table-cell">الأصناف</th>
+                            <th class="py-3 px-4 text-right font-bold">الإجمالي</th>
+                            <th class="py-3 px-4 text-right font-bold hidden md:table-cell">المدفوع</th>
+                            <th class="py-3 px-4 text-right font-bold hidden md:table-cell">المتبقي</th>
+                            <th class="py-3 px-4 text-center font-bold">عرض</th>
+                        </tr>
+                    </thead>
+                    <tbody id="orders-tbody" class="divide-y divide-slate-100"></tbody>
+                </table>
+            </div>
+
+            <div id="orders-empty" class="hidden py-14 text-center text-slate-400">
+                <i class="fa-solid fa-box-open text-4xl text-slate-200 mb-3 block"></i>
+                <p class="text-sm">لا توجد طلبات حالياً</p>
+            </div>
+        </div>
+
+        <!-- Design placeholder -->
+        <div id="panel-designs" class="cp-panel hidden p-8 md:p-10 text-center">
+            <div class="max-w-md mx-auto">
+                <div class="w-16 h-16 rounded-2xl bg-brand-50 flex items-center justify-center mx-auto mb-4">
+                    <i class="fa-solid fa-palette text-2xl text-brand-600"></i>
+                </div>
+                <h3 class="text-xl font-black text-slate-800 mb-2">قسم التصميم</h3>
+                <p class="text-sm text-slate-500">هذا القسم جاهز للبنية الأساسية، وسيتم تفعيله لاحقاً.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Order Detail Modal -->
+<div id="cp-order-modal" style="display:none" onclick="if(event.target===this) window._cpCloseOrderModal()" class="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/60 opacity-0 transition-opacity duration-200">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+            <div class="flex items-center gap-3 min-w-0">
+                <div class="w-10 h-10 bg-brand-50 rounded-xl flex items-center justify-center">
+                    <i class="fa-solid fa-receipt text-brand-600"></i>
+                </div>
+                <div class="min-w-0">
+                    <h3 id="order-modal-title" class="text-sm font-black text-slate-800 truncate">تفاصيل الطلب</h3>
+                    <p id="order-modal-subtitle" class="text-xs text-slate-400 truncate"></p>
+                </div>
+            </div>
+            <button onclick="window._cpCloseOrderModal()" class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <div id="order-modal-loading" class="flex-1 flex items-center justify-center py-20">
+            <i class="fa-solid fa-circle-notch fa-spin text-brand-600 text-2xl"></i>
+        </div>
+
+        <div id="order-modal-body" class="hidden flex-1 overflow-y-auto p-5 space-y-5">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <div class="bg-slate-50 rounded-2xl p-4 border border-slate-100">
+                    <p class="text-xs text-slate-400 font-bold mb-1">الحالة الحالية</p>
+                    <div id="order-status-badge"></div>
+                    <p id="order-status-text" class="text-xs text-slate-500 mt-2"></p>
+                </div>
+                <div class="bg-slate-50 rounded-2xl p-4 border border-slate-100">
+                    <p class="text-xs text-slate-400 font-bold mb-1">الملخص المالي</p>
+                    <div class="flex items-center justify-between text-sm"><span>الإجمالي</span><span id="order-grand-total" class="font-mono font-bold"></span></div>
+                    <div class="flex items-center justify-between text-sm"><span>المدفوع</span><span id="order-paid" class="font-mono font-bold text-emerald-600"></span></div>
+                    <div class="flex items-center justify-between text-sm"><span>المتبقي</span><span id="order-remaining" class="font-mono font-bold text-red-600"></span></div>
+                </div>
+                <div class="bg-slate-50 rounded-2xl p-4 border border-slate-100">
+                    <p class="text-xs text-slate-400 font-bold mb-1">مؤشرات التنفيذ</p>
+                    <div class="text-sm text-slate-600 space-y-1">
+                        <div class="flex items-center justify-between"><span>الأصناف</span><span id="order-items-count">0</span></div>
+                        <div class="flex items-center justify-between"><span>الاستلام</span><span id="order-wh-received">0</span></div>
+                        <div class="flex items-center justify-between"><span>الشحن</span><span id="order-released">0</span></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 xl:grid-cols-2 gap-5">
+                <div class="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+                    <div class="px-4 py-3 border-b border-slate-100 bg-slate-50">
+                        <h4 class="text-sm font-black text-slate-700">الأصناف</h4>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead class="bg-white text-slate-500 text-xs border-b border-slate-100">
+                                <tr>
+                                    <th class="py-3 px-4 text-right font-bold">الصنف</th>
+                                    <th class="py-3 px-4 text-center font-bold">الكمية</th>
+                                    <th class="py-3 px-4 text-center font-bold hidden sm:table-cell">تم الاستلام</th>
+                                    <th class="py-3 px-4 text-center font-bold hidden md:table-cell">تم الشحن</th>
+                                    <th class="py-3 px-4 text-left font-bold hidden md:table-cell">الإجمالي</th>
+                                </tr>
+                            </thead>
+                            <tbody id="order-items-tbody" class="divide-y divide-slate-100"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="space-y-5">
+                    <div class="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+                        <div class="px-4 py-3 border-b border-slate-100 bg-slate-50">
+                            <h4 class="text-sm font-black text-slate-700">سجل الدفعات</h4>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-xs">
+                                <thead class="bg-white text-slate-500 border-b border-slate-100">
+                                    <tr>
+                                        <th class="py-3 px-3 text-right font-bold">التاريخ</th>
+                                        <th class="py-3 px-3 text-right font-bold">المستند</th>
+                                        <th class="py-3 px-3 text-right font-bold">المبلغ</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="order-payments-tbody" class="divide-y divide-slate-100"></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+                        <div class="px-4 py-3 border-b border-slate-100 bg-slate-50">
+                            <h4 class="text-sm font-black text-slate-700">الفواتير</h4>
+                        </div>
+                        <div id="order-invoices-list" class="p-4 space-y-3"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+                <div class="px-4 py-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+                    <h4 class="text-sm font-black text-slate-700">الجدول الزمني</h4>
+                    <span class="text-xs text-slate-400">يتحدث تلقائياً حسب مراحل التنفيذ</span>
+                </div>
+                <div id="order-timeline" class="p-5 grid grid-cols-1 md:grid-cols-4 gap-3"></div>
+            </div>
+        </div>
+
+        <div id="order-modal-error" class="hidden flex-1 flex items-center justify-center py-14 text-slate-400">
+            <div class="text-center">
+                <i class="fa-solid fa-circle-exclamation text-4xl text-red-300 mb-3"></i>
+                <p id="order-modal-error-msg" class="text-sm">تعذّر تحميل الطلب.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="/js/views/public-client-portal.js?v=20260820a"></script>
+</body>
+</html>

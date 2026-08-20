@@ -89,6 +89,9 @@
             _setText('cp-parent', client.parent_name || '—');
         }
 
+        const portalBtn = document.getElementById('cp-portal-btn');
+        if (portalBtn) portalBtn.classList.remove('hidden');
+
         const editBtn = document.getElementById('cp-edit-btn');
         if (editBtn) editBtn.classList.remove('hidden');
     }
@@ -612,6 +615,83 @@
             if (errMsg) errMsg.textContent = err.message || 'تعذّر تحميل الفاتورة.';
             if (errEl)  errEl.classList.remove('hidden');
         }
+    };
+
+    // ── Client Portal Link Modal ─────────────────────────────────────────────
+    window._cpOpenPortal = async function() {
+        const clientId = window._cpClientId;
+        if (!clientId) {
+            if (window.showToast) window.showToast('لا يوجد عميل محدد', 'error');
+            return;
+        }
+
+        if (typeof window.apiFetch !== 'function') {
+            if (window.showToast) window.showToast('خدمة الاتصال غير متاحة حالياً.', 'error');
+            return;
+        }
+
+        const modal = document.getElementById('cp-portal-modal');
+        const linkEl = document.getElementById('cp-portal-link');
+        const nameEl = document.getElementById('cp-portal-name');
+        if (!modal || !linkEl) return;
+
+        linkEl.value = 'جاري التحميل...';
+        if (nameEl) nameEl.textContent = 'جاري التحميل...';
+        modal.style.display = 'flex';
+        requestAnimationFrame(() => modal.classList.add('opacity-100'));
+
+        try {
+            const res = await window.apiFetch('/api/public/client-portal/generate', {
+                method: 'POST',
+                body: { client_id: clientId }
+            });
+            const data = res?.data;
+            if (!data) throw new Error('فشل إنشاء الرابط.');
+
+            linkEl.value = data.portal_url;
+            if (nameEl) nameEl.textContent = data.client_name || '';
+        } catch (err) {
+            console.error('[cpOpenPortal]:', err);
+            linkEl.value = 'حدث خطأ: ' + (err.message || 'فشل إنشاء الرابط');
+            if (nameEl) nameEl.textContent = '';
+        }
+    };
+
+    window._cpClosePortalModal = function() {
+        const modal = document.getElementById('cp-portal-modal');
+        if (!modal) return;
+        modal.classList.remove('opacity-100');
+        setTimeout(() => { modal.style.display = 'none'; }, 200);
+    };
+
+    window._cpCopyPortalLink = function() {
+        const linkEl = document.getElementById('cp-portal-link');
+        if (!linkEl || !linkEl.value || linkEl.value.startsWith('جاري') || linkEl.value.startsWith('حدث')) return;
+        navigator.clipboard.writeText(linkEl.value).then(() => {
+            const btn = document.getElementById('cp-copy-portal-btn');
+            if (btn) {
+                btn.innerHTML = '<i class="fa-solid fa-check ml-1"></i> تم النسخ!';
+                setTimeout(() => { btn.innerHTML = '<i class="fa-solid fa-copy ml-1"></i> نسخ'; }, 2000);
+            }
+        });
+    };
+
+    window._cpSharePortalWhatsApp = function() {
+        const linkEl = document.getElementById('cp-portal-link');
+        const nameEl = document.getElementById('cp-portal-name');
+        if (!linkEl || !linkEl.value || linkEl.value.startsWith('جاري') || linkEl.value.startsWith('حدث')) return;
+        const clientName = nameEl?.textContent || '';
+        const msg = `مرحباً ${clientName}،\nهذا رابط بوابتكم لمتابعة الطلبات والدفعات:\n${linkEl.value}`;
+        window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+    };
+
+    window._cpOpenPortalLink = function() {
+        const linkEl = document.getElementById('cp-portal-link');
+        if (!linkEl || !linkEl.value || linkEl.value.startsWith('جاري') || linkEl.value.startsWith('حدث')) {
+            if (window.showToast) window.showToast('الرابط غير جاهز بعد أو غير صالح.', 'warning');
+            return;
+        }
+        window.open(linkEl.value, '_blank');
     };
 
     window._cpCloseInvoiceModal = function() {
