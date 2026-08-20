@@ -41,11 +41,6 @@
             const res = await window.apiFetch('/api/accounts');
             _allAccounts = res.data || [];
 
-            // Expand everything on first load so the user sees the tree
-            if (!_expandedIds.size) {
-                for (const a of _allAccounts) _expandedIds.add(a.id);
-            }
-
             _renderStats(_allAccounts);
             _applyFilter();
             _populateParentSelect(_allAccounts);
@@ -81,48 +76,50 @@
 
         let filtered = _allAccounts;
 
+        if (type)   filtered = filtered.filter(a => a.account_type === type);
+        if (active !== undefined && active !== '')
+            filtered = filtered.filter(a => String(a.is_active) === active);
+
         if (search) {
             const matches = filtered.filter(a =>
                 a.name.toLowerCase().includes(search) ||
                 a.code.toLowerCase().includes(search)
             );
 
-            // Keep the matching accounts and all their ancestors
+            // Keep the matching accounts and all their ancestors.
             const allMap = Object.fromEntries(_allAccounts.map(a => [a.id, a]));
             const visibleIds = new Set();
+            const searchExpandedIds = new Set();
+
             for (const a of matches) {
                 let cur = a;
                 while (cur && !visibleIds.has(cur.id)) {
                     visibleIds.add(cur.id);
-                    cur = _findParent(cur, allMap);
+                    if (cur.parent_id && allMap[cur.parent_id]) {
+                        searchExpandedIds.add(cur.parent_id);
+                        cur = allMap[cur.parent_id];
+                    } else {
+                        cur = null;
+                    }
                 }
             }
 
             filtered = _allAccounts.filter(a => visibleIds.has(a.id));
+            const roots = _buildTree(filtered);
+            _renderTree(roots, new Set([..._expandedIds, ...searchExpandedIds]));
+            return;
         }
 
-        if (type)   filtered = filtered.filter(a => a.account_type === type);
-        if (active !== undefined && active !== '')
-            filtered = filtered.filter(a => String(a.is_active) === active);
-
         const roots = _buildTree(filtered);
-        _renderTree(roots);
+        _renderTree(roots, _expandedIds);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Find the best parent using explicit parent_id or longest code prefix
+    // Find parent using explicit parent_id only
     // ─────────────────────────────────────────────────────────────────────────
     function _findParent(a, map) {
-        if (!a) return null;
-        if (a.parent_id && map[a.parent_id]) return map[a.parent_id];
-
-        let best = null;
-        for (const p of Object.values(map)) {
-            if (p.id !== a.id && p.code.length < a.code.length && a.code.startsWith(p.code)) {
-                if (!best || p.code.length > best.code.length) best = p;
-            }
-        }
-        return best;
+        if (!a || !a.parent_id) return null;
+        return map[a.parent_id] || null;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -151,7 +148,7 @@
     // ─────────────────────────────────────────────────────────────────────────
     // Render expandable tree
     // ─────────────────────────────────────────────────────────────────────────
-    function _renderTree(roots) {
+    function _renderTree(roots, expandedIds = _expandedIds) {
         const wrap = _el('coa-tree-wrap');
         const tree = _el('coa-tree');
         const empty = _el('coa-empty');
@@ -170,7 +167,7 @@
 
         const _row = (node, level) => {
             const hasChildren = node.children && node.children.length;
-            const expanded = hasChildren ? _expandedIds.has(node.id) : false;
+            const expanded = hasChildren ? expandedIds.has(node.id) : false;
 
             const el = document.createElement('div');
             el.className = 'coa-tree-row flex items-center gap-2 py-3 pr-4 pl-4 border-b border-slate-100 hover:bg-slate-50/60 transition-colors';
