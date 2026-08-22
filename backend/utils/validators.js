@@ -658,7 +658,7 @@ const vmiDispatch = z.object({
 // =============================================================================
 
 const accountCreate = z.object({
-    code: z.string().min(1).max(50),
+    code: z.string().max(50).optional().nullable(),
     name: z.string().min(1).max(255),
     account_type: z.enum(['asset', 'liability', 'equity', 'revenue', 'expense']),
     parent_id: z.string().uuid().optional().nullable(),

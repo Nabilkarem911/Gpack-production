@@ -15,6 +15,92 @@ router.use(authorize('chart_of_accounts', 'view'));
 const restrictWrite = authorize('chart_of_accounts', 'create');
 const restrictEdit  = authorize('chart_of_accounts', 'edit');
 
+function _normalizeCode(code) {
+    return String(code || '').trim();
+}
+
+function _countTrailingZeros(code) {
+    const normalized = _normalizeCode(code);
+    const match = normalized.match(/0+$/);
+    return match ? match[0].length : 0;
+}
+
+function _parseSequenceDigit(parentCode, childCode) {
+    const normalizedParent = _normalizeCode(parentCode);
+    const normalizedChild  = _normalizeCode(childCode);
+
+    if (!normalizedParent || !normalizedChild) return null;
+
+    const trailingZeros = _countTrailingZeros(normalizedParent);
+    if (trailingZeros > 0) {
+        const prefix = normalizedParent.slice(0, -trailingZeros);
+        const suffix = '0'.repeat(trailingZeros - 1);
+        const expectedPrefix = `${prefix}`;
+        const expectedSuffix  = `${suffix}`;
+        if (!normalizedChild.startsWith(expectedPrefix) || !normalizedChild.endsWith(expectedSuffix)) {
+            return null;
+        }
+
+        const digit = normalizedChild.slice(prefix.length, prefix.length + 1);
+        return /^\d$/.test(digit) ? parseInt(digit, 10) : null;
+    }
+
+    if (!normalizedChild.startsWith(normalizedParent) || normalizedChild.length !== normalizedParent.length + 1) {
+        return null;
+    }
+
+    const digit = normalizedChild.slice(-1);
+    return /^\d$/.test(digit) ? parseInt(digit, 10) : null;
+}
+
+function _nextRootCode(rootCodes) {
+    const existing = rootCodes
+        .map(code => _normalizeCode(code))
+        .filter(code => /^\d{4}$/.test(code) && code.endsWith('000'))
+        .sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
+
+    const last = existing.length ? existing[existing.length - 1] : null;
+    if (!last) return '1000';
+
+    const next = parseInt(last.slice(0, 1), 10) + 1;
+    if (next > 9) {
+        throw new Error('لا توجد أكواد جذر متاحة.');
+    }
+
+    return `${next}000`;
+}
+
+function _nextHierarchicalCode(parentCode, siblingCodes) {
+    const normalizedParent = _normalizeCode(parentCode);
+    const normalizedSiblings = siblingCodes.map(code => _normalizeCode(code)).filter(Boolean);
+
+    if (!normalizedParent) {
+        return _nextRootCode(normalizedSiblings);
+    }
+
+    if (!/^\d+$/.test(normalizedParent)) {
+        throw new Error('كود الحساب الأب يجب أن يكون رقمياً.');
+    }
+
+    const trailingZeros = _countTrailingZeros(normalizedParent);
+    const highestSeq = normalizedSiblings.reduce((max, siblingCode) => {
+        const seq = _parseSequenceDigit(normalizedParent, siblingCode);
+        return seq === null ? max : Math.max(max, seq);
+    }, 0);
+
+    if (highestSeq >= 9) {
+        throw new Error('لا توجد أكواد فرعية متاحة تحت هذا الحساب الأب.');
+    }
+
+    if (trailingZeros > 0) {
+        const prefix = normalizedParent.slice(0, -trailingZeros);
+        const suffix = '0'.repeat(trailingZeros - 1);
+        return `${prefix}${highestSeq + 1}${suffix}`;
+    }
+
+    return `${normalizedParent}${highestSeq + 1}`;
+}
+
 // =============================================================================
 // GET /api/accounts
 // List all accounts with optional balance from accounting_voucher_lines
@@ -112,8 +198,8 @@ router.post('/', restrictWrite, validateBody(accountCreate), async (req, res) =>
     try {
         const { code, name, account_type, parent_id } = req.validatedBody;
 
-        if (!code || !name || !account_type) {
-            return res.status(400).json({ error: 'code و name و account_type مطلوبة.' });
+        if (!name || !account_type) {
+            return res.status(400).json({ error: 'name و account_type مطلوبة.' });
         }
 
         const valid_types = ['asset','liability','equity','revenue','expense'];
@@ -121,20 +207,67 @@ router.post('/', restrictWrite, validateBody(accountCreate), async (req, res) =>
             return res.status(400).json({ error: 'نوع الحساب غير صحيح.' });
         }
 
-        // Check code uniqueness
-        const exists = await db.query('SELECT id FROM accounts WHERE code = $1', [code]);
-        if (exists.rows.length) return res.status(409).json({ error: `كود الحساب "${code}" موجود مسبقاً.` });
+        const result = await db.withTransaction(async (client) => {
+            let finalCode = _normalizeCode(code);
 
-        const result = await db.query(`
-            INSERT INTO accounts (code, name, account_type, parent_id, is_active)
-            VALUES ($1, $2, $3, $4, true)
-            RETURNING *
-        `, [code, name, account_type, parent_id || null]);
+            if (!finalCode) {
+                const lockKey = parent_id ? `accounts-parent:${parent_id}` : 'accounts-root';
+                await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [lockKey]);
 
-        return res.status(201).json({ data: result.rows[0] });
+                if (parent_id) {
+                    const parentRes = await client.query(
+                        'SELECT id, code FROM accounts WHERE id = $1 FOR SHARE',
+                        [parent_id]
+                    );
+
+                    if (!parentRes.rows.length) {
+                        const err = new Error('الحساب الأب غير موجود.');
+                        err.statusCode = 400;
+                        throw err;
+                    }
+
+                    const siblingsRes = await client.query(
+                        'SELECT code FROM accounts WHERE parent_id = $1 FOR UPDATE',
+                        [parent_id]
+                    );
+
+                    finalCode = _nextHierarchicalCode(parentRes.rows[0].code, siblingsRes.rows.map(r => r.code));
+                } else {
+                    const rootsRes = await client.query(
+                        'SELECT code FROM accounts WHERE parent_id IS NULL FOR UPDATE',
+                        []
+                    );
+
+                    finalCode = _nextHierarchicalCode('', rootsRes.rows.map(r => r.code));
+                }
+            }
+
+            if (!finalCode) {
+                const err = new Error('تعذّر توليد كود الحساب.');
+                err.statusCode = 400;
+                throw err;
+            }
+
+            const exists = await client.query('SELECT id FROM accounts WHERE code = $1', [finalCode]);
+            if (exists.rows.length) {
+                const err = new Error(`كود الحساب "${finalCode}" موجود مسبقاً.`);
+                err.statusCode = 409;
+                throw err;
+            }
+
+            const inserted = await client.query(`
+                INSERT INTO accounts (code, name, account_type, parent_id, is_active)
+                VALUES ($1, $2, $3, $4, true)
+                RETURNING *
+            `, [finalCode, name, account_type, parent_id || null]);
+
+            return inserted.rows[0];
+        });
+
+        return res.status(201).json({ data: result });
     } catch (err) {
         console.error('[Accounts] POST / error:', err.message);
-        return res.status(500).json({ error: 'Internal server error.' });
+        return res.status(err.statusCode || 500).json({ error: err.message || 'Internal server error.' });
     }
 });
 

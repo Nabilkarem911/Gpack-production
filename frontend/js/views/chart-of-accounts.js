@@ -29,6 +29,12 @@
     let _allAccounts = [];
     const _expandedIds = new Set();
 
+    const _canCreate = () => {
+        if (window.hasPermission) return !!window.hasPermission('chart_of_accounts', 'create');
+        const perms = window.GpackPerms || {};
+        return perms.all_access === true || !!perms.chart_of_accounts?.create;
+    };
+
     // ─────────────────────────────────────────────────────────────────────────
     // Load all accounts
     // ─────────────────────────────────────────────────────────────────────────
@@ -181,6 +187,7 @@
             const t = TYPE_LABEL[node.account_type] || { label: node.account_type, cls: 'bg-slate-100 text-slate-500' };
             const bal = parseFloat(node.balance || 0);
             const balCls = bal > 0 ? 'text-emerald-600' : bal < 0 ? 'text-red-500' : 'text-slate-400';
+            const canCreate = _canCreate();
 
             el.innerHTML = `
                 <div class="coa-tree-toggle w-6 h-6 flex items-center justify-center rounded-md hover:bg-slate-100 text-slate-500 text-xs" ${hasChildren ? '' : 'style=\'pointer-events:none\''}>
@@ -192,8 +199,13 @@
                     <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${t.cls}">${t.label}</span>
                 </div>
                 <div class="w-28 font-mono font-black ${balCls} text-sm text-left">${fmt(bal)}</div>
-                <div class="w-8 text-center">
-                    <button class="coa-edit-btn px-2.5 py-1.5 bg-slate-50 hover:bg-brand-50 hover:text-brand-600 text-slate-600 text-xs font-bold rounded-lg transition-colors">
+                <div class="w-20 flex items-center justify-center gap-2">
+                    <button class="coa-child-btn ${canCreate ? '' : 'hidden'} px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold rounded-lg transition-colors"
+                            title="إضافة حساب فرعي">
+                        <i class="fa-solid fa-plus"></i>
+                    </button>
+                    <button class="coa-edit-btn px-2.5 py-1.5 bg-slate-50 hover:bg-brand-50 hover:text-brand-600 text-slate-600 text-xs font-bold rounded-lg transition-colors"
+                            title="تعديل الحساب">
                         <i class="fa-solid fa-pen-to-square"></i>
                     </button>
                 </div>
@@ -217,6 +229,14 @@
                 editBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
                     window.coaOpenEdit(node.id);
+                });
+            }
+
+            const childBtn = el.querySelector('.coa-child-btn');
+            if (childBtn) {
+                childBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    window.coaOpenAdd(node.id);
                 });
             }
 
@@ -252,6 +272,12 @@
         }
     }
 
+    function _applyPermissions() {
+        const canCreate = _canCreate();
+        const addBtn = _el('coa-add-btn');
+        if (addBtn) addBtn.classList.toggle('hidden', !canCreate);
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Modal helpers
     // ─────────────────────────────────────────────────────────────────────────
@@ -267,17 +293,33 @@
         setTimeout(() => { m.style.display = 'none'; }, 200);
     };
 
-    window.coaOpenAdd = function () {
-        _el('coa-modal-title').textContent = 'إضافة حساب جديد';
+    window.coaOpenAdd = function (parentId = '') {
+        if (!_canCreate()) {
+            window.showToast('ليس لديك صلاحية إضافة حسابات.', 'error');
+            return;
+        }
+
+        const parent = parentId ? _allAccounts.find(x => x.id === parentId) : null;
+
+        _el('coa-modal-title').textContent = parent ? 'إضافة حساب فرعي' : 'إضافة حساب جديد';
         _el('coa-modal-id').value   = '';
         _el('coa-modal-code').value = '';
         _el('coa-modal-name').value = '';
-        _el('coa-modal-type').value = '';
+        _el('coa-modal-type').value = parent?.account_type || '';
         _el('coa-modal-parent').value = '';
         _el('coa-modal-code').disabled = false;
         _el('coa-modal-type').disabled = false;
+        _el('coa-modal-code').placeholder = parent ? 'يُولد تلقائياً أو اكتب كوداً يدوياً' : 'يُولد تلقائياً إذا تُرك فارغاً';
         _el('coa-modal-active-row')?.classList.add('hidden');
         _populateParentSelect(_allAccounts);
+
+        if (parent) {
+            _el('coa-modal-parent').value = parent.id;
+            if (!_el('coa-modal-type').value) {
+                _el('coa-modal-type').value = parent.account_type || '';
+            }
+        }
+
         _openModal();
     };
 
@@ -312,7 +354,7 @@
         const isActive = _el('coa-modal-active').checked;
 
         if (!name) { window.showToast('اسم الحساب مطلوب', 'error'); return; }
-        if (!id && (!code || !type)) { window.showToast('الكود والنوع مطلوبان', 'error'); return; }
+        if (!id && !type) { window.showToast('نوع الحساب مطلوب', 'error'); return; }
 
         const btn = _el('coa-modal-save-btn');
         btn.disabled = true;
@@ -409,6 +451,7 @@
     // ─────────────────────────────────────────────────────────────────────────
     // Init
     // ─────────────────────────────────────────────────────────────────────────
+    _applyPermissions();
     _load();
 
 })();

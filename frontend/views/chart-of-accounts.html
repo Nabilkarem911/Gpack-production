@@ -14,7 +14,7 @@
                 class="w-9 h-9 flex items-center justify-center rounded-xl bg-white border border-slate-200 text-slate-500 hover:text-brand-600 hover:border-brand-300 transition-colors shadow-sm">
             <i class="fa-solid fa-rotate-right text-sm"></i>
         </button>
-        <button onclick="window.coaOpenAdd()"
+        <button id="coa-add-btn" onclick="window.coaOpenAdd()"
                 class="flex items-center gap-2 px-5 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold rounded-xl shadow-md transition-all active:scale-[0.98]">
             <i class="fa-solid fa-plus"></i>
             <span>إضافة حساب</span>
@@ -111,9 +111,10 @@
 
             <div class="grid grid-cols-2 gap-4">
                 <div>
-                    <label class="block text-xs font-bold text-slate-600 mb-1.5">كود الحساب <span class="text-red-500">*</span></label>
-                    <input id="coa-modal-code" type="text" placeholder="مثال: 1150"
+                    <label class="block text-xs font-bold text-slate-600 mb-1.5">كود الحساب <span class="text-slate-400 font-normal">(اختياري)</span></label>
+                    <input id="coa-modal-code" type="text" placeholder="سيُولد تلقائياً إذا تركته فارغاً"
                            class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition-all" />
+                    <p class="mt-1.5 text-[11px] text-slate-400">يمكن تركه فارغًا عند الإضافة من زر <span class="font-bold">+</span> أمام الحساب الأب.</p>
                 </div>
                 <div>
                     <label class="block text-xs font-bold text-slate-600 mb-1.5">نوع الحساب <span class="text-red-500">*</span></label>
