@@ -660,7 +660,9 @@
 
             // Refresh variants list
             const fresh = await window.apiFetch(`/api/products/${productId}`);
-            _currentVariants = (fresh && fresh.data && fresh.data.variants) ? fresh.data.variants : [];
+            _currentVariants = (fresh && fresh.data && fresh.data.variants)
+                ? fresh.data.variants.filter(variant => variant.status === 'active')
+                : [];
             _renderVariantsTable(_currentVariants);
 
             // If we were editing this variant, reset the form

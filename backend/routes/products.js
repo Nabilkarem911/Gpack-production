@@ -109,6 +109,7 @@ router.get('/', async (req, res) => {
                  FROM product_variants pv
                  LEFT JOIN units u ON u.id = pv.unit_id
                  WHERE pv.product_id = ANY($1::uuid[])
+                   AND pv.status = 'active'
                  ORDER BY pv.created_at ASC`,
                 [productIds]
             );
@@ -355,6 +356,7 @@ router.get('/:id', async (req, res) => {
              FROM product_variants pv
              LEFT JOIN units u ON u.id = pv.unit_id
              WHERE pv.product_id = $1
+               AND pv.status = 'active'
              ORDER BY pv.created_at ASC`,
             [product.id]
         );
@@ -637,7 +639,7 @@ router.put('/:id/variants/:variantId', restrictWrite, validateBody(variantUpdate
 // =============================================================================
 
 router.delete('/:id/variants/:variantId', restrictWrite, async (req, res) => {
-    const { variantId } = req.params;
+    const { id: productId, variantId } = req.params;
 
     try {
         const result = await db.query(
@@ -645,8 +647,9 @@ router.delete('/:id/variants/:variantId', restrictWrite, async (req, res) => {
              SET status     = 'inactive',
                  updated_at = NOW()
              WHERE id = $1
+               AND product_id = $2
              RETURNING id`,
-            [variantId]
+            [variantId, productId]
         );
 
         if (result.rowCount === 0) {
