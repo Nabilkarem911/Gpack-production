@@ -455,6 +455,16 @@
         }
         _setText('hub-order-num',         `#${o.order_number}`);
         _setHTML('hub-status-badge',      _badge(o.status, STATUS_CFG));
+        const sourceEl = _el('hub-source-info');
+        if (sourceEl) {
+            const sourceParts = o.direct_receipt_id ? [
+                o.direct_receipt_supplier_name ? `المورد: ${_escapeHtml(o.direct_receipt_supplier_name)}` : '',
+                o.direct_receipt_number ? `استلام مؤقت #${o.direct_receipt_number}` : '',
+                o.direct_receipt_purchase_invoice_number ? `فاتورة مشتريات #${o.direct_receipt_purchase_invoice_number}` : '',
+            ].filter(Boolean) : [];
+            sourceEl.innerHTML = sourceParts.join(' <span class="mx-1">•</span> ');
+            sourceEl.classList.toggle('hidden', sourceParts.length === 0);
+        }
         _setText('hub-grand-total',       sar(gt));
         _setText('hub-paid',              sar(pd));
         _setText('hub-remaining',         sar(rem));

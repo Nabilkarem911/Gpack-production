@@ -454,11 +454,10 @@ router.put('/:id', restrictEdit, validateBody(invoiceUpdate), async (req, res) =
             const qty = parseFloat(item.quantity) || 0;
             const price = parseFloat(item.unit_price) || 0;
             const disc = parseFloat(item.discount_percent) || 0;
-            const lineTotal = qty * price * (1 - disc / 100);
             await client.query(`
-                INSERT INTO invoice_items (invoice_id, variant_id, order_item_id, quantity, unit_price, discount_percent, line_total)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
-            `, [id, item.variant_id, item.order_item_id || null, qty, price, disc, lineTotal]);
+                INSERT INTO invoice_items (invoice_id, variant_id, order_item_id, quantity, unit_price, discount_percent)
+                VALUES ($1, $2, $3, $4, $5, $6)
+            `, [id, item.variant_id, item.order_item_id || null, qty, price, disc]);
         }
 
         // Delete old expenses and insert new one

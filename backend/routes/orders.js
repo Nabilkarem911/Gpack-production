@@ -137,6 +137,20 @@ router.get('/', async (req, res) => {
                 o.pricing_status,
                 o.pricing_notes,
                 (SELECT dr.id FROM direct_receipts dr WHERE dr.production_order_id = o.id LIMIT 1) AS direct_receipt_id,
+                (SELECT s.company_name
+                 FROM direct_receipts dr
+                 JOIN suppliers s ON s.id = dr.supplier_id
+                 WHERE dr.production_order_id = o.id
+                 LIMIT 1) AS direct_receipt_supplier_name,
+                (SELECT dr.receipt_number
+                 FROM direct_receipts dr
+                 WHERE dr.production_order_id = o.id
+                 LIMIT 1) AS direct_receipt_number,
+                (SELECT pi.invoice_number
+                 FROM direct_receipts dr
+                 JOIN purchase_invoices pi ON pi.id = dr.purchase_invoice_id
+                 WHERE dr.production_order_id = o.id
+                 LIMIT 1) AS direct_receipt_purchase_invoice_number,
                 o.design_status,
                 o.design_client_status,
                 COUNT(oi.id)::int AS item_count,
@@ -152,7 +166,15 @@ router.get('/', async (req, res) => {
                     WHEN mo_stats.total_received > 0 THEN 'partial'
                     ELSE 'ordered'
                 END AS receive_status,
-                COALESCE(sup_stats.supplier_names, '') AS supplier_names,
+                COALESCE(
+                    sup_stats.supplier_names,
+                    (SELECT s.company_name
+                     FROM direct_receipts dr
+                     JOIN suppliers s ON s.id = dr.supplier_id
+                     WHERE dr.production_order_id = o.id
+                     LIMIT 1),
+                    ''
+                ) AS supplier_names,
                 COUNT(*) OVER() AS total_count
              FROM orders o
              LEFT JOIN clients c  ON c.id = o.client_id
@@ -645,7 +667,21 @@ router.get('/:id', async (req, res) => {
                 o.down_payment_required,
                 o.pricing_status,
                 o.pricing_notes,
-                (SELECT dr.id FROM direct_receipts dr WHERE dr.production_order_id = o.id LIMIT 1) AS direct_receipt_id
+                (SELECT dr.id FROM direct_receipts dr WHERE dr.production_order_id = o.id LIMIT 1) AS direct_receipt_id,
+                (SELECT s.company_name
+                 FROM direct_receipts dr
+                 JOIN suppliers s ON s.id = dr.supplier_id
+                 WHERE dr.production_order_id = o.id
+                 LIMIT 1) AS direct_receipt_supplier_name,
+                (SELECT dr.receipt_number
+                 FROM direct_receipts dr
+                 WHERE dr.production_order_id = o.id
+                 LIMIT 1) AS direct_receipt_number,
+                (SELECT pi.invoice_number
+                 FROM direct_receipts dr
+                 JOIN purchase_invoices pi ON pi.id = dr.purchase_invoice_id
+                 WHERE dr.production_order_id = o.id
+                 LIMIT 1) AS direct_receipt_purchase_invoice_number
              FROM orders o
              LEFT JOIN clients c ON c.id = o.client_id
              WHERE o.id = $1

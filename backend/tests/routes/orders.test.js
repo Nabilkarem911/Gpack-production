@@ -94,4 +94,32 @@ describe('Orders Routes — Zod Validation', () => {
         expect(res.body.error).toBe('Validation failed');
         expect(res.body.field).toMatch(/order_date/);
     });
+
+    test('GET /:id includes direct receipt supplier and source metadata', async () => {
+        mockQuery
+            .mockResolvedValueOnce({ rowCount: 1, rows: [{
+                id: '550e8400-e29b-41d4-a716-446655440000',
+                order_number: 1001,
+                status: 'production',
+                client_id: '660e8400-e29b-41d4-a716-446655440000',
+                client_name: 'Test Client',
+                direct_receipt_id: '770e8400-e29b-41d4-a716-446655440000',
+                direct_receipt_supplier_name: 'Test Supplier',
+                direct_receipt_number: 12,
+                direct_receipt_purchase_invoice_number: 2001,
+            }] })
+            .mockResolvedValueOnce({ rows: [] })
+            .mockResolvedValueOnce({ rows: [] });
+
+        const res = await request(app)
+            .get('/api/orders/550e8400-e29b-41d4-a716-446655440000');
+
+        expect(res.status).toBe(200);
+        expect(res.body.data).toMatchObject({
+            direct_receipt_supplier_name: 'Test Supplier',
+            direct_receipt_number: 12,
+            direct_receipt_purchase_invoice_number: 2001,
+        });
+        expect(mockQuery.mock.calls[0][0]).toContain('direct_receipt_supplier_name');
+    });
 });

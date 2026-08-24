@@ -93,6 +93,8 @@ router.get('/', async (req, res) => {
             LEFT JOIN manufacturer_orders mo ON mo.id = pi.manufacturer_order_id
             LEFT JOIN orders o ON o.id = mo.order_id
             LEFT JOIN clients c ON c.id = o.client_id
+            LEFT JOIN direct_receipts dr ON dr.purchase_invoice_id = pi.id
+            LEFT JOIN orders dro ON dro.id = dr.production_order_id
             WHERE ${whereClause}
         `, params);
 
@@ -106,12 +108,20 @@ router.get('/', async (req, res) => {
                    (EXISTS(SELECT 1 FROM direct_receipts WHERE purchase_invoice_id = pi.id)) AS is_from_direct_receipt,
                    s.id AS supplier_id, s.company_name AS supplier_name,
                    mo.id AS mo_id, mo.mo_number,
-                   c.id AS client_id, c.name AS client_name
+                   COALESCE(c.id, dro.client_id) AS client_id,
+                   COALESCE(c.name, dc.name) AS client_name,
+                   dr.id AS direct_receipt_id,
+                   dr.receipt_number AS direct_receipt_number,
+                   dro.id AS production_order_id,
+                   dro.order_number AS production_order_number
             FROM purchase_invoices pi
             LEFT JOIN suppliers s ON s.id = pi.supplier_id
             LEFT JOIN manufacturer_orders mo ON mo.id = pi.manufacturer_order_id
             LEFT JOIN orders o ON o.id = mo.order_id
             LEFT JOIN clients c ON c.id = o.client_id
+            LEFT JOIN direct_receipts dr ON dr.purchase_invoice_id = pi.id
+            LEFT JOIN orders dro ON dro.id = dr.production_order_id
+            LEFT JOIN clients dc ON dc.id = dro.client_id
             WHERE ${whereClause}
             ORDER BY pi.invoice_date DESC, pi.invoice_number DESC
             LIMIT $${paramIdx++} OFFSET $${paramIdx++}
@@ -147,13 +157,21 @@ router.get('/:id([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})',
                    s.phone AS supplier_phone, s.city AS supplier_city,
                    s.commercial_register, s.tax_id AS supplier_tax_id,
                    mo.id AS mo_id, mo.mo_number,
-                   c.id AS client_id, c.name AS client_name,
+                   COALESCE(c.id, dro.client_id) AS client_id,
+                   COALESCE(c.name, dc.name) AS client_name,
+                   dr.id AS direct_receipt_id,
+                   dr.receipt_number AS direct_receipt_number,
+                   dro.id AS production_order_id,
+                   dro.order_number AS production_order_number,
                    u.name AS created_by_name
             FROM purchase_invoices pi
             LEFT JOIN suppliers s ON s.id = pi.supplier_id
             LEFT JOIN manufacturer_orders mo ON mo.id = pi.manufacturer_order_id
             LEFT JOIN orders o ON o.id = mo.order_id
             LEFT JOIN clients c ON c.id = o.client_id
+            LEFT JOIN direct_receipts dr ON dr.purchase_invoice_id = pi.id
+            LEFT JOIN orders dro ON dro.id = dr.production_order_id
+            LEFT JOIN clients dc ON dc.id = dro.client_id
             LEFT JOIN users u ON u.id = pi.created_by
             WHERE pi.id = $1
         `, [id]);
