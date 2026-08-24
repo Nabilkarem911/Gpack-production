@@ -639,6 +639,7 @@ router.get('/:id', async (req, res) => {
                 o.rejection_reason,
                 o.deposit_receipt,
                 o.responded_at,
+                o.quotation_revision,
                 o.custom_terms,
                 o.down_payment_required,
                 o.pricing_status,
@@ -655,6 +656,15 @@ router.get('/:id', async (req, res) => {
         }
 
         const order = orderResult.rows[0];
+        const approvalResult = await db.query(
+            `SELECT signer_name, signature_path, signature_sha256, declaration_text,
+                    client_ip, user_agent, device_info, approved_at
+             FROM quotation_approvals
+             WHERE order_id = $1 AND quotation_revision = $2
+             LIMIT 1`,
+            [order.id, order.quotation_revision || 1]
+        );
+        order.quotation_approval = approvalResult.rows[0] || null;
         if (order.share_token) order.share_token = decryptShareToken(order.share_token);
 
         if (isSalesRep && order.created_by !== req.user.id) {
@@ -794,6 +804,9 @@ router.post('/', restrictWrite, validateBody(orderCreate), async (req, res) => {
             // VMI orders (status = 'production') MUST NOT have financial fields.
             // VMI rule: only insert client_id, status, order_number, internal_notes.
             const isVmiOrder = (status === 'production');
+            const defaultValidUntil = !isVmiOrder && !valid_until
+                ? new Date(Date.now() + 45 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+                : valid_until || null;
 
             // ── Calculate totals server-side (Commercial only) ────────────────
             let subtotal    = null;
@@ -841,7 +854,7 @@ router.post('/', restrictWrite, validateBody(orderCreate), async (req, res) => {
                     status || 'quote',
                     req.validatedBody.pricing_status || (isVmiOrder ? null : 'priced'),
                     order_date || new Date().toISOString().split('T')[0],
-                    valid_until || null,
+                    defaultValidUntil,
                     subtotal,    // NULL for VMI
                     tax_amount,  // NULL for VMI
                     grand_total, // NULL for VMI
@@ -928,7 +941,10 @@ router.put('/:id', restrictEdit, validateBody(orderUpdate), async (req, res) => 
 
     try {
         const existing = await db.query(
-            'SELECT id, status, created_by FROM orders WHERE id = $1 LIMIT 1',
+            `SELECT id, status, created_by, client_id, order_date, valid_until,
+                    client_notes, internal_notes, terms_conditions, custom_terms,
+                    down_payment_required, pricing_status, quotation_revision
+             FROM orders WHERE id = $1 LIMIT 1`,
             [id]
         );
         if (existing.rowCount === 0) {
@@ -953,6 +969,44 @@ router.put('/:id', restrictEdit, validateBody(orderUpdate), async (req, res) => 
         if (!Array.isArray(items) || items.length === 0) {
             return res.status(400).json({ error: 'يجب إضافة صنف واحد على الأقل.' });
         }
+
+        const existingItems = await db.query(
+            `SELECT variant_id, quantity, unit_price, notes, design_status, design_id
+             FROM order_items WHERE order_id = $1 ORDER BY created_at ASC, id ASC`,
+            [id]
+        );
+        const normalize = value => value === undefined || value === null ? null : String(value);
+        const normalizeDate = value => value === undefined || value === null ? null : String(value).slice(0, 10);
+        const normalizeJson = value => value === undefined || value === null ? null : JSON.stringify(value);
+        const incomingItems = items.map(item => ({
+            variant_id: item.product_variant_id || item.variant_id || null,
+            quantity: Number(item.quantity),
+            unit_price: Number(item.unit_price || 0),
+            notes: item.notes || null,
+            design_status: item.design_status || 'new',
+            design_id: item.design_id || null,
+        }));
+        const storedItems = existingItems.rows.map(item => ({
+            variant_id: item.variant_id,
+            quantity: Number(item.quantity),
+            unit_price: Number(item.unit_price || 0),
+            notes: item.notes || null,
+            design_status: item.design_status || 'new',
+            design_id: item.design_id || null,
+        }));
+        const quoteChanged = [
+            normalize(order.client_id) !== normalize(client_id),
+            normalize(order.status) !== normalize(status || 'quote'),
+            normalizeDate(order.order_date) !== normalizeDate(order_date || order.order_date),
+            normalizeDate(order.valid_until) !== normalizeDate(valid_until || null),
+            normalize(order.client_notes) !== normalize(client_notes || null),
+            normalize(order.internal_notes) !== normalize(internal_notes || null),
+            normalizeJson(order.terms_conditions) !== normalizeJson(Array.isArray(terms_conditions) ? terms_conditions : []),
+            normalizeJson(order.custom_terms) !== normalizeJson(custom_terms || null),
+            normalize(order.down_payment_required) !== normalize(down_payment_required ? parseFloat(down_payment_required) : null),
+            req.validatedBody.pricing_status !== undefined && normalize(order.pricing_status) !== normalize(req.validatedBody.pricing_status || null),
+            JSON.stringify(storedItems) !== JSON.stringify(incomingItems),
+        ].some(Boolean);
 
         const result = await db.withTransaction(async (client) => {
 
@@ -1009,10 +1063,11 @@ router.put('/:id', restrictEdit, validateBody(orderUpdate), async (req, res) => 
                     terms_conditions      = $10::jsonb,
                     custom_terms          = $11::jsonb,
                     down_payment_required = $12,
-                    client_response       = NULL,
-                    rejection_reason      = NULL,
-                    deposit_receipt       = NULL,
-                    responded_at          = NULL,
+                    client_response       = ${quoteChanged ? 'NULL' : 'client_response'},
+                    rejection_reason      = ${quoteChanged ? 'NULL' : 'rejection_reason'},
+                    deposit_receipt       = ${quoteChanged ? 'NULL' : 'deposit_receipt'},
+                    responded_at          = ${quoteChanged ? 'NULL' : 'responded_at'},
+                    quotation_revision    = ${quoteChanged ? 'quotation_revision + 1' : 'quotation_revision'},
                     updated_at            = NOW()
                  WHERE id = $13`,
                 [

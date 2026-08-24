@@ -879,7 +879,7 @@
         if (orderDate) orderDate.value = _today();
 
         const validUntil = document.getElementById('quote-valid-until');
-        if (validUntil) validUntil.value = _futureDate(30);
+        if (validUntil) validUntil.value = _futureDate(45);
 
         const notes = document.getElementById('quote-notes');
         if (notes) notes.value = '';
@@ -3517,16 +3517,23 @@
             const orderRes = await window.apiFetch(`/api/orders/${orderId}`);
             const order = orderRes?.data;
             if (!order) throw new Error('لم يتم إيجاد العرض.');
+            const quotationApproval = order.quotation_approval;
+            const signaturePath = quotationApproval?.signature_path;
+            const safeSignaturePath = typeof signaturePath === 'string'
+                && /^\/uploads\/quotation-approvals\/[A-Za-z0-9._-]+$/.test(signaturePath)
+                ? signaturePath
+                : null;
 
             // Step 2: Determine token — reuse if still valid, otherwise generate new
             let token = order.share_token;
             let expires = order.token_expires_at;
-            const tokenStillValid = token && expires && new Date(expires) > new Date();
+            const minimumExpiry = new Date(Date.now() + 45 * 24 * 60 * 60 * 1000);
+            const tokenStillValid = token && expires && new Date(expires) > minimumExpiry;
 
             if (!tokenStillValid) {
                 const shareRes = await window.apiFetch(`/api/public/quotations/${orderId}/share`, {
                     method: 'POST',
-                    body: { expires_days: 90 },
+                    body: { expires_days: 45 },
                 });
                 token   = shareRes?.data?.token;
                 expires = shareRes?.data?.expires_at;
@@ -3551,6 +3558,20 @@
                                 <i class="fa-solid fa-circle-check text-emerald-500"></i>
                                 <p class="text-xs font-bold text-emerald-700">وافق العميل على العرض${receiptDate ? ' — ' + receiptDate : ''}</p>
                             </div>
+                            ${quotationApproval
+                                ? `<div class="bg-white border border-emerald-100 rounded-lg px-3 py-2 space-y-1">
+                                       <p class="text-xs text-slate-600"><span class="font-bold">الموقّع:</span> ${_escapeHtml(quotationApproval.signer_name)}</p>
+                                       <p class="text-xs text-slate-400"><span class="font-bold">تاريخ التوقيع:</span> ${new Date(quotationApproval.approved_at).toLocaleString('ar-SA')}</p>
+                                       ${safeSignaturePath
+                                           ? `<a href="${_escapeAttr(safeSignaturePath)}" target="_blank" rel="noopener noreferrer"
+                                              class="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 hover:text-emerald-900">
+                                               <i class="fa-solid fa-signature"></i> عرض توقيع العميل
+                                           </a>`
+                                           : '<p class="text-xs text-slate-400">ملف التوقيع غير متاح</p>'
+                                       }
+                                   </div>`
+                                : `<p class="text-xs text-amber-600"><i class="fa-solid fa-triangle-exclamation ml-1"></i>لا توجد بيانات توقيع لهذا الاعتماد</p>`
+                            }
                             ${order.deposit_receipt
                                 ? `<a href="${order.deposit_receipt}" target="_blank"
                                       class="inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-lg hover:bg-emerald-700">

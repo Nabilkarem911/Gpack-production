@@ -219,6 +219,23 @@
             </div>
         </div>
 
+        <!-- Quotation approval signature — required for approval only -->
+        <div id="quotation-signature-fields" class="hidden space-y-3">
+            <div>
+                <label class="block text-sm font-bold text-slate-700 mb-2">
+                    <i class="fa-solid fa-signature ml-1 text-emerald-600"></i>التوقيع الإلكتروني
+                    <span class="text-red-500">*</span>
+                </label>
+                <div class="border-2 border-dashed border-slate-300 rounded-xl bg-white p-2">
+                    <canvas id="quotation-signature-canvas" class="w-full h-40 touch-none cursor-crosshair"></canvas>
+                </div>
+                <div class="flex items-center justify-between mt-2">
+                    <p class="text-xs text-slate-400">وقّع داخل الحقل لتأكيد موافقتك على العرض</p>
+                    <button type="button" onclick="clearQuotationSignature()" class="text-xs text-slate-500 hover:text-red-500">مسح التوقيع</button>
+                </div>
+            </div>
+        </div>
+
         <!-- Reject fields -->
         <div id="reject-fields" class="hidden space-y-3">
             <label class="block text-sm font-bold text-slate-700 mb-1">
@@ -252,6 +269,49 @@ const sar = (v) => fmt(v);
 let selectedResponse = null;
 let selectedFile     = null;
 let quoteToken       = null;
+let quotationSignatureCanvas = null;
+let quotationSignatureHasInk = false;
+
+function initQuotationSignature() {
+    const canvas = document.getElementById('quotation-signature-canvas');
+    if (!canvas || quotationSignatureCanvas === canvas) return;
+    quotationSignatureCanvas = canvas;
+    const dpr = window.devicePixelRatio || 1;
+    const width = canvas.clientWidth || 600;
+    canvas.width = width * dpr;
+    canvas.height = 160 * dpr;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#1e293b';
+
+    const point = (event) => {
+        const rect = canvas.getBoundingClientRect();
+        return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    };
+    canvas.addEventListener('pointerdown', (event) => {
+        canvas.setPointerCapture(event.pointerId);
+        const p = point(event);
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y);
+        quotationSignatureHasInk = true;
+    });
+    canvas.addEventListener('pointermove', (event) => {
+        if (event.buttons !== 1) return;
+        const p = point(event);
+        ctx.lineTo(p.x, p.y);
+        ctx.stroke();
+    });
+}
+
+function clearQuotationSignature() {
+    initQuotationSignature();
+    if (!quotationSignatureCanvas) return;
+    const ctx = quotationSignatureCanvas.getContext('2d');
+    ctx.clearRect(0, 0, quotationSignatureCanvas.width, quotationSignatureCanvas.height);
+    quotationSignatureHasInk = false;
+}
 
 // ── Init ─────────────────────────────────────────────────────────────────────
 (async () => {
@@ -379,7 +439,9 @@ function selectResponse(type) {
         iconR.classList.remove('text-red-500');
         iconR.classList.add('text-slate-300');
         document.getElementById('approve-fields').classList.remove('hidden');
+        document.getElementById('quotation-signature-fields').classList.remove('hidden');
         document.getElementById('reject-fields').classList.add('hidden');
+        initQuotationSignature();
         document.getElementById('submit-btn').style.background = '#059669';
     } else {
         btnR.classList.add('border-red-400', 'bg-red-50');
@@ -392,6 +454,7 @@ function selectResponse(type) {
         iconA.classList.add('text-slate-300');
         document.getElementById('reject-fields').classList.remove('hidden');
         document.getElementById('approve-fields').classList.add('hidden');
+        document.getElementById('quotation-signature-fields').classList.add('hidden');
         document.getElementById('submit-btn').style.background = '#dc2626';
     }
 
@@ -434,6 +497,10 @@ async function submitResponse() {
             return;
         }
     }
+    if (selectedResponse === 'approved' && !quotationSignatureHasInk) {
+        alert('يرجى التوقيع لاعتماد عرض السعر.');
+        return;
+    }
 
     const btn = document.getElementById('submit-btn');
     btn.disabled = true;
@@ -444,6 +511,9 @@ async function submitResponse() {
         formData.append('response', selectedResponse);
         if (selectedResponse === 'rejected') {
             formData.append('reason', document.getElementById('rejection-reason').value.trim());
+        } else {
+            formData.append('signature', quotationSignatureCanvas.toDataURL('image/png'));
+            formData.append('device_info', `${navigator.platform || ''} | ${navigator.userAgent || ''}`);
         }
         if (selectedFile) {
             formData.append('receipt', selectedFile);
