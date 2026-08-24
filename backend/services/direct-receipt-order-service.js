@@ -64,10 +64,10 @@ async function createProductionOrderFromReceipt(client, { receiptId, receiptNumb
         }
         const itemRes = await client.query(
             `INSERT INTO order_items
-                (order_id, variant_id, quantity, unit_price, design_status, notes)
-             VALUES ($1, $2, $3, 0, 'new', $4)
-             RETURNING id, variant_id, quantity, unit_price`,
-            [order.id, item.variant_id, quantity, item.notes || null]
+                (order_id, variant_id, quantity, unit_price, wh_received_qty, design_status, notes)
+             VALUES ($1, $2, $3, 0, $4, 'new', $5)
+             RETURNING id, variant_id, quantity, unit_price, wh_received_qty`,
+            [order.id, item.variant_id, quantity, quantity, item.notes || null]
         );
         order.items.push(itemRes.rows[0]);
     }

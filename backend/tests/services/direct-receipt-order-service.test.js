@@ -29,7 +29,7 @@ describe('direct receipt production order service', () => {
         const client = makeClient((sql) => {
             if (sql.includes('SELECT production_order_id')) return { rowCount: 1, rows: [{ production_order_id: null }] };
             if (sql.includes('INSERT INTO orders')) return { rowCount: 1, rows: [{ id: orderId, order_number: 1001, client_id: clientId, status: 'production' }] };
-            if (sql.includes('INSERT INTO order_items')) return { rowCount: 1, rows: [{ id: 'item-id', variant_id: variantId, quantity: 4, unit_price: 0 }] };
+            if (sql.includes('INSERT INTO order_items')) return { rowCount: 1, rows: [{ id: 'item-id', variant_id: variantId, quantity: 4, unit_price: 0, wh_received_qty: 4 }] };
             return { rowCount: 1, rows: [] };
         });
 
@@ -45,6 +45,9 @@ describe('direct receipt production order service', () => {
         expect(orderInsert.sql).toContain('(client_id, status, order_number, internal_notes)');
         expect(orderInsert.sql).not.toContain('grand_total');
         expect(orderInsert.params.slice(0, 2)).toEqual([clientId, 'production']);
+        const itemInsert = client.calls.find(call => call.sql.includes('INSERT INTO order_items'));
+        expect(itemInsert.sql).toContain('wh_received_qty');
+        expect(itemInsert.params.slice(0, 4)).toEqual([orderId, variantId, 4, 4]);
     });
 
     test('is idempotent when the receipt already has a generated order', async () => {

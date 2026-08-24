@@ -2377,7 +2377,10 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         const type = _el('invoice-type')?.value || 'proforma';
         const isProforma = type === 'proforma';
 
-        const billableItems = _hubItems.filter(item => parseFloat(item.manufacturer_po_qty || 0) > 0);
+        const isDirectReceiptOrder = Boolean(_hubOrder?.direct_receipt_id);
+        const billableItems = _hubItems.filter(item =>
+            isDirectReceiptOrder || parseFloat(item.manufacturer_po_qty || 0) > 0
+        );
 
         // Available qty for invoicing = wh_received_qty on this order item (NOT total warehouse stock).
         // Total warehouse stock is shared across all orders; we must only allow invoicing what was
