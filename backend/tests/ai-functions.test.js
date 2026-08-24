@@ -182,10 +182,17 @@ async function runTests() {
     }
     console.log('═══════════════════════════════════════════════════════════\n');
 
-    process.exit(_failed > 0 ? 1 : 0);
+    process.exitCode = _failed > 0 ? 1 : 0;
 }
 
-runTests().catch(err => {
-    console.error('Fatal test error:', err);
-    process.exit(1);
-});
+if (process.env.JEST_WORKER_ID !== undefined) {
+    global.test('AI functions safety checks', async () => {
+        await runTests();
+        expect(_failed).toBe(0);
+    });
+} else {
+    runTests().catch(err => {
+        console.error('Fatal test error:', err);
+        process.exitCode = 1;
+    });
+}

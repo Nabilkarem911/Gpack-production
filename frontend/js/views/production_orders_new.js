@@ -503,7 +503,7 @@
         const nextSteps = STATUS_FLOW[_hubOrder.status] || [];
         const actionsEl = _el('hub-status-actions');
         if (actionsEl) {
-            const canRevertOrder = ['production', 'processing'].includes(_hubOrder.status);
+            const canRevertOrder = ['production', 'processing'].includes(_hubOrder.status) && !_hubOrder.direct_receipt_id;
             const canRevertExecution = _hubOrder.status === 'processing';
             const hasMOs = _hubMOs && _hubMOs.length > 0;
             const autoHint = hasMOs && ['production', 'processing', 'completed'].includes(_hubOrder.status)

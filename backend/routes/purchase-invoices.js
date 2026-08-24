@@ -12,6 +12,7 @@ const { authenticate } = require('../middleware/authMiddleware');
 const authorize = require('../middleware/authorize');
 const { getVatRate } = require('../utils/settings');
 const { validateBody, purchaseInvoiceCreate } = require('../utils/validators');
+const { revertDirectReceiptToReview } = require('../services/direct-receipt-order-service');
 
 router.use(authenticate);
 
@@ -937,7 +938,8 @@ router.post('/:id([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/
 
         // 1. Lock the invoice and verify it's draft + from direct receipt
         const invRes = await client.query(`
-            SELECT pi.id, pi.status, pi.notes, dr.id AS direct_receipt_id, dr.warehouse_id
+            SELECT pi.id, pi.status, pi.notes, dr.id AS direct_receipt_id,
+                   dr.warehouse_id, dr.production_order_id
             FROM purchase_invoices pi
             LEFT JOIN direct_receipts dr ON dr.purchase_invoice_id = pi.id
             WHERE pi.id = $1 FOR UPDATE OF pi
@@ -963,7 +965,19 @@ router.post('/:id([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/
         const directReceiptId = inv.direct_receipt_id;
         const warehouseId     = inv.warehouse_id;
 
-        // 2. Get invoice items to revert stock
+        if (inv.production_order_id) {
+            const result = await revertDirectReceiptToReview(client, {
+                receiptId: directReceiptId,
+                userId: req.user?.id,
+            });
+            await client.query('COMMIT');
+            return res.json({
+                message: 'تم التراجع — الفاتورة وأمر التشغيل أُلغيا وأُعيد الاستلام للمراجعة',
+                data: result,
+            });
+        }
+
+        // 2. Get invoice items to revert stock for legacy direct receipts.
         const itemsRes = await client.query(`
             SELECT variant_id, quantity
             FROM purchase_invoice_items

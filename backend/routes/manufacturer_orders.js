@@ -1729,6 +1729,20 @@ router.post('/revert-order/:orderId', restrictDelete, async (req, res) => {
     try {
         await client.query('BEGIN');
 
+        const directReceiptRes = await client.query(
+            `SELECT id, status
+             FROM direct_receipts
+             WHERE production_order_id = $1
+             FOR UPDATE`,
+            [orderId]
+        );
+        if (directReceiptRes.rowCount > 0) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({
+                message: 'هذا الأمر منشأ من استلام مؤقت. استخدم إجراء إعادة الاستلام للمراجعة بدلاً من التراجع والأرشفة.'
+            });
+        }
+
         // 1. Get all MOs for this order and check for any received items
         const mosRes = await client.query(
             `SELECT mo.id, mo.status,

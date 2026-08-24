@@ -15,6 +15,10 @@ const fs      = require('fs');
 const { authenticate } = require('../middleware/authMiddleware');
 const authorize = require('../middleware/authorize');
 const { getVatRate } = require('../utils/settings');
+const {
+    createProductionOrderFromReceipt,
+    revertDirectReceiptToReview,
+} = require('../services/direct-receipt-order-service');
 
 // ── Upload config ────────────────────────────────────────────────────────────
 const UPLOAD_BASE = path.join(__dirname, '../uploads/direct-receipts');
@@ -535,12 +539,19 @@ router.post('/:id([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/
             ]);
         }
 
-        // Mark receipt as converted
+        const productionOrder = await createProductionOrderFromReceipt(client, {
+            receiptId: id,
+            receiptNumber: receipt.receipt_number,
+            items,
+            userId: req.user.id,
+        });
+
+        // Mark receipt as converted after both purchasing and order creation succeed.
         await client.query(`
             UPDATE direct_receipts
             SET status = 'converted', converted_at = NOW(),
                 purchase_invoice_id = $1, converted_by = $2, updated_at = NOW()
-            WHERE id = $3
+            WHERE id = $3 AND status = 'pending_review'
         `, [purchaseInvoiceId, req.user.id, id]);
 
         await client.query('COMMIT');
@@ -549,13 +560,44 @@ router.post('/:id([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/
             message: 'Converted to purchase invoice successfully',
             data: {
                 purchase_invoice_id: purchaseInvoiceId,
+                production_order_id: productionOrder.id,
+                order_number: productionOrder.order_number,
                 invoice_number: invRes.rows[0].invoice_number,
             },
         });
     } catch (err) {
         await client.query('ROLLBACK');
         console.error('[DirectReceipts] POST /convert error:', err.message);
-        res.status(500).json({ error: 'Internal server error.' });
+        res.status(err.statusCode || 500).json({ error: err.message || 'Internal server error.' });
+    } finally {
+        client.release();
+    }
+});
+
+// =============================================================================
+// POST /api/direct-receipts/:id/revert-to-review
+// Reverse a converted direct receipt and reopen it for review.
+// This is intentionally separate from the generic production-order archive flow.
+// =============================================================================
+router.post('/:id([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/revert-to-review',
+    authorize('purchasing', 'edit'),
+    async (req, res) => {
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+        const result = await revertDirectReceiptToReview(client, {
+            receiptId: req.params.id,
+            userId: req.user.id,
+        });
+        await client.query('COMMIT');
+        return res.json({
+            message: 'تم التراجع وإعادة الاستلام للمراجعة',
+            data: result,
+        });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('[DirectReceipts] POST /revert-to-review error:', err.message);
+        return res.status(err.statusCode || 500).json({ error: err.message || 'Internal server error.' });
     } finally {
         client.release();
     }

@@ -688,11 +688,31 @@
                         </table>
                     </div>
                 </div>
+                ${r.status === 'converted' && r.production_order_id ? `
+                    <div class="flex justify-end pt-2">
+                        <button onclick="window.drRevertToReview('${r.id}')"
+                                class="px-4 py-2.5 rounded-xl border-2 border-amber-300 text-amber-700 hover:bg-amber-50 text-sm font-bold transition-colors">
+                            <i class="fa-solid fa-rotate-left ml-1"></i> إعادة الاستلام للمراجعة
+                        </button>
+                    </div>
+                ` : ''}
             `;
 
             _showModal('dr-detail-modal');
         } catch (err) {
             window.showToast(err.message || 'فشل تحميل التفاصيل', 'error');
+        }
+    }
+
+    async function _revertToReview(id) {
+        if (!confirm('هل تريد إعادة الاستلام للمراجعة؟ سيتم إلغاء أمر التشغيل وعكس المخزون وإلغاء فاتورة المشتريات المسودة.')) return;
+        try {
+            await window.apiFetch(`/api/direct-receipts/${id}/revert-to-review`, { method: 'POST' });
+            window.showToast('تمت إعادة الاستلام للمراجعة', 'success');
+            _closeDetailModal();
+            await _loadList();
+        } catch (err) {
+            window.showToast(err.message || 'فشل التراجع', 'error');
         }
     }
 
@@ -941,6 +961,7 @@
     window.drConvert = _convert;
     window.drCancelReceipt = _cancelReceipt;
     window.drOpenDetail = _openDetail;
+    window.drRevertToReview = _revertToReview;
     window.drCloseDetailModal = _closeDetailModal;
     window.drOpenQuickProduct = _openQuickProduct;
     window.drCloseQuickProduct = _closeQuickProduct;

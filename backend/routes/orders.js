@@ -136,6 +136,7 @@ router.get('/', async (req, res) => {
                 o.responded_at,
                 o.pricing_status,
                 o.pricing_notes,
+                (SELECT dr.id FROM direct_receipts dr WHERE dr.production_order_id = o.id LIMIT 1) AS direct_receipt_id,
                 o.design_status,
                 o.design_client_status,
                 COUNT(oi.id)::int AS item_count,
@@ -643,7 +644,8 @@ router.get('/:id', async (req, res) => {
                 o.custom_terms,
                 o.down_payment_required,
                 o.pricing_status,
-                o.pricing_notes
+                o.pricing_notes,
+                (SELECT dr.id FROM direct_receipts dr WHERE dr.production_order_id = o.id LIMIT 1) AS direct_receipt_id
              FROM orders o
              LEFT JOIN clients c ON c.id = o.client_id
              WHERE o.id = $1
