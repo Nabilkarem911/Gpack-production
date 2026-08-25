@@ -286,6 +286,12 @@
                                        hover:text-gray-600 hover:bg-gray-100 transition-colors">
                             <i class="fa-solid fa-box-archive text-xs"></i>
                         </button>` : ''}
+                        ${q.status === 'production' ? `
+                        <button onclick="window.shareQuote('${q.id}')" title="عرض العرض للعميل — قراءة فقط"
+                                class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400
+                                       hover:text-emerald-600 hover:bg-emerald-50 transition-colors">
+                            <i class="fa-solid fa-share-nodes text-xs"></i>
+                        </button>` : ''}
                         ${q.status === 'archived' ? `
                         <button onclick="window.restoreQuote('${q.id}')" title="استرجاع"
                                 class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400

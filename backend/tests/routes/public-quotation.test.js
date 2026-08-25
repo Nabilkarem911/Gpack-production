@@ -112,6 +112,22 @@ describe('Public quotation approval signature', () => {
         expect(mockRelease).toHaveBeenCalledTimes(1);
     });
 
+    test('blocks responses after conversion to production', async () => {
+        mockClientQuery
+            .mockResolvedValueOnce({})
+            .mockResolvedValueOnce({ rows: [{ ...order, status: 'production' }], rowCount: 1 })
+            .mockResolvedValueOnce({});
+
+        const response = await request(buildApp())
+            .post('/api/public/quotation/test-token/respond')
+            .field('response', 'approved')
+            .field('signature', 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=');
+
+        expect(response.status).toBe(409);
+        expect(response.body.error).toMatch(/تحويل عرض السعر/);
+        expect(mockClientQuery.mock.calls.map(call => call[0])).toEqual(['BEGIN', expect.stringContaining('FOR UPDATE OF o'), 'ROLLBACK']);
+    });
+
     test('rejects a second response after completion', async () => {
         mockClientQuery
             .mockResolvedValueOnce({})

@@ -79,7 +79,9 @@ router.post('/quotations/:id/share', require('../middleware/authMiddleware').aut
             [id]
         );
         if (check.rowCount === 0) return res.status(404).json({ error: 'العرض غير موجود.' });
-        if (check.rows[0].status !== 'quote') return res.status(400).json({ error: 'يمكن مشاركة عروض الأسعار فقط.' });
+        if (!['quote', 'production'].includes(check.rows[0].status)) {
+            return res.status(400).json({ error: 'لا يمكن مشاركة هذا الطلب في حالته الحالية.' });
+        }
 
         const plainToken = crypto.randomBytes(32).toString('hex');
         const expiresAt  = new Date(Date.now() + expiresDays * 24 * 60 * 60 * 1000);
@@ -182,6 +184,15 @@ router.get('/quotation/:token', async (req, res) => {
             return res.status(410).json({ error: 'انتهت صلاحية هذا الرابط.' });
         }
 
+        const approvalResult = await db.query(
+            `SELECT signer_name, signature_path, signature_sha256, approved_at
+             FROM quotation_approvals
+             WHERE order_id = $1 AND quotation_revision = $2
+             LIMIT 1`,
+            [order.id, order.quotation_revision || 1]
+        );
+        order.quotation_approval = approvalResult.rows[0] || null;
+
         // Fetch order items
         const itemsRes = await db.query(
             `SELECT
@@ -262,6 +273,10 @@ router.post('/quotation/:token/respond', upload.single('receipt'), async (req, r
         }
 
         const order = result.rows[0];
+        if (order.status !== 'quote') {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ error: 'تم تحويل عرض السعر إلى أمر تشغيل ولا يمكن تعديل الرد.' });
+        }
         const signerName = (order.client_name || 'العميل').trim();
         if (new Date(order.token_expires_at) < new Date()) {
             await client.query('ROLLBACK');

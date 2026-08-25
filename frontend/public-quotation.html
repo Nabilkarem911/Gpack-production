@@ -270,6 +270,28 @@ let selectedResponse = null;
 let selectedFile     = null;
 let quoteToken       = null;
 let quotationSignatureCanvas = null;
+
+function escapeHtml(value) {
+    return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function safeSignaturePath(value) {
+    return typeof value === 'string' && /^\/uploads\/quotation-approvals\/[A-Za-z0-9._-]+$/.test(value)
+        ? value
+        : null;
+}
+
+function renderQuotationApproval(approval) {
+    if (!approval) return '';
+    const signaturePath = safeSignaturePath(approval.signature_path);
+    return `<div class="mt-4 p-4 bg-white border border-emerald-200 rounded-xl">
+        <p class="text-sm font-bold text-emerald-700 mb-3"><i class="fa-solid fa-file-signature ml-1"></i>اعتماد عرض السعر والتوقيع</p>
+        ${signaturePath ? `<img src="${escapeHtml(signaturePath)}" alt="التوقيع الإلكتروني" class="max-w-full h-24 object-contain border border-slate-100 rounded-lg bg-slate-50 p-2 mb-3" />` : ''}
+        <p class="text-xs text-slate-500">تم حفظ التوقيع مع بيانات اعتماد عرض السعر.</p>
+        ${approval.approved_at ? `<p class="text-xs text-slate-400 mt-1">تاريخ الاعتماد: ${escapeHtml(new Date(approval.approved_at).toLocaleString('ar-SA'))}</p>` : ''}
+    </div>`;
+}
 let quotationSignatureHasInk = false;
 
 function initQuotationSignature() {
@@ -397,10 +419,23 @@ function renderQuote({ order, items }) {
         document.getElementById('q-terms-section').classList.remove('hidden');
     }
 
-    // If already responded
+    // If already responded, show the approval and signature in the same page.
     if (order.client_response) {
         showAlreadyResponded(order);
+    } else if (order.status !== 'quote') {
+        showReadOnlyStatus(order);
     }
+}
+
+function showReadOnlyStatus(order) {
+    document.getElementById('response-section').classList.add('hidden');
+    const banner = document.getElementById('responded-banner');
+    banner.innerHTML = `<div class="p-4 rounded-2xl bg-slate-50 border border-slate-200">
+        <p class="font-bold text-sm text-slate-700"><i class="fa-solid fa-lock ml-1"></i>هذا العرض تم تحويله إلى أمر تشغيل</p>
+        <p class="text-xs text-slate-500 mt-1">يمكنك مراجعة بيانات العرض، ولا يمكن تسجيل رد جديد عليه.</p>
+        ${renderQuotationApproval(order.quotation_approval)}
+    </div>`;
+    banner.classList.remove('hidden');
 }
 
 function showAlreadyResponded(order) {
@@ -414,8 +449,9 @@ function showAlreadyResponded(order) {
                 <p class="font-bold text-sm ${isApproved ? 'text-emerald-700' : 'text-red-700'}">
                     ${isApproved ? 'تمت الموافقة على العرض' : 'تم رفض العرض'}
                 </p>
-                ${order.rejection_reason ? `<p class="text-xs text-slate-500 mt-0.5">السبب: ${order.rejection_reason}</p>` : ''}
+                ${order.rejection_reason ? `<p class="text-xs text-slate-500 mt-0.5">السبب: ${escapeHtml(order.rejection_reason)}</p>` : ''}
                 <p class="text-xs text-slate-400 mt-0.5">بتاريخ: ${new Date(order.responded_at).toLocaleDateString('ar-SA')}</p>
+                ${isApproved ? renderQuotationApproval(order.quotation_approval) : ''}
             </div>
         </div>`;
     banner.classList.remove('hidden');
