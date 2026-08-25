@@ -3,6 +3,7 @@
 const express = require('express');
 const db = require('../db');
 const authorize = require('../middleware/authorize');
+const { ensurePdfThumbnail } = require('../utils/pdf-thumbnail');
 
 const router = express.Router();
 const canView = authorize('production_orders', 'view');
@@ -176,6 +177,17 @@ router.get('/:id', async (req, res) => {
             [template.variant_id]
         );
 
+        const designs = await Promise.all(designsResult.rows.map(async design => {
+            const files = Array.isArray(design.files) ? design.files : [];
+            const processedFiles = await Promise.all(files.map(async file => {
+                const previewPath = file.type === 'pdf'
+                    ? await ensurePdfThumbnail(file.path)
+                    : null;
+                return { ...file, preview_path: previewPath };
+            }));
+            return { ...design, files: processedFiles };
+        }));
+
         const missingResult = await db.query(
             `SELECT moi.id AS manufacturer_order_item_id,
                     moi.design_id,
@@ -203,7 +215,7 @@ router.get('/:id', async (req, res) => {
         return res.json({
             data: {
                 ...template,
-                designs: designsResult.rows,
+                designs,
                 missing_design_links: missingResult.rows,
             },
         });
