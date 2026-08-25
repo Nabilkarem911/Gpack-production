@@ -75,7 +75,7 @@
         if (!filePath) return `<span class="text-xs text-slate-400">ملف غير صالح</span>`;
         const isImage = String(file.mime_type || '').startsWith('image/') || /\.(png|jpe?g|webp|gif)$/i.test(filePath);
         return `<div class="flex items-center gap-3 border border-slate-100 rounded-xl p-3">
-            ${isImage ? `<img src="${escapeHtml(filePath)}" alt="" class="w-14 h-14 object-cover rounded-lg bg-slate-50">` : '<div class="w-14 h-14 rounded-lg bg-slate-100 flex items-center justify-center text-slate-400"><i class="fa-solid fa-file text-xl"></i></div>'}
+            ${isImage ? `<div class="w-14 h-14 rounded-lg bg-slate-50 overflow-hidden"><img src="${escapeHtml(filePath)}" alt="" class="w-full h-full object-cover" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'"><div style="display:none" class="w-full h-full items-center justify-center text-slate-400"><i class="fa-solid fa-file-image text-xl"></i></div></div>` : '<div class="w-14 h-14 rounded-lg bg-slate-100 flex items-center justify-center text-slate-400"><i class="fa-solid fa-file text-xl"></i></div>'}
             <div class="min-w-0 flex-1"><p class="text-sm font-semibold text-slate-700 truncate">${escapeHtml(file.name || file.type || 'ملف')}</p><p class="text-xs text-slate-400">${escapeHtml(file.type || '')}</p></div>
             <a href="${escapeHtml(filePath)}" target="_blank" rel="noopener noreferrer" download class="text-brand-600 hover:text-brand-800" title="عرض وتحميل"><i class="fa-solid fa-download"></i></a>
         </div>`;
