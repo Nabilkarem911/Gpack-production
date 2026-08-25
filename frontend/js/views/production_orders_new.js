@@ -790,7 +790,7 @@
                             <td class="py-2.5 px-4 text-center">
                                 <button onclick="window.poView.shareInvoice('${inv.id}')"
                                         class="px-2.5 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-600 text-xs font-bold rounded-lg transition-colors"
-                                        title="نسخ رابط الفاتورة للعميل">
+                                        title="مشاركة فاتورة العميل">
                                     <i class="fa-solid fa-link"></i>
                                 </button>
                             </td>
@@ -2715,21 +2715,78 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         }
     }
 
-    // ── Print Invoice ─────────────────────────────────────────────────────────
+    // ── Share Invoice ─────────────────────────────────────────────────────────
+    let _currentInvoiceShareData = null;
+
     async function _shareInvoice(invoiceId) {
+        const modal = document.getElementById('share-invoice-modal');
+        const linkEl = document.getElementById('share-invoice-link');
+        const statusEl = document.getElementById('share-invoice-status');
+        if (!modal || !linkEl) return;
+
+        _currentInvoiceShareData = null;
+        linkEl.value = 'جاري إنشاء الرابط...';
+        if (statusEl) statusEl.innerHTML = '';
+        modal.style.display = 'flex';
+        setTimeout(() => { modal.style.opacity = '1'; }, 10);
+
         try {
-            _toast('جاري إنشاء الرابط...', 'info');
             const res = await window.apiFetch(`/api/invoices/${invoiceId}/share`, {
                 method: 'POST',
-                body: JSON.stringify({ expires_days: 90 })
+                body: { expires_days: 90 },
             });
             if (!res?.url) throw new Error('تعذّر إنشاء الرابط');
-            await navigator.clipboard.writeText(res.url);
-            _toast('تم نسخ رابط الفاتورة — أرسله للعميل', 'success');
+
+            _currentInvoiceShareData = { invoiceId, ...res };
+            linkEl.value = res.url;
+            if (statusEl && res.expires_at) {
+                const date = new Date(res.expires_at).toLocaleDateString('en-GB');
+                statusEl.innerHTML = `<span class="text-xs text-slate-400"><i class="fa-regular fa-clock ml-1"></i>صالح حتى: ${date}</span>`;
+            }
         } catch (err) {
             console.error('[poView] shareInvoice:', err);
+            linkEl.value = 'حدث خطأ: ' + (err.message || 'فشل إنشاء الرابط');
             _toast(err.message || 'فشل إنشاء رابط المشاركة', 'error');
         }
+    }
+
+    function _copyInvoiceLink() {
+        const link = _currentInvoiceShareData?.url;
+        if (!link) return;
+        navigator.clipboard.writeText(link).then(() => {
+            const button = document.getElementById('copy-invoice-link-btn');
+            if (!button) return;
+            const original = button.innerHTML;
+            button.innerHTML = '<i class="fa-solid fa-check"></i> تم النسخ!';
+            button.classList.add('bg-emerald-600');
+            button.classList.remove('bg-purple-600');
+            setTimeout(() => {
+                button.innerHTML = original;
+                button.classList.remove('bg-emerald-600');
+                button.classList.add('bg-purple-600');
+            }, 2000);
+        }).catch(() => _toast('تعذّر نسخ الرابط', 'error'));
+    }
+
+    function _shareInvoiceWhatsApp() {
+        const link = _currentInvoiceShareData?.url;
+        if (!link) return;
+        const message = `رابط الفاتورة من G.PACK:\n${link}`;
+        window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank', 'noopener');
+    }
+
+    function _openInvoiceLink() {
+        const link = _currentInvoiceShareData?.url;
+        if (link) window.open(link, '_blank', 'noopener');
+    }
+
+    function _closeShareInvoice() {
+        const modal = document.getElementById('share-invoice-modal');
+        if (modal) {
+            modal.style.opacity = '0';
+            setTimeout(() => { modal.style.display = 'none'; }, 200);
+        }
+        _currentInvoiceShareData = null;
     }
 
     let _editingInvoiceId = null;
@@ -3807,6 +3864,10 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         saveInvoice:        _saveInvoice,
         printInvoice:       _printInvoice,
         shareInvoice:       _shareInvoice,
+        copyInvoiceLink:    _copyInvoiceLink,
+        shareInvoiceWhatsApp: _shareInvoiceWhatsApp,
+        openInvoiceLink:    _openInvoiceLink,
+        closeShareInvoice:  _closeShareInvoice,
         editInvoice:        _editInvoice,
         saveEditInvoice:    _saveEditInvoice,
         openPaymentModal:   _openPaymentModal,
