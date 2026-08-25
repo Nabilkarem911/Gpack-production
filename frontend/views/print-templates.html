@@ -1,0 +1,51 @@
+<!-- G.PACK 2.0 - Print Templates View -->
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+    <div>
+        <h1 class="text-2xl font-extrabold text-slate-800">قوالب الطباعة</h1>
+        <p class="text-slate-500 text-sm mt-1">قوالب مجمعة حسب الصنف والمقاس والتصميمات المرتبطة بها</p>
+    </div>
+    <button id="print-templates-refresh" class="flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold rounded-xl transition-colors">
+        <i class="fa-solid fa-rotate"></i> تحديث
+    </button>
+</div>
+
+<div class="bg-white border border-slate-100 rounded-2xl shadow-sm p-4 mb-5">
+    <div class="flex flex-col sm:flex-row gap-3">
+        <div class="relative flex-1">
+            <i class="fa-solid fa-magnifying-glass absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+            <input id="print-templates-search" type="search" placeholder="ابحث بالكود أو اسم الصنف أو المقاس..."
+                   class="w-full pr-9 pl-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-brand-500" />
+        </div>
+        <select id="print-templates-filter" class="sm:w-48 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-brand-500">
+            <option value="all">كل القوالب</option>
+            <option value="used">المستخدمة مع مورد</option>
+            <option value="missing">تحتاج مراجعة</option>
+        </select>
+    </div>
+</div>
+
+<div id="print-templates-loading" class="py-16 text-center text-slate-400">
+    <i class="fa-solid fa-circle-notch fa-spin text-2xl"></i>
+    <p class="text-sm mt-3">جاري تحميل القوالب...</p>
+</div>
+<div id="print-templates-empty" class="hidden py-16 text-center text-slate-400">
+    <i class="fa-solid fa-print text-5xl text-slate-200 mb-3"></i>
+    <p class="font-bold text-slate-500">لا توجد قوالب طباعة</p>
+    <p class="text-xs mt-1">ستظهر القوالب تلقائيًا بعد إسناد تصميم لمورد.</p>
+</div>
+<div id="print-templates-grid" class="hidden grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"></div>
+
+<div id="print-template-details-modal" class="hidden fixed inset-0 z-[9999] items-center justify-center p-4 bg-black/60" data-close-template-modal>
+    <div class="bg-white w-full max-w-5xl max-h-[92vh] overflow-hidden rounded-2xl shadow-2xl flex flex-col">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+            <div>
+                <p id="print-template-details-code" class="text-xs font-bold text-brand-600"></p>
+                <h2 id="print-template-details-title" class="text-lg font-extrabold text-slate-800"></h2>
+            </div>
+            <button id="print-template-details-close" class="w-9 h-9 rounded-lg hover:bg-slate-100 text-slate-400"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <div id="print-template-details-body" class="overflow-y-auto p-5"></div>
+    </div>
+</div>
+
+<script src="/js/views/print-templates.js?v=20260825a"></script>

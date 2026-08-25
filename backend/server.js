@@ -362,6 +362,7 @@ _mountRoute('/categories',          authenticate, require('./routes/categories')
 _mountRoute('/units',               authenticate, require('./routes/units'));
 _mountRoute('/orders',              authenticate, require('./routes/orders'));
 _mountRoute('/manufacturer-orders', authenticate, require('./routes/manufacturer_orders'));
+_mountRoute('/print-templates',      authenticate, require('./routes/print-templates'));
 _mountRoute('/manufacturer-orders',       authenticate, require('./routes/manufacturer_print'));
 _mountRoute('/suppliers',           authenticate, require('./routes/suppliers'));
 _mountRoute('/terms',               authenticate, require('./routes/terms'));

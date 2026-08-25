@@ -8,6 +8,7 @@ const authorize = require('../middleware/authorize');
 const { validateBody, manufacturerOrderCreate, manufacturerOrderStatusUpdate, manufacturerOrderUpdate, manufacturerOrderReceive, manufacturerOrderPricing, moFinalize } = require('../utils/validators');
 const { ensurePdfThumbnail } = require('../utils/pdf-thumbnail');
 const eventBus = require('../utils/event-bus');
+const { ensurePrintTemplateForOrderItem } = require('../services/print-template-service');
 
 const router = express.Router();
 
@@ -567,6 +568,10 @@ router.post('/', restrictWrite, validateBody(manufacturerOrderCreate), async (re
                     : (item.pantone_color ? [item.pantone_color] : []);
                 const singlePantone = pantoneColors[0] || item.pantone_color || null;
 
+                if (item.design_id) {
+                    await ensurePrintTemplateForOrderItem(client, item.order_item_id);
+                }
+
                 const itemResult = await client.query(
                     `INSERT INTO manufacturer_order_items (
                         manufacturer_order_id, order_item_id, mo_quantity, design_status, design_id, pantone_color, pantone_colors, created_at
@@ -848,6 +853,10 @@ router.put('/:id', restrictEdit, validateBody(manufacturerOrderCreate), async (r
                     ? item.pantone_colors.filter(c => c && String(c).trim())
                     : (item.pantone_color ? [item.pantone_color] : []);
                 const singlePantone = pantoneColors[0] || item.pantone_color || null;
+
+                if (item.design_id) {
+                    await ensurePrintTemplateForOrderItem(client, item.order_item_id);
+                }
 
                 const itemResult = await client.query(
                     `INSERT INTO manufacturer_order_items (
