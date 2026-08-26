@@ -125,7 +125,7 @@
         </div>
         <div id="account-error" class="hidden bg-red-50 text-red-600 rounded-xl p-4 text-sm font-bold"></div>
         <div id="account-content">
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-4">
                 <div class="bg-white rounded-xl shadow-sm p-5 border-r-4 border-blue-500">
                     <p class="text-xs text-slate-500 font-bold mb-2">إجمالي الفواتير</p>
                     <p id="account-total-invoices" class="text-xl font-extrabold text-slate-800">0.00 ر.س</p>
@@ -137,6 +137,19 @@
                 <div class="bg-white rounded-xl shadow-sm p-5 border-r-4 border-amber-500">
                     <p class="text-xs text-slate-500 font-bold mb-2">الرصيد المستحق للمورد</p>
                     <p id="account-balance" class="text-xl font-extrabold text-amber-600">0.00 ر.س</p>
+                </div>
+                <div class="bg-white rounded-xl shadow-sm p-5 border-r-4 border-purple-500">
+                    <p class="text-xs text-slate-500 font-bold mb-2">مرتجعات المشتريات</p>
+                    <p id="account-total-returns" class="text-xl font-extrabold text-purple-600">0.00 ر.س</p>
+                </div>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm p-4 mb-4">
+                <div class="flex flex-wrap items-end gap-3">
+                    <label class="text-xs font-bold text-slate-600">من تاريخ<input id="account-from" type="date" class="block mt-1 border border-slate-200 rounded-lg px-3 py-2 text-sm"></label>
+                    <label class="text-xs font-bold text-slate-600">إلى تاريخ<input id="account-to" type="date" class="block mt-1 border border-slate-200 rounded-lg px-3 py-2 text-sm"></label>
+                    <button id="account-filter-btn" type="button" class="px-4 py-2 bg-purple-700 hover:bg-purple-800 text-white rounded-lg text-sm font-bold"><i class="fa-solid fa-filter ml-1"></i>تطبيق</button>
+                    <button id="account-pdf-btn" type="button" class="px-4 py-2 bg-slate-700 hover:bg-slate-800 text-white rounded-lg text-sm font-bold"><i class="fa-solid fa-file-pdf ml-1"></i>تحميل PDF</button>
+                    <span id="account-status" class="mr-auto px-3 py-2 rounded-lg text-xs font-bold"></span>
                 </div>
             </div>
             <div class="bg-white rounded-xl shadow-sm overflow-hidden">
@@ -153,6 +166,7 @@
                                 <th class="py-3 px-4 text-right text-xs font-bold text-slate-500">المرجع</th>
                                 <th class="py-3 px-4 text-right text-xs font-bold text-slate-500">مدين</th>
                                 <th class="py-3 px-4 text-right text-xs font-bold text-slate-500">دائن</th>
+                                <th class="py-3 px-4 text-center text-xs font-bold text-slate-500">التفاصيل</th>
                             </tr>
                         </thead>
                         <tbody id="account-tbody"></tbody>
@@ -160,6 +174,17 @@
                 </div>
                 <div id="account-empty" class="hidden p-10 text-center text-slate-400 text-sm">لا توجد حركات مالية مسجلة</div>
             </div>
+        </div>
+    </div>
+
+    <!-- Account Transaction Detail Modal -->
+    <div id="account-detail-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 p-4 items-center justify-center">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div class="flex items-center justify-between p-5 border-b border-slate-100">
+                <h2 id="account-detail-title" class="text-lg font-extrabold text-slate-800"></h2>
+                <button type="button" id="account-detail-close" class="text-slate-400 hover:text-slate-700 text-xl"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div id="account-detail-body" class="p-5"></div>
         </div>
     </div>
 
@@ -327,10 +352,18 @@
     }
 
     function renderAccountStatement(payload) {
+        window._currentAccountStatement = payload;
         const summary = payload.summary || {};
         document.getElementById('account-total-invoices').textContent = formatAmount(summary.total_invoices);
         document.getElementById('account-total-payments').textContent = formatAmount(summary.total_payments);
+        document.getElementById('account-total-returns').textContent = formatAmount(summary.total_returns);
         document.getElementById('account-balance').textContent = formatAmount(summary.balance);
+        const balance = parseFloat(summary.balance || 0);
+        const statusEl = document.getElementById('account-status');
+        statusEl.textContent = Math.abs(balance) < 0.01
+            ? 'لا يوجد رصيد'
+            : balance > 0 ? 'مستحق للمورد' : 'رصيد مدفوع بالزيادة';
+        statusEl.className = `mr-auto px-3 py-2 rounded-lg text-xs font-bold ${Math.abs(balance) < 0.01 ? 'bg-emerald-100 text-emerald-700' : balance > 0 ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`;
 
         const tbody = document.getElementById('account-tbody');
         const empty = document.getElementById('account-empty');
@@ -343,6 +376,13 @@
                 <td class="py-3 px-4 text-sm text-slate-600">#${escapeHtml(transaction.document_number || '—')}</td>
                 <td class="py-3 px-4 text-sm font-bold text-emerald-600">${transaction.debit > 0 ? formatAmount(transaction.debit) : '—'}</td>
                 <td class="py-3 px-4 text-sm font-bold text-blue-600">${transaction.credit > 0 ? formatAmount(transaction.credit) : '—'}</td>
+                <td class="py-3 px-4 text-center">
+                    ${transaction.document_type === 'فاتورة مشتريات'
+                        ? `<button type="button" onclick="window._openAccountInvoice('${escapeAttr(transaction.transaction_id)}')" class="text-purple-600 hover:text-purple-800 text-xs font-bold"><i class="fa-solid fa-file-invoice ml-1"></i>عرض / PDF</button>`
+                        : transaction.document_type === 'سند صرف'
+                            ? `<button type="button" onclick="window._openAccountPayment('${escapeAttr(transaction.transaction_id)}')" class="text-emerald-600 hover:text-emerald-800 text-xs font-bold"><i class="fa-solid fa-eye ml-1"></i>عرض</button>`
+                            : '—'}
+                </td>
             </tr>
         `).join('');
     }
@@ -356,7 +396,13 @@
         error.classList.add('hidden');
 
         try {
-            const res = await fetch(`${API_BASE}/public/supplier-portal/${_token}/account-statement`);
+            const params = new URLSearchParams();
+            const from = document.getElementById('account-from').value;
+            const to = document.getElementById('account-to').value;
+            if (from) params.set('from', from);
+            if (to) params.set('to', to);
+            const query = params.toString();
+            const res = await fetch(`${API_BASE}/public/supplier-portal/${_token}/account-statement${query ? `?${query}` : ''}`);
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(data.error || 'تعذّر تحميل كشف الحساب.');
             renderAccountStatement(data.data || data);
@@ -369,6 +415,60 @@
             loading.classList.add('hidden');
         }
     }
+
+    function closeAccountDetail() {
+        document.getElementById('account-detail-modal').classList.add('hidden');
+        document.getElementById('account-detail-modal').classList.remove('flex');
+    }
+
+    function showAccountDetail(title, html) {
+        document.getElementById('account-detail-title').textContent = title;
+        document.getElementById('account-detail-body').innerHTML = html;
+        const modal = document.getElementById('account-detail-modal');
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+    }
+
+    window._openAccountInvoice = async function(invoiceId) {
+        try {
+            const res = await fetch(`${API_BASE}/public/supplier-portal/${_token}/invoices/${invoiceId}`);
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || 'تعذّر تحميل الفاتورة.');
+            const invoice = data.data?.invoice || data.invoice;
+            const items = data.data?.items || data.items || [];
+            const itemsHtml = items.length
+                ? `<div class="overflow-x-auto mt-4"><table class="w-full text-sm"><thead><tr class="bg-slate-50"><th class="p-2 text-right">الصنف</th><th class="p-2 text-right">الكمية</th><th class="p-2 text-right">سعر الوحدة</th><th class="p-2 text-right">الإجمالي</th></tr></thead><tbody>${items.map(item => `<tr class="border-b border-slate-100"><td class="p-2">${escapeHtml(item.product_name || '—')}</td><td class="p-2">${item.quantity || 0}</td><td class="p-2">${formatAmount(item.unit_cost)}</td><td class="p-2 font-bold">${formatAmount(item.total_cost)}</td></tr>`).join('')}</tbody></table></div>`
+                : '<p class="mt-4 text-sm text-slate-400">لا توجد أصناف مسجلة.</p>';
+            showAccountDetail(`فاتورة مشتريات #${invoice.invoice_number}`, `<div class="grid grid-cols-2 gap-3 text-sm"><p><b>التاريخ:</b> ${new Date(invoice.invoice_date).toLocaleDateString('ar-EG')}</p><p><b>الاستحقاق:</b> ${invoice.due_date ? new Date(invoice.due_date).toLocaleDateString('ar-EG') : '—'}</p><p><b>مرجع المورد:</b> ${escapeHtml(invoice.supplier_invoice_ref || '—')}</p><p><b>الإجمالي:</b> ${formatAmount(invoice.grand_total)}</p></div>${itemsHtml}<button type="button" onclick="window._printAccountInvoice()" class="mt-5 px-4 py-2 bg-purple-700 text-white rounded-lg text-sm font-bold"><i class="fa-solid fa-file-pdf ml-1"></i>طباعة / حفظ PDF</button>`);
+            window._currentAccountInvoice = { invoice, items };
+        } catch (err) {
+            alert(err.message || 'تعذّر تحميل الفاتورة.');
+        }
+    };
+
+    window._printAccountInvoice = function() {
+        const payload = window._currentAccountInvoice;
+        if (!payload) return;
+        const { invoice, items } = payload;
+        const rows = items.map(item => `<tr><td>${escapeHtml(item.product_name || '—')}</td><td>${item.quantity || 0}</td><td>${formatAmount(item.unit_cost)}</td><td>${formatAmount(item.total_cost)}</td></tr>`).join('');
+        const printWindow = window.open('', '_blank', 'width=900,height=700');
+        if (!printWindow) return;
+        printWindow.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>فاتورة مشتريات #${invoice.invoice_number}</title><style>body{font-family:Arial,sans-serif;padding:32px;color:#1e293b}h1{color:#563d5d}table{width:100%;border-collapse:collapse;margin-top:24px}th,td{border:1px solid #cbd5e1;padding:10px;text-align:right}th{background:#f1f5f9}.total{margin-top:24px;font-size:20px;font-weight:bold}</style></head><body><h1>G.PACK — فاتورة مشتريات #${invoice.invoice_number}</h1><p>التاريخ: ${new Date(invoice.invoice_date).toLocaleDateString('ar-EG')}</p><table><thead><tr><th>الصنف</th><th>الكمية</th><th>سعر الوحدة</th><th>الإجمالي</th></tr></thead><tbody>${rows}</tbody></table><p class="total">الإجمالي: ${formatAmount(invoice.grand_total)}</p><script>window.onload=function(){window.print();};<\/script></body></html>`);
+        printWindow.document.close();
+    };
+
+    window._openAccountPayment = async function(paymentId) {
+        try {
+            const res = await fetch(`${API_BASE}/public/supplier-portal/${_token}/payments/${paymentId}`);
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || 'تعذّر تحميل تفاصيل الدفعة.');
+            const payment = data.data?.payment || data.payment;
+            const lines = data.data?.lines || data.lines || [];
+            showAccountDetail(`سند صرف #${payment.voucher_number}`, `<div class="space-y-3 text-sm"><p><b>التاريخ:</b> ${new Date(payment.voucher_date).toLocaleDateString('ar-EG')}</p><p><b>المبلغ:</b> ${formatAmount(payment.total_amount)}</p><p><b>البيان:</b> ${escapeHtml(payment.description || '—')}</p><div class="border-t pt-3"><b>تفاصيل القيد:</b>${lines.map(line => `<div class="flex justify-between mt-2"><span>${escapeHtml(line.account_name || line.description || '—')}</span><span>${formatAmount(line.debit || line.credit)}</span></div>`).join('')}</div></div>`);
+        } catch (err) {
+            alert(err.message || 'تعذّر تحميل تفاصيل الدفعة.');
+        }
+    };
 
     // ── Render Orders List ──────────────────────────────────────────────────
     function renderOrders() {
@@ -725,6 +825,17 @@
         renderOrders();
     };
 
+    window._printAccountStatement = function() {
+        const payload = window._currentAccountStatement;
+        if (!payload) return;
+        const summary = payload.summary || {};
+        const rows = (payload.transactions || []).map(transaction => `<tr><td>${transaction.trans_date ? new Date(transaction.trans_date).toLocaleDateString('ar-EG') : '—'}</td><td>${escapeHtml(transaction.document_type || '—')}</td><td>#${escapeHtml(transaction.document_number || '—')}</td><td>${transaction.debit > 0 ? formatAmount(transaction.debit) : '—'}</td><td>${transaction.credit > 0 ? formatAmount(transaction.credit) : '—'}</td></tr>`).join('');
+        const printWindow = window.open('', '_blank', 'width=1000,height=700');
+        if (!printWindow) return;
+        printWindow.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>كشف حساب المورد</title><style>body{font-family:Arial,sans-serif;padding:32px;color:#1e293b}h1{color:#563d5d}table{width:100%;border-collapse:collapse;margin-top:24px}th,td{border:1px solid #cbd5e1;padding:9px;text-align:right}th{background:#f1f5f9}.summary{display:flex;gap:24px;margin-top:18px;font-weight:bold}</style></head><body><h1>G.PACK — كشف حساب المورد</h1><div class="summary"><span>الفواتير: ${formatAmount(summary.total_invoices)}</span><span>الدفعات: ${formatAmount(summary.total_payments)}</span><span>المرتجعات: ${formatAmount(summary.total_returns)}</span><span>الرصيد: ${formatAmount(summary.balance)}</span></div><table><thead><tr><th>التاريخ</th><th>نوع الحركة</th><th>المرجع</th><th>مدين</th><th>دائن</th></tr></thead><tbody>${rows}</tbody></table><script>window.onload=function(){window.print();};<\/script></body></html>`);
+        printWindow.document.close();
+    };
+
     // ── Portal Tabs ─────────────────────────────────────────────────────────
     document.getElementById('orders-tab').addEventListener('click', () => {
         setActivePortalTab('orders');
@@ -734,6 +845,15 @@
         setActivePortalTab('account');
         if (!_accountLoaded) await loadAccountStatement();
     });
+    document.getElementById('account-detail-close').addEventListener('click', closeAccountDetail);
+    document.getElementById('account-detail-modal').addEventListener('click', event => {
+        if (event.target.id === 'account-detail-modal') closeAccountDetail();
+    });
+    document.getElementById('account-filter-btn').addEventListener('click', async () => {
+        _accountLoaded = false;
+        await loadAccountStatement();
+    });
+    document.getElementById('account-pdf-btn').addEventListener('click', window._printAccountStatement);
 
     // ── Filter Buttons ──────────────────────────────────────────────────────
     document.querySelectorAll('.filter-btn').forEach(btn => {

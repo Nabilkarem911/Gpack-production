@@ -226,11 +226,29 @@ router.get('/supplier-portal/:token', async (req, res) => {
 // =============================================================================
 router.get('/supplier-portal/:token/account-statement', async (req, res) => {
     const { token } = req.params;
+    const { from = '', to = '' } = req.query;
 
     try {
         const supplier = await _resolveSupplierFromToken(token);
         if (!supplier) {
             return res.status(404).json({ error: 'الرابط غير صالح.' });
+        }
+
+        const statementParams = [supplier.id];
+        let invoiceDateFilter = '';
+        let paymentDateFilter = '';
+        let returnDateFilter = '';
+        if (from) {
+            statementParams.push(from);
+            invoiceDateFilter += ` AND pi.invoice_date >= $${statementParams.length}`;
+            paymentDateFilter += ` AND av.voucher_date >= $${statementParams.length}`;
+            returnDateFilter += ` AND pr.return_date >= $${statementParams.length}`;
+        }
+        if (to) {
+            statementParams.push(to);
+            invoiceDateFilter += ` AND pi.invoice_date <= $${statementParams.length}`;
+            paymentDateFilter += ` AND av.voucher_date <= $${statementParams.length}`;
+            returnDateFilter += ` AND pr.return_date <= $${statementParams.length}`;
         }
 
         const transactionsRes = await db.query(`
@@ -247,6 +265,23 @@ router.get('/supplier-portal/:token/account-statement', async (req, res) => {
                 FROM purchase_invoices pi
                 WHERE pi.supplier_id = $1
                   AND pi.status != 'cancelled'
+                  ${invoiceDateFilter}
+
+                UNION ALL
+
+                SELECT
+                    pr.id::text AS transaction_id,
+                    pr.return_date AS trans_date,
+                    'مرتجع مشتريات' AS document_type,
+                    pr.return_number::text AS document_number,
+                    pr.total_amount AS debit,
+                    0::numeric AS credit,
+                    pr.status,
+                    COALESCE(pr.notes, '') AS notes
+                FROM purchase_returns pr
+                WHERE pr.supplier_id = $1
+                  AND pr.status != 'cancelled'
+                  ${returnDateFilter}
 
                 UNION ALL
 
@@ -266,19 +301,25 @@ router.get('/supplier-portal/:token/account-statement', async (req, res) => {
                   AND avl.sub_account_type = 'supplier'
                   AND avl.sub_account_id = $1
                   AND avl.debit > 0
+                  ${paymentDateFilter}
             ) transactions
             ORDER BY trans_date DESC, document_number DESC
             LIMIT 200
-        `, [supplier.id]);
+        `, statementParams);
 
         const summaryRes = await db.query(`
             SELECT
                 COALESCE(SUM(CASE WHEN source = 'invoice' THEN amount ELSE 0 END), 0) AS total_invoices,
-                COALESCE(SUM(CASE WHEN source = 'payment' THEN amount ELSE 0 END), 0) AS total_payments
+                COALESCE(SUM(CASE WHEN source = 'payment' THEN amount ELSE 0 END), 0) AS total_payments,
+                COALESCE(SUM(CASE WHEN source = 'return' THEN amount ELSE 0 END), 0) AS total_returns
             FROM (
                 SELECT 'invoice' AS source, pi.grand_total AS amount
                 FROM purchase_invoices pi
-                WHERE pi.supplier_id = $1 AND pi.status != 'cancelled'
+                WHERE pi.supplier_id = $1 AND pi.status != 'cancelled' ${invoiceDateFilter}
+                UNION ALL
+                SELECT 'return' AS source, pr.total_amount AS amount
+                FROM purchase_returns pr
+                WHERE pr.supplier_id = $1 AND pr.status != 'cancelled' ${returnDateFilter}
                 UNION ALL
                 SELECT 'payment' AS source, avl.debit AS amount
                 FROM accounting_vouchers av
@@ -287,14 +328,15 @@ router.get('/supplier-portal/:token/account-statement', async (req, res) => {
                   AND av.status = 'posted'
                   AND avl.sub_account_type = 'supplier'
                   AND avl.sub_account_id = $1
-                  AND avl.debit > 0
+                  AND avl.debit > 0 ${paymentDateFilter}
             ) totals
-        `, [supplier.id]);
+        `, statementParams);
 
         const totalInvoices = parseFloat(summaryRes.rows[0]?.total_invoices || 0);
         const totalPayments = parseFloat(summaryRes.rows[0]?.total_payments || 0);
+        const totalReturns = parseFloat(summaryRes.rows[0]?.total_returns || 0);
 
-        let runningBalance = totalInvoices - totalPayments;
+        const runningBalance = totalInvoices - totalPayments - totalReturns;
         const transactions = transactionsRes.rows.map(transaction => ({
             ...transaction,
             debit: parseFloat(transaction.debit || 0),
@@ -310,12 +352,92 @@ router.get('/supplier-portal/:token/account-statement', async (req, res) => {
             summary: {
                 total_invoices: totalInvoices,
                 total_payments: totalPayments,
+                total_returns: totalReturns,
                 balance: runningBalance,
+                from: from || null,
+                to: to || null,
             },
         });
     } catch (err) {
         console.error('[SupplierPortal] account statement error:', err.message);
         return res.status(500).json({ error: 'تعذّر تحميل كشف الحساب.' });
+    }
+});
+
+// =============================================================================
+// GET /api/public/supplier-portal/:token/invoices/:invoiceId
+// Returns one invoice only when it belongs to the token's supplier.
+// =============================================================================
+router.get('/supplier-portal/:token/invoices/:invoiceId', async (req, res) => {
+    const { token, invoiceId } = req.params;
+
+    try {
+        const supplier = await _resolveSupplierFromToken(token);
+        if (!supplier) return res.status(404).json({ error: 'الرابط غير صالح.' });
+
+        const invoiceRes = await db.query(`
+            SELECT id, invoice_number, invoice_date, due_date, supplier_invoice_ref,
+                   subtotal, tax_rate, tax_amount, grand_total, paid_amount, status, notes
+            FROM purchase_invoices
+            WHERE id = $1 AND supplier_id = $2 AND status != 'cancelled'
+        `, [invoiceId, supplier.id]);
+        if (!invoiceRes.rows.length) return res.status(404).json({ error: 'الفاتورة غير موجودة.' });
+
+        const itemsRes = await db.query(`
+            SELECT id, product_name, quantity, unit_cost, total_cost
+            FROM purchase_invoice_items
+            WHERE purchase_invoice_id = $1
+            ORDER BY created_at ASC
+        `, [invoiceId]);
+
+        return success(res, { invoice: invoiceRes.rows[0], items: itemsRes.rows });
+    } catch (err) {
+        console.error('[SupplierPortal] invoice detail error:', err.message);
+        return res.status(500).json({ error: 'تعذّر تحميل الفاتورة.' });
+    }
+});
+
+// =============================================================================
+// GET /api/public/supplier-portal/:token/payments/:paymentId
+// Returns one posted payment voucher only when it belongs to the supplier.
+// =============================================================================
+router.get('/supplier-portal/:token/payments/:paymentId', async (req, res) => {
+    const { token, paymentId } = req.params;
+
+    try {
+        const supplier = await _resolveSupplierFromToken(token);
+        if (!supplier) return res.status(404).json({ error: 'الرابط غير صالح.' });
+
+        const paymentRes = await db.query(`
+            SELECT av.id, av.voucher_number, av.voucher_date, av.description,
+                   av.total_amount, av.status
+            FROM accounting_vouchers av
+            WHERE av.id = $1
+              AND av.voucher_type = 'payment'
+              AND av.status = 'posted'
+              AND EXISTS (
+                  SELECT 1 FROM accounting_voucher_lines avl
+                  WHERE avl.voucher_id = av.id
+                    AND avl.sub_account_type = 'supplier'
+                    AND avl.sub_account_id = $2
+                    AND avl.debit > 0
+              )
+        `, [paymentId, supplier.id]);
+        if (!paymentRes.rows.length) return res.status(404).json({ error: 'سند الدفعة غير موجود.' });
+
+        const linesRes = await db.query(`
+            SELECT avl.debit, avl.credit, avl.description,
+                   a.code AS account_code, a.name AS account_name
+            FROM accounting_voucher_lines avl
+            JOIN accounts a ON a.id = avl.account_id
+            WHERE avl.voucher_id = $1
+            ORDER BY avl.debit DESC, avl.credit DESC
+        `, [paymentId]);
+
+        return success(res, { payment: paymentRes.rows[0], lines: linesRes.rows });
+    } catch (err) {
+        console.error('[SupplierPortal] payment detail error:', err.message);
+        return res.status(500).json({ error: 'تعذّر تحميل تفاصيل الدفعة.' });
     }
 });
 
