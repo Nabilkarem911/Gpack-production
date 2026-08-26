@@ -9,6 +9,7 @@ const cookieParser = require('cookie-parser');
 const path = require('path');
 const fs = require('fs');
 const rateLimit = require('express-rate-limit');
+const jwt = require('jsonwebtoken');
 const db = require('./db');
 const { authenticate } = require('./middleware/authMiddleware');
 const authorize = require('./middleware/authorize');
@@ -221,13 +222,30 @@ app.set('trust proxy', 1);
 // Security: Rate Limiting
 // =============================================================================
 
-// General API rate limiter
+const rateLimitKey = (req) => {
+  const token = req.cookies?.token || req.headers.authorization?.replace(/^Bearer\s+/i, '');
+  const payload = token ? jwt.decode(token) : null;
+  return payload?.sub ? `user:${payload.sub}` : `ip:${req.ip}`;
+};
+
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 500,
   message: { error: 'Too many requests. Please slow down.' },
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: rateLimitKey,
+  skip: (req) => req.path.startsWith('/auth/'),
+  validate: { xForwardedForHeader: false },
+});
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: { error: 'Too many login attempts. Please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `ip:${req.ip}`,
   validate: { xForwardedForHeader: false },
 });
 
@@ -352,7 +370,10 @@ function _mountRoute(basePath, ...handlers) {
 // Apply rate limiters
 _mountRoute('/', apiLimiter);        // General limit for all API endpoints
 
-_mountRoute('/auth',                require('./routes/auth'));
+_mountRoute('/auth', (req, res, next) => {
+  if (req.path === '/login') return loginLimiter(req, res, next);
+  return next();
+}, require('./routes/auth'));
 _mountRoute('/public',              publicLimiter, require('./routes/public_quotation'));
 _mountRoute('/users',               authenticate, require('./routes/users'));
 _mountRoute('/clients',             authenticate, require('./routes/clients'));
