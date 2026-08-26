@@ -42,7 +42,13 @@
                 <p id="print-template-details-code" class="text-xs font-bold text-brand-600"></p>
                 <h2 id="print-template-details-title" class="text-lg font-extrabold text-slate-800"></h2>
             </div>
-            <button id="print-template-details-close" class="w-9 h-9 rounded-lg hover:bg-slate-100 text-slate-400"><i class="fa-solid fa-xmark"></i></button>
+            <div class="flex items-center gap-2">
+                <button id="print-template-supplier-privacy" type="button" title="إظهار أسماء الموردين"
+                        class="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold transition-colors">
+                    <i class="fa-solid fa-eye-slash"></i><span>الموردون مخفيون</span>
+                </button>
+                <button id="print-template-details-close" class="w-9 h-9 rounded-lg hover:bg-slate-100 text-slate-400"><i class="fa-solid fa-xmark"></i></button>
+            </div>
         </div>
         <div id="print-template-details-body" class="overflow-y-auto p-5"></div>
     </div>

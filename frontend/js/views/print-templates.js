@@ -3,6 +3,7 @@
 (function () {
     let templates = [];
     let activeToken = window.getCurrentNavToken ? window.getCurrentNavToken() : 0;
+    let supplierNamesVisible = false;
 
     const $ = id => document.getElementById(id);
     const escapeHtml = value => String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
@@ -12,6 +13,28 @@
         ? value
         : null;
     const dateText = value => value ? new Date(value).toLocaleDateString('ar-SA') : '—';
+
+    function updateSupplierPrivacyButton() {
+        const button = $('print-template-supplier-privacy');
+        if (!button) return;
+        button.innerHTML = supplierNamesVisible
+            ? '<i class="fa-solid fa-eye"></i><span>الموردون ظاهرون</span>'
+            : '<i class="fa-solid fa-eye-slash"></i><span>الموردون مخفيون</span>';
+        button.title = supplierNamesVisible ? 'إخفاء أسماء الموردين' : 'إظهار أسماء الموردين';
+    }
+
+    function applySupplierPrivacy() {
+        document.querySelectorAll('.print-template-supplier-name').forEach(element => {
+            element.textContent = supplierNamesVisible ? element.dataset.supplierName : '********';
+        });
+        updateSupplierPrivacyButton();
+    }
+
+    function toggleSupplierPrivacy() {
+        supplierNamesVisible = !supplierNamesVisible;
+        applySupplierPrivacy();
+    }
+
     const decodeFilename = value => {
         const original = String(value ?? '');
         if (!/[ÃÂØÙÐÑ]/.test(original)) return original;
@@ -88,7 +111,7 @@
         const previewPath = safeUploadPath(file.preview_path) || (isImage ? filePath : null);
         const fileName = decodeFilename(file.name || file.type || 'ملف');
         return `<div class="flex items-center gap-3 border border-slate-100 rounded-xl p-3">
-            ${previewPath ? `<div class="w-14 h-14 rounded-lg bg-slate-50 overflow-hidden"><img src="${escapeHtml(previewPath)}" alt="" class="w-full h-full object-cover" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'"><div style="display:none" class="w-full h-full items-center justify-center text-slate-400"><i class="fa-solid fa-file-image text-xl"></i></div></div>` : '<div class="w-14 h-14 rounded-lg bg-slate-100 flex items-center justify-center text-slate-400"><i class="fa-solid fa-file text-xl"></i></div>'}
+            ${previewPath ? `<div class="w-36 h-28 rounded-lg bg-slate-50 overflow-hidden"><img src="${escapeHtml(previewPath)}" alt="" class="w-full h-full object-contain" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'"><div style="display:none" class="w-full h-full items-center justify-center text-slate-400"><i class="fa-solid fa-file-image text-xl"></i></div></div>` : '<div class="w-14 h-14 rounded-lg bg-slate-100 flex items-center justify-center text-slate-400"><i class="fa-solid fa-file text-xl"></i></div>'}
             <div class="min-w-0 flex-1"><p class="text-sm font-semibold text-slate-700 truncate">${escapeHtml(fileName)}</p><p class="text-xs text-slate-400">${escapeHtml(file.type || '')}</p></div>
             <a href="${escapeHtml(filePath)}" target="_blank" rel="noopener noreferrer" download class="text-brand-600 hover:text-brand-800" title="عرض وتحميل"><i class="fa-solid fa-download"></i></a>
         </div>`;
@@ -98,6 +121,8 @@
         const modal = $('print-template-details-modal');
         const body = $('print-template-details-body');
         if (!modal || !body) return;
+        supplierNamesVisible = false;
+        updateSupplierPrivacyButton();
         modal.classList.remove('hidden');
         modal.classList.add('flex');
         body.innerHTML = '<div class="py-12 text-center text-slate-400"><i class="fa-solid fa-circle-notch fa-spin text-2xl"></i></div>';
@@ -116,13 +141,18 @@
                         <span class="text-xs px-2 py-1 rounded-full ${design.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}">${design.is_active ? 'نشط' : 'غير نشط'}</span>
                     </div>
                     ${files.length ? `<div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-4">${files.map(fileMarkup).join('')}</div>` : '<p class="mt-4 text-xs text-amber-600 bg-amber-50 rounded-lg p-3">لا توجد ملفات لهذا التصميم.</p>'}
-                    <div class="mt-4"><p class="text-xs font-bold text-slate-500 mb-2">الموردون وأوامر التشغيل</p>${usage.length ? `<div class="space-y-2">${usage.map(item => `<div class="flex flex-wrap items-center gap-2 text-xs bg-slate-50 rounded-lg px-3 py-2"><span class="font-bold text-slate-700">${escapeHtml(item.supplier_name || 'مورد غير معروف')}</span><span class="text-slate-400">أمر تشغيل #${escapeHtml(item.order_number || '—')}</span><span class="text-slate-400">${dateText(item.used_at)}</span></div>`).join('')}</div>` : '<p class="text-xs text-slate-400">لم يتم إسناد هذا التصميم لمورد بعد.</p>'}</div>
+                    <div class="mt-4"><p class="text-xs font-bold text-slate-500 mb-2">الموردون وأوامر التشغيل</p>${usage.length ? `<div class="space-y-2">${usage.map(item => {
+                        const supplierName = item.supplier_name || 'مورد غير معروف';
+                        const supplierLabel = item.supplier_name ? '********' : supplierName;
+                        return `<div class="flex flex-wrap items-center gap-2 text-xs bg-slate-50 rounded-lg px-3 py-2"><span class="print-template-supplier-name font-bold text-slate-700" data-supplier-name="${escapeHtml(supplierName)}">${supplierLabel}</span><span class="text-slate-400">أمر تشغيل #${escapeHtml(item.order_number || '—')}</span><span class="text-slate-400">${dateText(item.used_at)}</span></div>`;
+                    }).join('')}</div>` : '<p class="text-xs text-slate-400">لم يتم إسناد هذا التصميم لمورد بعد.</p>'}</div>
                     <div class="flex gap-4 mt-3 text-xs text-slate-400"><span>أول استخدام: ${dateText(design.first_used_at)}</span><span>آخر استخدام: ${dateText(design.last_used_at)}</span></div>
                 </section>`;
             }).join('') || '<p class="py-10 text-center text-slate-400">لا توجد تصميمات مسجلة.</p>';
             if (template.missing_design_links?.length) {
                 body.innerHTML += `<div class="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800"><b>سجلات تحتاج مراجعة:</b><p class="text-xs mt-1">يوجد ${template.missing_design_links.length} إسناد يشير إلى تصميم غير موجود.</p></div>`;
             }
+            applySupplierPrivacy();
         } catch (err) {
             body.innerHTML = `<p class="py-10 text-center text-red-400">${escapeHtml(err.message || 'فشل تحميل التفاصيل')}</p>`;
         }
@@ -137,6 +167,7 @@
     $('print-templates-search')?.addEventListener('input', render);
     $('print-templates-filter')?.addEventListener('change', render);
     $('print-template-details-close')?.addEventListener('click', closeDetails);
+    $('print-template-supplier-privacy')?.addEventListener('click', toggleSupplierPrivacy);
     $('print-template-details-modal')?.addEventListener('click', event => {
         if (event.target === $('print-template-details-modal')) closeDetails();
     });
