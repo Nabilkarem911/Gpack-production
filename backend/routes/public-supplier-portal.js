@@ -252,7 +252,12 @@ router.get('/supplier-portal/:token/account-statement', async (req, res) => {
         }
 
         const transactionsRes = await db.query(`
-            SELECT * FROM (
+            SELECT transactions.*,
+                   SUM(transactions.credit - transactions.debit) OVER (
+                       ORDER BY transactions.trans_date ASC, transactions.document_number ASC
+                       ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                   ) AS running_balance
+            FROM (
                 SELECT
                     pi.id::text AS transaction_id,
                     pi.invoice_date AS trans_date,

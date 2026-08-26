@@ -166,6 +166,7 @@
                                 <th class="py-3 px-4 text-right text-xs font-bold text-slate-500">المرجع</th>
                                 <th class="py-3 px-4 text-right text-xs font-bold text-slate-500">مدين</th>
                                 <th class="py-3 px-4 text-right text-xs font-bold text-slate-500">دائن</th>
+                                <th class="py-3 px-4 text-right text-xs font-bold text-slate-500">الرصيد بعد العملية</th>
                                 <th class="py-3 px-4 text-center text-xs font-bold text-slate-500">التفاصيل</th>
                             </tr>
                         </thead>
@@ -376,6 +377,7 @@
                 <td class="py-3 px-4 text-sm text-slate-600">#${escapeHtml(transaction.document_number || '—')}</td>
                 <td class="py-3 px-4 text-sm font-bold text-emerald-600">${transaction.debit > 0 ? formatAmount(transaction.debit) : '—'}</td>
                 <td class="py-3 px-4 text-sm font-bold text-blue-600">${transaction.credit > 0 ? formatAmount(transaction.credit) : '—'}</td>
+                <td class="py-3 px-4 text-sm font-extrabold ${parseFloat(transaction.running_balance || 0) > 0 ? 'text-amber-600' : parseFloat(transaction.running_balance || 0) < 0 ? 'text-blue-600' : 'text-emerald-600'}">${formatAmount(transaction.running_balance)}</td>
                 <td class="py-3 px-4 text-center">
                     ${transaction.document_type === 'فاتورة مشتريات'
                         ? `<button type="button" onclick="window._openAccountInvoice('${escapeAttr(transaction.transaction_id)}')" class="text-purple-600 hover:text-purple-800 text-xs font-bold"><i class="fa-solid fa-file-invoice ml-1"></i>عرض / PDF</button>`
@@ -829,10 +831,10 @@
         const payload = window._currentAccountStatement;
         if (!payload) return;
         const summary = payload.summary || {};
-        const rows = (payload.transactions || []).map(transaction => `<tr><td>${transaction.trans_date ? new Date(transaction.trans_date).toLocaleDateString('ar-EG') : '—'}</td><td>${escapeHtml(transaction.document_type || '—')}</td><td>#${escapeHtml(transaction.document_number || '—')}</td><td>${transaction.debit > 0 ? formatAmount(transaction.debit) : '—'}</td><td>${transaction.credit > 0 ? formatAmount(transaction.credit) : '—'}</td></tr>`).join('');
+        const rows = (payload.transactions || []).map(transaction => `<tr><td>${transaction.trans_date ? new Date(transaction.trans_date).toLocaleDateString('ar-EG') : '—'}</td><td>${escapeHtml(transaction.document_type || '—')}</td><td>#${escapeHtml(transaction.document_number || '—')}</td><td>${transaction.debit > 0 ? formatAmount(transaction.debit) : '—'}</td><td>${transaction.credit > 0 ? formatAmount(transaction.credit) : '—'}</td><td>${formatAmount(transaction.running_balance)}</td></tr>`).join('');
         const printWindow = window.open('', '_blank', 'width=1000,height=700');
         if (!printWindow) return;
-        printWindow.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>كشف حساب المورد</title><style>body{font-family:Arial,sans-serif;padding:32px;color:#1e293b}h1{color:#563d5d}table{width:100%;border-collapse:collapse;margin-top:24px}th,td{border:1px solid #cbd5e1;padding:9px;text-align:right}th{background:#f1f5f9}.summary{display:flex;gap:24px;margin-top:18px;font-weight:bold}</style></head><body><h1>G.PACK — كشف حساب المورد</h1><div class="summary"><span>الفواتير: ${formatAmount(summary.total_invoices)}</span><span>الدفعات: ${formatAmount(summary.total_payments)}</span><span>المرتجعات: ${formatAmount(summary.total_returns)}</span><span>الرصيد: ${formatAmount(summary.balance)}</span></div><table><thead><tr><th>التاريخ</th><th>نوع الحركة</th><th>المرجع</th><th>مدين</th><th>دائن</th></tr></thead><tbody>${rows}</tbody></table><script>window.onload=function(){window.print();};<\/script></body></html>`);
+        printWindow.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>كشف حساب المورد</title><style>body{font-family:Arial,sans-serif;padding:32px;color:#1e293b}h1{color:#563d5d}table{width:100%;border-collapse:collapse;margin-top:24px}th,td{border:1px solid #cbd5e1;padding:9px;text-align:right}th{background:#f1f5f9}.summary{display:flex;gap:24px;margin-top:18px;font-weight:bold}</style></head><body><h1>G.PACK — كشف حساب المورد</h1><div class="summary"><span>الفواتير: ${formatAmount(summary.total_invoices)}</span><span>الدفعات: ${formatAmount(summary.total_payments)}</span><span>المرتجعات: ${formatAmount(summary.total_returns)}</span><span>الرصيد: ${formatAmount(summary.balance)}</span></div><table><thead><tr><th>التاريخ</th><th>نوع الحركة</th><th>المرجع</th><th>مدين</th><th>دائن</th><th>الرصيد بعد العملية</th></tr></thead><tbody>${rows}</tbody></table><script>window.onload=function(){window.print();};<\/script></body></html>`);
         printWindow.document.close();
     };
 
