@@ -220,6 +220,106 @@ router.get('/supplier-portal/:token', async (req, res) => {
 });
 
 // =============================================================================
+// GET /api/public/supplier-portal/:token/account-statement
+// Returns the supplier's purchase invoices, posted payments, and balance.
+// No auth required — the permanent portal token is the credential.
+// =============================================================================
+router.get('/supplier-portal/:token/account-statement', async (req, res) => {
+    const { token } = req.params;
+
+    try {
+        const supplier = await _resolveSupplierFromToken(token);
+        if (!supplier) {
+            return res.status(404).json({ error: 'الرابط غير صالح.' });
+        }
+
+        const transactionsRes = await db.query(`
+            SELECT * FROM (
+                SELECT
+                    pi.id::text AS transaction_id,
+                    pi.invoice_date AS trans_date,
+                    'فاتورة مشتريات' AS document_type,
+                    pi.invoice_number::text AS document_number,
+                    0::numeric AS debit,
+                    pi.grand_total AS credit,
+                    pi.status,
+                    COALESCE(pi.notes, '') AS notes
+                FROM purchase_invoices pi
+                WHERE pi.supplier_id = $1
+                  AND pi.status != 'cancelled'
+
+                UNION ALL
+
+                SELECT
+                    av.id::text AS transaction_id,
+                    av.voucher_date AS trans_date,
+                    'سند صرف' AS document_type,
+                    av.voucher_number::text AS document_number,
+                    avl.debit AS debit,
+                    0::numeric AS credit,
+                    av.status,
+                    COALESCE(av.description, '') AS notes
+                FROM accounting_vouchers av
+                JOIN accounting_voucher_lines avl ON avl.voucher_id = av.id
+                WHERE av.voucher_type = 'payment'
+                  AND av.status = 'posted'
+                  AND avl.sub_account_type = 'supplier'
+                  AND avl.sub_account_id = $1
+                  AND avl.debit > 0
+            ) transactions
+            ORDER BY trans_date DESC, document_number DESC
+            LIMIT 200
+        `, [supplier.id]);
+
+        const summaryRes = await db.query(`
+            SELECT
+                COALESCE(SUM(CASE WHEN source = 'invoice' THEN amount ELSE 0 END), 0) AS total_invoices,
+                COALESCE(SUM(CASE WHEN source = 'payment' THEN amount ELSE 0 END), 0) AS total_payments
+            FROM (
+                SELECT 'invoice' AS source, pi.grand_total AS amount
+                FROM purchase_invoices pi
+                WHERE pi.supplier_id = $1 AND pi.status != 'cancelled'
+                UNION ALL
+                SELECT 'payment' AS source, avl.debit AS amount
+                FROM accounting_vouchers av
+                JOIN accounting_voucher_lines avl ON avl.voucher_id = av.id
+                WHERE av.voucher_type = 'payment'
+                  AND av.status = 'posted'
+                  AND avl.sub_account_type = 'supplier'
+                  AND avl.sub_account_id = $1
+                  AND avl.debit > 0
+            ) totals
+        `, [supplier.id]);
+
+        const totalInvoices = parseFloat(summaryRes.rows[0]?.total_invoices || 0);
+        const totalPayments = parseFloat(summaryRes.rows[0]?.total_payments || 0);
+
+        let runningBalance = totalInvoices - totalPayments;
+        const transactions = transactionsRes.rows.map(transaction => ({
+            ...transaction,
+            debit: parseFloat(transaction.debit || 0),
+            credit: parseFloat(transaction.credit || 0),
+        }));
+
+        return success(res, {
+            supplier: {
+                id: supplier.id,
+                company_name: supplier.company_name,
+            },
+            transactions,
+            summary: {
+                total_invoices: totalInvoices,
+                total_payments: totalPayments,
+                balance: runningBalance,
+            },
+        });
+    } catch (err) {
+        console.error('[SupplierPortal] account statement error:', err.message);
+        return res.status(500).json({ error: 'تعذّر تحميل كشف الحساب.' });
+    }
+});
+
+// =============================================================================
 // GET /api/public/supplier-portal/:token/orders/:moId
 // Returns full detail of a single manufacturer order with items and design files.
 // No auth required.

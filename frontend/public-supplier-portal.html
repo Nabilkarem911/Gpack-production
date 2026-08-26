@@ -57,6 +57,18 @@
         </div>
     </div>
 
+    <!-- Portal Sections -->
+    <div class="bg-white rounded-xl shadow-sm p-2 mb-6 flex gap-2">
+        <button id="orders-tab" type="button"
+                class="portal-tab flex-1 px-4 py-3 rounded-lg text-sm font-bold bg-purple-700 text-white transition-colors">
+            <i class="fa-solid fa-clipboard-list ml-2"></i>أوامر التشغيل
+        </button>
+        <button id="account-tab" type="button"
+                class="portal-tab flex-1 px-4 py-3 rounded-lg text-sm font-bold text-slate-600 hover:bg-slate-100 transition-colors">
+            <i class="fa-solid fa-file-invoice-dollar ml-2"></i>الحسابات وكشف الحساب
+        </button>
+    </div>
+
     <!-- Orders List View -->
     <div id="orders-list-view">
         <!-- Filter Bar -->
@@ -101,6 +113,52 @@
             <div id="no-orders" class="hidden p-10 text-center">
                 <i class="fa-solid fa-box-open text-4xl text-slate-300 mb-3"></i>
                 <p class="text-slate-400 text-sm">لا توجد أوامر تشغيل حالياً</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Account Statement View -->
+    <div id="account-view" class="hidden">
+        <div id="account-loading" class="hidden bg-white rounded-xl shadow-sm p-10 text-center">
+            <div class="w-10 h-10 border-4 border-purple-600 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+            <p class="text-slate-500 text-sm">جاري تحميل كشف الحساب...</p>
+        </div>
+        <div id="account-error" class="hidden bg-red-50 text-red-600 rounded-xl p-4 text-sm font-bold"></div>
+        <div id="account-content">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div class="bg-white rounded-xl shadow-sm p-5 border-r-4 border-blue-500">
+                    <p class="text-xs text-slate-500 font-bold mb-2">إجمالي الفواتير</p>
+                    <p id="account-total-invoices" class="text-xl font-extrabold text-slate-800">0.00 ر.س</p>
+                </div>
+                <div class="bg-white rounded-xl shadow-sm p-5 border-r-4 border-emerald-500">
+                    <p class="text-xs text-slate-500 font-bold mb-2">إجمالي الدفعات</p>
+                    <p id="account-total-payments" class="text-xl font-extrabold text-emerald-600">0.00 ر.س</p>
+                </div>
+                <div class="bg-white rounded-xl shadow-sm p-5 border-r-4 border-amber-500">
+                    <p class="text-xs text-slate-500 font-bold mb-2">الرصيد المستحق للمورد</p>
+                    <p id="account-balance" class="text-xl font-extrabold text-amber-600">0.00 ر.س</p>
+                </div>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm overflow-hidden">
+                <div class="p-4 border-b border-slate-100">
+                    <h2 class="font-bold text-slate-800">كشف الحساب</h2>
+                    <p class="text-xs text-slate-400 mt-1">الفواتير والدفعات المسجلة والمعتمدة</p>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full">
+                        <thead>
+                            <tr class="bg-slate-50 border-b border-slate-200">
+                                <th class="py-3 px-4 text-right text-xs font-bold text-slate-500">التاريخ</th>
+                                <th class="py-3 px-4 text-right text-xs font-bold text-slate-500">نوع الحركة</th>
+                                <th class="py-3 px-4 text-right text-xs font-bold text-slate-500">المرجع</th>
+                                <th class="py-3 px-4 text-right text-xs font-bold text-slate-500">مدين</th>
+                                <th class="py-3 px-4 text-right text-xs font-bold text-slate-500">دائن</th>
+                            </tr>
+                        </thead>
+                        <tbody id="account-tbody"></tbody>
+                    </table>
+                </div>
+                <div id="account-empty" class="hidden p-10 text-center text-slate-400 text-sm">لا توجد حركات مالية مسجلة</div>
             </div>
         </div>
     </div>
@@ -156,6 +214,7 @@
     let _token = null;
     let _allOrders = [];
     let _currentFilter = 'all';
+    let _accountLoaded = false;
 
     // ── Utility functions ─────────────────────────────────────────────────────
     function getExt(url) {
@@ -245,6 +304,70 @@
         document.getElementById('loading').classList.add('hidden');
         document.getElementById('error-msg').textContent = msg;
         document.getElementById('error-state').classList.remove('hidden');
+    }
+
+    function formatAmount(value) {
+        return parseFloat(value || 0).toLocaleString('en-US', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        }) + ' ر.س';
+    }
+
+    function setActivePortalTab(tab) {
+        const ordersTab = document.getElementById('orders-tab');
+        const accountTab = document.getElementById('account-tab');
+        const activeClasses = 'portal-tab flex-1 px-4 py-3 rounded-lg text-sm font-bold bg-purple-700 text-white transition-colors';
+        const inactiveClasses = 'portal-tab flex-1 px-4 py-3 rounded-lg text-sm font-bold text-slate-600 hover:bg-slate-100 transition-colors';
+
+        ordersTab.className = tab === 'orders' ? activeClasses : inactiveClasses;
+        accountTab.className = tab === 'account' ? activeClasses : inactiveClasses;
+        document.getElementById('order-detail-view').classList.add('hidden');
+        document.getElementById('orders-list-view').classList.toggle('hidden', tab !== 'orders');
+        document.getElementById('account-view').classList.toggle('hidden', tab !== 'account');
+    }
+
+    function renderAccountStatement(payload) {
+        const summary = payload.summary || {};
+        document.getElementById('account-total-invoices').textContent = formatAmount(summary.total_invoices);
+        document.getElementById('account-total-payments').textContent = formatAmount(summary.total_payments);
+        document.getElementById('account-balance').textContent = formatAmount(summary.balance);
+
+        const tbody = document.getElementById('account-tbody');
+        const empty = document.getElementById('account-empty');
+        const transactions = payload.transactions || [];
+        empty.classList.toggle('hidden', transactions.length > 0);
+        tbody.innerHTML = transactions.map(transaction => `
+            <tr class="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                <td class="py-3 px-4 text-sm text-slate-600">${transaction.trans_date ? new Date(transaction.trans_date).toLocaleDateString('ar-EG') : '—'}</td>
+                <td class="py-3 px-4 text-sm font-bold ${transaction.debit > 0 ? 'text-emerald-700' : 'text-blue-700'}">${escapeHtml(transaction.document_type || '—')}</td>
+                <td class="py-3 px-4 text-sm text-slate-600">#${escapeHtml(transaction.document_number || '—')}</td>
+                <td class="py-3 px-4 text-sm font-bold text-emerald-600">${transaction.debit > 0 ? formatAmount(transaction.debit) : '—'}</td>
+                <td class="py-3 px-4 text-sm font-bold text-blue-600">${transaction.credit > 0 ? formatAmount(transaction.credit) : '—'}</td>
+            </tr>
+        `).join('');
+    }
+
+    async function loadAccountStatement() {
+        const loading = document.getElementById('account-loading');
+        const content = document.getElementById('account-content');
+        const error = document.getElementById('account-error');
+        loading.classList.remove('hidden');
+        content.classList.add('hidden');
+        error.classList.add('hidden');
+
+        try {
+            const res = await fetch(`${API_BASE}/public/supplier-portal/${_token}/account-statement`);
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || 'تعذّر تحميل كشف الحساب.');
+            renderAccountStatement(data.data || data);
+            _accountLoaded = true;
+            content.classList.remove('hidden');
+        } catch (err) {
+            error.textContent = err.message || 'تعذّر تحميل كشف الحساب.';
+            error.classList.remove('hidden');
+        } finally {
+            loading.classList.add('hidden');
+        }
     }
 
     // ── Render Orders List ──────────────────────────────────────────────────
@@ -601,6 +724,16 @@
         document.getElementById('orders-list-view').classList.add('fade-in');
         renderOrders();
     };
+
+    // ── Portal Tabs ─────────────────────────────────────────────────────────
+    document.getElementById('orders-tab').addEventListener('click', () => {
+        setActivePortalTab('orders');
+    });
+
+    document.getElementById('account-tab').addEventListener('click', async () => {
+        setActivePortalTab('account');
+        if (!_accountLoaded) await loadAccountStatement();
+    });
 
     // ── Filter Buttons ──────────────────────────────────────────────────────
     document.querySelectorAll('.filter-btn').forEach(btn => {
