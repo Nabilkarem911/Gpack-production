@@ -203,6 +203,104 @@
         }
     }
 
+    function _renderWorkflowConversation(history, items = []) {
+        const roleConfig = {
+            client: {
+                label: 'العميل',
+                icon: 'fa-user-tie',
+                wrapper: 'justify-start',
+                bubble: 'bg-red-50 border-red-200',
+                title: 'text-red-700',
+                text: 'text-red-800',
+                iconColor: 'bg-red-100 text-red-600',
+            },
+            designer: {
+                label: 'المصمم',
+                icon: 'fa-pen-ruler',
+                wrapper: 'justify-end',
+                bubble: 'bg-blue-50 border-blue-200',
+                title: 'text-blue-700',
+                text: 'text-blue-800',
+                iconColor: 'bg-blue-100 text-blue-600',
+            },
+            manager: {
+                label: 'المدير',
+                icon: 'fa-user-shield',
+                wrapper: 'justify-end',
+                bubble: 'bg-purple-50 border-purple-200',
+                title: 'text-purple-700',
+                text: 'text-purple-800',
+                iconColor: 'bg-purple-100 text-purple-600',
+            },
+            admin: {
+                label: 'المدير',
+                icon: 'fa-user-shield',
+                wrapper: 'justify-end',
+                bubble: 'bg-purple-50 border-purple-200',
+                title: 'text-purple-700',
+                text: 'text-purple-800',
+                iconColor: 'bg-purple-100 text-purple-600',
+            },
+            super_admin: {
+                label: 'المدير',
+                icon: 'fa-user-shield',
+                wrapper: 'justify-end',
+                bubble: 'bg-purple-50 border-purple-200',
+                title: 'text-purple-700',
+                text: 'text-purple-800',
+                iconColor: 'bg-purple-100 text-purple-600',
+            },
+        };
+        const systemConfig = {
+            label: 'النظام',
+            icon: 'fa-robot',
+            wrapper: 'justify-center',
+            bubble: 'bg-slate-50 border-slate-200',
+            title: 'text-slate-600',
+            text: 'text-slate-700',
+            iconColor: 'bg-slate-100 text-slate-500',
+        };
+
+        return `
+            <div class="bg-slate-50 rounded-2xl p-4 mt-4 border border-slate-200">
+                <div class="flex items-center justify-between mb-4">
+                    <p class="text-sm font-bold text-slate-700"><i class="fa-solid fa-comments ml-1 text-brand-600"></i>محادثة متابعة الحالة</p>
+                    <span class="text-[10px] text-slate-400">${history.length} تحديث</span>
+                </div>
+                <div class="space-y-3 max-h-80 overflow-y-auto pl-1">
+                    ${history.map(h => {
+                        const role = String(h.actor_role || '').toLowerCase();
+                        const config = roleConfig[role] || systemConfig;
+                        const item = items.find(i => String(i.id) === String(h.entity_id));
+                        const stateChange = h.from_state
+                            ? `${_statusLabel(h.from_state)} <i class="fa-solid fa-arrow-left mx-1 text-[9px]"></i> ${_statusLabel(h.to_state)}`
+                            : _statusLabel(h.to_state);
+                        const time = h.changed_at
+                            ? new Date(h.changed_at).toLocaleString('ar-SA', { dateStyle: 'medium', timeStyle: 'short' })
+                            : '';
+                        return `
+                            <div class="flex ${config.wrapper}">
+                                <div class="max-w-[88%] ${config.bubble} border rounded-2xl px-3 py-2.5 shadow-sm">
+                                    <div class="flex items-center gap-2 mb-1.5">
+                                        <span class="w-6 h-6 rounded-full ${config.iconColor} flex items-center justify-center">
+                                            <i class="fa-solid ${config.icon} text-[10px]"></i>
+                                        </span>
+                                        <span class="text-xs font-extrabold ${config.title}">${config.label}</span>
+                                        <span class="text-[10px] text-slate-400">${_esc(h.actor_name || '')}</span>
+                                    </div>
+                                    <div class="text-xs font-bold ${config.text}">${stateChange}</div>
+                                    ${item ? `<div class="text-[10px] text-slate-500 mt-1">الصنف: ${_esc(item.product_name || item.size || '—')}</div>` : ''}
+                                    ${h.notes ? `<div class="mt-2 pt-2 border-t border-black/5 text-xs leading-5 ${config.text}">${_esc(h.notes)}</div>` : ''}
+                                    <div class="text-[10px] text-slate-400 mt-1.5">${time}</div>
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            </div>
+        `;
+    }
+
     // ── Open task detail (context-aware: pass current tab status to API) ──────
     async function _openTaskDetail(taskId) {
         try {
@@ -335,25 +433,8 @@
             html += `</div>`;
 
             // Workflow history (if available)
-            if (res.workflow_history && res.workflow_history.length > 0 && isManagerRole) {
-                html += `
-                    <div class="bg-slate-50 rounded-xl p-4 mt-4">
-                        <p class="text-xs font-semibold text-slate-600 mb-2"><i class="fa-solid fa-clock-rotate-left ml-1"></i>سجل الحالات</p>
-                        <div class="space-y-1">
-                            ${res.workflow_history.map(h => `
-                                <div class="flex items-center gap-2 text-xs text-slate-500">
-                                    <span class="text-slate-400">${h.changed_at ? new Date(h.changed_at).toLocaleString('ar-SA') : ''}</span>
-                                    <span class="font-semibold text-slate-600">${_statusLabel(h.from_state)}</span>
-                                    <i class="fa-solid fa-arrow-left text-slate-300"></i>
-                                    <span class="font-semibold text-slate-700">${_statusLabel(h.to_state)}</span>
-                                    ${h.actor_name ? `<span class="text-slate-400">— ${_esc(h.actor_name)}</span>` : ''}
-                                    ${h.transition_reason ? `<span class="text-[10px] px-1 py-0.5 rounded bg-slate-200 text-slate-600">${_esc(h.transition_reason)}</span>` : ''}
-                                    ${h.notes ? `<span class="text-slate-400">(${_esc(h.notes)})</span>` : ''}
-                                </div>
-                            `).join('')}
-                        </div>
-                    </div>
-                `;
+            if (res.workflow_history && res.workflow_history.length > 0) {
+                html += _renderWorkflowConversation(res.workflow_history, res.items || []);
             }
 
             if (body) body.innerHTML = html;
