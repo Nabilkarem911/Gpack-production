@@ -111,7 +111,9 @@
         const previewPath = safeUploadPath(file.preview_path) || (isImage ? filePath : null);
         const fileName = decodeFilename(file.name || file.type || 'ملف');
         return `<div class="flex items-center gap-3 border border-slate-100 rounded-xl p-3">
-            ${previewPath ? `<div class="w-36 h-28 rounded-lg bg-slate-50 overflow-hidden"><img src="${escapeHtml(previewPath)}" alt="" class="w-full h-full object-contain" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'"><div style="display:none" class="w-full h-full items-center justify-center text-slate-400"><i class="fa-solid fa-file-image text-xl"></i></div></div>` : '<div class="w-14 h-14 rounded-lg bg-slate-100 flex items-center justify-center text-slate-400"><i class="fa-solid fa-file text-xl"></i></div>'}
+            <a href="${escapeHtml(filePath)}" target="_blank" rel="noopener noreferrer" class="shrink-0 block rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-400" title="فتح التصميم في صفحة جديدة">
+                ${previewPath ? `<div class="w-36 h-28 rounded-lg bg-slate-50 overflow-hidden"><img src="${escapeHtml(previewPath)}" alt="فتح التصميم" class="w-full h-full object-contain" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'"><div style="display:none" class="w-full h-full items-center justify-center text-slate-400"><i class="fa-solid fa-file-image text-xl"></i></div></div>` : '<div class="w-14 h-14 rounded-lg bg-slate-100 flex items-center justify-center text-slate-400"><i class="fa-solid fa-file text-xl"></i></div>'}
+            </a>
             <div class="min-w-0 flex-1"><p class="text-sm font-semibold text-slate-700 truncate">${escapeHtml(fileName)}</p><p class="text-xs text-slate-400">${escapeHtml(file.type || '')}</p></div>
             <a href="${escapeHtml(filePath)}" target="_blank" rel="noopener noreferrer" download class="text-brand-600 hover:text-brand-800" title="عرض وتحميل"><i class="fa-solid fa-download"></i></a>
         </div>`;
