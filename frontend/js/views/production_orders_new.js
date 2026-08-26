@@ -305,6 +305,29 @@
         _setText('po-stat-unpaid',     unpaid);
     }
 
+    function _renderSupplierLinks(order) {
+        const names = String(order.supplier_names || '').split(',').map(name => name.trim()).filter(Boolean);
+        const ids = Array.isArray(order.supplier_ids) ? order.supplier_ids.filter(Boolean) : [];
+
+        if (!ids.length) {
+            return names.length
+                ? `<span class="text-xs font-semibold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-lg">${_escapeHtml(names.join(', '))}</span>`
+                : '<span class="text-xs text-slate-300">—</span>';
+        }
+
+        return ids.map((supplierId, index) => {
+            const supplier = _suppliers.find(s => String(s.id) === String(supplierId));
+            const supplierName = supplier?.company_name || supplier?.name || names[index] || 'المورد';
+            const safeSupplierId = _escapeAttrValue(supplierId);
+            return `<button type="button"
+                            onclick="event.stopPropagation(); window.poView.openSupplierPortalInNewTab('${safeSupplierId}')"
+                            class="text-xs font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 hover:text-purple-900 px-2 py-0.5 rounded-lg transition-colors"
+                            title="فتح بوابة المورد في تبويب جديد">
+                        ${_escapeHtml(supplierName)}
+                    </button>`;
+        }).join('<span class="text-slate-300 mx-1">،</span>');
+    }
+
     // ── Table render ───────────────────────────────────────────────────────────
     function _renderTable() {
         const search = (_el('po-search')?.value || '').toLowerCase().trim();
@@ -357,10 +380,9 @@
                         : '—'}
                 </td>
                 <td class="py-3 px-4 hidden md:table-cell">
-                    ${o.supplier_names
-                        ? `<span class="text-xs font-semibold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-lg">${o.supplier_names}</span>`
-                        : `<span class="text-xs text-slate-300">—</span>`
-                    }
+                    <div class="flex flex-wrap items-center gap-1">
+                        ${_renderSupplierLinks(o)}
+                    </div>
                 </td>
                 <td class="py-3 px-4 text-xs text-slate-400 hidden sm:table-cell">${_fmtDate(o.order_date)}</td>
                 <td class="py-3 px-4 text-sm font-bold text-slate-800 hidden md:table-cell">${_fmt(gt)} ر.س</td>
@@ -3901,10 +3923,40 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         _searchQuickPantone:     _searchQuickPantone,
         _selectQuickPantone:     _selectQuickPantone,
         // Supplier portal link
-        openSupplierPortal:      _openSupplierPortal,
+        openSupplierPortal:           _openSupplierPortal,
+        openSupplierPortalInNewTab:    _openSupplierPortalInNewTab,
     };
 
     // ── Supplier Portal Link ──────────────────────────────────────────────────
+    async function _openSupplierPortalInNewTab(supplierId) {
+        if (!supplierId) {
+            _toast('لا يوجد مورد مرتبط بأمر التشغيل', 'error');
+            return;
+        }
+
+        const portalWindow = window.open('', '_blank');
+        if (!portalWindow) {
+            _toast('اسمح بفتح النوافذ المنبثقة لفتح بوابة المورد.', 'warning');
+            return;
+        }
+        portalWindow.document.title = 'بوابة المورد';
+        portalWindow.document.body.innerHTML = '<p dir="rtl" style="font-family: sans-serif; padding: 2rem;">جاري فتح بوابة المورد...</p>';
+
+        try {
+            const res = await window.apiFetch('/api/public/supplier-portal/generate', {
+                method: 'POST',
+                body: JSON.stringify({ supplier_id: supplierId })
+            });
+            const data = res?.data;
+            if (!data?.portal_url) throw new Error('فشل إنشاء الرابط.');
+            portalWindow.location.href = data.portal_url;
+        } catch (err) {
+            portalWindow.close();
+            console.error('[poView] openSupplierPortalInNewTab:', err);
+            _toast(err.message || 'فشل فتح بوابة المورد', 'error');
+        }
+    }
+
     async function _openSupplierPortal(supplierId) {
         if (!supplierId) {
             _toast('لا يوجد مورد مرتبط بأمر التشغيل', 'error');
