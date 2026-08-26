@@ -596,19 +596,13 @@
             hideEl('dv-archive-loading');
             if (!notes.length) { showEl('dv-archive-empty'); return; }
 
-            const itemMap = {};
-            await Promise.all(notes.map(async dn => {
-                try { const r = await window.apiFetch('/api/delivery-notes/' + dn.id); itemMap[dn.id] = r.data?.items || []; }
-                catch (_) { itemMap[dn.id] = []; }
-            }));
-
             listEl.innerHTML = notes.map(dn => {
+                const dnItems = Array.isArray(dn.items) ? dn.items : [];
                 const stBadge = dn.status === 'completed'
                     ? '<span class="text-xs px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-lg font-bold">مكتمل</span>'
                     : dn.status === 'partial'
                         ? '<span class="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded-lg font-bold">جزئي</span>'
                         : '<span class="text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-lg font-bold">معلق</span>';
-                const dnItems = itemMap[dn.id] || [];
                 const itemRows = dnItems.map(i => {
                     const req = parseFloat(i.requested_qty || i.quantity || 0);
                     const del = parseFloat(i.delivered_qty || 0);

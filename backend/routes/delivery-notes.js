@@ -80,7 +80,38 @@ router.get('/', async (req, res) => {
                 dn.notes,
                 dn.created_at,
                 dn.updated_at,
-                COUNT(dni.id) AS item_count
+                COUNT(dni.id) AS item_count,
+                COALESCE((
+                    SELECT json_agg(json_build_object(
+                        'id', item.id,
+                        'delivery_note_id', item.delivery_note_id,
+                        'order_item_id', item.order_item_id,
+                        'variant_id', item.variant_id,
+                        'product_name', item.product_name,
+                        'variant_name', item.variant_name,
+                        'requested_qty', item.requested_qty,
+                        'quantity', item.quantity,
+                        'delivered_qty', item.delivered_qty,
+                        'notes', item.notes
+                    ) ORDER BY item.id)
+                    FROM (
+                        SELECT dni2.id,
+                               dni2.delivery_note_id,
+                               dni2.order_item_id,
+                               dni2.variant_id,
+                               p2.name AS product_name,
+                               pv2.size_name AS variant_name,
+                               dni2.requested_qty,
+                               dni2.requested_qty AS quantity,
+                               dni2.delivered_qty,
+                               dni2.notes
+                        FROM delivery_note_items dni2
+                        LEFT JOIN order_items oi2 ON oi2.id = dni2.order_item_id
+                        LEFT JOIN product_variants pv2 ON pv2.id = COALESCE(dni2.variant_id, oi2.variant_id)
+                        LEFT JOIN products p2 ON p2.id = pv2.product_id
+                        WHERE dni2.delivery_note_id = dn.id
+                    ) item
+                ), '[]'::json) AS items
             FROM delivery_notes dn
             LEFT JOIN orders o ON o.id = dn.order_id
             LEFT JOIN clients c ON c.id = dn.client_id
