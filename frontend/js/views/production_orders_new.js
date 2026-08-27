@@ -265,8 +265,8 @@
             const productionOrders = (activeRes?.data) || [];
             const assignedOrders = productionOrders.filter(o => _isFullyAssigned(o));
             _allOrders.pending_assignment = productionOrders.filter(o => !_isFullyAssigned(o));
-            _allOrders.active             = assignedOrders.filter(o => o.status !== 'processing');
-            _allOrders.delivering         = assignedOrders.filter(o => o.status === 'processing');
+            _allOrders.active             = assignedOrders.filter(o => Number(o.delivery_note_count || 0) === 0);
+            _allOrders.delivering         = assignedOrders.filter(o => Number(o.delivery_note_count || 0) > 0);
             _allOrders.completed = (completedRes?.data) || [];
             _allOrders.archived  = (archivedRes?.data)  || [];
             _updateStats();
@@ -297,7 +297,7 @@
         const active = _allOrders.active;
         const delivering = _allOrders.delivering;
         const pending    = _allOrders.pending_assignment.length;
-        const processing = delivering.length;
+        const processing = [...active, ...delivering].filter(o => o.status === 'processing').length;
         const completed  = _allOrders.completed.length;
         const unpaid = [..._allOrders.pending_assignment, ...active, ...delivering, ..._allOrders.completed].filter(o =>
             parseFloat(o.grand_total || 0) - parseFloat(o.paid_amount || 0) > 0.01

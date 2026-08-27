@@ -136,6 +136,7 @@ router.get('/', async (req, res) => {
                 o.responded_at,
                 o.pricing_status,
                 o.pricing_notes,
+                (SELECT COUNT(*)::int FROM delivery_notes dn WHERE dn.order_id = o.id) AS delivery_note_count,
                 (SELECT dr.id FROM direct_receipts dr WHERE dr.production_order_id = o.id LIMIT 1) AS direct_receipt_id,
                 (SELECT s.company_name
                  FROM direct_receipts dr
