@@ -1027,7 +1027,7 @@
         const designVal = prefill.design_id || prefill.design_status || 'new';
 
         const row = document.createElement('div');
-        row.className = 'quote-item-row grid grid-cols-[1.4fr_2fr_2fr_1fr_1.2fr_1.2fr_1.2fr_auto] gap-2 items-start bg-white border border-slate-200 rounded-xl px-3 py-2.5';
+        row.className = 'quote-item-row grid grid-cols-1 sm:grid-cols-[1.4fr_2fr_2fr_1fr_1.2fr_1.2fr_1.2fr_auto] gap-2 items-start bg-white border border-slate-200 rounded-xl px-3 py-2.5';
         row.dataset.rowId = rowId;
         row.dataset.clientId = document.getElementById('quote-client')?.value || '';
         row.dataset.variantId = prefill.product_variant_id || '';

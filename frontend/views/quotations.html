@@ -154,6 +154,87 @@
     </div>
 </div>
 
+<style>
+    #quote-modal {
+        z-index: 60;
+    }
+
+    @media (max-width: 639px) {
+        #quote-modal {
+            padding: 0.5rem;
+        }
+
+        #quote-modal .modal-panel {
+            width: 100%;
+            max-width: 100%;
+            max-height: calc(100dvh - 1rem);
+            border-radius: 1rem;
+        }
+
+        #quote-modal .modal-panel > div:first-child {
+            padding: 0.75rem 1rem;
+        }
+
+        #quote-modal .modal-panel > div:nth-child(2) {
+            padding: 1rem;
+            gap: 1.25rem;
+        }
+
+        #quote-modal .modal-panel > div:last-child {
+            padding: 1rem;
+        }
+
+        #quote-modal .quote-item-row {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            position: relative;
+            padding: 0.75rem;
+        }
+
+        #quote-modal .quote-item-row > div:nth-child(1),
+        #quote-modal .quote-item-row > div:nth-child(2),
+        #quote-modal .quote-item-row > div:nth-child(3),
+        #quote-modal .quote-item-row > div:nth-child(7) {
+            grid-column: 1 / -1;
+        }
+
+        #quote-modal .quote-item-row > div:nth-child(4),
+        #quote-modal .quote-item-row > div:nth-child(5),
+        #quote-modal .quote-item-row > div:nth-child(6) {
+            min-width: 0;
+        }
+
+        #quote-modal .quote-item-row > div:nth-child(8) {
+            position: absolute;
+            top: 0.75rem;
+            left: 0.75rem;
+        }
+
+        #quote-modal .quote-item-row select,
+        #quote-modal .quote-item-row input {
+            min-height: 2.75rem;
+            min-width: 0;
+        }
+
+        #quote-modal .quote-item-row .quick-add-btn button {
+            width: 1.75rem;
+            height: 1.75rem;
+        }
+
+        #quote-modal .quote-item-row .design-section {
+            padding-top: 0.25rem;
+        }
+
+        #quote-modal .modal-panel > div:last-child > div {
+            gap: 0.75rem;
+        }
+
+        #quote-modal #quote-modal-cancel-btn,
+        #quote-modal #quote-modal-submit-btn {
+            min-height: 2.75rem;
+        }
+    }
+</style>
+
 <!-- =============================================================================
      QUOTE ADD / EDIT MODAL (Full-Screen)
 ============================================================================= -->
