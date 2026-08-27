@@ -7,7 +7,7 @@
 (function () {
 
     // ── State ──────────────────────────────────────────────────────────────────
-    let _allOrders    = { pending_assignment: [], active: [], completed: [], archived: [] };
+    let _allOrders    = { pending_assignment: [], active: [], delivering: [], completed: [], archived: [] };
     let _suppliers    = [];
     let _warehouses   = [];
     let _activeTab    = 'pending_assignment';
@@ -263,8 +263,10 @@
                 window.apiFetch('/api/orders?status=delivered'),
             ]);
             const productionOrders = (activeRes?.data) || [];
+            const assignedOrders = productionOrders.filter(o => _isFullyAssigned(o));
             _allOrders.pending_assignment = productionOrders.filter(o => !_isFullyAssigned(o));
-            _allOrders.active             = productionOrders.filter(o => _isFullyAssigned(o));
+            _allOrders.active             = assignedOrders.filter(o => o.status !== 'processing');
+            _allOrders.delivering         = assignedOrders.filter(o => o.status === 'processing');
             _allOrders.completed = (completedRes?.data) || [];
             _allOrders.archived  = (archivedRes?.data)  || [];
             _updateStats();
@@ -293,10 +295,11 @@
     // ── Stats ──────────────────────────────────────────────────────────────────
     function _updateStats() {
         const active = _allOrders.active;
+        const delivering = _allOrders.delivering;
         const pending    = _allOrders.pending_assignment.length;
-        const processing = active.filter(o => o.status === 'processing').length;
+        const processing = delivering.length;
         const completed  = _allOrders.completed.length;
-        const unpaid = [..._allOrders.pending_assignment, ...active, ..._allOrders.completed].filter(o =>
+        const unpaid = [..._allOrders.pending_assignment, ...active, ...delivering, ..._allOrders.completed].filter(o =>
             parseFloat(o.grand_total || 0) - parseFloat(o.paid_amount || 0) > 0.01
         ).length;
         _setText('po-stat-pending',    pending);
@@ -3229,7 +3232,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
     // ── Tab switching (page list) ──────────────────────────────────────────────
     function _switchTab(tab) {
         _activeTab = tab;
-        ['pending_assignment','active','completed','archived'].forEach(t => {
+        ['pending_assignment','active','delivering','completed','archived'].forEach(t => {
             const btn = _el(`po-tab-${t}`);
             if (!btn) return;
             if (t === tab) {
