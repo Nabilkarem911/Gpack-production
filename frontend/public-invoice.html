@@ -5,46 +5,103 @@
     <title>فاتورة | G.PACK</title>
     <style>
         * { margin:0; padding:0; box-sizing:border-box; }
-        body { font-family: 'Segoe UI', Tahoma, Arial, sans-serif; background:#fff; color:#1e293b; padding:30px; }
-        @media print { body { padding:15px; } .no-print { display:none !important; } @page { margin:15mm; } }
-        .invoice-container { max-width:800px; margin:0 auto; }
-        .header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:30px; padding-bottom:20px; border-bottom:3px solid #563D5D; }
-        .logo-section { display:flex; align-items:center; gap:12px; }
-        .logo-section img { width:58px; height:58px; object-fit:contain; }
-        .logo-text h1 { font-size:24px; font-weight:900; color:#563D5D; margin-bottom:4px; }
-        .logo-text p { font-size:12px; color:#64748b; }
-        .invoice-meta { text-align:left; }
-        .invoice-meta .inv-number { font-size:22px; font-weight:900; color:#1e293b; }
-        .invoice-meta .inv-date { font-size:13px; color:#64748b; margin-top:4px; }
-        .invoice-type-badge { display:inline-block; padding:4px 14px; border-radius:20px; font-size:12px; font-weight:700; margin-top:8px; }
+        body { font-family:'Segoe UI', Tahoma, Arial, sans-serif; background:#eef1f6; color:#1e293b; padding:28px; }
+        @media print { body { padding:0; background:#fff; } .no-print { display:none !important; } @page { size:A4; margin:12mm; } }
+        .invoice-container { max-width:960px; margin:0 auto; background:#fff; padding:38px 44px 32px; border-top:7px solid #563D5D; box-shadow:0 12px 40px rgba(15,23,42,0.08); }
+        @media print {
+            .invoice-container { max-width:none; padding:0; border-top:0; box-shadow:none; }
+            table.items thead { display:table-header-group; }
+            table.items tr, .totals-grid, .totals-box { break-inside:avoid; page-break-inside:avoid; }
+        }
+        .header { display:flex; justify-content:space-between; align-items:stretch; gap:36px; margin-bottom:30px; padding-bottom:24px; border-bottom:1px solid #d8cbe4; }
+        .logo-section { display:flex; align-items:center; gap:18px; min-width:0; }
+        .logo-section img { width:84px; height:84px; object-fit:contain; flex-shrink:0; }
+        .logo-text { padding-top:2px; }
+        .logo-text h1 { font-size:30px; line-height:1; font-weight:900; letter-spacing:0.8px; color:#563D5D; margin-bottom:9px; }
+        .logo-text p { font-size:12px; line-height:1.8; color:#64748b; }
+        .logo-text p:first-of-type { font-size:14px; font-weight:700; color:#334155; }
+        .invoice-meta { min-width:245px; text-align:right; padding:16px 18px; background:linear-gradient(135deg,#faf7fd,#f5f0fa); border:1px solid #e4d8ee; border-right:4px solid #563D5D; border-radius:14px; }
+        .invoice-meta .meta-label { display:block; font-size:10px; font-weight:800; color:#8b6a9b; letter-spacing:0.6px; margin-bottom:5px; }
+        .invoice-meta .inv-number { font-size:27px; line-height:1.1; font-weight:900; color:#1e293b; }
+        .invoice-meta .inv-date { font-size:12px; color:#64748b; margin-top:8px; }
+        .invoice-meta .inv-status { display:inline-block; margin-top:11px; font-size:10px; font-weight:800; color:#475569; }
+        .invoice-type-badge { display:inline-block; padding:6px 14px; border-radius:8px; font-size:12px; font-weight:800; margin-top:8px; }
         .badge-final { background:#ffd700; color:#563D5D; }
         .badge-proforma { background:#fff7cc; color:#563D5D; }
-        .client-section { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom:25px; background:#f8fafc; border-radius:12px; padding:20px; border:1px solid #e2e8f0; }
-        .client-section h4 { font-size:11px; color:#94a3b8; font-weight:700; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.5px; }
-        .client-section p { font-size:14px; color:#1e293b; font-weight:600; }
-        .client-section .sub { font-size:12px; color:#64748b; margin-top:2px; }
-        table.items { width:100%; border-collapse:collapse; margin-bottom:20px; border-radius:12px; overflow:hidden; border:1px solid #e2e8f0; }
-        table.items thead { background:linear-gradient(135deg, #563D5D, #3D2A43); }
-        table.items thead th { padding:12px; color:#fff; font-size:12px; font-weight:700; text-align:center; }
-        table.items thead th:nth-child(2) { text-align:right; }
+        .client-section { display:grid; grid-template-columns:1.35fr 1fr; gap:18px; margin-bottom:28px; background:transparent; padding:0; border:0; }
+        .client-section > div { min-height:126px; padding:18px 20px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:14px; border-top:3px solid #d8cbe4; }
+        .client-section > div:last-child { border-top-color:#ffd700; }
+        .client-section h4 { font-size:11px; color:#8b6a9b; font-weight:800; margin-bottom:10px; text-transform:uppercase; letter-spacing:0.5px; }
+        .client-section p { font-size:15px; color:#1e293b; font-weight:700; line-height:1.65; }
+        .client-section .sub { font-size:12px; color:#64748b; font-weight:500; margin-top:3px; line-height:1.7; }
+        table.items { width:100%; table-layout:fixed; border-collapse:separate; border-spacing:0; margin-bottom:24px; border-radius:14px; overflow:hidden; border:1px solid #dbe2ea; }
+        table.items thead { background:linear-gradient(135deg,#563D5D,#3D2A43); }
+        table.items thead th { padding:13px 12px; color:#fff; font-size:12px; font-weight:800; text-align:center; }
+        table.items thead th.item-index { width:8%; }
+        table.items thead th.item-name { width:44%; text-align:right; }
+        table.items thead th.item-qty { width:13%; }
+        table.items thead th.item-unit-price { width:17%; }
+        table.items thead th.item-line-total { width:18%; }
+        table.items tbody tr:nth-child(even) { background:#fafbfc; }
+        table.items tbody tr:hover { background:#f8f0fb; }
+        table.items tbody td { padding:12px; border-bottom:1px solid #e8edf2; color:#334155; font-size:13px; vertical-align:middle; }
         table.items tbody tr:last-child td { border-bottom:none; }
-        table.items tbody tr:hover { background:#f8fafc; }
-        .totals-grid { display:grid; grid-template-columns:1fr 280px; gap:20px; margin-bottom:25px; }
-        .totals-box { background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; }
-        .total-row { display:flex; justify-content:space-between; padding:8px 0; font-size:14px; border-bottom:1px solid #f1f5f9; }
+        table.items td.item-index { text-align:center; color:#8b6a9b; font-weight:700; }
+        table.items td.item-name { text-align:right; color:#1e293b; font-weight:700; line-height:1.55; overflow-wrap:anywhere; }
+        table.items td.item-qty, table.items td.item-unit-price { text-align:center; color:#475569; font-variant-numeric:tabular-nums; }
+        table.items td.item-line-total { text-align:center; color:#563D5D; font-weight:900; font-variant-numeric:tabular-nums; }
+        .totals-grid { display:grid; grid-template-columns:1fr 300px; gap:24px; margin-bottom:28px; align-items:start; }
+        .totals-box { background:linear-gradient(145deg,#fafbfc,#f8f5fb); border:1px solid #dbe2ea; border-radius:14px; padding:18px 20px; box-shadow:0 5px 16px rgba(15,23,42,0.04); }
+        .total-row { display:flex; justify-content:space-between; align-items:center; gap:16px; padding:9px 0; font-size:13px; border-bottom:1px solid #e9edf2; }
+        .total-row span:last-child { white-space:nowrap; font-variant-numeric:tabular-nums; }
         .total-row:last-child { border-bottom:none; }
-        .total-row.grand { font-size:18px; font-weight:900; color:#563D5D; padding-top:12px; border-top:2px solid #563D5D; }
-        .total-row.paid { color:#059669; font-weight:700; }
-        .total-row.remaining { color:#dc2626; font-weight:800; font-size:16px; padding-top:10px; border-top:2px dashed #fca5a5; }
+        .total-row.grand { margin:5px -8px 0; padding:14px 8px 4px; font-size:19px; font-weight:900; color:#563D5D; border-top:2px solid #563D5D; }
+        .total-row.paid { color:#059669; font-weight:800; }
+        .total-row.remaining { color:#dc2626; font-weight:800; font-size:15px; padding-top:11px; border-top:2px dashed #fca5a5; }
         .payments-section { margin-bottom:25px; border:1px solid #ffd700; border-radius:8px; overflow:hidden; }
         .payments-section h3 { font-size:14px; font-weight:700; color:#563D5D; margin-bottom:10px; padding:10px 12px 0; }
-        table.payments { width:100%; border-collapse:collapse; border-top:1px solid #ffd700; }
-        table.payments thead { background:linear-gradient(135deg, #ffd700, #ffeb7f); }
+        table.payments { width:100%; table-layout:fixed; border-collapse:collapse; border-top:1px solid #ffd700; }
+        table.payments thead { background:linear-gradient(135deg,#ffd700,#ffeb7f); }
         table.payments thead th { padding:8px 12px; font-size:11px; color:#563D5D; font-weight:700; text-align:right; }
+        table.payments td { overflow-wrap:anywhere; }
         .footer { text-align:center; padding-top:20px; border-top:2px solid #ffd700; margin-top:30px; }
         .footer p { font-size:11px; color:#94a3b8; }
         .print-btn { position:fixed; bottom:20px; left:20px; padding:12px 24px; background:#563D5D; color:#ffd700; border:none; border-radius:10px; font-size:14px; font-weight:700; cursor:pointer; box-shadow:0 4px 12px rgba(86,61,93,0.3); }
         .print-btn:hover { background:#3D2A43; }
+        @media (max-width:640px) {
+            body { padding:10px; }
+            .invoice-container { padding:22px 16px 24px; border-top-width:5px; }
+            .header { flex-direction:column; gap:18px; margin-bottom:22px; padding-bottom:18px; }
+            .logo-section { gap:12px; }
+            .logo-section img { width:64px; height:64px; }
+            .logo-text h1 { font-size:25px; }
+            .logo-text p { font-size:11px; }
+            .logo-text p:first-of-type { font-size:13px; }
+            .invoice-meta { width:100%; min-width:0; padding:13px 15px; }
+            .invoice-meta .inv-number { font-size:23px; }
+            .client-section { grid-template-columns:1fr; gap:10px; margin-bottom:22px; }
+            .client-section > div { min-height:0; padding:14px 15px; }
+            .client-section p { font-size:14px; }
+            .totals-grid { grid-template-columns:1fr; gap:14px; margin-bottom:20px; }
+            table.items { margin-bottom:18px; }
+            table.items thead th { padding:9px 5px; font-size:10px; }
+            table.items thead th.item-index { width:8%; }
+            table.items thead th.item-name { width:38%; }
+            table.items thead th.item-qty { width:14%; }
+            table.items thead th.item-unit-price { width:20%; }
+            table.items thead th.item-line-total { width:20%; }
+            table.items tbody td { padding:9px 5px; font-size:11px; }
+            .totals-box { padding:14px; }
+            .total-row { gap:8px; padding:8px 0; font-size:12px; }
+            .total-row.grand { font-size:17px; }
+            .total-row.remaining { font-size:14px; }
+            .print-btn { position:static; display:block; width:100%; margin:18px auto 0; padding:10px 16px; }
+        }
+        .loading-state { text-align:center; padding:80px 20px; }
+        .loading-state p { font-size:16px; color:#64748b; }
+        .error-state { text-align:center; padding:80px 20px; }
+        .error-state h2 { font-size:20px; font-weight:700; color:#64748b; margin-bottom:8px; }
+        .error-state p { font-size:14px; color:#94a3b8; }
         .loading-state { text-align:center; padding:80px 20px; }
         .loading-state p { font-size:16px; color:#64748b; }
         .error-state { text-align:center; padding:80px 20px; }
@@ -78,35 +135,38 @@
                     </div>
                 </div>
                 <div class="invoice-meta">
+                    <span class="meta-label">مستند مالي إلكتروني</span>
                     <div class="inv-number" id="pinv-number">---</div>
-                    <div class="inv-date" id="pinv-date">---</div>
+                    <div class="inv-date">تاريخ الإصدار: <span id="pinv-date">---</span></div>
                     <span class="invoice-type-badge" id="pinv-badge">---</span>
+                    <span class="inv-status" id="pinv-status">الحالة: ---</span>
                 </div>
             </div>
 
             <div class="client-section">
                 <div>
-                    <h4>العميل</h4>
+                    <h4>بيانات العميل</h4>
                     <p id="pinv-client-name">---</p>
                     <p class="sub" id="pinv-client-phone"></p>
                     <p class="sub" id="pinv-client-address" style="display:none;"></p>
                     <p class="sub" id="pinv-client-tax" style="display:none;"></p>
                 </div>
                 <div>
-                    <h4>مرجع الطلب</h4>
+                    <h4>بيانات الفاتورة</h4>
                     <p id="pinv-order-number">---</p>
                     <p class="sub" id="pinv-invoice-ref"></p>
+                    <p class="sub" id="pinv-invoice-date"></p>
                 </div>
             </div>
 
             <table class="items">
                 <thead>
                     <tr>
-                        <th>#</th>
-                        <th>الصنف</th>
-                        <th>الكمية</th>
-                        <th>سعر الوحدة</th>
-                        <th>المجموع</th>
+                        <th class="item-index">#</th>
+                        <th class="item-name">الصنف / البيان</th>
+                        <th class="item-qty">الكمية</th>
+                        <th class="item-unit-price">سعر الوحدة</th>
+                        <th class="item-line-total">الإجمالي</th>
                     </tr>
                 </thead>
                 <tbody id="pinv-items"></tbody>
@@ -205,6 +265,7 @@
             const badge = _el('pinv-badge');
             badge.className = 'invoice-type-badge ' + (isProforma ? 'badge-proforma' : 'badge-final');
             badge.textContent = invoiceTitle;
+            _el('pinv-status').textContent = 'الحالة: ' + (isProforma ? 'أولية' : 'صادرة');
 
             _el('pinv-client-name').textContent = esc(inv.client_name || '---');
             if (inv.client_phone) {
@@ -221,8 +282,9 @@
                 taxEl.style.display = 'block';
             }
 
-            _el('pinv-order-number').textContent = inv.order_number ? 'أمر #' + inv.order_number : '---';
+            _el('pinv-order-number').textContent = inv.order_number ? 'أمر تشغيل #' + inv.order_number : '---';
             _el('pinv-invoice-ref').textContent = 'رقم الفاتورة: ' + (inv.invoice_number || '---');
+            _el('pinv-invoice-date').textContent = 'تاريخ الإصدار: ' + fmtDate(inv.invoice_date);
 
             // Items + expenses
             const items = inv.items || [];
@@ -244,11 +306,11 @@
                     ? esc(item.product_name)
                     : esc(item.product_name || '—') + ' ' + esc(item.size_name || '');
                 return '<tr>' +
-                    '<td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:center;color:#64748b;font-size:13px;">' + (idx + 1) + '</td>' +
-                    '<td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#1e293b;font-size:13px;">' + nameCell + '</td>' +
-                    '<td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:center;color:#334155;font-size:13px;">' + qty + '</td>' +
-                    '<td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:center;color:#334155;font-size:13px;">' + fmt(unitPrice) + '</td>' +
-                    '<td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:center;font-weight:700;color:#0f172a;font-size:13px;">' + fmt(lineTotal) + '</td>' +
+                    '<td class="item-index">' + (idx + 1) + '</td>' +
+                    '<td class="item-name">' + nameCell + '</td>' +
+                    '<td class="item-qty">' + qty + '</td>' +
+                    '<td class="item-unit-price">' + fmt(unitPrice) + '</td>' +
+                    '<td class="item-line-total">' + fmt(lineTotal) + '</td>' +
                     '</tr>';
             }).join('') : '<tr><td colspan="5" style="padding:32px;text-align:center;color:#94a3b8;">لا توجد أصناف</td></tr>';
 
@@ -263,7 +325,7 @@
             const remaining = Math.max(0, parseFloat(inv.grand_total || 0) - totalPaid);
 
             const subtotalWithExp = parseFloat(inv.subtotal || 0) + parseFloat(inv.additional_expenses || 0);
-            let totalsHtml = '<div class="total-row"><span>المجموع</span><span>' + fmt(subtotalWithExp) + ' ر.س</span></div>';
+            let totalsHtml = '<div class="total-row"><span>المجموع قبل الضريبة</span><span>' + fmt(subtotalWithExp) + ' ر.س</span></div>';
             totalsHtml += '<div class="total-row"><span>الضريبة (' + Math.round(parseFloat(inv.tax_rate || 0.15) * 100) + '%)</span><span>' + fmt(inv.tax_amount) + ' ر.س</span></div>';
             if (parseFloat(inv.discount_amount || 0) > 0) {
                 totalsHtml += '<div class="total-row"><span>خصم</span><span>- ' + fmt(inv.discount_amount) + ' ر.س</span></div>';
