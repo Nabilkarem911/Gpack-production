@@ -64,8 +64,18 @@
         table.payments thead { background:linear-gradient(135deg,#ffd700,#ffeb7f); }
         table.payments thead th { padding:8px 12px; font-size:11px; color:#563D5D; font-weight:700; text-align:right; }
         table.payments td { overflow-wrap:anywhere; }
-        .footer { text-align:center; padding-top:20px; border-top:2px solid #ffd700; margin-top:30px; }
-        .footer p { font-size:11px; color:#94a3b8; }
+        .doc-footer { margin-top:32px; border-top:2px solid #ffd700; padding-top:18px; }
+        .doc-footer-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; margin-bottom:16px; }
+        .doc-footer-grid > div { padding:14px 16px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; border-top:3px solid #d8cbe4; }
+        .doc-footer-grid > div:nth-child(2) { border-top-color:#563D5D; }
+        .doc-footer-grid > div:nth-child(3) { border-top-color:#ffd700; }
+        .doc-footer-grid h5 { font-size:11px; font-weight:800; color:#8b6a9b; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px; }
+        .doc-footer-grid p { font-size:12px; color:#334155; line-height:1.7; margin:0; }
+        .doc-footer-grid p.sub { font-size:11px; color:#64748b; margin-top:2px; }
+        .doc-footer-grid p.muted { font-size:11px; color:#94a3b8; }
+        .doc-footer-grid .fv { font-weight:700; color:#1e293b; }
+        .footer-bar { text-align:center; padding:12px 16px; background:linear-gradient(135deg,#563D5D,#3D2A43); color:#ffd700; border-radius:10px; font-size:12px; font-weight:700; letter-spacing:0.3px; }
+        .footer-bar span.brand { color:#fff; font-weight:900; }
         .print-btn { position:fixed; bottom:20px; left:20px; padding:12px 24px; background:#563D5D; color:#ffd700; border:none; border-radius:10px; font-size:14px; font-weight:700; cursor:pointer; box-shadow:0 4px 12px rgba(86,61,93,0.3); }
         .print-btn:hover { background:#3D2A43; }
         @media (max-width:640px) {
@@ -96,6 +106,9 @@
             .total-row.grand { font-size:17px; }
             .total-row.remaining { font-size:14px; }
             .print-btn { position:static; display:block; width:100%; margin:18px auto 0; padding:10px 16px; }
+            .doc-footer-grid { grid-template-columns:1fr; gap:10px; }
+            .doc-footer-grid > div { padding:12px 14px; }
+            .footer-bar { font-size:11px; padding:10px 12px; }
         }
         .loading-state { text-align:center; padding:80px 20px; }
         .loading-state p { font-size:16px; color:#64748b; }
@@ -179,9 +192,33 @@
 
             <div id="pinv-payments-section"></div>
 
-            <div class="footer">
-                <p>شكراً لتعاملكم معنا • G.PACK — حلول التعبئة والتغليف</p>
-                <p style="margin-top:4px;">تم إنشاء هذه الفاتورة إلكترونياً ولا تحتاج إلى توقيع</p>
+            <div class="doc-footer">
+                <div class="doc-footer-grid">
+                    <div>
+                        <h5>بيانات التواصل</h5>
+                        <p class="fv">G.PACK — حلول التعبئة والتغليف</p>
+                        <p class="sub">ينبع، المملكة العربية السعودية</p>
+                        <p class="sub">الهاتف: 0566012959</p>
+                        <p class="sub">البريد: Info@gpacksa.com</p>
+                        <p class="sub">الموقع: www.gpacksa.com</p>
+                    </div>
+                    <div>
+                        <h5>حالة المستند</h5>
+                        <p>رقم الفاتورة: <span class="fv" id="pinv-foot-number">---</span></p>
+                        <p class="sub">الحالة: <span id="pinv-foot-status">---</span></p>
+                        <p class="sub">تاريخ الإصدار: <span id="pinv-foot-date">---</span></p>
+                        <p class="sub" id="pinv-foot-due" style="display:none;">تاريخ الاستحقاق: <span id="pinv-foot-due-val">---</span></p>
+                        <p class="muted" id="pinv-foot-print">---</p>
+                    </div>
+                    <div>
+                        <h5>ملاحظة</h5>
+                        <p>هذه الفاتورة إلكترونية ومُصدَّرة من نظام G.PACK ERP.</p>
+                        <p class="sub" id="pinv-foot-terms" style="display:none;"></p>
+                    </div>
+                </div>
+                <div class="footer-bar">
+                    شكراً لتعاملكم معنا • <span class="brand">G.PACK</span> — حلول التعبئة والتغليف
+                </div>
             </div>
         </div>
     </div>
@@ -285,6 +322,24 @@
             _el('pinv-order-number').textContent = inv.order_number ? 'أمر تشغيل #' + inv.order_number : '---';
             _el('pinv-invoice-ref').textContent = 'رقم الفاتورة: ' + (inv.invoice_number || '---');
             _el('pinv-invoice-date').textContent = 'تاريخ الإصدار: ' + fmtDate(inv.invoice_date);
+
+            // Footer dynamic fields
+            _el('pinv-foot-number').textContent = inv.invoice_number || '---';
+            _el('pinv-foot-status').textContent = isProforma ? 'أولية' : 'صادرة';
+            _el('pinv-foot-date').textContent = fmtDate(inv.invoice_date);
+            if (inv.due_date) {
+                _el('pinv-foot-due').style.display = 'block';
+                _el('pinv-foot-due-val').textContent = fmtDate(inv.due_date);
+            }
+            const now = new Date();
+            _el('pinv-foot-print').textContent = 'تاريخ الطباعة: ' +
+                now.toLocaleDateString('en-GB') + ' ' +
+                now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+            if (inv.payment_terms && String(inv.payment_terms).trim()) {
+                const termsEl = _el('pinv-foot-terms');
+                termsEl.textContent = 'شروط الدفع: ' + inv.payment_terms;
+                termsEl.style.display = 'block';
+            }
 
             // Items + expenses
             const items = inv.items || [];

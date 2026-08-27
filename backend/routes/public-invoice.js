@@ -22,7 +22,7 @@ router.get('/:identifier', async (req, res) => {
         const selectFields = `
             i.id, i.invoice_number, i.invoice_date, i.due_date,
             i.status, i.subtotal, i.tax_rate, i.tax_amount, i.additional_expenses,
-            i.discount_amount, i.grand_total,
+            i.discount_amount, i.grand_total, i.payment_terms,
             i.notes, i.created_at, i.share_token, i.token_expires_at,
             c.id AS client_id, c.name AS client_name, c.phone AS client_phone,
             c.email AS client_email, c.address AS client_address,

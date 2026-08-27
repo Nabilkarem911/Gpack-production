@@ -3067,8 +3067,18 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         table.payments thead { background:linear-gradient(135deg, #ffd700, #ffeb7f); }
         table.payments td { overflow-wrap:anywhere; }
         table.payments thead th { padding:8px 12px; font-size:11px; color:#4b0082; font-weight:700; text-align:right; }
-        .footer { text-align:center; padding-top:20px; border-top:2px solid #ffd700; margin-top:30px; }
-        .footer p { font-size:11px; color:#94a3b8; }
+        .doc-footer { margin-top:32px; border-top:2px solid #ffd700; padding-top:18px; }
+        .doc-footer-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; margin-bottom:16px; }
+        .doc-footer-grid > div { padding:14px 16px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; border-top:3px solid #d8cbe4; }
+        .doc-footer-grid > div:nth-child(2) { border-top-color:#4b0082; }
+        .doc-footer-grid > div:nth-child(3) { border-top-color:#ffd700; }
+        .doc-footer-grid h5 { font-size:11px; font-weight:800; color:#8b6a9b; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px; }
+        .doc-footer-grid p { font-size:12px; color:#334155; line-height:1.7; margin:0; }
+        .doc-footer-grid p.sub { font-size:11px; color:#64748b; margin-top:2px; }
+        .doc-footer-grid p.muted { font-size:11px; color:#94a3b8; }
+        .doc-footer-grid .fv { font-weight:700; color:#1e293b; }
+        .footer-bar { text-align:center; padding:12px 16px; background:linear-gradient(135deg,#4b0082,#3D2A43); color:#ffd700; border-radius:10px; font-size:12px; font-weight:700; letter-spacing:0.3px; }
+        .footer-bar span.brand { color:#fff; font-weight:900; }
         .print-btn { position:fixed; bottom:20px; left:20px; padding:12px 24px; background:#4b0082; color:#ffd700; border:none; border-radius:10px; font-size:14px; font-weight:700; cursor:pointer; box-shadow:0 4px 12px rgba(75,0,130,0.3); }
         .print-btn:hover { background:#5d198e; }
         @media (max-width:640px) {
@@ -3099,6 +3109,9 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
             .total-row.grand { font-size:17px; }
             .total-row.remaining { font-size:14px; }
             .print-btn { position:static; display:block; width:100%; margin:18px auto 0; padding:10px 16px; }
+            .doc-footer-grid { grid-template-columns:1fr; gap:10px; }
+            .doc-footer-grid > div { padding:12px 14px; }
+            .footer-bar { font-size:11px; padding:10px 12px; }
 
         }
     </style>
@@ -3195,9 +3208,33 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
             </table>
         </div>` : ''}
 
-        <div class="footer">
-            <p>شكراً لتعاملكم معنا • G.PACK — حلول التعبئة والتغليف</p>
-            <p style="margin-top:4px;">تم إنشاء هذه الفاتورة إلكترونياً ولا تحتاج إلى توقيع</p>
+        <div class="doc-footer">
+            <div class="doc-footer-grid">
+                <div>
+                    <h5>بيانات التواصل</h5>
+                    <p class="fv">G.PACK — حلول التعبئة والتغليف</p>
+                    <p class="sub">ينبع، المملكة العربية السعودية</p>
+                    <p class="sub">الهاتف: 0566012959</p>
+                    <p class="sub">البريد: Info@gpacksa.com</p>
+                    <p class="sub">الموقع: www.gpacksa.com</p>
+                </div>
+                <div>
+                    <h5>حالة المستند</h5>
+                    <p>رقم الفاتورة: <span class="fv">${inv.invoice_number || '—'}</span></p>
+                    <p class="sub">الحالة: ${isProforma ? 'أولية' : 'صادرة'}</p>
+                    <p class="sub">تاريخ الإصدار: ${_fmtDate(inv.invoice_date)}</p>
+                    ${inv.due_date ? `<p class="sub">تاريخ الاستحقاق: ${_fmtDate(inv.due_date)}</p>` : ''}
+                    <p class="muted">تاريخ الطباعة: ${new Date().toLocaleDateString('en-GB')} ${new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</p>
+                </div>
+                <div>
+                    <h5>ملاحظة</h5>
+                    <p>هذه الفاتورة إلكترونية ومُصدَّرة من نظام G.PACK ERP.</p>
+                    ${inv.payment_terms && String(inv.payment_terms).trim() ? `<p class="sub">شروط الدفع: ${inv.payment_terms}</p>` : ''}
+                </div>
+            </div>
+            <div class="footer-bar">
+                شكراً لتعاملكم معنا • <span class="brand">G.PACK</span> — حلول التعبئة والتغليف
+            </div>
         </div>
     </div>
     <button class="print-btn no-print" onclick="window.print()">🖨️ طباعة</button>
