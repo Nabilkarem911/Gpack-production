@@ -369,7 +369,7 @@ async function _isInternalWhatsAppEnabled() {
 }
 
 // ── Convenience: Quotation needs pricing ─────────────────────────────────────
-async function notifyQuotationNeedsPricing({ order_id, order_number, client_name, unpriced_count }) {
+async function notifyQuotationNeedsPricing({ order_id, order_number, client_name, unpriced_count, revision }) {
     if (!await _isInternalWhatsAppEnabled()) return null;
     const phone = await _getSetting('manager_whatsapp_phone');
     if (!phone) return null;
@@ -377,9 +377,13 @@ async function notifyQuotationNeedsPricing({ order_id, order_number, client_name
     const body =
         `📋 عرض سعر بحاجة تسعير\n\n` +
         `رقم العرض: #${order_number}\n` +
+        (revision ? `التعديل رقم: ${revision}\n` : '') +
         `العميل: ${client_name || '—'}\n` +
         `أصناف بدون سعر: ${unpriced_count}\n\n` +
         `يرجى المراجعة وتحديد الأسعار.`;
+
+    // Include revision in entity_id so each edit produces a unique idempotency key.
+    const entityId = revision ? `${order_id}_rev${revision}` : order_id;
 
     const id = await enqueue({
         channel: 'whatsapp',
@@ -389,8 +393,8 @@ async function notifyQuotationNeedsPricing({ order_id, order_number, client_name
         message_type: 'quotation_needs_pricing',
         body,
         entity_type: 'order',
-        entity_id: order_id,
-        metadata: { order_number, unpriced_count, client_name },
+        entity_id: entityId,
+        metadata: { order_number, unpriced_count, client_name, revision },
         priority: 'high',
         session: 'internal',
     });
