@@ -374,6 +374,9 @@ async function notifyQuotationNeedsPricing({ order_id, order_number, client_name
     const phone = await _getSetting('manager_whatsapp_phone');
     if (!phone) return null;
 
+    const baseUrl = process.env.BASE_URL || 'https://erp.gpacksa.com';
+    const link = `${baseUrl}/#/quotations?id=${order_id}`;
+
     const body =
         `📋 عرض سعر بحاجة تسعير\n\n` +
         `رقم العرض: #${order_number}\n` +
@@ -381,7 +384,8 @@ async function notifyQuotationNeedsPricing({ order_id, order_number, client_name
         `العميل: ${client_name || '—'}\n` +
         `أصناف بدون سعر: ${unpriced_count}\n\n` +
         (items_summary ? `الأصناف:\n${items_summary}\n\n` : '') +
-        `يرجى المراجعة وتحديد الأسعار.`;
+        `يرجى المراجعة وتحديد الأسعار.\n\n` +
+        `🔗 ${link}`;
 
     // Build a unique idempotency entity_id per revision so re-edits send new
     // alerts. The outbox stores the raw order_id (UUID); only the queue
@@ -477,6 +481,9 @@ async function notifyManufacturerOrderReceived({ session_id, mo_number, session_
     const phone = await _getSetting('manager_whatsapp_phone');
     if (!phone) return null;
 
+    const baseUrl = process.env.BASE_URL || 'https://erp.gpacksa.com';
+    const link = `${baseUrl}/#/receiving-vouchers?mo=${mo_number}`;
+
     const body =
         `📦 استلام بضاعة من مورد\n\n` +
         `رقم أمر التشغيل: #${mo_number}\n` +
@@ -485,7 +492,8 @@ async function notifyManufacturerOrderReceived({ session_id, mo_number, session_
         `استلمها: ${received_by_name || 'أمين المستودع'}\n` +
         `المستودع: ${warehouse_name || '—'}\n\n` +
         (items_summary ? `الأصناف:\n${items_summary}\n\n` : '') +
-        `بانتظار مراجعتك واعتماد فاتورة الشراء.`;
+        `بانتظار مراجعتك واعتماد فاتورة الشراء.\n\n` +
+        `🔗 ${link}`;
 
     const id = await enqueue({
         channel: 'whatsapp',
@@ -530,13 +538,19 @@ async function notifyReleaseOrderCreated({ order_id, order_number, delivery_note
         ? `سند تسليم #${delivery_note_number}`
         : `أمر #${order_number || '—'}`;
 
+    const baseUrl = process.env.BASE_URL || 'https://erp.gpacksa.com';
+    const link = delivery_note_id
+        ? `${baseUrl}/#/vmi-dispatch?dn=${delivery_note_id}`
+        : `${baseUrl}/#/production_orders?id=${order_id}`;
+
     const body =
         `📤 أمر فسح بضاعة\n\n` +
         `${refLabel}\n` +
         `العميل: ${client_name || '—'}\n` +
         `المستودع: ${warehouse_name || '—'}\n\n` +
         `الأصناف:\n${items_summary}\n\n` +
-        `يرجى الاستلام وتجهيز البضاعة للإفراج.`;
+        `يرجى الاستلام وتجهيز البضاعة للإفراج.\n\n` +
+        `🔗 ${link}`;
 
     // Use delivery_note_id if available (from delivery-notes route), otherwise
     // fall back to order_id (from orders/:id/release route).

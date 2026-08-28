@@ -948,7 +948,7 @@ router.post('/', restrictWrite, validateBody(orderCreate), async (req, res) => {
             if (!isVmiOrder && order.pricing_status === 'pending') {
                 const unpricedCount = processedItems.filter(i => !i.price || parseFloat(i.price) === 0).length;
                 if (unpricedCount > 0) {
-                    // Build readable items list with product name, size, qty, price
+                    // Build readable items list with product name, size, qty, price, last sale price
                     const variantIds = processedItems.map(i => i.product_variant_id).filter(Boolean);
                     let itemsSummary = '';
                     if (variantIds.length > 0) {
@@ -961,13 +961,33 @@ router.post('/', restrictWrite, validateBody(orderCreate), async (req, res) => {
                         );
                         const varMap = {};
                         for (const v of varRes.rows) varMap[v.id] = `${v.product_name} (${v.size_name})`;
+
+                        // Fetch last sale price per variant for this client
+                        const lastPriceRes = await client.query(
+                            `SELECT oi.variant_id, oi.unit_price
+                             FROM order_items oi
+                             JOIN orders o ON o.id = oi.order_id
+                             WHERE o.client_id = $1
+                               AND oi.variant_id = ANY($2::uuid[])
+                               AND o.status != 'cancelled'
+                               AND oi.unit_price > 0
+                             ORDER BY oi.created_at DESC`,
+                            [client_id, variantIds]
+                        );
+                        const lastPriceMap = {};
+                        for (const lp of lastPriceRes.rows) {
+                            if (!lastPriceMap[lp.variant_id]) lastPriceMap[lp.variant_id] = Number(lp.unit_price);
+                        }
+
                         itemsSummary = processedItems
                             .map(i => {
                                 const name = varMap[i.product_variant_id] || '—';
                                 const qty = i.qty || 0;
                                 const price = parseFloat(i.price || 0);
                                 const priceLabel = price > 0 ? `${price} ر.س` : 'بدون سعر';
-                                return `• ${name} — ${qty} (${priceLabel})`;
+                                const lastPrice = lastPriceMap[i.product_variant_id];
+                                const lastPriceLabel = lastPrice ? ` | آخر سعر: ${lastPrice} ر.س` : '';
+                                return `• ${name} — ${qty} (${priceLabel}${lastPriceLabel})`;
                             })
                             .join('\n');
                     }
@@ -1230,7 +1250,7 @@ router.put('/:id', restrictEdit, validateBody(orderUpdate), async (req, res) => 
                     );
                     const clientName = clientNameRes.rows[0]?.name || '—';
 
-                    // Build readable items list with product name, size, qty, price
+                    // Build readable items list with product name, size, qty, price, last sale price
                     const variantIds = processedItems.map(i => i.product_variant_id).filter(Boolean);
                     let itemsSummary = '';
                     if (variantIds.length > 0) {
@@ -1243,13 +1263,37 @@ router.put('/:id', restrictEdit, validateBody(orderUpdate), async (req, res) => 
                         );
                         const varMap = {};
                         for (const v of varRes.rows) varMap[v.id] = `${v.product_name} (${v.size_name})`;
+
+                        // Fetch last sale price per variant for this client
+                        const clientIdRes = await client.query('SELECT client_id FROM orders WHERE id = $1', [id]);
+                        const quotationClientId = clientIdRes.rows[0]?.client_id;
+                        let lastPriceMap = {};
+                        if (quotationClientId) {
+                            const lastPriceRes = await client.query(
+                                `SELECT oi.variant_id, oi.unit_price
+                                 FROM order_items oi
+                                 JOIN orders o ON o.id = oi.order_id
+                                 WHERE o.client_id = $1
+                                   AND oi.variant_id = ANY($2::uuid[])
+                                   AND o.status != 'cancelled'
+                                   AND oi.unit_price > 0
+                                 ORDER BY oi.created_at DESC`,
+                                [quotationClientId, variantIds]
+                            );
+                            for (const lp of lastPriceRes.rows) {
+                                if (!lastPriceMap[lp.variant_id]) lastPriceMap[lp.variant_id] = Number(lp.unit_price);
+                            }
+                        }
+
                         itemsSummary = processedItems
                             .map(i => {
                                 const name = varMap[i.product_variant_id] || '—';
                                 const qty = i.qty || 0;
                                 const price = parseFloat(i.price || 0);
                                 const priceLabel = price > 0 ? `${price} ر.س` : 'بدون سعر';
-                                return `• ${name} — ${qty} (${priceLabel})`;
+                                const lastPrice = lastPriceMap[i.product_variant_id];
+                                const lastPriceLabel = lastPrice ? ` | آخر سعر: ${lastPrice} ر.س` : '';
+                                return `• ${name} — ${qty} (${priceLabel}${lastPriceLabel})`;
                             })
                             .join('\n');
                     }
