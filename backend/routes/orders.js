@@ -1185,6 +1185,43 @@ router.put('/:id', restrictEdit, validateBody(orderUpdate), async (req, res) => 
                 newItems.push(itemInsert.rows[0]);
             }
 
+            // ── Internal notification: quotation needs pricing (on update) ──────
+            // If the updated quotation still has zero-priced items and pricing
+            // status is pending, notify the manager. Uses order id + revision
+            // as entity_id so each revision produces a fresh notification.
+            if (!isVmiOrder) {
+                const unpricedCount = processedItems.filter(i => !i.price || parseFloat(i.price) === 0).length;
+                if (unpricedCount > 0) {
+                    const curRevRes = await client.query(
+                        'SELECT quotation_revision, order_number FROM orders WHERE id = $1',
+                        [id]
+                    );
+                    const curRev = curRevRes.rows[0]?.quotation_revision || 0;
+                    const orderNum = curRevRes.rows[0]?.order_number;
+                    const clientNameRes = await client.query(
+                        `SELECT c.name FROM orders o JOIN clients c ON c.id = o.client_id WHERE o.id = $1`,
+                        [id]
+                    );
+                    const clientName = clientNameRes.rows[0]?.name || '—';
+
+                    const NotificationService = require('../services/notification-service');
+                    await NotificationService.writeOutboxEvent({
+                        event_type: 'quotation_needs_pricing',
+                        entity_type: 'order',
+                        entity_id: `${id}_rev${curRev}`,
+                        correlation_id: NotificationService.generateCorrelationId('PRC'),
+                        payload: {
+                            order_id: id,
+                            order_number: orderNum,
+                            client_name: clientName,
+                            unpriced_count: unpricedCount,
+                            revision: curRev,
+                        },
+                        session: 'internal',
+                    }, client);
+                }
+            }
+
             return { id, subtotal, tax_amount, grand_total, items: newItems };
         });
 
