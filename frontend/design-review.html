@@ -571,7 +571,11 @@
         const waMessage = isApprove
             ? `*تم اعتماد التصميم*\n\nطلب رقم: #${designData.order_number}\nالعميل: ${designData.client_name}\n${responseData?.certificate_number ? `رقم الاعتماد: ${responseData.certificate_number}\n` : ''}تم الاعتماد إلكترونياً\n\nG.PACK — حلول التعبئة والتغليف`
             : `*طلب تعديل التصميم*\n\nطلب رقم: #${designData.order_number}\nالعميل: ${designData.client_name}\nملاحظات: ${document.getElementById('revision-notes').value}\n\nG.PACK — حلول التعبئة والتغليف`;
-        waLink.href = `https://wa.me/?text=${encodeURIComponent(waMessage)}`;
+        const waNumber = responseData?.whatsapp_number || '';
+        const waUrl = waNumber
+            ? `https://wa.me/${waNumber}?text=${encodeURIComponent(waMessage)}`
+            : `https://wa.me/?text=${encodeURIComponent(waMessage)}`;
+        waLink.href = waUrl;
         waSection.classList.remove('hidden');
     }
 

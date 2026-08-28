@@ -35,6 +35,17 @@ function _normalizePhone(phone) {
     return `${cleaned}@c.us`;
 }
 
+// ── Ensure chatId is in WAHA format ──────────────────────────────────────────
+// If the input already looks like a WhatsApp ID (contains '@'), pass through
+// as-is. Otherwise, normalize it as a phone number.
+// This makes all send functions accept BOTH raw phones and pre-normalized IDs
+// without double-normalizing or breaking group IDs (e.g. 120363xxx@g.us).
+function _ensureChatId(chatId) {
+    if (!chatId) return null;
+    if (typeof chatId === 'string' && chatId.includes('@')) return chatId;
+    return _normalizePhone(chatId);
+}
+
 // ── Send text message ───────────────────────────────────────────────────────
 async function sendText(chatId, text) {
     if (PROVIDER === 'waha') {
@@ -117,7 +128,7 @@ async function _wahaRequest(endpoint, options = {}) {
 async function _wahaSendText(chatId, text) {
     return _wahaRequest('/api/sendText', {
         method: 'POST',
-        body: { session: WAHA_SESSION, chatId, text },
+        body: { session: WAHA_SESSION, chatId: _ensureChatId(chatId), text },
     });
 }
 
@@ -127,13 +138,21 @@ async function _wahaSendImage(chatId, imagePath, caption) {
     const buffer = fs.readFileSync(resolved);
     const base64 = buffer.toString('base64');
     const ext = imagePath.split('.').pop().toLowerCase();
-    const mime = ext === 'png' ? 'image/png' : 'image/jpeg';
+    const imageMimeMap = {
+        png: 'image/png',
+        jpg: 'image/jpeg',
+        jpeg: 'image/jpeg',
+        gif: 'image/gif',
+        webp: 'image/webp',
+        bmp: 'image/bmp',
+    };
+    const mime = imageMimeMap[ext] || 'image/jpeg';
 
     return _wahaRequest('/api/sendImage', {
         method: 'POST',
         body: {
             session: WAHA_SESSION,
-            chatId,
+            chatId: _ensureChatId(chatId),
             file: { mimetype: mime, filename: resolved.split('/').pop(), data: base64 },
             caption: caption || '',
         },
@@ -153,7 +172,7 @@ async function _wahaSendFile(chatId, filePath, caption) {
         method: 'POST',
         body: {
             session: WAHA_SESSION,
-            chatId,
+            chatId: _ensureChatId(chatId),
             file: { mimetype: mime, filename: resolved.split('/').pop(), data: base64 },
             caption: caption || '',
         },
@@ -167,7 +186,7 @@ async function _wahaGetSessionStatus() {
             provider: 'waha',
             session: WAHA_SESSION,
             status: result?.status || 'unknown',
-            connected: result?.status === 'WORKING' || result?.status === 'qr',
+            connected: result?.status === 'WORKING',
             url: WAHA_URL,
         };
     } catch (err) {
@@ -225,7 +244,7 @@ function _resolvePath(filePath) {
 // ── Send interactive buttons message ────────────────────────────────────────
 async function sendButtons(chatId, text, buttons) {
     if (!WAHA_URL) throw new Error('WAHA_URL not configured');
-    const normalizedId = _normalizePhone(chatId);
+    const normalizedId = _ensureChatId(chatId);
 
     // WAHA buttons format: [{ id, title }, ...]
     const wahaButtons = buttons.map((b, i) => ({
@@ -247,7 +266,7 @@ async function sendButtons(chatId, text, buttons) {
 // ── Send template message (for future use with Meta Cloud API) ──────────────
 async function sendTemplate(chatId, templateName, language, components) {
     if (!WAHA_URL) throw new Error('WAHA_URL not configured');
-    const normalizedId = _normalizePhone(chatId);
+    const normalizedId = _ensureChatId(chatId);
 
     // WAHA template format (may vary by provider)
     return _wahaRequest('/api/sendTemplate', {
@@ -274,5 +293,6 @@ module.exports = {
     getQRCode,
     startSession,
     normalizePhone: _normalizePhone,
+    ensureChatId: _ensureChatId,
     isConfigured: () => !!WAHA_URL,
 };

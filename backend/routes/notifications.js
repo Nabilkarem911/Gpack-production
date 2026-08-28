@@ -315,6 +315,21 @@ router.post('/whatsapp/webhook', async (req, res) => {
             console.log(`[WAHA Webhook] Session ${session} status: ${sessionStatus}`);
         }
 
+        // ── Cleanup expired webhook nonces ─────────────────────────────────────
+        // Nonces older than 10 minutes are safe to delete: the replay window is
+        // 5 minutes (timestamp check above), so any nonce older than 10 min can
+        // never be valid again. This prevents notification_settings from growing
+        // indefinitely. Fire-and-forget — failure must not affect the webhook.
+        try {
+            await db.query(
+                `DELETE FROM notification_settings
+                 WHERE key LIKE 'waha_webhook_nonce:%'
+                   AND updated_at < NOW() - INTERVAL '10 minutes'`
+            );
+        } catch (cleanupErr) {
+            console.warn('[WAHA Webhook] Nonce cleanup skipped:', cleanupErr.message);
+        }
+
         res.json({ success: true });
     } catch (err) {
         console.error('[WAHA Webhook] Error:', err.message);
