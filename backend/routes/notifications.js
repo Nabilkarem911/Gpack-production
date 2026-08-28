@@ -213,6 +213,94 @@ router.get('/whatsapp/qr', authenticate, authorize(['admin', 'super_admin']), as
     }
 });
 
+// ── GET /api/notifications/whatsapp/qr/:session ─────────────────────────────
+// Get QR code for a specific WAHA session (e.g. internal session).
+router.get('/whatsapp/qr/:session', authenticate, authorize(['admin', 'super_admin']), async (req, res) => {
+    try {
+        const result = await WhatsApp.getQRCode(req.params.session);
+        res.json({ success: true, qr: result });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── GET /api/notifications/whatsapp/internal-settings ───────────────────────
+// Get internal WhatsApp notification settings.
+router.get('/whatsapp/internal-settings', authenticate, authorize(['admin', 'super_admin', 'manager']), async (req, res) => {
+    try {
+        const keys = [
+            'internal_whatsapp_enabled',
+            'manager_whatsapp_phone',
+            'warehouse_keeper_whatsapp_phone',
+        ];
+        const settings = {};
+        for (const key of keys) {
+            const result = await db.query(
+                `SELECT value FROM notification_settings WHERE key = $1`,
+                [key]
+            );
+            let val = null;
+            if (result.rows.length > 0) {
+                val = result.rows[0].value;
+                if (typeof val === 'string') { try { val = JSON.parse(val); } catch { val = null; } }
+            }
+            settings[key] = val;
+        }
+
+        res.json({
+            success: true,
+            enabled: settings.internal_whatsapp_enabled === true || settings.internal_whatsapp_enabled === 'true',
+            manager_phone: settings.manager_whatsapp_phone || '',
+            warehouse_keeper_phone: settings.warehouse_keeper_whatsapp_phone || '',
+        });
+    } catch (err) {
+        console.error('[Notifications] Internal settings fetch error:', err.message);
+        res.status(500).json({ error: 'فشل في جلب الإعدادات' });
+    }
+});
+
+// ── PUT /api/notifications/whatsapp/internal-settings ───────────────────────
+// Update internal WhatsApp notification settings.
+router.put('/whatsapp/internal-settings', authenticate, authorize(['admin', 'super_admin']), async (req, res) => {
+    try {
+        const { manager_phone, warehouse_keeper_phone, enabled } = req.body;
+
+        // Normalize phone numbers (strip non-digits)
+        const normalize = (phone) => phone ? String(phone).replace(/[^0-9]/g, '') : '';
+        const managerPhone = normalize(manager_phone);
+        const warehousePhone = normalize(warehouse_keeper_phone);
+
+        // Basic Saudi number validation (optional but helpful)
+        const isValid = (phone) => !phone || (phone.startsWith('05') && phone.length === 10) || phone.startsWith('966');
+        if (managerPhone && !isValid(managerPhone)) {
+            return res.status(400).json({ error: 'رقم المدير غير صالح' });
+        }
+        if (warehousePhone && !isValid(warehousePhone)) {
+            return res.status(400).json({ error: 'رقم أمين المستودع غير صالح' });
+        }
+
+        const settings = [
+            { key: 'internal_whatsapp_enabled', value: enabled === true || enabled === 'true' },
+            { key: 'manager_whatsapp_phone', value: managerPhone || null },
+            { key: 'warehouse_keeper_whatsapp_phone', value: warehousePhone || null },
+        ];
+
+        for (const s of settings) {
+            await db.query(
+                `INSERT INTO notification_settings (key, value, description)
+                 VALUES ($1, $2, 'internal whatsapp notification setting')
+                 ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()`,
+                [s.key, JSON.stringify(s.value)]
+            );
+        }
+
+        res.json({ success: true, message: 'تم حفظ الإعدادات' });
+    } catch (err) {
+        console.error('[Notifications] Internal settings update error:', err.message);
+        res.status(500).json({ error: 'فشل في حفظ الإعدادات' });
+    }
+});
+
 // ── POST /api/notifications/whatsapp/webhook ────────────────────────────────
 // WAHA webhook receiver — WAHA calls this when message status changes.
 // Configure in WAHA: webhook URL = https://erp.gpacksa.com/api/notifications/whatsapp/webhook

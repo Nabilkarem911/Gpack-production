@@ -261,6 +261,35 @@ router.post('/', upload.fields([
             ]);
         }
 
+        // ── Internal notification: direct receipt created ────────────────────
+        // Written inside the transaction — if commit fails, no outbox event.
+        try {
+            const userRes = await client.query(
+                'SELECT name FROM users WHERE id = $1',
+                [req.user.id]
+            );
+            const receivedByName = userRes.rows[0]?.name || req.user.name || 'أمين المستودع';
+
+            const NotificationService = require('../services/notification-service');
+            await NotificationService.writeOutboxEvent({
+                event_type: 'direct_receipt_created',
+                entity_type: 'direct_receipt',
+                entity_id: receiptId,
+                correlation_id: NotificationService.generateCorrelationId('RCV'),
+                payload: {
+                    receipt_id: receiptId,
+                    receipt_number: receiptNumber,
+                    item_count: items.length,
+                    received_by_name: receivedByName,
+                    warehouse_name: null,
+                },
+                session: 'internal',
+            }, client);
+        } catch (outboxErr) {
+            console.error('[DirectReceipts] Outbox write error:', outboxErr.message);
+            // Don' best-effort.
+        }
+
         // Clean up temp files that weren't moved
         const tempDir = path.join(UPLOAD_BASE, 'temp');
         if (fs.existsSync(tempDir)) {

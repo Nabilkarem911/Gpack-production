@@ -34,7 +34,7 @@ function _idempotencyKey({ entity_type, entity_id, message_type, recipient }) {
 // the existing ID — no duplicate delivery.
 async function enqueue({ channel, recipient, recipient_name, recipient_role,
                          message_type, subject, body, attachments,
-                         entity_type, entity_id, metadata, priority, correlation_id }) {
+                         entity_type, entity_id, metadata, priority, correlation_id, session }) {
     const idempotencyKey = _idempotencyKey({ entity_type, entity_id, message_type, recipient });
 
     try {
@@ -42,8 +42,8 @@ async function enqueue({ channel, recipient, recipient_name, recipient_role,
             `INSERT INTO notification_queue
                 (channel, recipient, recipient_name, recipient_role,
                  message_type, subject, body, attachments,
-                 entity_type, entity_id, metadata, idempotency_key, priority, correlation_id)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                 entity_type, entity_id, metadata, idempotency_key, priority, correlation_id, session)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
              RETURNING id`,
             [
                 channel || 'whatsapp',
@@ -60,6 +60,7 @@ async function enqueue({ channel, recipient, recipient_name, recipient_role,
                 idempotencyKey,
                 priority || 'normal',
                 correlation_id || null,
+                session || 'default',
             ]
         );
         return result.rows[0].id;
@@ -134,13 +135,13 @@ async function getAdminRecipients() {
 
 // ── Write outbox event (same transaction as business operation) ─────────────
 // This ensures no message is lost even if the server crashes mid-approval.
-async function writeOutboxEvent({ event_type, entity_type, entity_id, correlation_id, payload }, client) {
+async function writeOutboxEvent({ event_type, entity_type, entity_id, correlation_id, payload, session }, client) {
     const queryFn = client ? client.query.bind(client) : db.query;
     await queryFn(
         `INSERT INTO notification_outbox
-            (event_type, entity_type, entity_id, correlation_id, payload)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [event_type, entity_type, entity_id, correlation_id, JSON.stringify(payload)]
+            (event_type, entity_type, entity_id, correlation_id, payload, session)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [event_type, entity_type, entity_id, correlation_id, JSON.stringify(payload), session || 'default']
     );
 }
 
@@ -336,6 +337,161 @@ async function notifyClientOpenedLink(data) {
     });
 }
 
+// =============================================================================
+// Internal WhatsApp Notifications (second number)
+// Operational alerts: manager pricing, warehouse receipts, release orders.
+// Feature-flagged. All disabled by default.
+// =============================================================================
+
+async function _getSetting(key) {
+    try {
+        const result = await db.query(
+            `SELECT value FROM notification_settings WHERE key = $1`,
+            [key]
+        );
+        if (result.rows.length === 0) return null;
+        let val = result.rows[0].value;
+        if (typeof val === 'string') { try { val = JSON.parse(val); } catch { val = null; } }
+        return val;
+    } catch (err) {
+        console.error(`[NotificationService] Setting read error (${key}):`, err.message);
+        return null;
+    }
+}
+
+async function _isInternalWhatsAppEnabled() {
+    const enabled = await _getSetting('internal_whatsapp_enabled');
+    return enabled === true || enabled === 'true';
+}
+
+// ── Convenience: Quotation needs pricing ─────────────────────────────────────
+async function notifyQuotationNeedsPricing({ order_id, order_number, client_name, unpriced_count }) {
+    if (!await _isInternalWhatsAppEnabled()) return null;
+    const phone = await _getSetting('manager_whatsapp_phone');
+    if (!phone) return null;
+
+    const body =
+        `📋 عرض سعر بحاجة تسعير\n\n` +
+        `رقم العرض: #${order_number}\n` +
+        `العميل: ${client_name || '—'}\n` +
+        `أصناف بدون سعر: ${unpriced_count}\n\n` +
+        `يرجى المراجعة وتحديد الأسعار.`;
+
+    const id = await enqueue({
+        channel: 'whatsapp',
+        recipient: WhatsApp.ensureChatId(phone),
+        recipient_name: 'المدير',
+        recipient_role: 'manager',
+        message_type: 'quotation_needs_pricing',
+        body,
+        entity_type: 'order',
+        entity_id: order_id,
+        metadata: { order_number, unpriced_count, client_name },
+        priority: 'high',
+        session: 'internal',
+    });
+
+    await notifyInApp({
+        target_role: 'manager',
+        category: 'quotation',
+        icon: 'fa-tags',
+        title: `عرض سعر #${order_number} بحاجة تسعير`,
+        body: `العميل: ${client_name || '—'} | ${unpriced_count} صنف بدون سعر`,
+        link: `/quotations`,
+        priority: 'high',
+        entity_type: 'order',
+        entity_id: order_id,
+    });
+
+    return id;
+}
+
+// ── Convenience: Direct receipt created ──────────────────────────────────────
+async function notifyDirectReceiptCreated({ receipt_id, receipt_number, item_count, received_by_name, warehouse_name }) {
+    if (!await _isInternalWhatsAppEnabled()) return null;
+    const phone = await _getSetting('manager_whatsapp_phone');
+    if (!phone) return null;
+
+    const body =
+        `📦 استلام بضاعة مؤقت\n\n` +
+        `رقم الاستلام: #${receipt_number}\n` +
+        `عدد الأصناف: ${item_count}\n` +
+        `استلمها: ${received_by_name || 'أمين المستودع'}\n` +
+        `المستودع: ${warehouse_name || '—'}\n\n` +
+        `بانتظار مراجعتك وتحويلها لفاتورة شراء.`;
+
+    const id = await enqueue({
+        channel: 'whatsapp',
+        recipient: WhatsApp.ensureChatId(phone),
+        recipient_name: 'المدير',
+        recipient_role: 'manager',
+        message_type: 'direct_receipt_created',
+        body,
+        entity_type: 'direct_receipt',
+        entity_id: receipt_id,
+        metadata: { receipt_number, item_count, warehouse_name },
+        priority: 'normal',
+        session: 'internal',
+    });
+
+    await notifyInApp({
+        target_role: 'manager',
+        category: 'warehouse',
+        icon: 'fa-warehouse',
+        title: `استلام مؤقت #${receipt_number} بانتظار المراجعة`,
+        body: `${item_count} صنف | استلمها: ${received_by_name || '—'}`,
+        link: `/direct-receipts`,
+        priority: 'normal',
+        entity_type: 'direct_receipt',
+        entity_id: receipt_id,
+    });
+
+    return id;
+}
+
+// ── Convenience: Release order created ───────────────────────────────────────
+async function notifyReleaseOrderCreated({ order_id, order_number, client_name, items_summary, warehouse_name }) {
+    if (!await _isInternalWhatsAppEnabled()) return null;
+    const phone = await _getSetting('warehouse_keeper_whatsapp_phone');
+    if (!phone) return null;
+
+    const body =
+        `📤 أمر فسح بضاعة\n\n` +
+        `رقم الأمر: #${order_number}\n` +
+        `العميل: ${client_name || '—'}\n` +
+        `المستودع: ${warehouse_name || '—'}\n\n` +
+        `الأصناف:\n${items_summary}\n\n` +
+        `يرجى الاستلام وتجهيز البضاعة للإفراج.`;
+
+    const id = await enqueue({
+        channel: 'whatsapp',
+        recipient: WhatsApp.ensureChatId(phone),
+        recipient_name: 'أمين المستودع',
+        recipient_role: 'warehouse_keeper',
+        message_type: 'release_order_created',
+        body,
+        entity_type: 'order',
+        entity_id: order_id,
+        metadata: { order_number, client_name, warehouse_name },
+        priority: 'high',
+        session: 'internal',
+    });
+
+    await notifyInApp({
+        target_role: 'warehouse_keeper',
+        category: 'warehouse',
+        icon: 'fa-truck',
+        title: `أمر فسح #${order_number} — ${client_name || '—'}`,
+        body: items_summary,
+        link: `/orders/${order_id}`,
+        priority: 'high',
+        entity_type: 'order',
+        entity_id: order_id,
+    });
+
+    return id;
+}
+
 // ── Convenience: WhatsApp Failed ────────────────────────────────────────────
 async function notifyWhatsAppFailed(data) {
     const { queue_id, recipient, recipient_name, error, message_type } = data;
@@ -359,6 +515,9 @@ module.exports = {
     notifyDesignSentToClient,
     notifyClientOpenedLink,
     notifyWhatsAppFailed,
+    notifyQuotationNeedsPricing,
+    notifyDirectReceiptCreated,
+    notifyReleaseOrderCreated,
     generateCorrelationId,
     getAdminRecipients,
     writeOutboxEvent,

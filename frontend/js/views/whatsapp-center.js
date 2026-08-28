@@ -226,13 +226,59 @@
         }
     };
 
+    async function _loadInternalSettings() {
+        try {
+            const res = await window.apiFetch('/api/notifications/whatsapp/internal-settings');
+            if (!res || !res.success) return;
+
+            document.getElementById('wa-manager-phone').value = res.manager_phone || '';
+            document.getElementById('wa-warehouse-phone').value = res.warehouse_keeper_phone || '';
+            document.getElementById('wa-internal-enabled').checked = res.enabled === true;
+        } catch (err) {
+            console.error('[WhatsAppCenter] Settings load error:', err);
+        }
+    }
+
+    async function _saveInternalSettings() {
+        const managerPhone = document.getElementById('wa-manager-phone')?.value?.trim() || '';
+        const warehousePhone = document.getElementById('wa-warehouse-phone')?.value?.trim() || '';
+        const enabled = document.getElementById('wa-internal-enabled')?.checked || false;
+
+        try {
+            const res = await window.apiFetch('/api/notifications/whatsapp/internal-settings', {
+                method: 'PUT',
+                body: JSON.stringify({
+                    manager_phone: managerPhone,
+                    warehouse_keeper_phone: warehousePhone,
+                    enabled,
+                }),
+            });
+            if (res && res.success) {
+                window.showToast?.('تم حفظ الإعدادات', 'success');
+            } else {
+                window.showToast?.(res?.error || 'فشل الحفظ', 'error');
+            }
+        } catch (err) {
+            console.error('[WhatsAppCenter] Settings save error:', err);
+            window.showToast?.(err.message || 'فشل في حفظ الإعدادات', 'error');
+        }
+    }
+
+    function _normalizeInput(phone) {
+        if (!phone) return '';
+        // Strip non-digits; if starts with 0, keep it; admin can edit if needed.
+        return phone.replace(/[^0-9]/g, '');
+    }
+
     function _init() {
         _loadStatus();
         _loadQueue();
+        _loadInternalSettings();
 
         document.getElementById('wa-refresh-btn')?.addEventListener('click', () => {
             _loadStatus();
             _loadQueue();
+            _loadInternalSettings();
         });
 
         document.getElementById('wa-queue-filter')?.addEventListener('change', (e) => {
@@ -248,6 +294,16 @@
             } catch (err) {
                 window.showToast?.(err.message || 'فشل في بدء الجلسة', 'error');
             }
+        });
+
+        document.getElementById('wa-save-settings-btn')?.addEventListener('click', _saveInternalSettings);
+
+        // Normalize phone inputs on blur
+        document.getElementById('wa-manager-phone')?.addEventListener('blur', (e) => {
+            e.target.value = _normalizeInput(e.target.value);
+        });
+        document.getElementById('wa-warehouse-phone')?.addEventListener('blur', (e) => {
+            e.target.value = _normalizeInput(e.target.value);
         });
 
         _pollTimer = setInterval(() => {

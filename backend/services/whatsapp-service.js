@@ -13,6 +13,7 @@ const fs = require('fs');
 const PROVIDER = process.env.WHATSAPP_PROVIDER || 'waha';
 const WAHA_URL = process.env.WAHA_URL || '';
 const WAHA_SESSION = process.env.WAHA_SESSION || 'default';
+const WAHA_SESSION_INTERNAL = process.env.WAHA_SESSION_INTERNAL || WAHA_SESSION;
 const WAHA_API_KEY = process.env.WAHA_API_KEY || '';
 
 // ── Normalize phone number to WAHA chatId format ────────────────────────────
@@ -47,50 +48,53 @@ function _ensureChatId(chatId) {
 }
 
 // ── Send text message ───────────────────────────────────────────────────────
-async function sendText(chatId, text) {
+// options.session: WAHA session name (default: WAHA_SESSION)
+async function sendText(chatId, text, options = {}) {
     if (PROVIDER === 'waha') {
-        return _wahaSendText(chatId, text);
+        return _wahaSendText(chatId, text, options.session);
     }
     // Future: _metaSendText, _twilioSendText, etc.
     throw new Error(`WhatsApp provider "${PROVIDER}" not implemented`);
 }
 
 // ── Send image with optional caption ────────────────────────────────────────
-async function sendImage(chatId, imagePath, caption) {
+// options.session: WAHA session name (default: WAHA_SESSION)
+async function sendImage(chatId, imagePath, caption, options = {}) {
     if (PROVIDER === 'waha') {
-        return _wahaSendImage(chatId, imagePath, caption);
+        return _wahaSendImage(chatId, imagePath, caption, options.session);
     }
     throw new Error(`WhatsApp provider "${PROVIDER}" not implemented`);
 }
 
 // ── Send file (PDF, etc.) with optional caption ─────────────────────────────
-async function sendFile(chatId, filePath, caption) {
+// options.session: WAHA session name (default: WAHA_SESSION)
+async function sendFile(chatId, filePath, caption, options = {}) {
     if (PROVIDER === 'waha') {
-        return _wahaSendFile(chatId, filePath, caption);
+        return _wahaSendFile(chatId, filePath, caption, options.session);
     }
     throw new Error(`WhatsApp provider "${PROVIDER}" not implemented`);
 }
 
 // ── Get session status ──────────────────────────────────────────────────────
-async function getSessionStatus() {
+async function getSessionStatus(session = WAHA_SESSION) {
     if (PROVIDER === 'waha') {
-        return _wahaGetSessionStatus();
+        return _wahaGetSessionStatus(session);
     }
     throw new Error(`WhatsApp provider "${PROVIDER}" not implemented`);
 }
 
 // ── Get QR code for pairing ─────────────────────────────────────────────────
-async function getQRCode() {
+async function getQRCode(session = WAHA_SESSION) {
     if (PROVIDER === 'waha') {
-        return _wahaGetQRCode();
+        return _wahaGetQRCode(session);
     }
     throw new Error(`WhatsApp provider "${PROVIDER}" not implemented`);
 }
 
 // ── Start session ───────────────────────────────────────────────────────────
-async function startSession() {
+async function startSession(session = WAHA_SESSION) {
     if (PROVIDER === 'waha') {
-        return _wahaStartSession();
+        return _wahaStartSession(session);
     }
     throw new Error(`WhatsApp provider "${PROVIDER}" not implemented`);
 }
@@ -125,14 +129,14 @@ async function _wahaRequest(endpoint, options = {}) {
     return res.text();
 }
 
-async function _wahaSendText(chatId, text) {
+async function _wahaSendText(chatId, text, session = WAHA_SESSION) {
     return _wahaRequest('/api/sendText', {
         method: 'POST',
-        body: { session: WAHA_SESSION, chatId: _ensureChatId(chatId), text },
+        body: { session, chatId: _ensureChatId(chatId), text },
     });
 }
 
-async function _wahaSendImage(chatId, imagePath, caption) {
+async function _wahaSendImage(chatId, imagePath, caption, session = WAHA_SESSION) {
     const resolved = _resolvePath(imagePath);
     if (!fs.existsSync(resolved)) throw new Error(`Image not found: ${imagePath}`);
     const buffer = fs.readFileSync(resolved);
@@ -151,7 +155,7 @@ async function _wahaSendImage(chatId, imagePath, caption) {
     return _wahaRequest('/api/sendImage', {
         method: 'POST',
         body: {
-            session: WAHA_SESSION,
+            session,
             chatId: _ensureChatId(chatId),
             file: { mimetype: mime, filename: resolved.split('/').pop(), data: base64 },
             caption: caption || '',
@@ -159,7 +163,7 @@ async function _wahaSendImage(chatId, imagePath, caption) {
     });
 }
 
-async function _wahaSendFile(chatId, filePath, caption) {
+async function _wahaSendFile(chatId, filePath, caption, session = WAHA_SESSION) {
     const resolved = _resolvePath(filePath);
     if (!fs.existsSync(resolved)) throw new Error(`File not found: ${filePath}`);
     const buffer = fs.readFileSync(resolved);
@@ -171,7 +175,7 @@ async function _wahaSendFile(chatId, filePath, caption) {
     return _wahaRequest('/api/sendFile', {
         method: 'POST',
         body: {
-            session: WAHA_SESSION,
+            session,
             chatId: _ensureChatId(chatId),
             file: { mimetype: mime, filename: resolved.split('/').pop(), data: base64 },
             caption: caption || '',
@@ -179,12 +183,12 @@ async function _wahaSendFile(chatId, filePath, caption) {
     });
 }
 
-async function _wahaGetSessionStatus() {
+async function _wahaGetSessionStatus(session = WAHA_SESSION) {
     try {
-        const result = await _wahaRequest(`/api/sessions/${WAHA_SESSION}`);
+        const result = await _wahaRequest(`/api/sessions/${session}`);
         return {
             provider: 'waha',
-            session: WAHA_SESSION,
+            session,
             status: result?.status || 'unknown',
             connected: result?.status === 'WORKING',
             url: WAHA_URL,
@@ -192,7 +196,7 @@ async function _wahaGetSessionStatus() {
     } catch (err) {
         return {
             provider: 'waha',
-            session: WAHA_SESSION,
+            session,
             status: 'error',
             connected: false,
             error: err.message,
@@ -201,20 +205,20 @@ async function _wahaGetSessionStatus() {
     }
 }
 
-async function _wahaGetQRCode() {
+async function _wahaGetQRCode(session = WAHA_SESSION) {
     try {
-        const result = await _wahaRequest(`/api/sessions/${WAHA_SESSION}/qr`);
+        const result = await _wahaRequest(`/api/sessions/${session}/qr`);
         return result;
     } catch (err) {
         return { error: err.message };
     }
 }
 
-async function _wahaStartSession() {
+async function _wahaStartSession(session = WAHA_SESSION) {
     try {
         const result = await _wahaRequest('/api/sessions', {
             method: 'POST',
-            body: { name: WAHA_SESSION },
+            body: { name: session },
         });
         return result;
     } catch (err) {
@@ -242,8 +246,10 @@ function _resolvePath(filePath) {
 }
 
 // ── Send interactive buttons message ────────────────────────────────────────
-async function sendButtons(chatId, text, buttons) {
+// options.session: WAHA session name (default: WAHA_SESSION)
+async function sendButtons(chatId, text, buttons, options = {}) {
     if (!WAHA_URL) throw new Error('WAHA_URL not configured');
+    const session = options.session || WAHA_SESSION;
     const normalizedId = _ensureChatId(chatId);
 
     // WAHA buttons format: [{ id, title }, ...]
@@ -255,7 +261,7 @@ async function sendButtons(chatId, text, buttons) {
     return _wahaRequest('/api/sendButtons', {
         method: 'POST',
         body: {
-            session: WAHA_SESSION,
+            session,
             chatId: normalizedId,
             text,
             buttons: wahaButtons,
@@ -264,15 +270,17 @@ async function sendButtons(chatId, text, buttons) {
 }
 
 // ── Send template message (for future use with Meta Cloud API) ──────────────
-async function sendTemplate(chatId, templateName, language, components) {
+// options.session: WAHA session name (default: WAHA_SESSION)
+async function sendTemplate(chatId, templateName, language, components, options = {}) {
     if (!WAHA_URL) throw new Error('WAHA_URL not configured');
+    const session = options.session || WAHA_SESSION;
     const normalizedId = _ensureChatId(chatId);
 
     // WAHA template format (may vary by provider)
     return _wahaRequest('/api/sendTemplate', {
         method: 'POST',
         body: {
-            session: WAHA_SESSION,
+            session,
             chatId: normalizedId,
             template: {
                 name: templateName,
@@ -295,4 +303,6 @@ module.exports = {
     normalizePhone: _normalizePhone,
     ensureChatId: _ensureChatId,
     isConfigured: () => !!WAHA_URL,
+    WAHA_SESSION,
+    WAHA_SESSION_INTERNAL,
 };

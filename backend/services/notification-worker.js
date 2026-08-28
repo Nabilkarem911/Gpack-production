@@ -140,7 +140,7 @@ async function _processQueue() {
              RETURNING id, lease_id, lease_version, channel, recipient, recipient_name, recipient_role,
                        message_type, subject, body, attachments, attempts,
                        entity_type, entity_id, metadata, priority, idempotency_key,
-                       correlation_id`,
+                       correlation_id, session`,
             [`worker-${process.pid}`]
         );
 
@@ -205,7 +205,7 @@ async function _processOutbox() {
                  LIMIT 5
                  FOR UPDATE SKIP LOCKED
              )
-             RETURNING id, event_type, entity_type, entity_id, correlation_id, payload`
+             RETURNING id, event_type, entity_type, entity_id, correlation_id, payload, session`
         );
 
         if (events.rows.length === 0) return;
@@ -277,6 +277,18 @@ async function _processOutbox() {
                     }
                     case 'design_sent_to_client':
                         await NotificationService.notifyDesignSentToClient({
+                            ...payload,
+                            correlation_id: evt.correlation_id,
+                        });
+                        break;
+                    case 'quotation_needs_pricing':
+                        await NotificationService.notifyQuotationNeedsPricing({
+                            ...payload,
+                            correlation_id: evt.correlation_id,
+                        });
+                        break;
+                    case 'direct_receipt_created':
+                        await NotificationService.notifyDirectReceiptCreated({
                             ...payload,
                             correlation_id: evt.correlation_id,
                         });
@@ -356,12 +368,12 @@ async function _processItem(item) {
                 `INSERT INTO notification_dead_queue
                     (original_id, channel, recipient, recipient_name, recipient_role,
                      message_type, subject, body, attachments, entity_type, entity_id,
-                     metadata, idempotency_key, priority, correlation_id,
+                     metadata, idempotency_key, priority, correlation_id, session,
                      attempts, max_attempts, last_error, retry_history,
                      waha_message_id, waha_status, sent_at, delivered_at)
                  SELECT id, channel, recipient, recipient_name, recipient_role,
                         message_type, subject, body, attachments, entity_type, entity_id,
-                        metadata, idempotency_key, priority, correlation_id,
+                        metadata, idempotency_key, priority, correlation_id, session,
                         $1, max_attempts, $2,
                         COALESCE(retry_history, '[]') || $3::jsonb,
                         waha_message_id, waha_status, sent_at, delivered_at
@@ -432,13 +444,15 @@ async function _sendWhatsApp(item) {
         throw new Error('Circuit breaker OPEN — WAHA unavailable, message queued for retry');
     }
 
+    const session = item.session || 'default';
+    const whatsAppOptions = { session };
     let textSent = false;
     let attachmentErrors = [];
 
     // 1. Send text message (always try first — if this fails, retry whole message)
     if (item.body) {
         try {
-            await WhatsApp.sendText(item.recipient, item.body);
+            await WhatsApp.sendText(item.recipient, item.body, whatsAppOptions);
             textSent = true;
             await CircuitBreaker.recordSuccess();
         } catch (err) {
@@ -457,9 +471,9 @@ async function _sendWhatsApp(item) {
         for (const att of attachments) {
             try {
                 if (att.type === 'image') {
-                    await WhatsApp.sendImage(item.recipient, att.path, att.caption || '');
+                    await WhatsApp.sendImage(item.recipient, att.path, att.caption || '', whatsAppOptions);
                 } else if (att.type === 'file') {
-                    await WhatsApp.sendFile(item.recipient, att.path, att.caption || '');
+                    await WhatsApp.sendFile(item.recipient, att.path, att.caption || '', whatsAppOptions);
                 }
             } catch (err) {
                 attachmentErrors.push({ type: att.type, path: att.path, error: err.message });

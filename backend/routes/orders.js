@@ -843,12 +843,13 @@ router.post('/', restrictWrite, validateBody(orderCreate), async (req, res) => {
 
             // Verify client exists
             const clientCheck = await client.query(
-                'SELECT id FROM clients WHERE id = $1 LIMIT 1',
+                'SELECT id, name FROM clients WHERE id = $1 LIMIT 1',
                 [client_id]
             );
             if (clientCheck.rowCount === 0) {
                 throw new Error('العميل المحدد غير موجود.');
             }
+            const clientName = clientCheck.rows[0].name;
 
             // ── Determine order type: VMI (production) vs Commercial ──────────
             // VMI orders (status = 'production') MUST NOT have financial fields.
@@ -939,6 +940,29 @@ router.post('/', restrictWrite, validateBody(orderCreate), async (req, res) => {
                     ]
                 );
                 order.items.push(itemInsert.rows[0]);
+            }
+
+            // ── Internal notification: quotation needs pricing ─────────────────
+            // If any item has zero/null unit_price, write outbox event inside the
+            // same transaction. Worker will dispatch to manager via internal WAHA.
+            if (!isVmiOrder && order.pricing_status === 'pending') {
+                const unpricedCount = processedItems.filter(i => !i.price || parseFloat(i.price) === 0).length;
+                if (unpricedCount > 0) {
+                    const NotificationService = require('../services/notification-service');
+                    await NotificationService.writeOutboxEvent({
+                        event_type: 'quotation_needs_pricing',
+                        entity_type: 'order',
+                        entity_id: order.id,
+                        correlation_id: NotificationService.generateCorrelationId('PRC'),
+                        payload: {
+                            order_id: order.id,
+                            order_number: order.order_number,
+                            client_name: clientName,
+                            unpriced_count: unpricedCount,
+                        },
+                        session: 'internal',
+                    }, client);
+                }
             }
 
             return order;
@@ -1974,15 +1998,20 @@ router.post('/:id/release', restrictAdmin, validateBody(orderRelease), async (re
             throw new Error(`Cannot release order with status: ${order.status}. Order must be confirmed or in production.`);
         }
         
-        // 2. Get order items
+        // 2. Get order items with client + warehouse names
         const itemsResult = await client.query(
-            `SELECT oi.id, oi.variant_id, oi.quantity, 
-                    pv.size_name, p.name AS product_name
+            `SELECT oi.id, oi.variant_id, oi.quantity,
+                    pv.size_name, p.name AS product_name,
+                    c.name AS client_name,
+                    w.name AS warehouse_name
              FROM order_items oi
              JOIN product_variants pv ON pv.id = oi.variant_id
              JOIN products p ON p.id = pv.product_id
+             JOIN orders o ON o.id = oi.order_id
+             JOIN clients c ON c.id = o.client_id
+             LEFT JOIN warehouses w ON w.id = $2
              WHERE oi.order_id = $1`,
-            [id]
+            [id, warehouse_id || null]
         );
         
         if (itemsResult.rowCount === 0) {
@@ -2048,11 +2077,28 @@ router.post('/:id/release', restrictAdmin, validateBody(orderRelease), async (re
             status: 'processing',
             message: 'Order released successfully. Stock has been reserved for delivery.'
         };
-        
+
         }); // end withTransaction
-        
+
+        // ── Internal notification: release order for warehouse keeper ────────
+        try {
+            const itemsSummary = itemsResult.rows
+                .map(i => `• ${i.product_name} (${i.size_name}) — ${parseFloat(i.quantity)}`)
+                .join('\n');
+            const NotificationService = require('../services/notification-service');
+            await NotificationService.notifyReleaseOrderCreated({
+                order_id: id,
+                order_number: result.order_number,
+                client_name: itemsResult.rows[0]?.client_name,
+                items_summary: itemsSummary,
+                warehouse_name: itemsResult.rows[0]?.warehouse_name,
+            });
+        } catch (notifyErr) {
+            console.error('[Orders] Release notification error:', notifyErr.message);
+        }
+
         return success(res, result);
-        
+
     } catch (err) {
         console.error('[Orders] POST /:id/release error:', err.message);
         return res.status(400).json({ 

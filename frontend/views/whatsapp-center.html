@@ -19,6 +19,33 @@
         </button>
     </div>
 
+    <!-- Internal Notifications Settings Card -->
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-6 mb-6">
+        <h2 class="text-lg font-bold text-slate-800 mb-4">
+            <i class="fa-solid fa-gear ml-2 text-slate-500"></i>إعدادات الإشعارات الداخلية
+        </h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">رقم المدير</label>
+                <input id="wa-manager-phone" type="text" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" placeholder="05XXXXXXXX">
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">رقم أمين المستودع</label>
+                <input id="wa-warehouse-phone" type="text" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" placeholder="05XXXXXXXX">
+            </div>
+        </div>
+        <div class="mt-4 flex items-center gap-4">
+            <label class="flex items-center gap-2 cursor-pointer">
+                <input id="wa-internal-enabled" type="checkbox" class="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500">
+                <span class="text-sm text-slate-700">تفعيل الإشعارات الداخلية</span>
+            </label>
+            <button id="wa-save-settings-btn" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium transition-colors">
+                <i class="fa-solid fa-save ml-1"></i>حفظ الإعدادات
+            </button>
+        </div>
+        <p class="text-xs text-slate-400 mt-2">سيتم إرسال تنبيهات لرقم الإدارة عند عروض الأسعار بدون سعر أو استلام بضاعة مؤقت، ولأمين المستودع عند أوامر الفسح.</p>
+    </div>
+
     <!-- Session Status Card -->
     <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-6 mb-6">
         <div class="flex items-center justify-between mb-4">
