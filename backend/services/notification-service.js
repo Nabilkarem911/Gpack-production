@@ -395,17 +395,21 @@ async function notifyQuotationNeedsPricing({ order_id, order_number, client_name
         session: 'internal',
     });
 
-    await notifyInApp({
-        target_role: 'manager',
-        category: 'quotation',
-        icon: 'fa-tags',
-        title: `عرض سعر #${order_number} بحاجة تسعير`,
-        body: `العميل: ${client_name || '—'} | ${unpriced_count} صنف بدون سعر`,
-        link: `/quotations`,
-        priority: 'high',
-        entity_type: 'order',
-        entity_id: order_id,
-    });
+    try {
+        await notifyInApp({
+            target_role: 'manager',
+            category: 'quotation',
+            icon: 'fa-tags',
+            title: `عرض سعر #${order_number} بحاجة تسعير`,
+            body: `العميل: ${client_name || '—'} | ${unpriced_count} صنف بدون سعر`,
+            link: `/quotations`,
+            priority: 'high',
+            entity_type: 'order',
+            entity_id: order_id,
+        });
+    } catch (inAppErr) {
+        console.error('[NotificationService] notifyInApp failed for quotation:', inAppErr.message);
+    }
 
     return id;
 }
@@ -438,17 +442,21 @@ async function notifyDirectReceiptCreated({ receipt_id, receipt_number, item_cou
         session: 'internal',
     });
 
-    await notifyInApp({
-        target_role: 'manager',
-        category: 'warehouse',
-        icon: 'fa-warehouse',
-        title: `استلام مؤقت #${receipt_number} بانتظار المراجعة`,
-        body: `${item_count} صنف | استلمها: ${received_by_name || '—'}`,
-        link: `/direct-receipts`,
-        priority: 'normal',
-        entity_type: 'direct_receipt',
-        entity_id: receipt_id,
-    });
+    try {
+        await notifyInApp({
+            target_role: 'manager',
+            category: 'warehouse',
+            icon: 'fa-warehouse',
+            title: `استلام مؤقت #${receipt_number} بانتظار المراجعة`,
+            body: `${item_count} صنف | استلمها: ${received_by_name || '—'}`,
+            link: `/direct-receipts`,
+            priority: 'normal',
+            entity_type: 'direct_receipt',
+            entity_id: receipt_id,
+        });
+    } catch (inAppErr) {
+        console.error('[NotificationService] notifyInApp failed for direct receipt:', inAppErr.message);
+    }
 
     return id;
 }
@@ -481,17 +489,21 @@ async function notifyReleaseOrderCreated({ order_id, order_number, client_name, 
         session: 'internal',
     });
 
-    await notifyInApp({
-        target_role: 'warehouse_keeper',
-        category: 'warehouse',
-        icon: 'fa-truck',
-        title: `أمر فسح #${order_number} — ${client_name || '—'}`,
-        body: items_summary,
-        link: `/orders/${order_id}`,
-        priority: 'high',
-        entity_type: 'order',
-        entity_id: order_id,
-    });
+    try {
+        await notifyInApp({
+            target_role: 'warehouse_keeper',
+            category: 'warehouse',
+            icon: 'fa-truck',
+            title: `أمر فسح #${order_number} — ${client_name || '—'}`,
+            body: items_summary,
+            link: `/orders/${order_id}`,
+            priority: 'high',
+            entity_type: 'order',
+            entity_id: order_id,
+        });
+    } catch (inAppErr) {
+        console.error('[NotificationService] notifyInApp failed for release order:', inAppErr.message);
+    }
 
     return id;
 }
