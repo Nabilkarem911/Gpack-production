@@ -461,6 +461,57 @@ async function notifyDirectReceiptCreated({ receipt_id, receipt_number, item_cou
     return id;
 }
 
+// ── Convenience: Manufacturer order received ─────────────────────────────────
+// Notifies the manager when goods are received from a supplier against an MO.
+// Uses the receipt session id for entity_id so re-receiving (after reversal)
+// generates a unique idempotency key and a new notification.
+async function notifyManufacturerOrderReceived({ session_id, mo_number, session_number, item_count, received_by_name, warehouse_name }) {
+    if (!await _isInternalWhatsAppEnabled()) return null;
+    const phone = await _getSetting('manager_whatsapp_phone');
+    if (!phone) return null;
+
+    const body =
+        `📦 استلام بضاعة من مورد\n\n` +
+        `رقم أمر التشغيل: #${mo_number}\n` +
+        `رقم جلسة الاستلام: #${session_number}\n` +
+        `عدد الأصناف: ${item_count}\n` +
+        `استلمها: ${received_by_name || 'أمين المستودع'}\n` +
+        `المستودع: ${warehouse_name || '—'}\n\n` +
+        `بانتظار مراجعتك واعتماد فاتورة الشراء.`;
+
+    const id = await enqueue({
+        channel: 'whatsapp',
+        recipient: WhatsApp.ensureChatId(phone),
+        recipient_name: 'المدير',
+        recipient_role: 'manager',
+        message_type: 'manufacturer_order_received',
+        body,
+        entity_type: 'mo_receipt_session',
+        entity_id: session_id,
+        metadata: { mo_number, session_number, item_count, warehouse_name },
+        priority: 'normal',
+        session: 'internal',
+    });
+
+    try {
+        await notifyInApp({
+            target_role: 'manager',
+            category: 'warehouse',
+            icon: 'fa-warehouse',
+            title: `استلام من مورد — أمر #${mo_number} جلسة #${session_number}`,
+            body: `${item_count} صنف | استلمها: ${received_by_name || '—'}`,
+            link: `/manufacturer-orders`,
+            priority: 'normal',
+            entity_type: 'mo_receipt_session',
+            entity_id: session_id,
+        });
+    } catch (inAppErr) {
+        console.error('[NotificationService] notifyInApp failed for manufacturer order receipt:', inAppErr.message);
+    }
+
+    return id;
+}
+
 // ── Convenience: Release order created ───────────────────────────────────────
 async function notifyReleaseOrderCreated({ order_id, order_number, client_name, items_summary, warehouse_name }) {
     if (!await _isInternalWhatsAppEnabled()) return null;
@@ -533,6 +584,7 @@ module.exports = {
     notifyWhatsAppFailed,
     notifyQuotationNeedsPricing,
     notifyDirectReceiptCreated,
+    notifyManufacturerOrderReceived,
     notifyReleaseOrderCreated,
     generateCorrelationId,
     getAdminRecipients,

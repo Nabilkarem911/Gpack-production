@@ -1354,17 +1354,19 @@ router.post('/:id/receive', restrictReceive, validateBody(manufacturerOrderRecei
 
             // ── Internal notification: manufacturer order received ─────────────
             // Notify manager that warehouse keeper received goods from supplier.
-            // Written inside the transaction for atomicity.
+            // Uses the receipt session id (not the MO id) as entity_id so a reversed
+            // and re-received MO still produces a fresh notification per session.
             try {
                 const NotificationService = require('../services/notification-service');
                 await NotificationService.writeOutboxEvent({
-                    event_type: 'direct_receipt_created',
-                    entity_type: 'manufacturer_order',
-                    entity_id: id,
+                    event_type: 'manufacturer_order_received',
+                    entity_type: 'mo_receipt_session',
+                    entity_id: sessionId,
                     correlation_id: NotificationService.generateCorrelationId('MOR'),
                     payload: {
-                        receipt_id: id,
-                        receipt_number: mo.mo_number,
+                        session_id: sessionId,
+                        mo_number: mo.mo_number,
+                        session_number: sessionNumber,
                         item_count: invoiceItems.length,
                         received_by_name: receivedByName,
                         warehouse_name: warehouseName,
