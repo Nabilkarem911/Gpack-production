@@ -1,6 +1,9 @@
 services:
   backend:
-    build: ./backend
+    build:
+      context: ./backend
+      args:
+        CACHEBUST: ${CACHEBUST:-1}
     restart: unless-stopped
     stop_grace_period: 10s
     environment:
@@ -44,7 +47,10 @@ services:
       dokploy-network:
 
   notification-worker:
-    build: ./backend
+    build:
+      context: ./backend
+      args:
+        CACHEBUST: ${CACHEBUST:-1}
     restart: unless-stopped
     stop_grace_period: 10s
     command: ["node", "services/notification-worker.js"]

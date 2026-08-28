@@ -10,6 +10,11 @@ COPY package.json package-lock.json ./
 
 RUN npm install --omit=dev
 
+# CACHEBUST is passed at build time to force a re-copy of source files.
+# Bump the value in Dokploy env to invalidate the build cache when needed.
+ARG CACHEBUST=1
+RUN echo "CACHEBUST=$CACHEBUST"
+
 COPY . .
 
 EXPOSE 3000
