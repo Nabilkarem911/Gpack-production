@@ -369,7 +369,7 @@ async function _isInternalWhatsAppEnabled() {
 }
 
 // ── Convenience: Quotation needs pricing ─────────────────────────────────────
-async function notifyQuotationNeedsPricing({ order_id, order_number, client_name, unpriced_count, revision }) {
+async function notifyQuotationNeedsPricing({ order_id, order_number, client_name, unpriced_count, revision, items_summary }) {
     if (!await _isInternalWhatsAppEnabled()) return null;
     const phone = await _getSetting('manager_whatsapp_phone');
     if (!phone) return null;
@@ -380,6 +380,7 @@ async function notifyQuotationNeedsPricing({ order_id, order_number, client_name
         (revision ? `التعديل رقم: ${revision}\n` : '') +
         `العميل: ${client_name || '—'}\n` +
         `أصناف بدون سعر: ${unpriced_count}\n\n` +
+        (items_summary ? `الأصناف:\n${items_summary}\n\n` : '') +
         `يرجى المراجعة وتحديد الأسعار.`;
 
     // Build a unique idempotency entity_id per revision so re-edits send new
@@ -471,7 +472,7 @@ async function notifyDirectReceiptCreated({ receipt_id, receipt_number, item_cou
 // Notifies the manager when goods are received from a supplier against an MO.
 // Uses the receipt session id for entity_id so re-receiving (after reversal)
 // generates a unique idempotency key and a new notification.
-async function notifyManufacturerOrderReceived({ session_id, mo_number, session_number, item_count, received_by_name, warehouse_name }) {
+async function notifyManufacturerOrderReceived({ session_id, mo_number, session_number, item_count, received_by_name, warehouse_name, items_summary }) {
     if (!await _isInternalWhatsAppEnabled()) return null;
     const phone = await _getSetting('manager_whatsapp_phone');
     if (!phone) return null;
@@ -483,6 +484,7 @@ async function notifyManufacturerOrderReceived({ session_id, mo_number, session_
         `عدد الأصناف: ${item_count}\n` +
         `استلمها: ${received_by_name || 'أمين المستودع'}\n` +
         `المستودع: ${warehouse_name || '—'}\n\n` +
+        (items_summary ? `الأصناف:\n${items_summary}\n\n` : '') +
         `بانتظار مراجعتك واعتماد فاتورة الشراء.`;
 
     const id = await enqueue({

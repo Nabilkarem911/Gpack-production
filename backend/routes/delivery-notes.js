@@ -262,6 +262,28 @@ router.post('/', restrictWrite, validateBody(deliveryNoteCreate), async (req, re
                     .map(i => `• ${i.variant_id || '—'} — ${i.requested_qty || i.quantity || 0}`)
                     .join('\n');
 
+                // Resolve variant names for a readable items summary
+                let itemsSummaryNamed = itemsSummary;
+                const variantIds = items.map(i => i.variant_id).filter(Boolean);
+                if (variantIds.length > 0) {
+                    const varRes = await client.query(
+                        `SELECT pv.id, p.name AS product_name, pv.size_name
+                         FROM product_variants pv
+                         JOIN products p ON p.id = pv.product_id
+                         WHERE pv.id = ANY($1::uuid[])`,
+                        [variantIds]
+                    );
+                    const varMap = {};
+                    for (const v of varRes.rows) varMap[v.id] = `${v.product_name} (${v.size_name})`;
+                    itemsSummaryNamed = items
+                        .map(i => {
+                            const name = varMap[i.variant_id] || '—';
+                            const qty = i.requested_qty || i.quantity || 0;
+                            return `• ${name} — ${qty}`;
+                        })
+                        .join('\n');
+                }
+
                 const NotificationService = require('../services/notification-service');
                 await NotificationService.writeOutboxEvent({
                     event_type: 'release_order_created',
@@ -274,7 +296,7 @@ router.post('/', restrictWrite, validateBody(deliveryNoteCreate), async (req, re
                         delivery_note_id: dnId,
                         delivery_note_number: noteNumber,
                         client_name: clientName,
-                        items_summary: itemsSummary,
+                        items_summary: itemsSummaryNamed,
                         warehouse_name: warehouseName,
                     },
                     session: 'internal',

@@ -1357,6 +1357,28 @@ router.post('/:id/receive', restrictReceive, validateBody(manufacturerOrderRecei
             // Uses the receipt session id (not the MO id) as entity_id so a reversed
             // and re-received MO still produces a fresh notification per session.
             try {
+                // Build readable items list with product name, size, qty
+                const receivedVariantIds = invoiceItems.map(i => i.variant_id).filter(Boolean);
+                let itemsSummary = '';
+                if (receivedVariantIds.length > 0) {
+                    const varRes = await client.query(
+                        `SELECT pv.id, p.name AS product_name, pv.size_name
+                         FROM product_variants pv
+                         JOIN products p ON p.id = pv.product_id
+                         WHERE pv.id = ANY($1::uuid[])`,
+                        [receivedVariantIds]
+                    );
+                    const varMap = {};
+                    for (const v of varRes.rows) varMap[v.id] = `${v.product_name} (${v.size_name})`;
+                    itemsSummary = invoiceItems
+                        .map(i => {
+                            const name = varMap[i.variant_id] || '—';
+                            const qty = i.quantity || 0;
+                            return `• ${name} — ${qty}`;
+                        })
+                        .join('\n');
+                }
+
                 const NotificationService = require('../services/notification-service');
                 await NotificationService.writeOutboxEvent({
                     event_type: 'manufacturer_order_received',
@@ -1370,6 +1392,7 @@ router.post('/:id/receive', restrictReceive, validateBody(manufacturerOrderRecei
                         item_count: invoiceItems.length,
                         received_by_name: receivedByName,
                         warehouse_name: warehouseName,
+                        items_summary: itemsSummary,
                     },
                     session: 'internal',
                 }, client);

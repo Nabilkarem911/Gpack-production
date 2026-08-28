@@ -948,6 +948,30 @@ router.post('/', restrictWrite, validateBody(orderCreate), async (req, res) => {
             if (!isVmiOrder && order.pricing_status === 'pending') {
                 const unpricedCount = processedItems.filter(i => !i.price || parseFloat(i.price) === 0).length;
                 if (unpricedCount > 0) {
+                    // Build readable items list with product name, size, qty, price
+                    const variantIds = processedItems.map(i => i.product_variant_id).filter(Boolean);
+                    let itemsSummary = '';
+                    if (variantIds.length > 0) {
+                        const varRes = await client.query(
+                            `SELECT pv.id, p.name AS product_name, pv.size_name
+                             FROM product_variants pv
+                             JOIN products p ON p.id = pv.product_id
+                             WHERE pv.id = ANY($1::uuid[])`,
+                            [variantIds]
+                        );
+                        const varMap = {};
+                        for (const v of varRes.rows) varMap[v.id] = `${v.product_name} (${v.size_name})`;
+                        itemsSummary = processedItems
+                            .map(i => {
+                                const name = varMap[i.product_variant_id] || '—';
+                                const qty = i.qty || 0;
+                                const price = parseFloat(i.price || 0);
+                                const priceLabel = price > 0 ? `${price} ر.س` : 'بدون سعر';
+                                return `• ${name} — ${qty} (${priceLabel})`;
+                            })
+                            .join('\n');
+                    }
+
                     const NotificationService = require('../services/notification-service');
                     await NotificationService.writeOutboxEvent({
                         event_type: 'quotation_needs_pricing',
@@ -959,6 +983,7 @@ router.post('/', restrictWrite, validateBody(orderCreate), async (req, res) => {
                             order_number: order.order_number,
                             client_name: clientName,
                             unpriced_count: unpricedCount,
+                            items_summary: itemsSummary,
                         },
                         session: 'internal',
                     }, client);
@@ -1205,6 +1230,30 @@ router.put('/:id', restrictEdit, validateBody(orderUpdate), async (req, res) => 
                     );
                     const clientName = clientNameRes.rows[0]?.name || '—';
 
+                    // Build readable items list with product name, size, qty, price
+                    const variantIds = processedItems.map(i => i.product_variant_id).filter(Boolean);
+                    let itemsSummary = '';
+                    if (variantIds.length > 0) {
+                        const varRes = await client.query(
+                            `SELECT pv.id, p.name AS product_name, pv.size_name
+                             FROM product_variants pv
+                             JOIN products p ON p.id = pv.product_id
+                             WHERE pv.id = ANY($1::uuid[])`,
+                            [variantIds]
+                        );
+                        const varMap = {};
+                        for (const v of varRes.rows) varMap[v.id] = `${v.product_name} (${v.size_name})`;
+                        itemsSummary = processedItems
+                            .map(i => {
+                                const name = varMap[i.product_variant_id] || '—';
+                                const qty = i.qty || 0;
+                                const price = parseFloat(i.price || 0);
+                                const priceLabel = price > 0 ? `${price} ر.س` : 'بدون سعر';
+                                return `• ${name} — ${qty} (${priceLabel})`;
+                            })
+                            .join('\n');
+                    }
+
                     const NotificationService = require('../services/notification-service');
                     await NotificationService.writeOutboxEvent({
                         event_type: 'quotation_needs_pricing',
@@ -1217,6 +1266,7 @@ router.put('/:id', restrictEdit, validateBody(orderUpdate), async (req, res) => 
                             client_name: clientName,
                             unpriced_count: unpricedCount,
                             revision: curRev,
+                            items_summary: itemsSummary,
                         },
                         session: 'internal',
                     }, client);
