@@ -116,6 +116,9 @@ async function _processQueue() {
         // Reclaim stuck items (processing for > 10 minutes = worker crash)
         await _reclaimStuckItems();
 
+        // Reclaim outbox events stuck in 'processing' from a previous crash/restart
+        await _reclaimStuckOutbox();
+
         // Claim up to 10 pending items — HIGH priority first, then by next_attempt_at
         // Lease token: each claimed item gets a unique lease_id UUID.
         // Only the worker holding the lease can update the item (prevents double processing).
@@ -189,6 +192,29 @@ async function _reclaimStuckItems() {
     }
 }
 
+// ── Reclaim stuck outbox events (processing for > 10 minutes) ───────────────
+// Outbox events claimed by a worker that crashes/restarts are left in 'processing'.
+// This sweeper resets them to 'pending' so they are retried.
+async function _reclaimStuckOutbox() {
+    try {
+        const result = await db.query(
+            `UPDATE notification_outbox
+             SET status = 'pending',
+                 processing_started_at = NULL,
+                 processing_owner = NULL,
+                 error = 'Reclaimed: processing timeout (>10min)'
+             WHERE status = 'processing'
+               AND (processing_started_at IS NULL OR processing_started_at < NOW() - INTERVAL '10 minutes')
+             RETURNING id, event_type, entity_id`
+        );
+        if (result.rows.length > 0) {
+            console.log(`[NotificationWorker] Reclaimed ${result.rows.length} stuck outbox event(s)`);
+        }
+    } catch (err) {
+        console.error('[NotificationWorker] Outbox reclaim error:', err.message);
+    }
+}
+
 // ── Process outbox events ───────────────────────────────────────────────────
 // The outbox guarantees no message is lost: the business operation and the
 // event are written in the same DB transaction. The worker reads the outbox
@@ -197,7 +223,9 @@ async function _processOutbox() {
     try {
         const events = await db.query(
             `UPDATE notification_outbox
-             SET status = 'processing'
+             SET status = 'processing',
+                 processing_started_at = NOW(),
+                 processing_owner = $1
              WHERE id IN (
                  SELECT id FROM notification_outbox
                  WHERE status = 'pending'
@@ -205,7 +233,8 @@ async function _processOutbox() {
                  LIMIT 5
                  FOR UPDATE SKIP LOCKED
              )
-             RETURNING id, event_type, entity_type, entity_id, correlation_id, payload, session`
+             RETURNING id, event_type, entity_type, entity_id, correlation_id, payload, session`,
+            [`worker-${process.pid}`]
         );
 
         if (events.rows.length === 0) return;
@@ -298,13 +327,13 @@ async function _processOutbox() {
                 }
 
                 await db.query(
-                    `UPDATE notification_outbox SET status = 'processed', processed_at = NOW() WHERE id = $1`,
+                    `UPDATE notification_outbox SET status = 'processed', processed_at = NOW(), processing_started_at = NULL, processing_owner = NULL WHERE id = $1`,
                     [evt.id]
                 );
             } catch (err) {
                 console.error(`[NotificationWorker] Outbox event ${evt.id} failed:`, err.message);
                 await db.query(
-                    `UPDATE notification_outbox SET status = 'pending', error = $1 WHERE id = $2`,
+                    `UPDATE notification_outbox SET status = 'pending', error = $1, processing_started_at = NULL, processing_owner = NULL WHERE id = $2`,
                     [err.message, evt.id]
                 );
             }
@@ -497,7 +526,9 @@ if (require.main === module) {
     const shutdown = (signal) => {
         console.log(`[NotificationWorker] ${signal} received, shutting down...`);
         stop();
-        setTimeout(() => process.exit(0), 1000);
+        // Allow the current poll to finish before exiting so outbox/queue items
+        // are not left stuck in 'processing' due to a mid-work SIGTERM.
+        setTimeout(() => process.exit(0), 10000);
     };
     process.on('SIGTERM', () => shutdown('SIGTERM'));
     process.on('SIGINT', () => shutdown('SIGINT'));
