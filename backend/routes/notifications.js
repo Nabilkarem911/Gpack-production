@@ -242,7 +242,12 @@ router.get('/whatsapp/internal-settings', authenticate, authorize(['admin', 'sup
             let val = null;
             if (result.rows.length > 0) {
                 val = result.rows[0].value;
-                if (typeof val === 'string') { try { val = JSON.parse(val); } catch { val = null; } }
+                // JSONB already parsed by pg; if a legacy text value is stored as a JSON
+                // string, try to parse it. On parse failure, keep the original value so
+                // phone numbers are not lost.
+                if (typeof val === 'string') {
+                    try { val = JSON.parse(val); } catch { /* keep original string */ }
+                }
             }
             settings[key] = val;
         }
