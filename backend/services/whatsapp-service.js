@@ -47,54 +47,67 @@ function _ensureChatId(chatId) {
     return _normalizePhone(chatId);
 }
 
+// ── Resolve logical session names to real WAHA session names ─────────────────
+// 'internal'  -> WAHA_SESSION_INTERNAL
+// 'default' or '' or undefined -> WAHA_SESSION
+// anything else -> used as-is (allows explicit WAHA session name)
+function _resolveSession(session) {
+    if (!session || session === 'default') return WAHA_SESSION;
+    if (session === 'internal') return WAHA_SESSION_INTERNAL;
+    return session;
+}
+
 // ── Send text message ───────────────────────────────────────────────────────
-// options.session: WAHA session name (default: WAHA_SESSION)
+// options.session: 'default', 'internal', or a WAHA session name
 async function sendText(chatId, text, options = {}) {
     if (PROVIDER === 'waha') {
-        return _wahaSendText(chatId, text, options.session);
+        return _wahaSendText(chatId, text, _resolveSession(options.session));
     }
     // Future: _metaSendText, _twilioSendText, etc.
     throw new Error(`WhatsApp provider "${PROVIDER}" not implemented`);
 }
 
 // ── Send image with optional caption ────────────────────────────────────────
-// options.session: WAHA session name (default: WAHA_SESSION)
+// options.session: 'default', 'internal', or a WAHA session name
 async function sendImage(chatId, imagePath, caption, options = {}) {
     if (PROVIDER === 'waha') {
-        return _wahaSendImage(chatId, imagePath, caption, options.session);
+        return _wahaSendImage(chatId, imagePath, caption, _resolveSession(options.session));
     }
     throw new Error(`WhatsApp provider "${PROVIDER}" not implemented`);
 }
 
 // ── Send file (PDF, etc.) with optional caption ─────────────────────────────
-// options.session: WAHA session name (default: WAHA_SESSION)
+// options.session: 'default', 'internal', or a WAHA session name
 async function sendFile(chatId, filePath, caption, options = {}) {
     if (PROVIDER === 'waha') {
-        return _wahaSendFile(chatId, filePath, caption, options.session);
+        return _wahaSendFile(chatId, filePath, caption, _resolveSession(options.session));
     }
     throw new Error(`WhatsApp provider "${PROVIDER}" not implemented`);
 }
 
 // ── Get session status ──────────────────────────────────────────────────────
+// session: 'default', 'internal', or a WAHA session name
 async function getSessionStatus(session = WAHA_SESSION) {
     if (PROVIDER === 'waha') {
-        return _wahaGetSessionStatus(session);
+        return _wahaGetSessionStatus(_resolveSession(session));
     }
     throw new Error(`WhatsApp provider "${PROVIDER}" not implemented`);
 }
 
 // ── Get QR code for pairing ─────────────────────────────────────────────────
+// session: 'default', 'internal', or a WAHA session name
 async function getQRCode(session = WAHA_SESSION) {
     if (PROVIDER === 'waha') {
-        return _wahaGetQRCode(session);
+        return _wahaGetQRCode(_resolveSession(session));
     }
     throw new Error(`WhatsApp provider "${PROVIDER}" not implemented`);
 }
 
 // ── Start session ───────────────────────────────────────────────────────────
+// session: 'default', 'internal', or a WAHA session name
 async function startSession(session = WAHA_SESSION) {
     if (PROVIDER === 'waha') {
-        return _wahaStartSession(session);
+        return _wahaStartSession(_resolveSession(session));
     }
     throw new Error(`WhatsApp provider "${PROVIDER}" not implemented`);
 }
@@ -246,10 +259,10 @@ function _resolvePath(filePath) {
 }
 
 // ── Send interactive buttons message ────────────────────────────────────────
-// options.session: WAHA session name (default: WAHA_SESSION)
+// options.session: 'default', 'internal', or a WAHA session name
 async function sendButtons(chatId, text, buttons, options = {}) {
     if (!WAHA_URL) throw new Error('WAHA_URL not configured');
-    const session = options.session || WAHA_SESSION;
+    const session = _resolveSession(options.session);
     const normalizedId = _ensureChatId(chatId);
 
     // WAHA buttons format: [{ id, title }, ...]
@@ -270,10 +283,10 @@ async function sendButtons(chatId, text, buttons, options = {}) {
 }
 
 // ── Send template message (for future use with Meta Cloud API) ──────────────
-// options.session: WAHA session name (default: WAHA_SESSION)
+// options.session: 'default', 'internal', or a WAHA session name
 async function sendTemplate(chatId, templateName, language, components, options = {}) {
     if (!WAHA_URL) throw new Error('WAHA_URL not configured');
-    const session = options.session || WAHA_SESSION;
+    const session = _resolveSession(options.session);
     const normalizedId = _ensureChatId(chatId);
 
     // WAHA template format (may vary by provider)
