@@ -382,8 +382,10 @@ async function notifyQuotationNeedsPricing({ order_id, order_number, client_name
         `أصناف بدون سعر: ${unpriced_count}\n\n` +
         `يرجى المراجعة وتحديد الأسعار.`;
 
-    // Include revision in entity_id so each edit produces a unique idempotency key.
-    const entityId = revision ? `${order_id}_rev${revision}` : order_id;
+    // Build a unique idempotency entity_id per revision so re-edits send new
+    // alerts. The outbox stores the raw order_id (UUID); only the queue
+    // entity_id (VARCHAR) carries the revision suffix.
+    const queueEntityId = revision ? `${order_id}_rev${revision}` : order_id;
 
     const id = await enqueue({
         channel: 'whatsapp',
@@ -393,7 +395,7 @@ async function notifyQuotationNeedsPricing({ order_id, order_number, client_name
         message_type: 'quotation_needs_pricing',
         body,
         entity_type: 'order',
-        entity_id: entityId,
+        entity_id: queueEntityId,
         metadata: { order_number, unpriced_count, client_name, revision },
         priority: 'high',
         session: 'internal',

@@ -1187,8 +1187,9 @@ router.put('/:id', restrictEdit, validateBody(orderUpdate), async (req, res) => 
 
             // ── Internal notification: quotation needs pricing (on update) ──────
             // If the updated quotation still has zero-priced items and pricing
-            // status is pending, notify the manager. Uses order id + revision
-            // as entity_id so each revision produces a fresh notification.
+            // status is pending, notify the manager. The revision is passed in
+            // the payload so the worker can build a unique idempotency key per
+            // edit while keeping entity_id a valid UUID for the outbox table.
             if (!isVmiOrder) {
                 const unpricedCount = processedItems.filter(i => !i.price || parseFloat(i.price) === 0).length;
                 if (unpricedCount > 0) {
@@ -1208,7 +1209,7 @@ router.put('/:id', restrictEdit, validateBody(orderUpdate), async (req, res) => 
                     await NotificationService.writeOutboxEvent({
                         event_type: 'quotation_needs_pricing',
                         entity_type: 'order',
-                        entity_id: `${id}_rev${curRev}`,
+                        entity_id: id,
                         correlation_id: NotificationService.generateCorrelationId('PRC'),
                         payload: {
                             order_id: id,
