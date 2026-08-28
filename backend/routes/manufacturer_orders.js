@@ -1142,6 +1142,19 @@ router.post('/:id/receive', restrictReceive, validateBody(manufacturerOrderRecei
     try {
         const result = await db.withTransaction(async (client) => {
 
+            // ── 0. Load user + warehouse names (for notification later)
+            const userRes = await client.query(
+                'SELECT name FROM users WHERE id = $1',
+                [req.user?.id]
+            );
+            const receivedByName = userRes.rows[0]?.name || req.user?.name || 'أمين المستودع';
+
+            const warehouseRes = await client.query(
+                'SELECT name FROM warehouses WHERE id = $1',
+                [warehouse_id]
+            );
+            const warehouseName = warehouseRes.rows[0]?.name || null;
+
             // ── 1. Load MO ───────────────────────────────────────────────────
             const moCheck = await client.query(
                 `SELECT mo.*, o.client_id
@@ -1338,6 +1351,29 @@ router.post('/:id/receive', restrictReceive, validateBody(manufacturerOrderRecei
 
             // Auto-update order status based on aggregate MO statuses
             await _autoUpdateOrderStatus(client, mo.order_id);
+
+            // ── Internal notification: manufacturer order received ─────────────
+            // Notify manager that warehouse keeper received goods from supplier.
+            // Written inside the transaction for atomicity.
+            try {
+                const NotificationService = require('../services/notification-service');
+                await NotificationService.writeOutboxEvent({
+                    event_type: 'direct_receipt_created',
+                    entity_type: 'manufacturer_order',
+                    entity_id: id,
+                    correlation_id: NotificationService.generateCorrelationId('MOR'),
+                    payload: {
+                        receipt_id: id,
+                        receipt_number: mo.mo_number,
+                        item_count: invoiceItems.length,
+                        received_by_name: receivedByName,
+                        warehouse_name: warehouseName,
+                    },
+                    session: 'internal',
+                }, client);
+            } catch (outboxErr) {
+                console.error('[ManufacturerOrders] Outbox write error:', outboxErr.message);
+            }
 
             return { newStatus, purchaseInvoiceId, invoiceNumber };
         });
