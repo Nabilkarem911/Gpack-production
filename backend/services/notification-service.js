@@ -519,18 +519,27 @@ async function notifyManufacturerOrderReceived({ session_id, mo_number, session_
 }
 
 // ── Convenience: Release order created ───────────────────────────────────────
-async function notifyReleaseOrderCreated({ order_id, order_number, client_name, items_summary, warehouse_name }) {
+async function notifyReleaseOrderCreated({ order_id, order_number, delivery_note_id, delivery_note_number, client_name, items_summary, warehouse_name }) {
     if (!await _isInternalWhatsAppEnabled()) return null;
     const phone = await _getSetting('warehouse_keeper_whatsapp_phone');
     if (!phone) return null;
 
+    const refLabel = delivery_note_number
+        ? `سند تسليم #${delivery_note_number}`
+        : `أمر #${order_number || '—'}`;
+
     const body =
         `📤 أمر فسح بضاعة\n\n` +
-        `رقم الأمر: #${order_number}\n` +
+        `${refLabel}\n` +
         `العميل: ${client_name || '—'}\n` +
         `المستودع: ${warehouse_name || '—'}\n\n` +
         `الأصناف:\n${items_summary}\n\n` +
         `يرجى الاستلام وتجهيز البضاعة للإفراج.`;
+
+    // Use delivery_note_id if available (from delivery-notes route), otherwise
+    // fall back to order_id (from orders/:id/release route).
+    const entityId = delivery_note_id || order_id;
+    const entityType = delivery_note_id ? 'delivery_note' : 'order';
 
     const id = await enqueue({
         channel: 'whatsapp',
@@ -539,9 +548,9 @@ async function notifyReleaseOrderCreated({ order_id, order_number, client_name, 
         recipient_role: 'warehouse_keeper',
         message_type: 'release_order_created',
         body,
-        entity_type: 'order',
-        entity_id: order_id,
-        metadata: { order_number, client_name, warehouse_name },
+        entity_type: entityType,
+        entity_id: entityId,
+        metadata: { order_number, delivery_note_number, client_name, warehouse_name },
         priority: 'high',
         session: 'internal',
     });
@@ -551,12 +560,12 @@ async function notifyReleaseOrderCreated({ order_id, order_number, client_name, 
             target_role: 'warehouse_keeper',
             category: 'warehouse',
             icon: 'fa-truck',
-            title: `أمر فسح #${order_number} — ${client_name || '—'}`,
+            title: `أمر فسح ${refLabel} — ${client_name || '—'}`,
             body: items_summary,
-            link: `/orders/${order_id}`,
+            link: order_id ? `/orders/${order_id}` : `/delivery-notes`,
             priority: 'high',
-            entity_type: 'order',
-            entity_id: order_id,
+            entity_type: entityType,
+            entity_id: entityId,
         });
     } catch (inAppErr) {
         console.error('[NotificationService] notifyInApp failed for release order:', inAppErr.message);

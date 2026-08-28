@@ -239,6 +239,50 @@ router.post('/', restrictWrite, validateBody(deliveryNoteCreate), async (req, re
                 );
             }
 
+            // ── Internal notification: release order for warehouse keeper ──────
+            // Written inside the transaction so it's atomic with the delivery note.
+            try {
+                let orderNum = null;
+                let clientName = clientCheck.rows[0]?.name || '—';
+                let warehouseName = null;
+
+                if (order_id) {
+                    const ordRes = await client.query(
+                        `SELECT o.order_number, w.name AS warehouse_name
+                         FROM orders o
+                         LEFT JOIN warehouses w ON w.id = $2
+                         WHERE o.id = $1`,
+                        [order_id, warehouse_id]
+                    );
+                    orderNum = ordRes.rows[0]?.order_number || null;
+                    warehouseName = ordRes.rows[0]?.warehouse_name || null;
+                }
+
+                const itemsSummary = items
+                    .map(i => `• ${i.variant_id || '—'} — ${i.requested_qty || i.quantity || 0}`)
+                    .join('\n');
+
+                const NotificationService = require('../services/notification-service');
+                await NotificationService.writeOutboxEvent({
+                    event_type: 'release_order_created',
+                    entity_type: 'delivery_note',
+                    entity_id: dnId,
+                    correlation_id: NotificationService.generateCorrelationId('REL'),
+                    payload: {
+                        order_id: order_id,
+                        order_number: orderNum,
+                        delivery_note_id: dnId,
+                        delivery_note_number: noteNumber,
+                        client_name: clientName,
+                        items_summary: itemsSummary,
+                        warehouse_name: warehouseName,
+                    },
+                    session: 'internal',
+                }, client);
+            } catch (outboxErr) {
+                console.error('[DeliveryNotes] Outbox write error:', outboxErr.message);
+            }
+
             return { id: dnId, note_number: noteNumber };
         });
 

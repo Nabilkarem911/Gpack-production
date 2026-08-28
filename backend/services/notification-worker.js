@@ -337,6 +337,12 @@ async function _processOutbox() {
                             correlation_id: evt.correlation_id,
                         });
                         break;
+                    case 'release_order_created':
+                        await NotificationService.notifyReleaseOrderCreated({
+                            ...payload,
+                            correlation_id: evt.correlation_id,
+                        });
+                        break;
                     default:
                         console.warn(`[NotificationWorker] Unknown outbox event: ${evt.event_type}`);
                 }
