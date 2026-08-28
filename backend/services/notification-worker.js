@@ -35,6 +35,7 @@ let _lastHealthStatus = null;
 function start() {
     if (_intervalId) return;
     console.log('[NotificationWorker] Starting — polling every 15s (priority-based)');
+    console.log(`[NotificationWorker] WAHA_SESSION=${process.env.WAHA_SESSION || 'default'}, WAHA_SESSION_INTERNAL=${process.env.WAHA_SESSION_INTERNAL || 'not-set'}`);
     _intervalId = setInterval(_processQueue, POLL_INTERVAL_MS);
     _processQueue();
 
@@ -148,6 +149,7 @@ async function _processQueue() {
         );
 
         if (claimRes.rows.length === 0) {
+            console.log('[NotificationWorker] No pending queue items');
             // Process outbox events (if any)
             await _processOutbox();
             return;
@@ -159,6 +161,8 @@ async function _processQueue() {
 
         // Also process outbox after queue items
         await _processOutbox();
+
+        console.log(`[NotificationWorker] Poll complete — processed ${claimRes.rows.length} queue item(s)`);
     } catch (err) {
         console.error('[NotificationWorker] Queue processing error:', err.message);
     } finally {
@@ -237,7 +241,12 @@ async function _processOutbox() {
             [`worker-${process.pid}`]
         );
 
-        if (events.rows.length === 0) return;
+        if (events.rows.length === 0) {
+            console.log('[NotificationWorker] No pending outbox events');
+            return;
+        }
+
+        console.log(`[NotificationWorker] Processing ${events.rows.length} outbox event(s)`);
 
         for (const evt of events.rows) {
             try {
