@@ -1041,7 +1041,7 @@ router.delete('/:id/receipts/:sessionId', restrictReverse, async (req, res) => {
             if (session.accounting_voucher_id) {
                 await client.query(
                     `UPDATE accounting_vouchers
-                     SET status = 'reversed', updated_at = NOW()
+                     SET status = 'reversed'
                      WHERE id = $1`,
                     [session.accounting_voucher_id]
                 );
