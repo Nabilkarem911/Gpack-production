@@ -351,7 +351,11 @@ async function _getSetting(key) {
         );
         if (result.rows.length === 0) return null;
         let val = result.rows[0].value;
-        if (typeof val === 'string') { try { val = JSON.parse(val); } catch { val = null; } }
+        // JSONB is already parsed by pg; only try JSON.parse for legacy text values.
+        // If parse fails, keep the original string so phone numbers are not lost.
+        if (typeof val === 'string') {
+            try { val = JSON.parse(val); } catch { /* keep original string */ }
+        }
         return val;
     } catch (err) {
         console.error(`[NotificationService] Setting read error (${key}):`, err.message);
