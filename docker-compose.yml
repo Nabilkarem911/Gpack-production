@@ -3,7 +3,7 @@ services:
     build:
       context: ./backend
       args:
-        CACHEBUST: ${CACHEBUST:-1}
+        CACHEBUST: ${CACHEBUST:-}
     restart: unless-stopped
     stop_grace_period: 10s
     environment:
@@ -50,7 +50,7 @@ services:
     build:
       context: ./backend
       args:
-        CACHEBUST: ${CACHEBUST:-1}
+        CACHEBUST: ${CACHEBUST:-}
     restart: unless-stopped
     stop_grace_period: 10s
     command: ["node", "services/notification-worker.js"]
