@@ -1157,9 +1157,10 @@ router.post('/:id/receive', restrictReceive, validateBody(manufacturerOrderRecei
 
             // ── 1. Load MO ───────────────────────────────────────────────────
             const moCheck = await client.query(
-                `SELECT mo.*, o.client_id
+                `SELECT mo.*, o.client_id, c.name AS client_name
                  FROM manufacturer_orders mo
                  JOIN orders o ON o.id = mo.order_id
+                 LEFT JOIN clients c ON c.id = o.client_id
                  WHERE mo.id = $1
                  FOR UPDATE OF mo`,
                 [id]
@@ -1392,6 +1393,7 @@ router.post('/:id/receive', restrictReceive, validateBody(manufacturerOrderRecei
                         item_count: invoiceItems.length,
                         received_by_name: receivedByName,
                         warehouse_name: warehouseName,
+                        client_name: mo.client_name || '—',
                         items_summary: itemsSummary,
                     },
                     session: 'internal',

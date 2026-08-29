@@ -476,7 +476,7 @@ async function notifyDirectReceiptCreated({ receipt_id, receipt_number, item_cou
 // Notifies the manager when goods are received from a supplier against an MO.
 // Uses the receipt session id for entity_id so re-receiving (after reversal)
 // generates a unique idempotency key and a new notification.
-async function notifyManufacturerOrderReceived({ session_id, mo_number, session_number, item_count, received_by_name, warehouse_name, items_summary }) {
+async function notifyManufacturerOrderReceived({ session_id, mo_number, session_number, item_count, received_by_name, warehouse_name, client_name, items_summary }) {
     if (!await _isInternalWhatsAppEnabled()) return null;
     const phone = await _getSetting('manager_whatsapp_phone');
     if (!phone) return null;
@@ -488,6 +488,7 @@ async function notifyManufacturerOrderReceived({ session_id, mo_number, session_
         `📦 استلام بضاعة من مورد\n\n` +
         `رقم أمر التشغيل: #${mo_number}\n` +
         `رقم جلسة الاستلام: #${session_number}\n` +
+        `العميل: ${client_name || '—'}\n` +
         `عدد الأصناف: ${item_count}\n` +
         `استلمها: ${received_by_name || 'أمين المستودع'}\n` +
         `المستودع: ${warehouse_name || '—'}\n\n` +

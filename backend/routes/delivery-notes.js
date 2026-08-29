@@ -247,10 +247,20 @@ router.post('/', restrictWrite, validateBody(deliveryNoteCreate), async (req, re
                 let warehouseName = null;
 
                 if (order_id) {
+                    // Get order number + warehouse name from the first reserved
+                    // stock row for this order (the warehouse the goods will be
+                    // dispatched from). Falls back to the provided warehouse_id.
                     const ordRes = await client.query(
                         `SELECT o.order_number, w.name AS warehouse_name
                          FROM orders o
-                         LEFT JOIN warehouses w ON w.id = $2
+                         LEFT JOIN warehouses w ON w.id = COALESCE($2, (
+                             SELECT ws.warehouse_id
+                             FROM warehouse_stock ws
+                             JOIN order_items oi ON oi.variant_id = ws.variant_id
+                             WHERE oi.order_id = o.id
+                               AND ws.reserved_qty > 0
+                             LIMIT 1
+                         ))
                          WHERE o.id = $1`,
                         [order_id, warehouse_id]
                     );
