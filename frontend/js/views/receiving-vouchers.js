@@ -234,7 +234,8 @@
                                data-order-item-id="${item.order_item_id || ''}"
                                data-variant-id="${item.variant_id || ''}"
                                data-rem-qty="${remQty}"
-                               value="0" min="0" max="${remQty}"
+                               value="" min="1" max="${remQty}"
+                               placeholder="—"
                                ${remQty === 0 ? 'disabled' : ''}
                                oninput="window.rvUpdateRowState(this)"
                                class="w-20 px-2 py-1 border border-slate-200 rounded-lg text-center text-xs focus:border-brand-500 outline-none">
@@ -991,7 +992,8 @@
                                data-item-id="${item.id}"
                                data-order-item-id="${item.order_item_id || ''}"
                                data-variant-id="${item.variant_id || ''}"
-                               value="${remQty}" min="0" max="${remQty}"
+                               value="" min="1" max="${remQty}"
+                               placeholder="—"
                                class="w-20 px-2 py-1.5 border border-slate-200 rounded-lg text-center text-xs focus:border-brand-500 outline-none">
                     </td>
                     <td class="py-2.5 px-3 text-center">
