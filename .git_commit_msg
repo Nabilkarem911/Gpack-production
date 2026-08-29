@@ -1,0 +1,28 @@
+feat(whatsapp): add internal WhatsApp notifications on second WAHA session
+
+Adds a second WhatsApp number (Gpack-2-sultan / WAHA_SESSION_INTERNAL) for
+operational alerts while keeping the existing client-facing number intact.
+
+New internal notifications:
+- Quotation with zero/undefined prices -> manager
+- Direct warehouse receipt created -> manager
+- Order release -> warehouse keeper
+
+Changes:
+- DB migration 075 adds session column + settings
+- whatsapp-service supports multi-session via options.session
+- notification-service adds 3 internal notify helpers with feature flag
+- notification-worker routes queue items to the correct WAHA session
+- triggers in orders.js and direct-receipts.js write outbox events
+- WhatsApp Center UI to enable/disable and set manager/keeper phones
+- docker-compose WAHA_SESSION_INTERNAL env var
+
+All new code is feature-flagged and disabled by default.
+
+Tests:
+- 38 WhatsApp-related tests pass
+- Full suite: 92 passed, 17 pre-existing failures unrelated
+
+Generated with Devin
+
+Co-Authored-By: Devin <158243242+devin-ai-integration[bot]@users.noreply.github.com>

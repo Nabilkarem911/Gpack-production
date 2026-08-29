@@ -1787,9 +1787,10 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
                             <input type="hidden" data-receive-unit-cost value="${estCost}">
                             <div class="grid grid-cols-2 gap-2">
                                 <div class="flex flex-col">
-                                    <label class="text-xs text-slate-500 mb-0.5">الكمية المستلمة</label>
-                                    <input type="number" min="0" max="${remQty}" step="1"
-                                           value="0"
+                                    <label class="text-xs text-slate-500 mb-0.5">الكمية المستلمة <span class="text-red-500">*</span></label>
+                                    <input type="number" min="1" max="${remQty}" step="1"
+                                           value=""
+                                           placeholder="أدخل الكمية يدوياً"
                                            data-receive-qty
                                            class="px-2 py-1.5 border border-slate-200 rounded-lg text-sm text-center font-bold outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all" />
                                 </div>
