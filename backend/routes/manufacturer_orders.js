@@ -5,10 +5,13 @@ const QRCode = require('qrcode');
 const db = require('../db');
 const { success, error: errorResponse } = require('../utils/response');
 const authorize = require('../middleware/authorize');
-const { validateBody, manufacturerOrderCreate, manufacturerOrderStatusUpdate, manufacturerOrderUpdate, manufacturerOrderReceive, manufacturerOrderPricing, moFinalize } = require('../utils/validators');
+const { validateBody, manufacturerOrderCreate, manufacturerOrderStatusUpdate, manufacturerOrderUpdate, manufacturerOrderPricing, moFinalize } = require('../utils/validators');
 const { ensurePdfThumbnail } = require('../utils/pdf-thumbnail');
 const eventBus = require('../utils/event-bus');
 const { ensurePrintTemplateForOrderItem } = require('../services/print-template-service');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 
 const router = express.Router();
 
@@ -85,6 +88,53 @@ const restrictReverse = (req, res, next) => {
     if (has('production_orders', 'delete') || has('receiving', 'delete')) return next();
     return res.status(403).json({ error: 'Forbidden: No permission to reverse receipts.' });
 };
+
+// ── Upload config for receipt item photos ────────────────────────────────────
+const RECEIPT_UPLOAD_BASE = path.join(__dirname, '..', 'uploads', 'mo-receipts');
+if (!fs.existsSync(RECEIPT_UPLOAD_BASE)) {
+    fs.mkdirSync(RECEIPT_UPLOAD_BASE, { recursive: true });
+}
+
+const receiptPhotoStorage = multer.diskStorage({
+    destination: (_req, _file, cb) => {
+        cb(null, RECEIPT_UPLOAD_BASE);
+    },
+    filename: (_req, file, cb) => {
+        // Preserve the frontend-encoded original name (item-{idx}-{seq}-{name})
+        const safe = (file.originalname || 'photo.jpg').replace(/[^a-zA-Z0-9._-]/g, '_');
+        cb(null, `${Date.now()}-${safe}`);
+    }
+});
+
+const receiptPhotoUpload = multer({
+    storage: receiptPhotoStorage,
+    limits: { fileSize: 10 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+        const allowed = /jpeg|jpg|png|gif|webp|heic/;
+        const extOk = allowed.test(path.extname(file.originalname || '').toLowerCase());
+        const mimeOk = allowed.test(file.mimetype || '');
+        cb(null, extOk && mimeOk);
+    }
+});
+
+// Middleware: applies multer only when content-type is multipart, so JSON clients keep working.
+function maybeReceiptPhotos(req, res, next) {
+    const ct = req.headers['content-type'] || '';
+    if (ct.includes('multipart/form-data')) {
+        return receiptPhotoUpload.array('item_photos', 50)(req, res, next);
+    }
+    next();
+}
+
+// Remove any temp files left behind by multer (used on validation/transaction failures).
+function cleanupMultipartFiles(req) {
+    if (!req.files || !Array.isArray(req.files)) return;
+    for (const file of req.files) {
+        if (file && file.path && fs.existsSync(file.path)) {
+            try { fs.unlinkSync(file.path); } catch (_e) {}
+        }
+    }
+}
 
 // ── Auto-update order status based on aggregate MO statuses ──────────────────
 // Rules:
@@ -921,6 +971,7 @@ router.get('/:id/receipts', async (req, res) => {
 
         const sessionIds = sessionsRes.rows.map(r => r.id);
         let itemsBySession = {};
+        let imagesByItem = {};
         if (sessionIds.length > 0) {
             const itemsRes = await db.query(
                 `SELECT
@@ -937,9 +988,30 @@ router.get('/:id/receipts', async (req, res) => {
                 if (!itemsBySession[row.session_id]) itemsBySession[row.session_id] = [];
                 itemsBySession[row.session_id].push(row);
             }
+
+            const itemIds = itemsRes.rows.map(r => r.id);
+            if (itemIds.length > 0) {
+                const imagesRes = await db.query(
+                    `SELECT session_item_id, id, image_path, file_name
+                     FROM mo_receipt_session_item_images
+                     WHERE session_item_id = ANY($1::uuid[])
+                     ORDER BY created_at`,
+                    [itemIds]
+                );
+                for (const img of imagesRes.rows) {
+                    if (!imagesByItem[img.session_item_id]) imagesByItem[img.session_item_id] = [];
+                    imagesByItem[img.session_item_id].push(img);
+                }
+            }
         }
 
-        const data = sessionsRes.rows.map(s => ({ ...s, items: itemsBySession[s.id] || [] }));
+        const data = sessionsRes.rows.map(s => ({
+            ...s,
+            items: (itemsBySession[s.id] || []).map(i => ({
+                ...i,
+                images: imagesByItem[i.id] || []
+            }))
+        }));
         return res.json({ data });
     } catch (err) {
         console.error('[ManufacturerOrders] GET /:id/receipts error:', err.message);
@@ -1094,13 +1166,12 @@ router.delete('/:id/receipts/:sessionId', restrictReverse, async (req, res) => {
 // POST /api/manufacturer-orders/:id/receive
 // Partial or full receipt of goods from manufacturer.
 //
-// Body: {
-//   warehouse_id: uuid,                             (required)
-//   items: [{ manufacturer_order_item_id, variant_id, order_item_id, quantity }],
-//   pay_now:   boolean,                             (optional — pay supplier immediately)
-//   pay_amount: number,                             (required if pay_now = true)
-//   pay_notes:  string,                             (optional)
-// }
+// Body:
+//   JSON:
+//     warehouse_id, items: [...], has_supplier_invoice, tax_rate, supplier_invoice_ref, notes
+//   Multipart (for item photos):
+//     warehouse_id, items (JSON string), item_photos[] (optional)
+//     item_photos filenames must be encoded as: item-{idx}-{seq}-{originalName}
 //
 // Accounting entries on RECEIPT:
 //   DR  Inventory Asset       (value of goods received)
@@ -1120,24 +1191,43 @@ const ACCOUNT_PAYABLE    = '3e118831-0022-47de-acfe-b06a1cd8b9d2'; // Accounts P
 const ACCOUNT_BANK       = 'c715d163-4bd7-41f4-8251-dcd8fed13297'; // Bank Accounts
 const ACCOUNT_VAT_INPUT  = 'a1b2c3d4-5678-9abc-def0-111222333444'; // VAT Input (Receivable)
 
-router.post('/:id/receive', restrictReceive, validateBody(manufacturerOrderReceive), async (req, res) => {
+router.post('/:id/receive', restrictReceive, maybeReceiptPhotos, async (req, res) => {
     const { id } = req.params;
+
+    // Support both JSON and multipart requests.
+    let body = req.body || {};
+    if (typeof body === 'string') {
+        try { body = JSON.parse(body); } catch (_e) { body = {}; }
+    }
+    if (body.items && typeof body.items === 'string') {
+        try { body.items = JSON.parse(body.items); } catch (_e) { body.items = null; }
+    }
+
     const {
         warehouse_id, items,
-        has_supplier_invoice = false,
+        has_supplier_invoice: _hasSupplierInvoice = false,
         tax_rate = 0, supplier_invoice_ref = '', notes = '',
         pay_now = false, pay_amount = 0, pay_notes = ''
-    } = req.validatedBody;
+    } = body;
+
+    const has_supplier_invoice = _hasSupplierInvoice === true || _hasSupplierInvoice === 'true';
+    const _payNow = pay_now === true || pay_now === 'true';
 
     if (!warehouse_id) {
+        cleanupMultipartFiles(req);
         return res.status(400).json({ error: 'warehouse_id مطلوب.' });
     }
     if (!items || !Array.isArray(items) || items.length === 0) {
+        cleanupMultipartFiles(req);
         return res.status(400).json({ error: 'items array مطلوب.' });
     }
-    if (pay_now && (!pay_amount || parseFloat(pay_amount) <= 0)) {
+    if (_payNow && (!pay_amount || parseFloat(pay_amount) <= 0)) {
+        cleanupMultipartFiles(req);
         return res.status(400).json({ error: 'أدخل مبلغ الدفع.' });
     }
+
+    let cleanupSessionId = null;
+    let cleanupImagePaths = [];
 
     try {
         const result = await db.withTransaction(async (client) => {
@@ -1302,14 +1392,60 @@ router.post('/:id/receive', restrictReceive, validateBody(manufacturerOrderRecei
 
             // Insert session items
             for (const ii of invoiceItems) {
-                await client.query(
+                const siiRes = await client.query(
                     `INSERT INTO mo_receipt_session_items
                        (session_id, manufacturer_order_item_id, variant_id, quantity, unit_cost, line_total)
-                     VALUES ($1, $2, $3, $4, $5, $6)`,
+                     VALUES ($1, $2, $3, $4, $5, $6)
+                     RETURNING id`,
                     [sessionId, ii.manufacturer_order_item_id, ii.variant_id,
                      ii.quantity, ii.unit_cost, ii.total_cost]
                 );
+                ii.session_item_id = siiRes.rows[0].id;
             }
+
+            // ── Save receipt item photos ─────────────────────────────────────
+            if (req.files && Array.isArray(req.files) && req.files.length > 0) {
+                const sessionDir = path.join(RECEIPT_UPLOAD_BASE, sessionId);
+                fs.mkdirSync(sessionDir, { recursive: true });
+                for (const file of req.files) {
+                    const match = (file.originalname || '').match(/^item-(\d+)-/);
+                    if (!match) {
+                        if (file.path && fs.existsSync(file.path)) { try { fs.unlinkSync(file.path); } catch (_e) {} }
+                        continue;
+                    }
+                    const idx = parseInt(match[1], 10);
+                    const invoiceItem = invoiceItems[idx];
+                    if (!invoiceItem || !invoiceItem.session_item_id || !file.path) {
+                        if (file.path && fs.existsSync(file.path)) { try { fs.unlinkSync(file.path); } catch (_e) {} }
+                        continue;
+                    }
+
+                    const ext = path.extname(file.originalname || '.jpg');
+                    const finalName = `item-${idx}-${Date.now()}${ext}`;
+                    const targetPath = path.join(sessionDir, finalName);
+
+                    try {
+                        fs.copyFileSync(file.path, targetPath);
+                        fs.unlinkSync(file.path);
+                    } catch (moveErr) {
+                        console.error('[ManufacturerOrders] photo copy error:', moveErr.message);
+                        cleanupMultipartFiles(req);
+                        throw new Error('فشل حفظ صور الاستلام، تم إلغاء العملية.');
+                    }
+
+                    cleanupImagePaths.push(targetPath);
+
+                    const imagePath = `/uploads/mo-receipts/${sessionId}/${finalName}`;
+                    await client.query(
+                        `INSERT INTO mo_receipt_session_item_images
+                           (session_item_id, image_path, file_name, created_by)
+                         VALUES ($1, $2, $3, $4)`,
+                        [invoiceItem.session_item_id, imagePath, finalName, req.user?.id || null]
+                    );
+                }
+            }
+
+            cleanupSessionId = sessionId;
 
             // ── 5. Create Purchase Invoice (DRAFT — manager will set prices and approve) ──
             let purchaseInvoiceId = null;
@@ -1402,7 +1538,7 @@ router.post('/:id/receive', restrictReceive, validateBody(manufacturerOrderRecei
                 console.error('[ManufacturerOrders] Outbox write error:', outboxErr.message);
             }
 
-            return { newStatus, purchaseInvoiceId, invoiceNumber };
+            return { newStatus, purchaseInvoiceId, invoiceNumber, sessionId };
         });
 
         return res.status(200).json({
@@ -1412,6 +1548,14 @@ router.post('/:id/receive', restrictReceive, validateBody(manufacturerOrderRecei
             data: result,
         });
     } catch (err) {
+        // Rollback happened in withTransaction. Clean up any files already moved to disk.
+        for (const p of cleanupImagePaths) {
+            try { fs.unlinkSync(p); } catch (_e) {}
+        }
+        if (cleanupSessionId) {
+            try { fs.rmSync(path.join(RECEIPT_UPLOAD_BASE, cleanupSessionId), { recursive: true, force: true }); } catch (_e) {}
+        }
+        cleanupMultipartFiles(req);
         console.error('[ManufacturerOrders] POST /:id/receive error:', err.message);
         return res.status(400).json({ error: err.message || 'Internal server error.' });
     }

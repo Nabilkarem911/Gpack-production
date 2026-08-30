@@ -234,11 +234,27 @@
                                data-order-item-id="${item.order_item_id || ''}"
                                data-variant-id="${item.variant_id || ''}"
                                data-rem-qty="${remQty}"
+                               data-row-idx="${idx}"
                                value="" min="1" max="${remQty}"
                                placeholder="—"
                                ${remQty === 0 ? 'disabled' : ''}
                                oninput="window.rvUpdateRowState(this)"
                                class="w-20 px-2 py-1 border border-slate-200 rounded-lg text-center text-xs focus:border-brand-500 outline-none">
+                    </td>
+                    <td class="py-2.5 px-3 text-center">
+                        <input type="file" accept="image/*" multiple
+                               id="rv-receive-photo-${idx}"
+                               data-rv-photo
+                               data-row-idx="${idx}"
+                               ${remQty === 0 ? 'disabled' : ''}
+                               onchange="window.rvOnPhotoChange(this)"
+                               class="hidden">
+                        <button type="button" onclick="document.getElementById('rv-receive-photo-${idx}').click()"
+                                class="w-8 h-8 inline-flex items-center justify-center rounded-lg bg-slate-50 border border-slate-200 text-slate-400 hover:text-brand-600 hover:border-brand-300 transition-all"
+                                title="إرفاق صور للصنف">
+                            <i class="fa-solid fa-camera text-xs"></i>
+                        </button>
+                        <span id="rv-receive-photo-count-${idx}" class="block text-[10px] text-slate-400 mt-0.5 hidden">0</span>
                     </td>
                     <td class="py-2.5 px-3 text-center">
                         <input type="checkbox" ${remQty === 0 ? 'disabled' : ''}
@@ -247,7 +263,7 @@
                                onchange="window.rvToggleFull(this)">
                     </td>
                     <td class="py-2.5 px-3 text-center">
-                        <input type="checkbox" ${remQty === 0 ? 'disabled' : ''}
+                        <input type="checkbox" data-rv-invoice ${remQty === 0 ? 'disabled' : ''}
                                class="w-4 h-4 text-amber-500 rounded" title="جاية بفاتورة">
                     </td>
                 </tr>`;
@@ -256,7 +272,7 @@
         }
 
         _el('rv-receive-items').innerHTML = html ||
-            '<tr><td colspan="7" class="py-8 text-center text-slate-400 text-xs">لا توجد أصناف</td></tr>';
+            '<tr><td colspan="8" class="py-8 text-center text-slate-400 text-xs">لا توجد أصناف</td></tr>';
 
         rvUpdateSummary();
         openModal('rv-receive-modal');
@@ -289,7 +305,7 @@
             const qtyInput = row.querySelector('input[type="number"]');
             const fullChk  = row.querySelectorAll('input[type="checkbox"]')[0];
             if (!qtyInput || qtyInput.disabled) return;
-            qtyInput.value = 0;
+            qtyInput.value = '';
             if (fullChk) fullChk.checked = false;
             row.classList.remove('bg-emerald-50', 'bg-amber-50');
         });
@@ -331,6 +347,16 @@
         rvUpdateSummary();
     };
 
+    window.rvOnPhotoChange = function (input) {
+        const idx  = input.dataset.rowIdx;
+        const cnt  = input.files ? input.files.length : 0;
+        const span = _el(`rv-receive-photo-count-${idx}`);
+        if (span) {
+            span.textContent = cnt;
+            span.classList.toggle('hidden', cnt === 0);
+        }
+    };
+
     function rvUpdateSummary() {
         const rows = _el('rv-receive-items').querySelectorAll('tr');
         let full = 0, partial = 0, none = 0;
@@ -368,7 +394,8 @@
 
         rows.forEach(row => {
             const qtyInput = row.querySelector('input[type="number"]');
-            const invCheck = row.querySelector('input[type="checkbox"]');
+            const invCheck = row.querySelector('[data-rv-invoice]');
+            const photoInput = row.querySelector('[data-rv-photo]');
             if (!qtyInput || qtyInput.disabled) return;
 
             const qty        = parseFloat(qtyInput.value) || 0;
@@ -377,15 +404,19 @@
             const variantId  = qtyInput.dataset.variantId;
             const moId       = qtyInput.dataset.moId;
             const hasInvoice = invCheck?.checked || false;
+            const files      = photoInput ? Array.from(photoInput.files) : [];
 
             if (qty > 0 && moItemId && variantId && variantId !== 'undefined' && moId) {
                 if (!itemsByMO[moId]) { itemsByMO[moId] = []; moInvoice[moId] = false; }
+                const idx = itemsByMO[moId].length;
                 itemsByMO[moId].push({
                     manufacturer_order_item_id: moItemId,
                     order_item_id: oItemId || null,
                     variant_id:    variantId,
                     quantity:      qty,
-                    has_supplier_invoice: hasInvoice
+                    has_supplier_invoice: hasInvoice,
+                    _idx:          idx,
+                    _files:        files
                 });
                 if (hasInvoice) moInvoice[moId] = true;
             }
@@ -400,15 +431,27 @@
 
         try {
             for (const [moId, moItems] of Object.entries(itemsByMO)) {
-                await window.apiFetch('/api/manufacturer-orders/' + moId + '/receive', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        warehouse_id:         warehouseId,
-                        items:                moItems,
-                        has_supplier_invoice: moInvoice[moId],
-                        notes:                notes
-                    })
+                const formData = new FormData();
+                formData.append('warehouse_id', warehouseId);
+                formData.append('has_supplier_invoice', String(moInvoice[moId]));
+                formData.append('notes', notes);
+                formData.append('items', JSON.stringify(moItems.map(({ _idx, _files, ...rest }) => rest)));
+
+                moItems.forEach((it, idx) => {
+                    (it._files || []).forEach((f, i) => {
+                        formData.append('item_photos', f, `item-${idx}-${i}-${f.name}`);
+                    });
                 });
+
+                const res = await fetch('/api/manufacturer-orders/' + moId + '/receive', {
+                    method: 'POST',
+                    body: formData,
+                    credentials: 'include'
+                });
+                if (!res.ok) {
+                    const errData = await res.json().catch(() => ({}));
+                    throw new Error(errData.error || `خطأ في اعتماد الاستلام (${res.status})`);
+                }
             }
             window.showToast('تم اعتماد الاستلام بنجاح ✓', 'success');
             window.rvCloseReceiveModal();
@@ -513,12 +556,16 @@
                     ? `<span class="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded-lg font-bold"><i class="fa-solid fa-file-invoice ml-1"></i>بفاتورة</span>${s.supplier_invoice_ref ? `<span class="text-xs text-slate-500 font-mono">(${esc(s.supplier_invoice_ref)})</span>` : ''}`
                     : '<span class="text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-lg font-bold"><i class="fa-solid fa-file-circle-xmark ml-1"></i>بدون فاتورة</span>';
 
-                const itemsHtml = (s.items || []).map(i =>
-                    `<div class="flex justify-between text-xs py-1.5 border-b border-slate-100 last:border-0">
+                const itemsHtml = (s.items || []).map(i => {
+                    const photoCount = (i.images || []).length;
+                    const photoBadge = photoCount > 0
+                        ? `<span class="text-brand-600 text-[10px] font-bold" title="${photoCount} صورة"><i class="fa-solid fa-camera ml-0.5"></i>${photoCount}</span>`
+                        : '';
+                    return `<div class="flex justify-between items-center text-xs py-1.5 border-b border-slate-100 last:border-0">
                         <span class="text-slate-700">${esc(i.product_name || '—')} ${esc(i.size_name || '')}</span>
-                        <span class="font-bold text-slate-800">${i.quantity} قطعة</span>
-                    </div>`
-                ).join('');
+                        <span class="font-bold text-slate-800 flex items-center gap-2">${i.quantity} قطعة ${photoBadge}</span>
+                    </div>`;
+                }).join('');
 
                 return `
                 <div class="bg-white border border-slate-200 rounded-2xl p-5 ${isReversed ? 'opacity-60' : ''} shadow-sm">
@@ -597,15 +644,23 @@
             sub.textContent = 'جلسة #' + (session.session_number || '—') + ' — ' + (session.warehouse_name || '—');
 
             const isReversed = session.status === 'reversed';
-            const itemsHtml = (session.items || []).map(i =>
-                `<tr class="border-b border-slate-100">
+            const itemsHtml = (session.items || []).map(i => {
+                const images = (i.images || []).map(img =>
+                    `<a href="${esc(img.image_path)}" target="_blank" class="inline-block w-9 h-9 rounded-lg border border-slate-200 overflow-hidden hover:opacity-90" title="عرض الصورة">
+                        <img src="${esc(img.image_path)}" class="w-full h-full object-cover" alt="" />
+                    </a>`
+                ).join('');
+                return `<tr class="border-b border-slate-100">
                     <td class="py-2.5 px-3 text-xs font-medium text-slate-700">${esc(i.product_name || '—')} ${esc(i.size_name || '')}</td>
                     <td class="py-2.5 px-3 text-center text-xs font-bold text-slate-800">${i.quantity}</td>
                     <td class="py-2.5 px-3 text-center text-xs ${i.has_supplier_invoice ? 'text-blue-600 font-bold' : 'text-slate-400'}">
                         ${i.has_supplier_invoice ? '<i class="fa-solid fa-file-invoice"></i> نعم' : '—'}
                     </td>
-                </tr>`
-            ).join('');
+                    <td class="py-2.5 px-3 text-center">
+                        ${images ? `<div class="flex items-center justify-center gap-1 flex-wrap">${images}</div>` : '—'}
+                    </td>
+                </tr>`;
+            }).join('');
 
             body.innerHTML = `
                 <div class="grid grid-cols-2 gap-3 bg-slate-50 rounded-xl p-4">
@@ -648,9 +703,10 @@
                                     <th class="py-2 px-3 text-right">المنتج</th>
                                     <th class="py-2 px-3 text-center">الكمية</th>
                                     <th class="py-2 px-3 text-center">فاتورة</th>
+                                    <th class="py-2 px-3 text-center">صور</th>
                                 </tr>
                             </thead>
-                            <tbody>${itemsHtml || '<tr><td colspan="3" class="py-6 text-center text-slate-400 text-xs">لا توجد أصناف</td></tr>'}</tbody>
+                            <tbody>${itemsHtml || '<tr><td colspan="4" class="py-6 text-center text-slate-400 text-xs">لا توجد أصناف</td></tr>'}</tbody>
                         </table>
                     </div>
                 </div>
@@ -678,13 +734,15 @@
     window.rvPrintSession = function () {
         if (!_currentSession) return;
         const s = _currentSession;
-        const items = (s.items || []).map(i =>
-            `<tr>
+        const items = (s.items || []).map(i => {
+            const photoCount = (i.images || []).length;
+            return `<tr>
                 <td style="padding:8px;border:1px solid #ddd;font-size:12px;">${esc(i.product_name || '—')} ${esc(i.size_name || '')}</td>
                 <td style="padding:8px;border:1px solid #ddd;text-align:center;font-size:12px;font-weight:bold;">${i.quantity}</td>
                 <td style="padding:8px;border:1px solid #ddd;text-align:center;font-size:12px;">${i.has_supplier_invoice ? 'نعم' : '—'}</td>
-            </tr>`
-        ).join('');
+                <td style="padding:8px;border:1px solid #ddd;text-align:center;font-size:12px;">${photoCount > 0 ? photoCount + ' صورة' : '—'}</td>
+            </tr>`;
+        }).join('');
 
         const w = window.open('', '_blank', 'width=800,height=600');
         w.document.write(`
@@ -708,8 +766,9 @@
                         <th style="padding:8px;border:1px solid #ddd;font-size:12px;text-align:right;">المنتج</th>
                         <th style="padding:8px;border:1px solid #ddd;font-size:12px;text-align:center;">الكمية</th>
                         <th style="padding:8px;border:1px solid #ddd;font-size:12px;text-align:center;">فاتورة</th>
+                        <th style="padding:8px;border:1px solid #ddd;font-size:12px;text-align:center;">صور</th>
                     </tr></thead>
-                    <tbody>${items || '<tr><td colspan=\"3\" style=\"padding:15px;text-align:center;color:#999;\">لا توجد أصناف</td></tr>'}</tbody>
+                    <tbody>${items || '<tr><td colspan=\"4\" style=\"padding:15px;text-align:center;color:#999;\">لا توجد أصناف</td></tr>'}</tbody>
                 </table>
                 <p style="margin-top:30px;font-size:11px;color:#94a3b8;text-align:center;">تم إنشاء هذا السند بواسطة نظام G.PACK 2.0</p>
             </body></html>`
@@ -992,19 +1051,34 @@
                                data-item-id="${item.id}"
                                data-order-item-id="${item.order_item_id || ''}"
                                data-variant-id="${item.variant_id || ''}"
+                               data-row-idx="${idx}"
                                value="" min="1" max="${remQty}"
                                placeholder="—"
                                class="w-20 px-2 py-1.5 border border-slate-200 rounded-lg text-center text-xs focus:border-brand-500 outline-none">
                     </td>
                     <td class="py-2.5 px-3 text-center">
-                        <input type="checkbox" id="rv-mo-inv-${idx}" class="w-4 h-4 text-amber-500 rounded" title="جاية بفاتورة">
+                        <input type="file" accept="image/*" multiple
+                               id="rv-mo-photo-${idx}"
+                               data-rv-photo
+                               data-row-idx="${idx}"
+                               onchange="window.rvOnPhotoChange(this)"
+                               class="hidden">
+                        <button type="button" onclick="document.getElementById('rv-mo-photo-${idx}').click()"
+                                class="w-8 h-8 inline-flex items-center justify-center rounded-lg bg-slate-50 border border-slate-200 text-slate-400 hover:text-brand-600 hover:border-brand-300 transition-all"
+                                title="إرفاق صور للصنف">
+                            <i class="fa-solid fa-camera text-xs"></i>
+                        </button>
+                        <span id="rv-receive-photo-count-${idx}" class="block text-[10px] text-slate-400 mt-0.5 hidden">0</span>
+                    </td>
+                    <td class="py-2.5 px-3 text-center">
+                        <input type="checkbox" id="rv-mo-inv-${idx}" data-rv-invoice class="w-4 h-4 text-amber-500 rounded" title="جاية بفاتورة">
                     </td>
                 </tr>`;
                 idx++;
             }
         }
         _el('rv-mo-modal-items').innerHTML = html ||
-            '<tr><td colspan="6" class="py-8 text-center text-slate-400 text-xs">لا توجد أصناف</td></tr>';
+            '<tr><td colspan="7" class="py-8 text-center text-slate-400 text-xs">لا توجد أصناف</td></tr>';
 
         const m = _el('rv-mo-modal');
         m.style.display = 'flex';
@@ -1032,7 +1106,8 @@
 
         rows.forEach((row) => {
             const qtyInput = row.querySelector('input[type="number"]');
-            const invCheck = row.querySelector('input[type="checkbox"]');
+            const invCheck = row.querySelector('[data-rv-invoice]');
+            const photoInput = row.querySelector('[data-rv-photo]');
             if (!qtyInput) return;
 
             const qty          = parseFloat(qtyInput.value) || 0;
@@ -1041,15 +1116,19 @@
             const variantId    = qtyInput.dataset.variantId;
             const moId         = qtyInput.dataset.moId;
             const hasInvoice   = invCheck?.checked || false;
+            const files        = photoInput ? Array.from(photoInput.files) : [];
 
             if (qty > 0 && moItemId && moItemId !== 'undefined' && variantId && variantId !== 'undefined' && moId) {
                 if (!itemsByMO[moId]) { itemsByMO[moId] = []; moHasInvoice[moId] = false; }
+                const idx = itemsByMO[moId].length;
                 itemsByMO[moId].push({
                     manufacturer_order_item_id: moItemId,
                     order_item_id: orderItemId || null,
                     variant_id:    variantId,
                     quantity:      qty,
-                    has_supplier_invoice: hasInvoice
+                    has_supplier_invoice: hasInvoice,
+                    _idx:          idx,
+                    _files:        files
                 });
                 if (hasInvoice) moHasInvoice[moId] = true;
             }
@@ -1064,14 +1143,26 @@
 
         try {
             for (const [moId, moItems] of Object.entries(itemsByMO)) {
-                await window.apiFetch('/api/manufacturer-orders/' + moId + '/receive', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        warehouse_id:         warehouseId,
-                        items:                moItems,
-                        has_supplier_invoice: moHasInvoice[moId]
-                    })
+                const formData = new FormData();
+                formData.append('warehouse_id', warehouseId);
+                formData.append('has_supplier_invoice', String(moHasInvoice[moId]));
+                formData.append('items', JSON.stringify(moItems.map(({ _idx, _files, ...rest }) => rest)));
+
+                moItems.forEach((it, idx) => {
+                    (it._files || []).forEach((f, i) => {
+                        formData.append('item_photos', f, `item-${idx}-${i}-${f.name}`);
+                    });
                 });
+
+                const res = await fetch('/api/manufacturer-orders/' + moId + '/receive', {
+                    method: 'POST',
+                    body: formData,
+                    credentials: 'include'
+                });
+                if (!res.ok) {
+                    const errData = await res.json().catch(() => ({}));
+                    throw new Error(errData.error || `خطأ في اعتماد الاستلام (${res.status})`);
+                }
             }
             window.showToast('تم اعتماد الاستلام بنجاح', 'success');
             rvCloseMOModal();
