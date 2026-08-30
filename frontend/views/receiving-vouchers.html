@@ -52,6 +52,22 @@
     </div>
 </div>
 
+<!-- Active Search -->
+<div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 mb-5">
+    <div class="flex items-center gap-2">
+        <div class="relative flex-1">
+            <i class="fa-solid fa-magnifying-glass absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+            <input id="rv-active-search" type="text" oninput="window.rvSearchActive()"
+                   placeholder="بحث باسم العميل أو رقم الطلب أو الصنف..."
+                   class="w-full pr-10 pl-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-brand-500 outline-none" />
+        </div>
+        <button onclick="window.rvClearActiveSearch()"
+                class="w-10 h-10 flex items-center justify-center rounded-xl bg-white border border-slate-200 text-slate-500 hover:text-brand-600 hover:border-brand-300 transition-colors">
+            <i class="fa-solid fa-xmark"></i>
+        </button>
+    </div>
+</div>
+
 <!-- Loading -->
 <div id="rv-loading"  class="bg-white rounded-2xl shadow-sm border border-slate-100 py-16 text-center mb-5">
     <i class="fa-solid fa-circle-notch fa-spin text-2xl text-brand-400 mb-3"></i>
@@ -91,8 +107,13 @@
                     class="px-3 py-2 border border-slate-200 rounded-xl text-sm text-slate-700 focus:border-brand-500 outline-none">
                 <option value="">الكل (فاتورة/بدون)</option>
                 <option value="with">بفاتورة</option>
-                <option value="without">بدون فاتورة</option>
-            </select>
+                <option value="without">بدون فاتورة</n            </select>
+            <div class="relative flex-1 min-w-[200px]">
+                <i class="fa-solid fa-magnifying-glass absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+                <input id="rv-archive-search" type="text" oninput="window.rvSearchArchive()"
+                       placeholder="بحث في الأرشيف باسم العميل أو رقم الطلب أو الصنف..."
+                       class="w-full pr-10 pl-4 py-2 border border-slate-200 rounded-xl text-sm focus:border-brand-500 outline-none" />
+            </div>
             <button onclick="window.rvLoadArchive()"
                     class="flex items-center gap-2 px-4 py-2 bg-slate-700 text-white text-sm font-bold rounded-xl hover:bg-slate-800 transition-colors">
                 <i class="fa-solid fa-filter"></i> تصفية

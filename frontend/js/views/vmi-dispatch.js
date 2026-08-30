@@ -10,6 +10,8 @@
     // ── State ─────────────────────────────────────────────────────────────────
     let _pendingNotes = [];       // delivery notes pending/partial
     let _currentDN    = null;     // selected delivery note for dispatch modal
+    let _pendingSearchQuery = '';
+    let _archiveNotes = [];
 
     // ── Helpers ───────────────────────────────────────────────────────────────
     const esc  = (s) => String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -87,9 +89,25 @@
     function _renderGrid() {
         const grid = _el('dv-notes-grid');
         if (!grid) return;
-        if (!_pendingNotes.length) { showEl('dv-empty'); return; }
+
+        let notes = _pendingNotes;
+        if (_pendingSearchQuery) {
+            const q = _pendingSearchQuery;
+            notes = notes.filter(dn =>
+                (dn.client_name || '').toLowerCase().includes(q) ||
+                (dn.parent_client_name || '').toLowerCase().includes(q) ||
+                String(dn.note_number || '').includes(q) ||
+                String(dn.order_number || '').includes(q) ||
+                (dn.items || []).some(i =>
+                    (i.product_name || '').toLowerCase().includes(q) ||
+                    (i.variant_name || '').toLowerCase().includes(q)
+                )
+            );
+        }
+
+        if (!notes.length) { showEl('dv-empty'); return; }
         hideEl('dv-empty');
-        grid.innerHTML = _pendingNotes.map(dn => {
+        grid.innerHTML = notes.map(dn => {
             const badge = dn.status === 'partial'
                 ? '<span class="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded-lg font-bold">جزئي التسليم</span>'
                 : '<span class="text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-lg font-bold">معلق</span>';
@@ -132,6 +150,19 @@
         }).join('');
         showEl('dv-notes-grid');
     }
+
+    window.dvSearchPending = function () {
+        const input = _el('dv-pending-search');
+        _pendingSearchQuery = (input?.value || '').trim().toLowerCase();
+        _renderGrid();
+    };
+
+    window.dvClearPendingSearch = function () {
+        const input = _el('dv-pending-search');
+        if (input) input.value = '';
+        _pendingSearchQuery = '';
+        _renderGrid();
+    };
 
     // ── Open dispatch modal ───────────────────────────────────────────────────
     window.dvOpenDispatchModal = async function(dnId) {
@@ -580,23 +611,46 @@
     // ── Archive ───────────────────────────────────────────────────────────────
     window.dvLoadArchive = async function() {
         const listEl  = _el('dv-archive-list');
-        const statusF = _el('dv-archive-status-filter')?.value || '';
-        const searchF = (_el('dv-archive-search')?.value || '').trim().toLowerCase();
         if (listEl) listEl.innerHTML = '';
         hideEl('dv-archive-empty'); showEl('dv-archive-loading');
         try {
             const res = await window.apiFetch('/api/delivery-notes');
-            let notes = res.data || [];
-            if (statusF) notes = notes.filter(dn => dn.status === statusF);
-            if (searchF)  notes = notes.filter(dn =>
+            _archiveNotes = res.data || [];
+            hideEl('dv-archive-loading');
+            dvFilterArchive();
+        } catch (e) { hideEl('dv-archive-loading'); window.showToast('فشل تحميل الأرشيف', 'error'); }
+    };
+
+    function dvFilterArchive() {
+        const listEl  = _el('dv-archive-list');
+        const emptyEl = _el('dv-archive-empty');
+        const statusF = _el('dv-archive-status-filter')?.value || '';
+        const searchF = (_el('dv-archive-search')?.value || '').trim().toLowerCase();
+
+        let notes = _archiveNotes;
+        if (statusF) notes = notes.filter(dn => dn.status === statusF);
+        if (searchF) {
+            notes = notes.filter(dn =>
                 (dn.client_name || '').toLowerCase().includes(searchF) ||
                 (dn.parent_client_name || '').toLowerCase().includes(searchF) ||
                 String(dn.note_number || '').includes(searchF) ||
-                String(dn.order_number || '').includes(searchF));
-            hideEl('dv-archive-loading');
-            if (!notes.length) { showEl('dv-archive-empty'); return; }
+                String(dn.order_number || '').includes(searchF) ||
+                (dn.items || []).some(i =>
+                    (i.product_name || '').toLowerCase().includes(searchF) ||
+                    (i.variant_name || '').toLowerCase().includes(searchF)
+                )
+            );
+        }
 
-            listEl.innerHTML = notes.map(dn => {
+        if (!notes.length) {
+            showEl('dv-archive-empty');
+            if (listEl) listEl.innerHTML = '';
+            return;
+        }
+        hideEl('dv-archive-empty');
+
+        if (!listEl) return;
+        listEl.innerHTML = notes.map(dn => {
                 const dnItems = Array.isArray(dn.items) ? dn.items : [];
                 const stBadge = dn.status === 'completed'
                     ? '<span class="text-xs px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-lg font-bold">مكتمل</span>'
@@ -669,8 +723,8 @@
                         : '<p class="text-xs text-slate-300 border-t border-slate-100 pt-2 mt-1">لا توجد أصناف</p>'}
                 </div>`;
             }).join('');
-        } catch (e) { hideEl('dv-archive-loading'); window.showToast('فشل تحميل الأرشيف', 'error'); }
-    };
+    }
+    window.dvFilterArchive = dvFilterArchive;
 
     // ── Show all dispatch slips for a delivery note ───────────────────────────
     window.dvShowDispatches = async function(dnId) {

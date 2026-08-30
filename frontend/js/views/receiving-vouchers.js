@@ -12,6 +12,8 @@
     let _warehouses     = [];
     let _currentGrouped = null; // الأمر المختار في modal الاستلام
     let _historyMO      = null; // الأمر المختار في modal الأرشيف
+    let _activeSearchQuery = '';
+    let _archiveSessionsCache = [];
 
     // ─────────────────────────────────────────────────────────────────────────
     // Helpers
@@ -138,8 +140,20 @@
     }
 
     function rvRenderGrid() {
-        const grouped = rvGroupByOrder();
+        let grouped = rvGroupByOrder();
         const grid    = _el('rv-mo-grid');
+
+        if (_activeSearchQuery) {
+            const q = _activeSearchQuery;
+            grouped = grouped.filter(order => {
+                const clientMatch  = (order.client_name || '').toLowerCase().includes(q);
+                const orderMatch   = (order.order_number || '').toLowerCase().includes(q);
+                const productMatch = order.allItems.some(i =>
+                    (i.product_name || '').toLowerCase().includes(q)
+                );
+                return clientMatch || orderMatch || productMatch;
+            });
+        }
 
         if (!grouped.length) {
             hideEl('rv-mo-grid');
@@ -187,6 +201,19 @@
 
         showEl('rv-mo-grid');
     }
+
+    window.rvSearchActive = function () {
+        const input = _el('rv-active-search');
+        _activeSearchQuery = (input?.value || '').trim().toLowerCase();
+        rvRenderGrid();
+    };
+
+    window.rvClearActiveSearch = function () {
+        const input = _el('rv-active-search');
+        if (input) input.value = '';
+        _activeSearchQuery = '';
+        rvRenderGrid();
+    };
 
     // ─────────────────────────────────────────────────────────────────────────
     // Modal: اعتماد الاستلام
@@ -523,101 +550,135 @@
             }
 
             hideEl('rv-archive-loading');
-
-            let filtered = allSessions;
-            if (filterStatus) {
-                filtered = filtered.filter(s => s.status === filterStatus);
-            }
-            if (filterInvoice === 'with') {
-                filtered = filtered.filter(s => s.has_supplier_invoice === true);
-            } else if (filterInvoice === 'without') {
-                filtered = filtered.filter(s => !s.has_supplier_invoice);
-            }
-
-            filtered.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-
-            if (!filtered.length) {
-                showEl('rv-archive-empty');
-                return;
-            }
-
-            listEl.innerHTML = filtered.map(s => {
-                const isReversed = s.status === 'reversed';
-                const isLocked   = s.order_locked === true;
-                const canReverse = !isReversed && !isLocked;
-
-                const statusBadge = isReversed
-                    ? '<span class="text-xs px-2 py-0.5 bg-red-100 text-red-600 rounded-lg font-bold">تم التراجع</span>'
-                    : isLocked
-                        ? '<span class="text-xs px-2 py-0.5 bg-slate-200 text-slate-600 rounded-lg font-bold">طلب مُقفل</span>'
-                        : '<span class="text-xs px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-lg font-bold">فعّال — يمكن التراجع</span>';
-
-                const invoiceBadge = s.has_supplier_invoice
-                    ? `<span class="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded-lg font-bold"><i class="fa-solid fa-file-invoice ml-1"></i>بفاتورة</span>${s.supplier_invoice_ref ? `<span class="text-xs text-slate-500 font-mono">(${esc(s.supplier_invoice_ref)})</span>` : ''}`
-                    : '<span class="text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-lg font-bold"><i class="fa-solid fa-file-circle-xmark ml-1"></i>بدون فاتورة</span>';
-
-                const itemsHtml = (s.items || []).map(i => {
-                    const photoCount = (i.images || []).length;
-                    const photoBadge = photoCount > 0
-                        ? `<span class="text-brand-600 text-[10px] font-bold" title="${photoCount} صورة"><i class="fa-solid fa-camera ml-0.5"></i>${photoCount}</span>`
-                        : '';
-                    return `<div class="flex justify-between items-center text-xs py-1.5 border-b border-slate-100 last:border-0">
-                        <span class="text-slate-700">${esc(i.product_name || '—')} ${esc(i.size_name || '')}</span>
-                        <span class="font-bold text-slate-800 flex items-center gap-2">${i.quantity} قطعة ${photoBadge}</span>
-                    </div>`;
-                }).join('');
-
-                return `
-                <div class="bg-white border border-slate-200 rounded-2xl p-5 ${isReversed ? 'opacity-60' : ''} shadow-sm">
-                    <div class="flex flex-wrap justify-between items-start gap-2 mb-3">
-                        <div class="flex-1 min-w-0">
-                            <div class="flex items-center gap-2 flex-wrap mb-2">
-                                ${statusBadge}
-                                <span class="text-sm font-black text-slate-800">جلسة #${s.session_number}</span>
-                                ${invoiceBadge}
-                            </div>
-                            <div class="flex items-center gap-2 mb-1">
-                                <div class="w-8 h-8 rounded-lg bg-brand-100 flex items-center justify-center flex-shrink-0">
-                                    <i class="fa-solid fa-user text-brand-600 text-xs"></i>
-                                </div>
-                                <p class="text-sm font-bold text-slate-800 truncate">${esc(s.client_name)}</p>
-                            </div>
-                            <p class="text-xs text-slate-500 mt-1">
-                                <i class="fa-solid fa-hashtag ml-0.5"></i> طلب #${esc(String(s.order_number))} • ${esc(s.mo_number)}
-                            </p>
-                            <p class="text-xs text-slate-400">
-                                <i class="fa-solid fa-calendar-day ml-0.5"></i> ${fmtD(s.received_date)} • 
-                                <i class="fa-solid fa-warehouse ml-0.5"></i> ${esc(s.warehouse_name || '—')}
-                                ${s.created_by_name ? ' • <i class="fa-solid fa-user-pen ml-0.5"></i> ' + esc(s.created_by_name) : ''}
-                            </p>
-                        </div>
-                        <div class="flex flex-col gap-2 flex-shrink-0">
-                            <button onclick="window.rvOpenSessionModal('${s._moId}','${s.id}')"
-                                    class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-brand-600 border border-brand-200 rounded-xl hover:bg-brand-50 transition-colors">
-                                <i class="fa-solid fa-eye"></i>عرض
-                            </button>
-                            ${canReverse
-                                ? `<button onclick="window.rvReverseSession('${s._moId}','${s.id}','${s.session_number}')"
-                                           class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-red-600 border border-red-200 rounded-xl hover:bg-red-50 transition-colors">
-                                   <i class="fa-solid fa-rotate-left"></i>تراجع
-                               </button>`
-                                : isLocked
-                                    ? `<span class="text-xs text-slate-500 text-center">ممنوع — <strong>${esc(s.order_status)}</strong></span>`
-                                    : ''}
-                        </div>
-                    </div>
-                    ${itemsHtml
-                        ? `<div class="bg-slate-50 rounded-xl px-3 py-1">${itemsHtml}</div>`
-                        : ''}
-                    ${isReversed && s.reversed_at
-                        ? `<p class="text-xs text-red-400 mt-2"><i class="fa-solid fa-rotate-left ml-1"></i>تم التراجع: ${fmtD(s.reversed_at)}${s.reversed_by_name ? ' — ' + esc(s.reversed_by_name) : ''}</p>`
-                        : ''}
-                </div>`;
-            }).join('');
-
+            _archiveSessionsCache = allSessions;
+            rvFilterArchive();
         } catch (e) {
             hideEl('rv-archive-loading');
             listEl.innerHTML = `<p class="text-center text-red-500 text-sm py-8">فشل تحميل الأرشيف: ${esc(e.message)}</p>`;
+        }
+    };
+
+    function rvFilterArchive() {
+        const listEl  = _el('rv-archive-list');
+        const emptyEl = _el('rv-archive-empty');
+        const filterStatus  = _el('rv-archive-status-filter')?.value || '';
+        const filterInvoice = _el('rv-archive-invoice-filter')?.value || '';
+        const searchQuery   = (_el('rv-archive-search')?.value || '').trim().toLowerCase();
+
+        let filtered = _archiveSessionsCache;
+        if (filterStatus) {
+            filtered = filtered.filter(s => s.status === filterStatus);
+        }
+        if (filterInvoice === 'with') {
+            filtered = filtered.filter(s => s.has_supplier_invoice === true);
+        } else if (filterInvoice === 'without') {
+            filtered = filtered.filter(s => !s.has_supplier_invoice);
+        }
+        if (searchQuery) {
+            filtered = filtered.filter(s =>
+                (s.client_name || '').toLowerCase().includes(searchQuery) ||
+                (s.order_number || '').toLowerCase().includes(searchQuery) ||
+                (s.mo_number || '').toLowerCase().includes(searchQuery) ||
+                (s.warehouse_name || '').toLowerCase().includes(searchQuery) ||
+                (s.supplier_invoice_ref || '').toLowerCase().includes(searchQuery) ||
+                (s.items || []).some(i =>
+                    (i.product_name || '').toLowerCase().includes(searchQuery) ||
+                    (i.size_name || '').toLowerCase().includes(searchQuery)
+                )
+            );
+        }
+
+        filtered.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+        if (!filtered.length) {
+            showEl('rv-archive-empty');
+            if (listEl) listEl.innerHTML = '';
+            return;
+        }
+
+        hideEl('rv-archive-empty');
+
+        if (!listEl) return;
+        listEl.innerHTML = filtered.map(s => {
+            const isReversed = s.status === 'reversed';
+            const isLocked   = s.order_locked === true;
+            const canReverse = !isReversed && !isLocked;
+
+            const statusBadge = isReversed
+                ? '<span class="text-xs px-2 py-0.5 bg-red-100 text-red-600 rounded-lg font-bold">تم التراجع</span>'
+                : isLocked
+                    ? '<span class="text-xs px-2 py-0.5 bg-slate-200 text-slate-600 rounded-lg font-bold">طلب مُقفل</span>'
+                    : '<span class="text-xs px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-lg font-bold">فعّال — يمكن التراجع</span>';
+
+            const invoiceBadge = s.has_supplier_invoice
+                ? `<span class="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded-lg font-bold"><i class="fa-solid fa-file-invoice ml-1"></i>بفاتورة</span>${s.supplier_invoice_ref ? `<span class="text-xs text-slate-500 font-mono">(${esc(s.supplier_invoice_ref)})</span>` : ''}`
+                : '<span class="text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-lg font-bold"><i class="fa-solid fa-file-circle-xmark ml-1"></i>بدون فاتورة</span>';
+
+            const itemsHtml = (s.items || []).map(i => {
+                const photoCount = (i.images || []).length;
+                const photoBadge = photoCount > 0
+                    ? `<span class="text-brand-600 text-[10px] font-bold" title="${photoCount} صورة"><i class="fa-solid fa-camera ml-0.5"></i>${photoCount}</span>`
+                    : '';
+                return `<div class="flex justify-between items-center text-xs py-1.5 border-b border-slate-100 last:border-0">
+                    <span class="text-slate-700">${esc(i.product_name || '—')} ${esc(i.size_name || '')}</span>
+                    <span class="font-bold text-slate-800 flex items-center gap-2">${i.quantity} قطعة ${photoBadge}</span>
+                </div>`;
+            }).join('');
+
+            return `
+            <div class="bg-white border border-slate-200 rounded-2xl p-5 ${isReversed ? 'opacity-60' : ''} shadow-sm">
+                <div class="flex flex-wrap justify-between items-start gap-2 mb-3">
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2 flex-wrap mb-2">
+                            ${statusBadge}
+                            <span class="text-sm font-black text-slate-800">جلسة #${s.session_number}</span>
+                            ${invoiceBadge}
+                        </div>
+                        <div class="flex items-center gap-2 mb-1">
+                            <div class="w-8 h-8 rounded-lg bg-brand-100 flex items-center justify-center flex-shrink-0">
+                                <i class="fa-solid fa-user text-brand-600 text-xs"></i>
+                            </div>
+                            <p class="text-sm font-bold text-slate-800 truncate">${esc(s.client_name)}</p>
+                        </div>
+                        <p class="text-xs text-slate-500 mt-1">
+                            <i class="fa-solid fa-hashtag ml-0.5"></i> طلب #${esc(String(s.order_number))} • ${esc(s.mo_number)}
+                        </p>
+                        <p class="text-xs text-slate-400">
+                            <i class="fa-solid fa-calendar-day ml-0.5"></i> ${fmtD(s.received_date)} • 
+                            <i class="fa-solid fa-warehouse ml-0.5"></i> ${esc(s.warehouse_name || '—')}
+                            ${s.created_by_name ? ' • <i class="fa-solid fa-user-pen ml-0.5"></i> ' + esc(s.created_by_name) : ''}
+                        </p>
+                    </div>
+                    <div class="flex flex-col gap-2 flex-shrink-0">
+                        <button onclick="window.rvOpenSessionModal('${s._moId}','${s.id}')"
+                                class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-brand-600 border border-brand-200 rounded-xl hover:bg-brand-50 transition-colors">
+                            <i class="fa-solid fa-eye"></i>عرض
+                        </button>
+                        ${canReverse
+                            ? `<button onclick="window.rvReverseSession('${s._moId}','${s.id}','${s.session_number}')"
+                                       class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-red-600 border border-red-200 rounded-xl hover:bg-red-50 transition-colors">
+                               <i class="fa-solid fa-rotate-left"></i>تراجع
+                           </button>`
+                            : isLocked
+                                ? `<span class="text-xs text-slate-500 text-center">ممنوع — <strong>${esc(s.order_status)}</strong></span>`
+                                : ''}
+                    </div>
+                </div>
+                ${itemsHtml
+                    ? `<div class="bg-slate-50 rounded-xl px-3 py-1">${itemsHtml}</div>`
+                    : ''}
+                ${isReversed && s.reversed_at
+                    ? `<p class="text-xs text-red-400 mt-2"><i class="fa-solid fa-rotate-left ml-1"></i>تم التراجع: ${fmtD(s.reversed_at)}${s.reversed_by_name ? ' — ' + esc(s.reversed_by_name) : ''}</p>`
+                    : ''}
+            </div>`;
+        }).join('');
+    }
+
+    window.rvSearchArchive = function () {
+        if (!_archiveSessionsCache.length) {
+            window.rvLoadArchive();
+        } else {
+            rvFilterArchive();
         }
     };
 
