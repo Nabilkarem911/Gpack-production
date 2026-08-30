@@ -194,7 +194,19 @@
 
         <!-- Items -->
         <div class="p-6">
-            <div id="dv-edit-modal-items" class="space-y-3 max-h-[50vh] overflow-y-auto mb-4"></div>
+            <div id="dv-edit-modal-items" class="space-y-3 max-h-[40vh] overflow-y-auto mb-4"></div>
+
+            <!-- Add Item (manual notes only) -->
+            <div id="dv-edit-add-section" class="hidden border-t border-slate-100 pt-4 mb-4">
+                <label class="block text-xs font-bold text-slate-500 mb-1.5">إضافة صنف جديد</label>
+                <div class="relative">
+                    <input id="dv-edit-item-search" type="text" placeholder="ابحث عن صنف..."
+                           oninput="window.dvEditSearchItems()"
+                           class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:border-blue-500 outline-none" />
+                    <div id="dv-edit-search-results"
+                         class="hidden absolute z-10 mt-1 w-full bg-white border border-slate-200 rounded-xl shadow-lg max-h-48 overflow-y-auto"></div>
+                </div>
+            </div>
 
             <!-- Notes -->
             <div>

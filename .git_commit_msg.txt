@@ -1,0 +1,14 @@
+feat(delivery-notes): allow adding items when editing manual delivery notes
+
+- Add warehouse_id to delivery_notes table and migration 080.
+- Store warehouse_id when creating manual delivery notes.
+- Return warehouse_id in GET /api/delivery-notes/:id.
+- Update PUT /api/delivery-notes/:id to update, insert, and remove items.
+- Block new items on order-linked delivery notes.
+- Validate stock availability for newly added items.
+- Add item search UI in edit modal for manual (non-order) notes.
+- Allow removing items (existing or newly added) in edit modal.
+
+Generated with [Devin](https://devin.ai)
+
+Co-Authored-By: Devin <158243242+devin-ai-integration[bot]@users.noreply.github.com>

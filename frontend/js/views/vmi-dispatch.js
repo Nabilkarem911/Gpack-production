@@ -10,6 +10,9 @@
     // ── State ─────────────────────────────────────────────────────────────────
     let _pendingNotes = [];       // delivery notes pending/partial
     let _currentDN    = null;     // selected delivery note for dispatch modal
+    let _editDN       = null;     // selected delivery note for edit modal
+    let _editStock    = [];       // stock available for adding items in edit modal
+    let _editSelected = {};       // new items selected in edit modal
     let _pendingSearchQuery = '';
     let _archiveNotes = [];
 
@@ -222,7 +225,61 @@
     };
 
     // ── Edit delivery note ────────────────────────────────────────────────────
-    let _editDN = null;
+
+    function _renderEditItems() {
+        const container = _el('dv-edit-modal-items');
+        if (!container) return;
+
+        const existingItems = (_editDN?.items || []).filter(i => !i._removed);
+        const newItems = Object.values(_editSelected);
+        const allItems = [...existingItems, ...newItems];
+
+        if (!allItems.length) {
+            container.innerHTML = '<p class="text-sm text-slate-400 text-center py-4">لا توجد أصناف</p>';
+            return;
+        }
+
+        container.innerHTML = allItems.map(item => {
+            const isNew = !!item._isNew;
+            const removeFn = isNew
+                ? `window.dvEditRemoveNewItem('${esc(item.variant_id)}')`
+                : `window.dvEditRemoveExistingItem('${esc(item.id)}')`;
+            return `
+            <div class="bg-slate-50 rounded-xl p-3 border border-slate-200" data-edit-row-id="${esc(isNew ? 'new-' + item.variant_id : item.id)}">
+                <div class="flex justify-between items-start mb-2">
+                    <div>
+                        <p class="text-sm font-bold text-slate-800">${esc(item.product_name || item.name || '—')}</p>
+                        ${(item.variant_name || item.variant) ? `<p class="text-xs text-slate-500">${esc(item.variant_name || item.variant)}</p>` : ''}
+                    </div>
+                    <button type="button" onclick="${removeFn}"
+                            class="w-7 h-7 flex items-center justify-center text-red-400 hover:bg-red-50 rounded-lg transition-colors"
+                            title="إزالة الصنف">
+                        <i class="fa-solid fa-xmark text-sm"></i>
+                    </button>
+                </div>
+                <div class="flex items-center gap-3">
+                    <div class="flex-1">
+                        <label class="text-xs text-slate-500 block mb-1">الكمية المطلوبة</label>
+                        <input type="number" min="1" step="1" value="${item.requested_qty || item.quantity || item.qty || 0}"
+                               ${isNew ? `data-edit-new-variant-id="${esc(item.variant_id)}"` : `data-edit-item-id="${esc(item.id)}"`}
+                               class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm text-center outline-none focus:border-blue-400" />
+                    </div>
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    async function _loadEditStock() {
+        _editStock = [];
+        const dn = _editDN;
+        if (!dn || dn.order_id || !dn.client_id) return;
+
+        const whId = dn.warehouse_id || '';
+        try {
+            const res = await window.apiFetch('/api/inventory/stock?client_id=' + dn.client_id + (whId ? '&warehouse_id=' + whId : ''));
+            _editStock = (res.data || []).filter(s => parseFloat(s.available_qty || s.qty_on_hand || s.quantity || 0) > 0);
+        } catch (e) { _editStock = []; }
+    }
 
     window.dvOpenEditModal = async function(dnId) {
         try {
@@ -233,38 +290,102 @@
                 window.showToast('يمكن تعديل سندات التسليم في حالة "معلق" فقط', 'error');
                 return;
             }
+
+            // Reset new item selection
+            _editSelected = {};
+            if (_editDN.items) _editDN.items.forEach(i => { i._removed = false; });
+
             const dn = _editDN;
             const sub = _el('dv-edit-modal-subtitle');
             if (sub) sub.textContent = `سند تسليم #${dn.note_number || '—'} — ${_clientDisplay(dn)} — طلب #${dn.order_number || '—'}`;
-            const container = _el('dv-edit-modal-items');
-            if (container) {
-                container.innerHTML = (dn.items || []).map(item => {
-                    return `
-                    <div class="bg-slate-50 rounded-xl p-3 border border-slate-200">
-                        <div class="flex justify-between items-start mb-2">
-                            <div>
-                                <p class="text-sm font-bold text-slate-800">${esc(item.product_name || '—')}</p>
-                                ${item.variant_name ? `<p class="text-xs text-slate-500">${esc(item.variant_name)}</p>` : ''}
-                            </div>
-                        </div>
-                        <div class="flex items-center gap-3">
-                            <div class="flex-1">
-                                <label class="text-xs text-slate-500 block mb-1">الكمية المطلوبة</label>
-                                <input type="number" min="1" step="1" value="${item.requested_qty || item.quantity || 0}"
-                                       data-edit-item-id="${esc(item.id)}"
-                                       class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm text-center outline-none focus:border-blue-400" />
-                            </div>
-                        </div>
-                    </div>`;
-                }).join('') || '<p class="text-sm text-slate-400 text-center py-4">لا توجد أصناف</p>';
-            }
+
+            const addSection = _el('dv-edit-add-section');
+            const searchInp  = _el('dv-edit-item-search');
+            const resultsDiv = _el('dv-edit-search-results');
+
+            // Show add-item search only for manual (non-order) notes
+            if (addSection) addSection.classList.toggle('hidden', !!dn.order_id);
+            if (searchInp) { searchInp.disabled = !!dn.order_id; searchInp.value = ''; }
+            if (resultsDiv) resultsDiv.classList.add('hidden');
+
+            await _loadEditStock();
+            _renderEditItems();
+
             const notesEl = _el('dv-edit-modal-notes');
             if (notesEl) notesEl.value = dn.notes || '';
             openModal('dv-edit-modal');
         } catch (e) { window.showToast('خطأ في تحميل البيانات', 'error'); }
     };
 
-    window.dvCloseEditModal = function() { closeModalEl('dv-edit-modal'); _editDN = null; };
+    window.dvCloseEditModal = function() { closeModalEl('dv-edit-modal'); _editDN = null; _editSelected = {}; _editStock = []; };
+
+    window.dvEditSearchItems = function() {
+        const query = (_el('dv-edit-item-search')?.value || '').trim().toLowerCase();
+        const resultsDiv = _el('dv-edit-search-results');
+        if (!resultsDiv) return;
+        if (!query || query.length < 1) { resultsDiv.classList.add('hidden'); return; }
+
+        const existingVariantIds = new Set((_editDN?.items || []).filter(i => !i._removed).map(i => i.variant_id).filter(Boolean));
+        Object.keys(_editSelected).forEach(vid => existingVariantIds.add(vid));
+
+        const matches = _editStock.filter(s => {
+            if (existingVariantIds.has(s.variant_id)) return false;
+            const name = (s.product_name || '').toLowerCase();
+            const variant = (s.variant_size || s.variant_name || s.size_name || '').toLowerCase();
+            const sku = (s.variant_sku || '').toLowerCase();
+            return name.includes(query) || variant.includes(query) || sku.includes(query);
+        }).slice(0, 10);
+
+        if (!matches.length) {
+            resultsDiv.innerHTML = '<p class="px-3 py-2 text-sm text-slate-400">لا توجد نتائج</p>';
+            resultsDiv.classList.remove('hidden');
+            return;
+        }
+
+        resultsDiv.innerHTML = matches.map(s => {
+            const avail = parseFloat(s.available_qty || s.qty_on_hand || s.quantity || 0);
+            return `
+            <div onclick="window.dvEditAddItem('${esc(s.variant_id)}')"
+                 class="px-3 py-2 cursor-pointer hover:bg-blue-50 border-b border-slate-100">
+                <span class="text-sm font-bold text-slate-800">${esc(s.product_name || '—')}</span>
+                <span class="text-xs text-slate-500"> ${esc(s.variant_size || s.variant_name || s.size_name || '')}</span>
+                <span class="text-xs text-emerald-600 font-bold"> (متاح: ${avail})</span>
+            </div>`;
+        }).join('');
+        resultsDiv.classList.remove('hidden');
+    };
+
+    window.dvEditAddItem = function(variantId) {
+        const s = _editStock.find(x => x.variant_id === variantId);
+        if (!s || _editSelected[variantId]) return;
+        const avail = parseFloat(s.available_qty || s.qty_on_hand || s.quantity || 0);
+        _editSelected[variantId] = {
+            _isNew: true,
+            variant_id: variantId,
+            product_name: s.product_name,
+            variant: s.variant_size || s.variant_name || s.size_name || '',
+            qty: 1,
+            max: avail,
+            delivered_qty: 0
+        };
+        const searchInp = _el('dv-edit-item-search');
+        if (searchInp) searchInp.value = '';
+        const resultsDiv = _el('dv-edit-search-results');
+        if (resultsDiv) resultsDiv.classList.add('hidden');
+        _renderEditItems();
+    };
+
+    window.dvEditRemoveExistingItem = function(itemId) {
+        if (!_editDN || !_editDN.items) return;
+        const item = _editDN.items.find(i => i.id === itemId);
+        if (item) item._removed = true;
+        _renderEditItems();
+    };
+
+    window.dvEditRemoveNewItem = function(variantId) {
+        delete _editSelected[variantId];
+        _renderEditItems();
+    };
 
     // ── Reverse dispatch ─────────────────────────────────────────────────────
     window.dvReverseDispatch = async function(dnId) {
@@ -546,14 +667,29 @@
 
     window.dvConfirmEdit = async function() {
         if (!_editDN) return;
-        const inputs = document.querySelectorAll('#dv-edit-modal-items input[data-edit-item-id]');
-        const items  = [];
-        let valErr   = null;
-        inputs.forEach(inp => {
+
+        const items = [];
+        let valErr = null;
+
+        // Existing items
+        const existingInputs = document.querySelectorAll('#dv-edit-modal-items input[data-edit-item-id]');
+        existingInputs.forEach(inp => {
             const q = parseFloat(inp.value) || 0;
             if (q <= 0) valErr = 'الكمية يجب أن تكون أكبر من صفر';
-            if (q > 0)  items.push({ item_id: inp.dataset.editItemId, quantity: q });
+            if (q > 0) items.push({ item_id: inp.dataset.editItemId, quantity: q });
         });
+
+        // New items added in this edit session
+        const newInputs = document.querySelectorAll('#dv-edit-modal-items input[data-edit-new-variant-id]');
+        newInputs.forEach(inp => {
+            const q = parseFloat(inp.value) || 0;
+            const variantId = inp.dataset.editNewVariantId;
+            const selected = _editSelected[variantId];
+            if (q <= 0) valErr = 'الكمية يجب أن تكون أكبر من صفر';
+            if (selected && q > selected.max) valErr = `الكمية (${q}) تتجاوز المتاح (${selected.max})`;
+            if (q > 0) items.push({ variant_id: variantId, quantity: q });
+        });
+
         if (valErr)        { window.showToast(valErr, 'error'); return; }
         if (!items.length) { window.showToast('أدخل كمية واحدة على الأقل', 'error'); return; }
         const notes = _el('dv-edit-modal-notes')?.value || '';

@@ -209,10 +209,10 @@ router.post('/', restrictWrite, validateBody(deliveryNoteCreate), async (req, re
 
             // Create delivery note (with order_id if provided)
             const dnRes = await client.query(
-                `INSERT INTO delivery_notes (order_id, client_id, status, notes, driver_name, vehicle_number, created_by)
-                 VALUES ($1, $2, 'pending', $3, $4, $5, $6)
+                `INSERT INTO delivery_notes (order_id, client_id, warehouse_id, status, notes, driver_name, vehicle_number, created_by)
+                 VALUES ($1, $2, $3, 'pending', $4, $5, $6, $7)
                  RETURNING id, note_number`,
-                [order_id, client_id, notes, driver_name, vehicle_number, req.user?.id]
+                [order_id, client_id, warehouse_id, notes, driver_name, vehicle_number, req.user?.id]
             );
             const dnId = dnRes.rows[0].id;
             const noteNumber = dnRes.rows[0].note_number;
@@ -355,6 +355,8 @@ router.get('/:id', async (req, res) => {
                 dn.client_id,
                 c.name AS client_name,
                 pc.name AS parent_client_name,
+                dn.warehouse_id,
+                w.name AS warehouse_name,
                 dn.status,
                 dn.notes,
                 dn.driver_name,
@@ -365,6 +367,7 @@ router.get('/:id', async (req, res) => {
              LEFT JOIN orders o ON o.id = dn.order_id
              LEFT JOIN clients c ON c.id = dn.client_id
              LEFT JOIN clients pc ON pc.id = c.parent_id
+             LEFT JOIN warehouses w ON w.id = dn.warehouse_id
              WHERE dn.id = $1`,
             [id]
         );
@@ -949,7 +952,8 @@ router.delete('/:id', restrictWrite, async (req, res) => {
 
 // =============================================================================
 // PUT /api/delivery-notes/:id
-// Edit delivery note items (requested_qty) and notes. Only allowed if status is 'pending'.
+// Edit delivery note items (requested_qty), add new items (manual notes only),
+// remove items, and notes. Only allowed if status is 'pending'.
 // =============================================================================
 
 router.put('/:id', restrictWrite, async (req, res) => {
@@ -963,7 +967,7 @@ router.put('/:id', restrictWrite, async (req, res) => {
     try {
         const result = await db.withTransaction(async (client) => {
             const dnCheck = await client.query(
-                `SELECT id, status, note_number FROM delivery_notes WHERE id = $1 FOR UPDATE`,
+                `SELECT id, status, note_number, client_id, warehouse_id, order_id FROM delivery_notes WHERE id = $1 FOR UPDATE`,
                 [id]
             );
             if (dnCheck.rowCount === 0) throw new Error('سند التسليم غير موجود.');
@@ -971,11 +975,85 @@ router.put('/:id', restrictWrite, async (req, res) => {
                 throw new Error('يمكن تعديل سندات التسليم في حالة "معلق" فقط.');
             }
 
+            const dn = dnCheck.rows[0];
+            const clientId = dn.client_id;
+            const warehouseId = dn.warehouse_id;
+            const orderId = dn.order_id;
+            const updatedItemIds = new Set();
+
+            // 1. Update quantities for existing items
             for (const item of items) {
-                if (!item.item_id || !item.quantity || item.quantity <= 0) continue;
+                if (!item.item_id) continue;
+                const newQty = parseFloat(item.quantity || item.requested_qty) || 0;
+                if (newQty <= 0) throw new Error('الكمية يجب أن تكون أكبر من صفر.');
+
+                const itemCheck = await client.query(
+                    `SELECT id, requested_qty, delivered_qty FROM delivery_note_items WHERE id = $1 AND delivery_note_id = $2`,
+                    [item.item_id, id]
+                );
+                if (itemCheck.rowCount === 0) throw new Error('صنف غير موجود في السند.');
+
+                const delivered = parseFloat(itemCheck.rows[0].delivered_qty) || 0;
+                if (newQty < delivered) {
+                    throw new Error(`لا يمكن أن تكون الكمية المطلوبة (${newQty}) أقل من الكمية المُسلّمة (${delivered}).`);
+                }
+
                 await client.query(
                     `UPDATE delivery_note_items SET requested_qty = $1 WHERE id = $2 AND delivery_note_id = $3`,
-                    [item.quantity, item.item_id, id]
+                    [newQty, item.item_id, id]
+                );
+                updatedItemIds.add(item.item_id);
+            }
+
+            // 2. Insert new items (manual/standalone delivery notes only)
+            for (const item of items) {
+                if (item.item_id || !item.variant_id) continue;
+                if (orderId) {
+                    throw new Error('لا يمكن إضافة أصناف جديدة على سند التسليم المرتبط بأمر تشغيل.');
+                }
+                const newQty = parseFloat(item.quantity || item.requested_qty) || 0;
+                if (newQty <= 0) throw new Error('الكمية يجب أن تكون أكبر من صفر.');
+
+                const stockRes = await client.query(
+                    `SELECT id, quantity, available_qty FROM warehouse_stock
+                     WHERE variant_id = $1
+                     AND (
+                         client_id = $2
+                         OR client_id IS NULL
+                         OR client_id IN (SELECT parent_id FROM clients WHERE id = $2)
+                     )
+                     ${warehouseId ? 'AND warehouse_id = $3' : ''}
+                     ORDER BY quantity DESC LIMIT 1`,
+                    warehouseId ? [item.variant_id, clientId, warehouseId] : [item.variant_id, clientId]
+                );
+                if (stockRes.rowCount === 0) throw new Error('لا يوجد مخزون لهذا الصنف لهذا العميل.');
+
+                const available = parseFloat(stockRes.rows[0].available_qty || stockRes.rows[0].quantity || 0);
+                if (newQty > available) {
+                    throw new Error(`الكمية المطلوبة (${newQty}) تتجاوز المتاح (${available}).`);
+                }
+
+                await client.query(
+                    `INSERT INTO delivery_note_items (delivery_note_id, order_item_id, variant_id, requested_qty, delivered_qty, notes, created_at)
+                     VALUES ($1, NULL, $2, $3, 0, NULL, NOW())`,
+                    [id, item.variant_id, newQty]
+                );
+            }
+
+            // 3. Remove items that are no longer in the request (only if not delivered)
+            const currentItems = await client.query(
+                `SELECT id, delivered_qty FROM delivery_note_items WHERE delivery_note_id = $1`,
+                [id]
+            );
+            for (const row of currentItems.rows) {
+                if (updatedItemIds.has(row.id)) continue;
+                const delivered = parseFloat(row.delivered_qty) || 0;
+                if (delivered > 0) {
+                    throw new Error('لا يمكن حذف صنف تم تسليم جزء منه.');
+                }
+                await client.query(
+                    `DELETE FROM delivery_note_items WHERE id = $1 AND delivery_note_id = $2`,
+                    [row.id, id]
                 );
             }
 
@@ -986,7 +1064,7 @@ router.put('/:id', restrictWrite, async (req, res) => {
                 );
             }
 
-            return { note_number: dnCheck.rows[0].note_number };
+            return { note_number: dn.note_number };
         });
 
         return res.status(200).json({ data: result, message: 'تم تعديل سند التسليم بنجاح.' });
