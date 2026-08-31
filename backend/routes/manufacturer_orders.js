@@ -981,7 +981,7 @@ router.get('/:id/receipts', async (req, res) => {
             const itemsRes = await db.query(
                 `SELECT
                     si.session_id, si.id, si.manufacturer_order_item_id,
-                    si.quantity, si.unit_cost, si.line_total,
+                    si.quantity, si.unit_cost, si.line_total, si.is_final,
                     moi.mo_quantity,
                     p.name AS product_name, pv.size_name
                  FROM mo_receipt_session_items si
@@ -1020,6 +1020,8 @@ router.get('/:id/receipts', async (req, res) => {
                 : s.mo_status === 'received' ? 'full' : 'partial',
             items: (itemsBySession[s.id] || []).map(i => ({
                 ...i,
+                item_completion_status: i.is_final || parseFloat(i.quantity) >= parseFloat(i.mo_quantity)
+                    ? 'full' : 'partial',
                 images: imagesByItem[i.id] || []
             }))
         }));
@@ -1308,6 +1310,7 @@ router.post('/:id/receive', restrictReceive, maybeReceiptPhotos, async (req, res
                     quantity: actualQty,
                     unit_cost: unitCost,
                     total_cost: lineTotal,
+                    is_final: item.is_final === true || item.is_final === 'true',
                 });
 
                 // 3a. Update received_qty on manufacturer_order_items
@@ -1411,11 +1414,11 @@ router.post('/:id/receive', restrictReceive, maybeReceiptPhotos, async (req, res
             for (const ii of invoiceItems) {
                 const siiRes = await client.query(
                     `INSERT INTO mo_receipt_session_items
-                       (session_id, manufacturer_order_item_id, variant_id, quantity, unit_cost, line_total)
-                     VALUES ($1, $2, $3, $4, $5, $6)
+                       (session_id, manufacturer_order_item_id, variant_id, quantity, unit_cost, line_total, is_final)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7)
                      RETURNING id`,
                     [sessionId, ii.manufacturer_order_item_id, ii.variant_id,
-                     ii.quantity, ii.unit_cost, ii.total_cost]
+                     ii.quantity, ii.unit_cost, ii.total_cost, ii.is_final]
                 );
                 ii.session_item_id = siiRes.rows[0].id;
             }

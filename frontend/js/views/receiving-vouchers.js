@@ -477,6 +477,8 @@
             const variantId  = qtyInput.dataset.variantId;
             const moId       = qtyInput.dataset.moId;
             const hasInvoice = invCheck?.checked || false;
+            const fullChk    = row.querySelectorAll('input[type="checkbox"]')[0];
+            const isFinal     = fullChk?.checked || false;
             const files      = photoInput ? Array.from(photoInput.files) : [];
 
             if (qty > 0 && moItemId && variantId && variantId !== 'undefined' && moId) {
@@ -487,6 +489,7 @@
                     order_item_id: oItemId || null,
                     variant_id:    variantId,
                     quantity:      qty,
+                    is_final:      isFinal,
                     has_supplier_invoice: hasInvoice,
                     _idx:          idx,
                     _files:        files
@@ -762,9 +765,13 @@
                         <img src="${esc(img.image_path)}" class="w-full h-full object-cover" alt="" />
                     </a>`
                 ).join('');
+                const itemStatus = i.item_completion_status === 'full'
+                    ? '<span class="inline-flex px-2 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-600">كلي</span>'
+                    : '<span class="inline-flex px-2 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-600">جزئي</span>';
                 return `<tr class="border-b border-slate-100">
                     <td class="py-2.5 px-3 text-xs font-medium text-slate-700">${esc(i.product_name || '—')} ${esc(i.size_name || '')}</td>
                     <td class="py-2.5 px-3 text-center text-xs font-bold text-slate-800">${i.quantity}</td>
+                    <td class="py-2.5 px-3 text-center">${itemStatus}</td>
                     <td class="py-2.5 px-3 text-center text-xs ${i.has_supplier_invoice ? 'text-blue-600 font-bold' : 'text-slate-400'}">
                         ${i.has_supplier_invoice ? '<i class="fa-solid fa-file-invoice"></i> نعم' : '—'}
                     </td>
@@ -815,11 +822,12 @@
                                 <tr>
                                     <th class="py-2 px-3 text-right">المنتج</th>
                                     <th class="py-2 px-3 text-center">الكمية</th>
+                                    <th class="py-2 px-3 text-center">الحالة</th>
                                     <th class="py-2 px-3 text-center">فاتورة</th>
                                     <th class="py-2 px-3 text-center">صور</th>
                                 </tr>
                             </thead>
-                            <tbody>${itemsHtml || '<tr><td colspan="4" class="py-6 text-center text-slate-400 text-xs">لا توجد أصناف</td></tr>'}</tbody>
+                            <tbody>${itemsHtml || '<tr><td colspan="5" class="py-6 text-center text-slate-400 text-xs">لا توجد أصناف</td></tr>'}</tbody>
                         </table>
                     </div>
                 </div>
