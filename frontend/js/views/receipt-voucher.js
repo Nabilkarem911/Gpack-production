@@ -24,6 +24,7 @@
     };
 
     let _accountsTree = { parents: [], children: [] };
+    let _editingVoucherId = null;
     let _selectedParent = null;
     let _selectedChild = null;
 
@@ -199,9 +200,15 @@
                 <td class="py-3.5 px-4 text-left font-mono font-bold text-emerald-600 text-base">${fmt(v.total_amount)}</td>
                 <td class="py-3.5 px-4 text-center">${statusBadge}</td>
                 <td class="py-3.5 px-4 text-center">
-                    <button class="rv-view-btn p-2 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors" data-id="${v.id}" title="عرض التفاصيل">
-                        <i class="fa-solid fa-eye text-sm"></i>
-                    </button>
+                    <div class="flex items-center justify-center gap-1">
+                        <button class="rv-view-btn p-2 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors" data-id="${v.id}" title="عرض التفاصيل">
+                            <i class="fa-solid fa-eye text-sm"></i>
+                        </button>
+                        ${v.status === 'posted' && v.source_type === 'accounting'
+                            ? `<button class="rv-edit-btn p-2 text-blue-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" data-id="${v.id}" title="تعديل وإعادة إصدار"><i class="fa-solid fa-pen text-sm"></i></button>
+                               <button class="rv-cancel-btn p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" data-id="${v.id}" title="إلغاء السند"><i class="fa-solid fa-trash text-sm"></i></button>`
+                            : ''}
+                    </div>
                 </td>
             </tr>`;
         }).join('');
@@ -215,6 +222,12 @@
         });
         _el('rv-tbody').querySelectorAll('.rv-view-btn').forEach(btn => {
             btn.addEventListener('click', (e) => { e.stopPropagation(); _openDetailModal(btn.dataset.id); });
+        });
+        _el('rv-tbody').querySelectorAll('.rv-edit-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => { e.stopPropagation(); _openEditVoucher(btn.dataset.id); });
+        });
+        _el('rv-tbody').querySelectorAll('.rv-cancel-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => { e.stopPropagation(); _cancelVoucherById(btn.dataset.id); });
         });
     }
 
@@ -364,12 +377,50 @@
 
     // ── New Voucher Modal ─────────────────────────────────────────────────────
     function _openNewModal() {
+        _editingVoucherId = null;
         _clearNewForm();
+        _el('rv-modal-title').textContent = 'سند قبض جديد';
+        _el('rv-modal-subtitle').textContent = 'تسجيل دفعة من العميل';
+        _el('rv-modal-submit').innerHTML = '<i class="fa-solid fa-check"></i> حفظ السند';
         _el('rv-modal').classList.remove('hidden');
     }
 
     function _closeNewModal() {
+        _editingVoucherId = null;
         _el('rv-modal').classList.add('hidden');
+    }
+
+    async function _openEditVoucher(id) {
+        try {
+            const res = await window.apiFetch(`/api/receipt-vouchers/${id}`);
+            const voucher = res.data;
+            if (!voucher || voucher.status !== 'posted') throw new Error('لا يمكن تعديل هذا السند.');
+            _editingVoucherId = id;
+            _el('rv-modal-title').textContent = 'تعديل سند القبض';
+            _el('rv-modal-subtitle').textContent = 'سيتم إلغاء السند القديم وإعادة إصداره';
+            _el('rv-amount').value = voucher.total_amount || '';
+            _el('rv-date').value = voucher.voucher_date ? String(voucher.voucher_date).slice(0, 10) : '';
+            _el('rv-description').value = voucher.description || '';
+            _updatePreview();
+            _el('rv-modal-submit').innerHTML = '<i class="fa-solid fa-rotate"></i> تعديل وإعادة إصدار';
+            _el('rv-modal').classList.remove('hidden');
+        } catch (err) {
+            window.showToast(err.message || 'فشل تحميل السند للتعديل', 'error');
+        }
+    }
+
+    async function _cancelVoucherById(id) {
+        if (!confirm('سيتم إلغاء السند وإنشاء قيد عكسي. هل تريد المتابعة؟')) return;
+        try {
+            await window.apiFetch(`/api/receipt-vouchers/${id}/cancel`, {
+                method: 'POST',
+                body: { reason: 'إلغاء من قائمة سندات القبض' }
+            });
+            window.showToast('تم إلغاء سند القبض بنجاح', 'success');
+            _loadVouchers();
+        } catch (err) {
+            window.showToast(err.message || 'فشل إلغاء السند', 'error');
+        }
     }
 
     function _clearNewForm() {
@@ -395,12 +446,36 @@
 
     // ── Submit Voucher ────────────────────────────────────────────────────────
     async function _submitVoucher() {
-        const clientId     = _el('rv-client-id').value;
-        const clientType   = _el('rv-client-type').value;
         const amount       = parseFloat(_el('rv-amount').value);
-        const cashAccId    = _el('rv-cash-account').value;
         const voucherDate  = _el('rv-date').value;
         const description  = _el('rv-description').value.trim();
+
+        if (_editingVoucherId) {
+            if (!amount || amount <= 0) return window.showToast('يجب إدخال مبلغ صحيح أكبر من صفر', 'warning');
+            if (!voucherDate) return window.showToast('يجب إدخال التاريخ', 'warning');
+            const btn = _el('rv-modal-submit');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> جارٍ التعديل...';
+            try {
+                await window.apiFetch(`/api/receipt-vouchers/${_editingVoucherId}/replace`, {
+                    method: 'PUT', body: { amount, voucher_date: voucherDate, description }
+                });
+                window.showToast('تم تعديل سند القبض وإعادة إصداره بنجاح', 'success');
+                _closeNewModal();
+                _state.page = 0;
+                _loadVouchers();
+            } catch (err) {
+                window.showToast(err.message || 'فشل تعديل السند', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fa-solid fa-check"></i> حفظ السند';
+            }
+            return;
+        }
+
+        const clientId     = _el('rv-client-id').value;
+        const clientType   = _el('rv-client-type').value;
+        const cashAccId    = _el('rv-cash-account').value;
         const paymentMethod = _el('rv-payment-method').value;
 
         if (!clientId)           return window.showToast('يجب اختيار الحساب الفرعي', 'warning');

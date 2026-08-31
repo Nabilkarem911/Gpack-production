@@ -367,6 +367,107 @@ router.post('/', restrictWrite, validateBody(receiptVoucherCreate), async (req, 
 });
 
 // =============================================================================
+// PUT /api/receipt-vouchers/:id/replace
+// Replace a posted voucher atomically: reverse the original and create a new one.
+// The original voucher remains in the ledger for audit purposes.
+// =============================================================================
+router.put('/:id/replace', restrictEdit, async (req, res) => {
+    const { id } = req.params;
+    const { amount, voucher_date, description } = req.body || {};
+    const parsedAmount = parseFloat(amount);
+
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0 || !voucher_date) {
+        return res.status(400).json({ error: 'المبلغ والتاريخ مطلوبان ويجب أن يكون المبلغ أكبر من صفر.' });
+    }
+
+    try {
+        const result = await db.withTransaction(async (client) => {
+            const originalRes = await client.query(
+                `SELECT * FROM accounting_vouchers WHERE id = $1 AND voucher_type = 'receipt' FOR UPDATE`,
+                [id]
+            );
+            if (!originalRes.rows.length) throw new Error('السند غير موجود.');
+            const original = originalRes.rows[0];
+            if (original.status !== 'posted') throw new Error('لا يمكن تعديل سند غير مرحّل.');
+
+            const linesRes = await client.query(
+                `SELECT * FROM accounting_voucher_lines WHERE voucher_id = $1 ORDER BY debit DESC`,
+                [id]
+            );
+            if (linesRes.rows.length < 2) throw new Error('لا يمكن تعديل سند لا يحتوي على قيد محاسبي مكتمل.');
+
+            await client.query(`UPDATE accounting_vouchers SET status = 'cancelled' WHERE id = $1`, [id]);
+
+            const reversalRes = await client.query(
+                `INSERT INTO accounting_vouchers
+                    (voucher_type, voucher_date, description, total_amount, status, reference_type, reference_id, created_by)
+                 VALUES ('receipt', CURRENT_DATE, $1, $2, 'cancelled', $3, $4, $5)
+                 RETURNING id`,
+                [`عكس سند قبض رقم ${original.voucher_number} — تعديل`, original.total_amount,
+                 original.reference_type, original.reference_id, req.user?.id || null]
+            );
+            for (const line of linesRes.rows) {
+                await client.query(
+                    `INSERT INTO accounting_voucher_lines
+                        (voucher_id, account_id, debit, credit, sub_account_type, sub_account_id, description)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+                    [reversalRes.rows[0].id, line.account_id, line.credit, line.debit,
+                     line.sub_account_type, line.sub_account_id, `عكس: ${line.description || ''}`]
+                );
+            }
+
+            const newRes = await client.query(
+                `INSERT INTO accounting_vouchers
+                    (voucher_type, voucher_date, description, total_amount, status, reference_type, reference_id, created_by)
+                 VALUES ('receipt', $1, $2, $3, 'posted', $4, $5, $6)
+                 RETURNING id, voucher_number`,
+                [voucher_date, description || original.description, parsedAmount,
+                 original.reference_type, original.reference_id, req.user?.id || null]
+            );
+            const newId = newRes.rows[0].id;
+
+            for (const line of linesRes.rows) {
+                const debit = parseFloat(line.debit) > 0 ? parsedAmount : 0;
+                const credit = parseFloat(line.credit) > 0 ? parsedAmount : 0;
+                await client.query(
+                    `INSERT INTO accounting_voucher_lines
+                        (voucher_id, account_id, debit, credit, sub_account_type, sub_account_id, description)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+                    [newId, line.account_id, debit, credit, line.sub_account_type, line.sub_account_id,
+                     line.description || `قبض — ${original.reference_id || ''}`]
+                );
+            }
+
+            const linkedTxRes = await client.query(
+                `SELECT id, client_id, order_id, payment_method FROM client_transactions
+                 WHERE linked_voucher_id = $1 AND type = 'payment'`,
+                [id]
+            );
+            for (const tx of linkedTxRes.rows) {
+                await client.query(
+                    `UPDATE client_transactions SET type = 'payment_reversal', description = COALESCE(description, '') || ' — عكس بسبب تعديل سند القبض' WHERE id = $1`,
+                    [tx.id]
+                );
+                await client.query(
+                    `INSERT INTO client_transactions
+                        (client_id, order_id, type, amount, payment_method, description, linked_voucher_id)
+                     VALUES ($1, $2, 'payment', $3, $4, $5, $6)`,
+                    [tx.client_id, tx.order_id, parsedAmount, tx.payment_method,
+                     description || original.description || 'تعديل سند قبض', newId]
+                );
+            }
+
+            return { id: newId, voucher_number: newRes.rows[0].voucher_number };
+        });
+
+        return res.json({ data: result, message: 'تم تعديل سند القبض وإعادة إصداره بنجاح.' });
+    } catch (err) {
+        console.error('[ReceiptVouchers] PUT /:id/replace error:', err.message);
+        return res.status(400).json({ error: err.message || 'Internal server error.' });
+    }
+});
+
+// =============================================================================
 // POST /api/receipt-vouchers/:id/cancel
 // Cancel a posted receipt voucher (IMMUTABILITY RULE: reverse + new cancellation)
 // =============================================================================
