@@ -286,7 +286,7 @@
                     <td class="py-2.5 px-3 text-center">
                         <input type="checkbox" ${remQty === 0 ? 'disabled' : ''}
                                class="w-4 h-4 text-emerald-500 rounded"
-                               title="استلام كلي"
+                               title="استلام كلي / إغلاق الأمر"
                                onchange="window.rvToggleFull(this)">
                     </td>
                     <td class="py-2.5 px-3 text-center">
@@ -320,10 +320,8 @@
             const rem = parseFloat(qtyInput.dataset.remQty || 0);
             qtyInput.value = rem;
             if (fullChk) fullChk.checked = true;
-            row.classList.remove('bg-amber-50');
-            row.classList.add('bg-emerald-50');
+            rvUpdateRowState(qtyInput);
         });
-        rvUpdateSummary();
     };
 
     window.rvReceiveNone = function () {
@@ -334,41 +332,36 @@
             if (!qtyInput || qtyInput.disabled) return;
             qtyInput.value = '';
             if (fullChk) fullChk.checked = false;
-            row.classList.remove('bg-emerald-50', 'bg-amber-50');
+            rvUpdateRowState(qtyInput);
         });
-        rvUpdateSummary();
     };
 
+    // Full checkbox: means "close this item (accept actual qty as final)"
+    // It does NOT change the quantity; it only marks the row for closure.
     window.rvToggleFull = function (chk) {
         const row   = chk.closest('tr');
         const input = row.querySelector('input[type="number"]');
         if (!input || input.disabled) return;
-        const rem = parseFloat(input.dataset.remQty || 0);
-        if (chk.checked) {
-            input.value = rem;
-            row.classList.remove('bg-amber-50');
-            row.classList.add('bg-emerald-50');
-        } else {
-            row.classList.remove('bg-emerald-50');
-        }
-        rvUpdateSummary();
+        rvUpdateRowState(input);
     };
 
+    // Update row style based on actual value and full/close checkbox.
+    // The checkbox is user-controlled; this function never toggles it.
     window.rvUpdateRowState = function (input) {
         const row   = input.closest('tr');
         const rem   = parseFloat(input.dataset.remQty || 0);
         const val   = parseFloat(input.value || 0);
         const fullChk = row.querySelectorAll('input[type="checkbox"]')[0];
-        if (val >= rem && rem > 0) {
-            if (fullChk) fullChk.checked = true;
+        const isFull = (fullChk && (fullChk.checked || fullChk.disabled)) ||
+                       (val >= rem && rem > 0);
+
+        if (isFull) {
             row.classList.remove('bg-amber-50');
             row.classList.add('bg-emerald-50');
         } else if (val > 0) {
-            if (fullChk) fullChk.checked = false;
             row.classList.remove('bg-emerald-50');
             row.classList.add('bg-amber-50');
         } else {
-            if (fullChk) fullChk.checked = false;
             row.classList.remove('bg-emerald-50', 'bg-amber-50');
         }
         rvUpdateSummary();
@@ -390,10 +383,13 @@
         rows.forEach(row => {
             const input = row.querySelector('input[type="number"]');
             if (!input) return;
-            if (input.disabled) return;
+            if (input.disabled) { full++; return; }
+            const fullChk = row.querySelectorAll('input[type="checkbox"]')[0];
             const rem = parseFloat(input.dataset.remQty || 0);
             const val = parseFloat(input.value || 0);
-            if (val >= rem && rem > 0) full++;
+            const isFull = (fullChk && (fullChk.checked || fullChk.disabled)) ||
+                           (val >= rem && rem > 0);
+            if (isFull) full++;
             else if (val > 0) partial++;
             else none++;
         });
@@ -418,6 +414,19 @@
         const rows       = _el('rv-receive-items').querySelectorAll('tr');
         const itemsByMO  = {};
         const moInvoice  = {};
+        const moClose    = {}; // close_order per MO
+
+        // First pass: decide close_order per MO (all rows closed/full)
+        rows.forEach(row => {
+            const qtyInput = row.querySelector('input[type="number"]');
+            if (!qtyInput) return;
+            const moId = qtyInput.dataset.moId;
+            if (!moId) return;
+            if (moClose[moId] === undefined) moClose[moId] = true;
+            const fullChk = row.querySelectorAll('input[type="checkbox"]')[0];
+            const isClosed = fullChk && (fullChk.checked || fullChk.disabled);
+            if (!isClosed) moClose[moId] = false;
+        });
 
         rows.forEach(row => {
             const qtyInput = row.querySelector('input[type="number"]');
@@ -461,6 +470,7 @@
                 const formData = new FormData();
                 formData.append('warehouse_id', warehouseId);
                 formData.append('has_supplier_invoice', String(moInvoice[moId]));
+                formData.append('close_order', String(moClose[moId] === true));
                 formData.append('notes', notes);
                 formData.append('items', JSON.stringify(moItems.map(({ _idx, _files, ...rest }) => rest)));
 

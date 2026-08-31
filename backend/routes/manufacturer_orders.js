@@ -1206,11 +1206,13 @@ router.post('/:id/receive', restrictReceive, maybeReceiptPhotos, async (req, res
     const {
         warehouse_id, items,
         has_supplier_invoice: _hasSupplierInvoice = false,
+        close_order: _closeOrder = false,
         tax_rate = 0, supplier_invoice_ref = '', notes = '',
         pay_now = false, pay_amount = 0, pay_notes = ''
     } = body;
 
     const has_supplier_invoice = _hasSupplierInvoice === true || _hasSupplierInvoice === 'true';
+    const forceClose = _closeOrder === true || _closeOrder === 'true';
     const _payNow = pay_now === true || pay_now === 'true';
 
     if (!warehouse_id) {
@@ -1358,7 +1360,11 @@ router.post('/:id/receive', restrictReceive, maybeReceiptPhotos, async (req, res
                 r => parseFloat(r.received_qty) >= parseFloat(r.mo_quantity)
             );
             const anyReceived = updatedItemsRes.rows.some(r => parseFloat(r.received_qty) > 0);
-            const newStatus = allFull ? 'received' : anyReceived ? 'partially_received' : mo.status;
+            // If user explicitly closes the MO (close_order), force received status
+            // while still recording the actual received quantities.
+            const newStatus = forceClose
+                ? 'received'
+                : (allFull ? 'received' : (anyReceived ? 'partially_received' : mo.status));
 
             await client.query(
                 `UPDATE manufacturer_orders SET status = $1, has_supplier_invoice = $2, updated_at = NOW() WHERE id = $3`,
