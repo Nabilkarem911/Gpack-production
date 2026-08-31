@@ -86,6 +86,22 @@
         } finally { if (window.isViewActive && window.isViewActive(_myToken)) hideEl('dv-loading'); }
         const badge = _el('dv-tab-pending-badge');
         if (badge) { badge.textContent = _pendingNotes.length; _pendingNotes.length > 0 ? badge.classList.remove('hidden') : badge.classList.add('hidden'); }
+
+        // ── Deep link: open dispatch modal for a specific delivery note ───────
+        // The hash may contain ?dn=<delivery_note_id> from a WhatsApp notification.
+        try {
+            const hash = window.location.hash || '';
+            const params = new URLSearchParams(hash.split('?')[1] || '');
+            const dnId = params.get('dn');
+            if (dnId) {
+                const dn = _pendingNotes.find(n => n.id === dnId);
+                if (dn) {
+                    window.dvOpenDispatchModal(dnId);
+                }
+            }
+        } catch (e) {
+            console.warn('[VmiDispatch] Deep link error:', e.message);
+        }
     };
 
     // ── Render pending grid ───────────────────────────────────────────────────

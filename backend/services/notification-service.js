@@ -476,13 +476,13 @@ async function notifyDirectReceiptCreated({ receipt_id, receipt_number, item_cou
 // Notifies the manager when goods are received from a supplier against an MO.
 // Uses the receipt session id for entity_id so re-receiving (after reversal)
 // generates a unique idempotency key and a new notification.
-async function notifyManufacturerOrderReceived({ session_id, mo_number, session_number, item_count, received_by_name, warehouse_name, client_name, items_summary }) {
+async function notifyManufacturerOrderReceived({ session_id, mo_id, mo_number, session_number, item_count, received_by_name, warehouse_name, client_name, items_summary }) {
     if (!await _isInternalWhatsAppEnabled()) return null;
     const phone = await _getSetting('manager_whatsapp_phone');
     if (!phone) return null;
 
     const baseUrl = process.env.BASE_URL || 'https://erp.gpacksa.com';
-    const link = `${baseUrl}/#/receiving-vouchers?mo=${mo_number}`;
+    const link = `${baseUrl}/#/receiving-vouchers?mo=${mo_id || mo_number}`;
 
     const body =
         `📦 استلام بضاعة من مورد\n\n` +

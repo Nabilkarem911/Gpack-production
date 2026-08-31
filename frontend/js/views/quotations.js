@@ -3446,6 +3446,19 @@
 
         // Start live polling for quote status updates (e.g. client response)
         _startQuotePolling(_myToken);
+
+        // ── Deep link: open a specific quotation by id ───────────────────────
+        // The hash may contain ?id=<order_id> from a WhatsApp notification.
+        try {
+            const hash = window.location.hash || '';
+            const params = new URLSearchParams(hash.split('?')[1] || '');
+            const quoteId = params.get('id');
+            if (quoteId) {
+                window.openQuoteModal(quoteId, true);
+            }
+        } catch (e) {
+            console.warn('[Quotations] Deep link error:', e.message);
+        }
     }
 
     // ==========================================================================

@@ -1530,6 +1530,7 @@ router.post('/:id/receive', restrictReceive, maybeReceiptPhotos, async (req, res
                     correlation_id: NotificationService.generateCorrelationId('MOR'),
                     payload: {
                         session_id: sessionId,
+                        mo_id: id,
                         mo_number: mo.mo_number,
                         session_number: sessionNumber,
                         item_count: invoiceItems.length,

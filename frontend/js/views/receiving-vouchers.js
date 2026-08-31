@@ -103,6 +103,29 @@
             badge.textContent = count;
             count > 0 ? badge.classList.remove('hidden') : badge.classList.add('hidden');
         }
+
+        // ── Deep link: open receive modal for a specific MO ──────────────────
+        // The hash may contain ?mo=<mo_id> from a WhatsApp notification link.
+        // We find the matching order group and open the modal automatically.
+        try {
+            const hash = window.location.hash || '';
+            const params = new URLSearchParams(hash.split('?')[1] || '');
+            const moId = params.get('mo');
+            if (moId) {
+                // moId could be the MO UUID or the order_id; find the matching group.
+                const grouped = rvGroupByOrder();
+                const match = grouped.find(g =>
+                    g.order_id === moId ||
+                    g.mos.some(m => m.id === moId)
+                );
+                if (match) {
+                    window.rvOpenReceiveModal(match.order_id);
+                }
+            }
+        } catch (e) {
+            // Deep link is best-effort; never break the page if it fails.
+            console.warn('[ReceivingVouchers] Deep link error:', e.message);
+        }
     };
 
     // ─────────────────────────────────────────────────────────────────────────
