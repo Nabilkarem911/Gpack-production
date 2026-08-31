@@ -752,6 +752,10 @@
             sub.textContent = 'جلسة #' + (session.session_number || '—') + ' — ' + (session.warehouse_name || '—');
 
             const isReversed = session.status === 'reversed';
+            const completionStatus = session.receipt_completion_status || (session.mo_status === 'received' ? 'full' : 'partial');
+            const completionBadge = completionStatus === 'full'
+                ? '<span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-600">استلام كلي</span>'
+                : '<span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-600">استلام جزئي</span>';
             const itemsHtml = (session.items || []).map(i => {
                 const images = (i.images || []).map(img =>
                     `<a href="${esc(img.image_path)}" target="_blank" class="inline-block w-9 h-9 rounded-lg border border-slate-200 overflow-hidden hover:opacity-90" title="عرض الصورة">
@@ -788,11 +792,12 @@
                         <span class="text-xs text-slate-400 block mb-0.5"><i class="fa-solid fa-circle-info ml-1"></i>الحالة</span>
                         ${isReversed
                             ? '<span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-red-100 text-red-600">تم التراجع</span>'
-                            : '<span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-600">فعّال</span>'}
+                            : completionBadge}
                     </div>
                     <div>
                         <span class="text-xs text-slate-400 block mb-0.5"><i class="fa-solid fa-hashtag ml-1"></i>أمر التشغيل</span>
                         <p class="text-sm font-bold text-slate-800 font-mono">${esc(session.mo_number || '—')}</p>
+                        <p class="text-xs text-slate-500 mt-0.5">رقم الطلب: ${esc(session.order_number || '—')}</p>
                     </div>
                     <div>
                         <span class="text-xs text-slate-400 block mb-0.5"><i class="fa-solid fa-file-invoice ml-1"></i>فاتورة المورد</span>

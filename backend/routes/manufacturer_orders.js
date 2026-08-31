@@ -957,10 +957,15 @@ router.get('/:id/receipts', async (req, res) => {
                 s.tax_rate, s.tax_amount, s.grand_total,
                 s.has_supplier_invoice, s.supplier_invoice_ref, s.notes,
                 s.status, s.created_at, s.reversed_at,
+                mo.mo_number, mo.status AS mo_status,
+                o.order_number, c.name AS client_name,
                 w.name AS warehouse_name,
                 u.name AS created_by_name,
                 ur.name AS reversed_by_name
              FROM mo_receipt_sessions s
+             JOIN manufacturer_orders mo ON mo.id = s.manufacturer_order_id
+             JOIN orders o ON o.id = mo.order_id
+             LEFT JOIN clients c ON c.id = o.client_id
              LEFT JOIN warehouses w ON w.id = s.warehouse_id
              LEFT JOIN users u  ON u.id = s.created_by
              LEFT JOIN users ur ON ur.id = s.reversed_by
@@ -975,9 +980,12 @@ router.get('/:id/receipts', async (req, res) => {
         if (sessionIds.length > 0) {
             const itemsRes = await db.query(
                 `SELECT
-                    si.session_id, si.id, si.quantity, si.unit_cost, si.line_total,
+                    si.session_id, si.id, si.manufacturer_order_item_id,
+                    si.quantity, si.unit_cost, si.line_total,
+                    moi.mo_quantity,
                     p.name AS product_name, pv.size_name
                  FROM mo_receipt_session_items si
+                 JOIN manufacturer_order_items moi ON moi.id = si.manufacturer_order_item_id
                  JOIN product_variants pv ON pv.id = si.variant_id
                  JOIN products p ON p.id = pv.product_id
                  WHERE si.session_id = ANY($1::uuid[])
@@ -1007,6 +1015,9 @@ router.get('/:id/receipts', async (req, res) => {
 
         const data = sessionsRes.rows.map(s => ({
             ...s,
+            receipt_completion_status: s.status === 'reversed'
+                ? 'reversed'
+                : s.mo_status === 'received' ? 'full' : 'partial',
             items: (itemsBySession[s.id] || []).map(i => ({
                 ...i,
                 images: imagesByItem[i.id] || []
