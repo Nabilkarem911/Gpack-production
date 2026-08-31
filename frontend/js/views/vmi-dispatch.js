@@ -20,6 +20,7 @@
     const esc  = (s) => String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     const fmtD = (d) => d ? new Date(d).toLocaleDateString('ar-SA-u-nu-latn') : '—';
     const _el  = (id) => document.getElementById(id);
+    const _norm = (v) => String(v ?? '').toLowerCase();
     const _clientDisplay = (dn) => dn.parent_client_name ? `${dn.parent_client_name} — ${dn.client_name}` : (dn.client_name || '—');
 
     // ── Logo loader for print templates ───────────────────────────────────────
@@ -113,13 +114,13 @@
         if (_pendingSearchQuery) {
             const q = _pendingSearchQuery;
             notes = notes.filter(dn =>
-                (dn.client_name || '').toLowerCase().includes(q) ||
-                (dn.parent_client_name || '').toLowerCase().includes(q) ||
-                String(dn.note_number || '').includes(q) ||
-                String(dn.order_number || '').includes(q) ||
+                _norm(dn.client_name).includes(q) ||
+                _norm(dn.parent_client_name).includes(q) ||
+                _norm(dn.note_number).includes(q) ||
+                _norm(dn.order_number).includes(q) ||
                 (dn.items || []).some(i =>
-                    (i.product_name || '').toLowerCase().includes(q) ||
-                    (i.variant_name || '').toLowerCase().includes(q)
+                    _norm(i.product_name).includes(q) ||
+                    _norm(i.variant_name).includes(q)
                 )
             );
         }
@@ -783,13 +784,13 @@
         if (statusF) notes = notes.filter(dn => dn.status === statusF);
         if (searchF) {
             notes = notes.filter(dn =>
-                (dn.client_name || '').toLowerCase().includes(searchF) ||
-                (dn.parent_client_name || '').toLowerCase().includes(searchF) ||
-                String(dn.note_number || '').includes(searchF) ||
-                String(dn.order_number || '').includes(searchF) ||
+                _norm(dn.client_name).includes(searchF) ||
+                _norm(dn.parent_client_name).includes(searchF) ||
+                _norm(dn.note_number).includes(searchF) ||
+                _norm(dn.order_number).includes(searchF) ||
                 (dn.items || []).some(i =>
-                    (i.product_name || '').toLowerCase().includes(searchF) ||
-                    (i.variant_name || '').toLowerCase().includes(searchF)
+                    _norm(i.product_name).includes(searchF) ||
+                    _norm(i.variant_name).includes(searchF)
                 )
             );
         }

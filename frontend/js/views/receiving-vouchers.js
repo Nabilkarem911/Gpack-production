@@ -21,6 +21,7 @@
     const _el  = id => document.getElementById(id);
     const esc  = t  => String(t ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     const fmtD = d  => d ? new Date(d).toLocaleDateString('ar-SA-u-nu-latn') : '—';
+    const _norm = v => String(v ?? '').toLowerCase();
 
     function showEl(id)  { const e = _el(id); if(e) { e.style.display=''; e.classList.remove('hidden'); } }
     function hideEl(id)  { const e = _el(id); if(e) { e.classList.add('hidden'); } }
@@ -177,12 +178,17 @@
         if (_activeSearchQuery) {
             const q = _activeSearchQuery;
             grouped = grouped.filter(order => {
-                const clientMatch  = (order.client_name || '').toLowerCase().includes(q);
-                const orderMatch   = (order.order_number || '').toLowerCase().includes(q);
-                const productMatch = order.allItems.some(i =>
-                    (i.product_name || '').toLowerCase().includes(q)
+                const clientMatch  = _norm(order.client_name).includes(q);
+                const orderMatch   = _norm(order.order_number).includes(q);
+                const moMatch      = order.mos.some(mo =>
+                    _norm(mo.mo_number).includes(q) ||
+                    _norm(mo.supplier_name).includes(q)
                 );
-                return clientMatch || orderMatch || productMatch;
+                const productMatch = order.allItems.some(i =>
+                    _norm(i.product_name).includes(q) ||
+                    _norm(i.size_name).includes(q)
+                );
+                return clientMatch || orderMatch || moMatch || productMatch;
             });
         }
 
@@ -617,14 +623,14 @@
         }
         if (searchQuery) {
             filtered = filtered.filter(s =>
-                (s.client_name || '').toLowerCase().includes(searchQuery) ||
-                (s.order_number || '').toLowerCase().includes(searchQuery) ||
-                (s.mo_number || '').toLowerCase().includes(searchQuery) ||
-                (s.warehouse_name || '').toLowerCase().includes(searchQuery) ||
-                (s.supplier_invoice_ref || '').toLowerCase().includes(searchQuery) ||
+                _norm(s.client_name).includes(searchQuery) ||
+                _norm(s.order_number).includes(searchQuery) ||
+                _norm(s.mo_number).includes(searchQuery) ||
+                _norm(s.warehouse_name).includes(searchQuery) ||
+                _norm(s.supplier_invoice_ref).includes(searchQuery) ||
                 (s.items || []).some(i =>
-                    (i.product_name || '').toLowerCase().includes(searchQuery) ||
-                    (i.size_name || '').toLowerCase().includes(searchQuery)
+                    _norm(i.product_name).includes(searchQuery) ||
+                    _norm(i.size_name).includes(searchQuery)
                 )
             );
         }
