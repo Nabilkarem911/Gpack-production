@@ -482,7 +482,7 @@ async function notifyManufacturerOrderReceived({ session_id, mo_id, mo_number, s
     if (!phone) return null;
 
     const baseUrl = process.env.BASE_URL || 'https://erp.gpacksa.com';
-    const link = `${baseUrl}/#/receiving-vouchers?mo=${mo_id || mo_number}`;
+    const link = `${baseUrl}/#/receiving-vouchers?mo=${encodeURIComponent(mo_id || mo_number)}${session_id ? `&session=${encodeURIComponent(session_id)}` : ''}`;
 
     const body =
         `📦 استلام بضاعة من مورد\n\n` +

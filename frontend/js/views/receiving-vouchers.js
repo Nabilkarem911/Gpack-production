@@ -104,22 +104,30 @@
             count > 0 ? badge.classList.remove('hidden') : badge.classList.add('hidden');
         }
 
-        // ── Deep link: open receive modal for a specific MO ──────────────────
-        // The hash may contain ?mo=<mo_id> from a WhatsApp notification link.
-        // We find the matching order group and open the modal automatically.
+        // ── Deep link: open the requested receipt or receipt session ─────────
+        // ?mo=<manufacturer_order_id>&session=<receipt_session_id> is used by
+        // receipt notifications. Completed MOs are not in _pendingMOs, so a
+        // completed receipt is resolved through the archive endpoint instead.
         try {
             const hash = window.location.hash || '';
             const params = new URLSearchParams(hash.split('?')[1] || '');
             const moId = params.get('mo');
+            const sessionId = params.get('session');
             if (moId) {
-                // moId could be the MO UUID or the order_id; find the matching group.
-                const grouped = rvGroupByOrder();
-                const match = grouped.find(g =>
-                    g.order_id === moId ||
-                    g.mos.some(m => m.id === moId)
+                const activeGrouped = rvGroupByOrder();
+                const activeMatch = activeGrouped.find(g =>
+                    g.order_id === moId || g.mos.some(m => m.id === moId)
                 );
-                if (match) {
-                    window.rvOpenReceiveModal(match.order_id);
+
+                if (sessionId) {
+                    const moRes = await window.apiFetch('/api/manufacturer-orders/' + encodeURIComponent(moId) + '/receipts');
+                    if (window.isViewActive && !window.isViewActive(_myToken)) return;
+                    const session = (moRes.data || []).find(s => s.id === sessionId);
+                    if (session) {
+                        window.rvOpenSessionModal(moId, sessionId);
+                    }
+                } else if (activeMatch) {
+                    window.rvOpenReceiveModal(activeMatch.order_id);
                 }
             }
         } catch (e) {
