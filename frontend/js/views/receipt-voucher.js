@@ -182,9 +182,11 @@
         }
 
         _el('rv-tbody').innerHTML = _state.rows.map(v => {
-            const statusBadge = v.status === 'posted'
-                ? '<span class="px-2.5 py-1 bg-emerald-100 text-emerald-700 rounded-lg text-xs font-bold">مرحّل</span>'
-                : '<span class="px-2.5 py-1 bg-red-100 text-red-600 rounded-lg text-xs font-bold">ملغي</span>';
+            const statusBadge = v.status === 'legacy'
+                ? '<span class="px-2.5 py-1 bg-amber-100 text-amber-700 rounded-lg text-xs font-bold">دفعة قديمة</span>'
+                : v.status === 'posted'
+                    ? '<span class="px-2.5 py-1 bg-emerald-100 text-emerald-700 rounded-lg text-xs font-bold">مرحّل</span>'
+                    : '<span class="px-2.5 py-1 bg-red-100 text-red-600 rounded-lg text-xs font-bold">ملغي</span>';
 
             return `<tr class="hover:bg-slate-50/60 transition-colors cursor-pointer" data-id="${v.id}">
                 <td class="py-3.5 px-4 font-mono font-bold text-brand-600">#${v.voucher_number}</td>
@@ -484,6 +486,9 @@
 
             <!-- Double-entry Lines -->
             <div>
+                ${v.status === 'legacy'
+                    ? '<p class="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg p-3 mb-2">هذه دفعة قديمة محفوظة قبل توحيد سندات القبض، ولا تحتوي على قيد محاسبي تفصيلي.</p>'
+                    : ''}
                 <p class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2 flex items-center gap-1.5">
                     <i class="fa-solid fa-scale-balanced text-brand-400"></i>
                     القيد المحاسبي
@@ -522,9 +527,9 @@
         const v = _state._currentVoucher;
         if (!v) return;
 
-        const statusText = v.status === 'posted' ? 'مرحّل' : 'ملغي';
-        const statusColor = v.status === 'posted' ? '#15803d' : '#dc2626';
-        const statusBg    = v.status === 'posted' ? '#dcfce7' : '#fee2e2';
+        const statusText = v.status === 'legacy' ? 'دفعة قديمة' : v.status === 'posted' ? 'مرحّل' : 'ملغي';
+        const statusColor = v.status === 'legacy' ? '#b45309' : v.status === 'posted' ? '#15803d' : '#dc2626';
+        const statusBg    = v.status === 'legacy' ? '#fef3c7' : v.status === 'posted' ? '#dcfce7' : '#fee2e2';
 
         const lines = (v.lines || []).map(l => `
             <tr>

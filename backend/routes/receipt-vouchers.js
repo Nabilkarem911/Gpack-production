@@ -25,64 +25,96 @@ const restrictDelete = authorize('receipt_voucher', 'delete');
 router.get('/', async (req, res) => {
     try {
         const { search = '', status = '', from = '', to = '', limit = 50, offset = 0 } = req.query;
-
-        const conditions = ["av.voucher_type = 'receipt'"];
+        const conditions = [];
         const params = [];
 
         if (search) {
             params.push(`%${search}%`);
             conditions.push(`(
-                av.description ILIKE $${params.length}
-                OR av.voucher_number::text ILIKE $${params.length}
-                OR (av.reference_type = 'client' AND EXISTS (SELECT 1 FROM clients cx WHERE cx.id = av.reference_id AND cx.name ILIKE $${params.length}))
-                OR (av.reference_type = 'order' AND EXISTS (SELECT 1 FROM orders ox JOIN clients cx ON cx.id = ox.client_id WHERE ox.id = av.reference_id AND cx.name ILIKE $${params.length}))
+                rv.description ILIKE $${params.length}
+                OR rv.voucher_number::text ILIKE $${params.length}
+                OR rv.client_name ILIKE $${params.length}
+                OR rv.order_number::text ILIKE $${params.length}
             )`);
         }
         if (status) {
             params.push(status);
-            conditions.push(`av.status = $${params.length}`);
+            conditions.push(`rv.status = $${params.length}`);
         }
         if (from) {
             params.push(from);
-            conditions.push(`av.voucher_date >= $${params.length}`);
+            conditions.push(`rv.voucher_date >= $${params.length}`);
         }
         if (to) {
             params.push(to);
-            conditions.push(`av.voucher_date <= $${params.length}`);
+            conditions.push(`rv.voucher_date <= $${params.length}`);
         }
 
-        const where = conditions.join(' AND ');
+        const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+        const receiptRows = `
+            WITH receipt_rows AS (
+                SELECT
+                    av.id,
+                    av.voucher_number::text AS voucher_number,
+                    av.voucher_date,
+                    av.description,
+                    av.total_amount,
+                    av.status,
+                    av.reference_type,
+                    av.reference_id,
+                    av.created_at,
+                    COALESCE(
+                        CASE WHEN av.reference_type = 'client' THEN c_direct.name END,
+                        (SELECT cl.name FROM orders o JOIN clients cl ON cl.id = o.client_id WHERE o.id = av.reference_id LIMIT 1)
+                    ) AS client_name,
+                    COALESCE(
+                        CASE WHEN av.reference_type = 'client' THEN c_direct.phone END,
+                        (SELECT cl.phone FROM orders o JOIN clients cl ON cl.id = o.client_id WHERE o.id = av.reference_id LIMIT 1)
+                    ) AS client_phone,
+                    o_ref.order_number,
+                    u.name AS created_by_name,
+                    'accounting' AS source_type
+                FROM accounting_vouchers av
+                LEFT JOIN clients c_direct ON c_direct.id = av.reference_id AND av.reference_type = 'client'
+                LEFT JOIN orders o_ref ON o_ref.id = av.reference_id AND av.reference_type = 'order'
+                LEFT JOIN users u ON u.id = av.created_by
+                WHERE av.voucher_type = 'receipt'
 
-        const countRes = await db.query(`
-            SELECT COUNT(*) as total
-            FROM accounting_vouchers av
-            WHERE ${where}
-        `, params);
+                UNION ALL
 
-        params.push(parseInt(limit));
-        params.push(parseInt(offset));
+                SELECT
+                    ct.id,
+                    COALESCE(ct.document_number::text, 'قديم-' || LEFT(ct.id::text, 8)) AS voucher_number,
+                    ct.created_at::date AS voucher_date,
+                    ct.description,
+                    ct.amount AS total_amount,
+                    'legacy' AS status,
+                    CASE WHEN ct.order_id IS NULL THEN 'client' ELSE 'order' END AS reference_type,
+                    COALESCE(ct.order_id, ct.client_id) AS reference_id,
+                    ct.created_at,
+                    COALESCE(c_order.name, c_direct_old.name) AS client_name,
+                    COALESCE(c_order.phone, c_direct_old.phone) AS client_phone,
+                    o_old.order_number,
+                    NULL AS created_by_name,
+                    'legacy_transaction' AS source_type
+                FROM client_transactions ct
+                LEFT JOIN clients c_direct_old ON c_direct_old.id = ct.client_id
+                LEFT JOIN orders o_old ON o_old.id = ct.order_id
+                LEFT JOIN clients c_order ON c_order.id = o_old.client_id
+                WHERE ct.type = 'payment' AND ct.linked_voucher_id IS NULL
+            )
+            SELECT * FROM receipt_rows rv
+            ${where}
+        `;
 
-        const rows = await db.query(`
-            SELECT
-                av.id, av.voucher_number, av.voucher_date, av.description,
-                av.total_amount, av.status, av.reference_type, av.reference_id,
-                av.created_at,
-                COALESCE(
-                    CASE WHEN av.reference_type = 'client' THEN c_direct.name END,
-                    (SELECT cl.name FROM orders o JOIN clients cl ON cl.id = o.client_id WHERE o.id = av.reference_id LIMIT 1)
-                ) AS client_name,
-                COALESCE(
-                    CASE WHEN av.reference_type = 'client' THEN c_direct.phone END,
-                    (SELECT cl.phone FROM orders o JOIN clients cl ON cl.id = o.client_id WHERE o.id = av.reference_id LIMIT 1)
-                ) AS client_phone,
-                u.name AS created_by_name
-            FROM accounting_vouchers av
-            LEFT JOIN clients c_direct ON c_direct.id = av.reference_id AND av.reference_type = 'client'
-            LEFT JOIN users u ON u.id = av.created_by
-            WHERE ${where}
-            ORDER BY av.voucher_date DESC, av.voucher_number DESC
-            LIMIT $${params.length - 1} OFFSET $${params.length}
-        `, params);
+        const countRes = await db.query(`SELECT COUNT(*) AS total FROM (${receiptRows}) counted`, params);
+        const dataParams = [...params, parseInt(limit), parseInt(offset)];
+        const rows = await db.query(
+            `${receiptRows}
+             ORDER BY rv.voucher_date DESC, rv.created_at DESC, rv.voucher_number DESC
+             LIMIT $${dataParams.length - 1} OFFSET $${dataParams.length}`,
+            dataParams
+        );
 
         res.json({
             data: rows.rows,
@@ -126,7 +158,33 @@ router.get('/:id', async (req, res) => {
         `, [id]);
 
         if (!voucherRes.rows.length) {
-            return res.status(404).json({ error: 'Voucher not found' });
+            const legacyRes = await db.query(`
+                SELECT
+                    ct.id,
+                    COALESCE(ct.document_number::text, 'قديم-' || LEFT(ct.id::text, 8)) AS voucher_number,
+                    ct.created_at::date AS voucher_date,
+                    ct.description,
+                    ct.amount AS total_amount,
+                    'legacy' AS status,
+                    CASE WHEN ct.order_id IS NULL THEN 'client' ELSE 'order' END AS reference_type,
+                    COALESCE(ct.order_id, ct.client_id) AS reference_id,
+                    ct.created_at,
+                    COALESCE(c_order.name, c_direct.name) AS client_name,
+                    COALESCE(c_order.phone, c_direct.phone) AS client_phone,
+                    o.order_number,
+                    NULL AS created_by_name
+                FROM client_transactions ct
+                LEFT JOIN clients c_direct ON c_direct.id = ct.client_id
+                LEFT JOIN orders o ON o.id = ct.order_id
+                LEFT JOIN clients c_order ON c_order.id = o.client_id
+                WHERE ct.id = $1 AND ct.type = 'payment' AND ct.linked_voucher_id IS NULL
+            `, [id]);
+
+            if (!legacyRes.rows.length) {
+                return res.status(404).json({ error: 'Voucher not found' });
+            }
+
+            return res.json({ data: { ...legacyRes.rows[0], lines: [] } });
         }
 
         const linesRes = await db.query(`
