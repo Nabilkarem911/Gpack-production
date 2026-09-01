@@ -8,6 +8,7 @@ const fs = require('fs');
 const db = require('../db');
 const authenticate = require('../middleware/authMiddleware').authenticate;
 const authorize = require('../middleware/authorize');
+const { encryptToken, decryptShareToken } = require('../utils/crypto');
 
 const router = express.Router();
 const uploadRoot = path.join(__dirname, '../uploads/design-requests');
@@ -61,6 +62,20 @@ function moveToRequestFolder(file, requestId) {
 function publicRequest(row) {
     return { id: row.id, request_number: `DES-${String(row.request_number).padStart(5, '0')}`, item_name: row.item_name, item_size: row.item_size, brief: row.brief, status: row.status, client_name: row.client_name, designer_name: row.designer_name, created_at: row.created_at, started_at: row.started_at, approved_at: row.approved_at, converted_quotation_id: row.converted_quotation_id, selected_product_id: row.selected_product_id };
 }
+function shareLinks(row) {
+    const clientToken = decryptShareToken(row.client_token_encrypted);
+    const designerToken = decryptShareToken(row.designer_token_encrypted);
+    return clientToken && designerToken ? { client: `/#/public-design-request?token=${clientToken}`, designer: `/#/public-design-request?token=${designerToken}` } : null;
+}
+async function ensureShareTokens(row) {
+    if (row.client_token_encrypted && row.designer_token_encrypted) return row;
+    const clientToken = token();
+    const designerToken = token();
+    await db.query(`UPDATE design_requests SET client_token_hash=$1, designer_token_hash=$2, client_token_encrypted=$3, designer_token_encrypted=$4 WHERE id=$5`, [hash(clientToken), hash(designerToken), encryptToken(clientToken), encryptToken(designerToken), row.id]);
+    row.client_token_encrypted = encryptToken(clientToken);
+    row.designer_token_encrypted = encryptToken(designerToken);
+    return row;
+}
 async function requestById(id) {
     const result = await db.query(`SELECT dr.*, c.name AS client_name, u.name AS designer_name FROM design_requests dr JOIN clients c ON c.id = dr.client_id JOIN users u ON u.id = dr.designer_id WHERE dr.id = $1`, [id]);
     return result.rows[0];
@@ -75,11 +90,22 @@ async function details(request, includeInternal) {
     return { request: publicRequest(request), messages: messages.rows, versions: versions.rows, revisions: revisions.rows, items: items.rows };
 }
 
+// Independent requests assigned to the logged-in designer.
+router.get('/designer/my-requests', authenticate, async (req, res) => {
+    try {
+        const manager = ['admin', 'manager', 'super_admin'].includes(req.user.role);
+        const result = await db.query(`SELECT dr.id, dr.request_number, dr.item_name, dr.item_size, dr.brief, dr.status, dr.created_at, dr.updated_at, c.name AS client_name FROM design_requests dr JOIN clients c ON c.id=dr.client_id WHERE $1 OR dr.designer_id=$2 ORDER BY dr.updated_at DESC`, [manager, req.user.id]);
+        for (const row of result.rows) await ensureShareTokens(row);
+        res.json({ requests: result.rows.map(row => ({ ...publicRequest(row), designer_link: shareLinks(row)?.designer || null })) });
+    } catch (err) { res.status(500).json({ error: 'فشل تحميل طلبات التصميم المستقلة' }); }
+});
+
 // Management list and creation. Creation is deliberately separate from quotations.
 router.get('/', authenticate, authorize(['admin', 'manager', 'super_admin']), async (_req, res) => {
     try {
         const result = await db.query(`SELECT dr.*, c.name AS client_name, u.name AS designer_name FROM design_requests dr JOIN clients c ON c.id = dr.client_id JOIN users u ON u.id = dr.designer_id ORDER BY dr.created_at DESC`);
-        res.json({ requests: result.rows.map(publicRequest) });
+        for (const row of result.rows) await ensureShareTokens(row);
+        res.json({ requests: result.rows.map(row => ({ ...publicRequest(row), share_links: shareLinks(row) })) });
     } catch (err) { console.error('[DesignRequests] list:', err.message); res.status(500).json({ error: 'فشل تحميل طلبات التصميم' }); }
 });
 
@@ -98,7 +124,7 @@ router.post('/', authenticate, authorize(['admin', 'manager', 'super_admin']), s
     const designerToken = token();
     try {
         await client.query('BEGIN');
-        const result = await client.query(`INSERT INTO design_requests (client_id, designer_id, item_name, item_size, brief, client_token_hash, designer_token_hash, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id, request_number`, [client_id, designer_id, requestedItems.map(item => item.product_name).join('، '), requestedItems.map(item => item.size_name).filter(Boolean).join('، ') || null, brief || null, hash(clientToken), hash(designerToken), req.user.id]);
+        const result = await client.query(`INSERT INTO design_requests (client_id, designer_id, item_name, item_size, brief, client_token_hash, designer_token_hash, client_token_encrypted, designer_token_encrypted, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id, request_number`, [client_id, designer_id, requestedItems.map(item => item.product_name).join('، '), requestedItems.map(item => item.size_name).filter(Boolean).join('، ') || null, brief || null, hash(clientToken), hash(designerToken), encryptToken(clientToken), encryptToken(designerToken), req.user.id]);
         const requestId = result.rows[0].id;
         for (let index = 0; index < requestedItems.length; index++) {
             const item = requestedItems[index];
@@ -114,7 +140,10 @@ router.post('/', authenticate, authorize(['admin', 'manager', 'super_admin']), s
 });
 
 router.get('/:id([0-9a-fA-F-]{36})', authenticate, async (req, res) => {
-    try { const request = await requestById(req.params.id); if (!request) return res.status(404).json({ error: 'طلب التصميم غير موجود' }); if (!['admin', 'manager', 'super_admin'].includes(req.user.role) && request.designer_id !== req.user.id) return res.status(403).json({ error: 'غير مصرح لك' }); res.json(await details(request, true)); } catch (err) { res.status(500).json({ error: 'فشل تحميل الطلب' }); }
+    try { const request = await requestById(req.params.id); if (!request) return res.status(404).json({ error: 'طلب التصميم غير موجود' }); if (!['admin', 'manager', 'super_admin'].includes(req.user.role) && request.designer_id !== req.user.id) return res.status(403).json({ error: 'غير مصرح لك' }); await ensureShareTokens(request);
+        const response = await details(request, true);
+        response.share_links = shareLinks(request);
+        res.json(response); } catch (err) { res.status(500).json({ error: 'فشل تحميل الطلب' }); }
 });
 
 router.put('/:id([0-9a-fA-F-]{36})/start', authenticate, async (req, res) => {

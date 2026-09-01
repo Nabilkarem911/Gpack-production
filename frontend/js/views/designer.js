@@ -56,6 +56,7 @@
         try {
             const res = await window.apiFetch('/api/designer/my-tasks');
             _allTasks = res.tasks || [];
+            try { const independent = await window.apiFetch('/api/design-requests/designer/my-requests'); _renderIndependentRequests(independent.requests || []); } catch (error) { console.warn('[Designer] Independent requests unavailable:', error.message); }
 
             const completedRes = await window.apiFetch('/api/designer/my-completed');
             _completedTasks = completedRes.tasks || [];
@@ -74,6 +75,17 @@
             console.error('[Designer] Load error:', err.message);
             window.showToast?.('فشل في تحميل المهام', 'error');
         }
+    }
+
+    function _renderIndependentRequests(requests) {
+        const section = document.getElementById('independent-design-requests-section');
+        const grid = document.getElementById('independent-design-requests-grid');
+        if (!section || !grid) return;
+        if (!requests.length) { section.classList.add('hidden'); return; }
+        section.classList.remove('hidden');
+        const labels = { waiting_design: 'بانتظار التصميم', in_progress: 'قيد التنفيذ', revision_requested: 'طلب تعديل', designer_review: 'مراجعة المدير', client_review: 'بانتظار العميل', approved: 'مكتمل' };
+        grid.innerHTML = requests.map(request => `<button type="button" data-independent-link="${_esc(request.designer_link || '')}" class="text-right bg-white rounded-xl border border-slate-200 p-4 hover:border-brand-400 hover:shadow-sm transition-all"><div class="flex justify-between items-start"><div><b class="text-sm text-slate-800">${_esc(request.request_number)}</b><p class="text-xs text-slate-500 mt-1">${_esc(request.client_name)}</p></div><span class="text-[11px] px-2 py-1 rounded-full bg-brand-50 text-brand-700">${labels[request.status] || request.status}</span></div><p class="text-sm font-semibold text-slate-700 mt-3">${_esc(request.item_name)}</p><p class="text-xs text-slate-400 mt-1">${_esc(request.item_size || 'المقاس غير محدد')}</p></button>`).join('');
+        grid.querySelectorAll('[data-independent-link]').forEach(card => card.addEventListener('click', () => { if (card.dataset.independentLink) window.open(card.dataset.independentLink, '_blank'); }));
     }
 
     // ── Render task cards ─────────────────────────────────────────────────────
