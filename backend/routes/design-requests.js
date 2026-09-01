@@ -101,11 +101,12 @@ router.get('/designer/my-requests', authenticate, async (req, res) => {
 });
 
 // Management list and creation. Creation is deliberately separate from quotations.
-router.get('/', authenticate, authorize(['admin', 'manager', 'super_admin']), async (_req, res) => {
+router.get('/', authenticate, authorize(['admin', 'manager', 'super_admin', 'designer']), async (req, res) => {
     try {
-        const result = await db.query(`SELECT dr.*, c.name AS client_name, u.name AS designer_name FROM design_requests dr JOIN clients c ON c.id = dr.client_id JOIN users u ON u.id = dr.designer_id ORDER BY dr.created_at DESC`);
-        for (const row of result.rows) await ensureShareTokens(row);
-        res.json({ requests: result.rows.map(row => ({ ...publicRequest(row), share_links: shareLinks(row) })) });
+        const isDesigner = req.user.role === 'designer';
+        const result = await db.query(`SELECT dr.*, c.name AS client_name, u.name AS designer_name FROM design_requests dr JOIN clients c ON c.id = dr.client_id JOIN users u ON u.id = dr.designer_id ${isDesigner ? 'WHERE dr.designer_id = $1' : ''} ORDER BY dr.created_at DESC`, isDesigner ? [req.user.id] : []);
+        if (!isDesigner) for (const row of result.rows) await ensureShareTokens(row);
+        res.json({ requests: result.rows.map(row => ({ ...publicRequest(row), ...(isDesigner ? {} : { share_links: shareLinks(row) }) })) });
     } catch (err) { console.error('[DesignRequests] list:', err.message); res.status(500).json({ error: 'فشل تحميل طلبات التصميم' }); }
 });
 

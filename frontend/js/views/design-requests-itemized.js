@@ -7,7 +7,7 @@
     const close = () => $('dr-modal').classList.add('hidden');
     async function init() {
         $('dr-new-itemized-btn')?.addEventListener('click', open);
-        $('dr-modal-close')?.addEventListener('click', close);
+        $('dr-modal-close')?.addEventListener('click', close); if (window.GpackUser?.role === 'designer') $('dr-new-itemized-btn')?.classList.add('hidden');
     }
     async function open() {
         try {
