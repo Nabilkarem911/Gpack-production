@@ -1,1 +1,56 @@
-<!doctype html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>طلب التصميم | G.PACK</title><script src="https://cdn.tailwindcss.com"></script><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"><link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet"><style>*{font-family:Cairo,sans-serif}#messages{scroll-behavior:smooth}</style></head><body class="bg-slate-100 min-h-screen"><main id="app" class="max-w-3xl mx-auto p-4 md:p-8"><div class="bg-white rounded-2xl shadow-sm overflow-hidden"><header class="bg-[#563D5D] text-white p-5"><div class="flex justify-between items-center"><div><p class="text-xs text-white/70">G.PACK</p><h1 id="title" class="text-xl font-bold mt-1">طلب تصميم</h1></div><span id="status" class="text-xs bg-white/15 px-3 py-1 rounded-full"></span></div></header><section class="p-4 border-b bg-slate-50"><div class="grid grid-cols-2 gap-3 text-sm"><div><small class="text-slate-400 block">العميل</small><b id="client"></b></div><div><small class="text-slate-400 block">المقاس</small><b id="size"></b></div></div><p id="brief" class="text-sm text-slate-600 mt-3"></p></section><section id="versions" class="p-4 space-y-3"></section><section id="messages" class="p-4 h-[420px] overflow-y-auto space-y-3 bg-white"></section><form id="message-form" class="p-4 border-t bg-slate-50"><div id="recording" class="hidden text-xs text-red-600 mb-2">جاري التسجيل... اضغط إيقاف عند الانتهاء</div><div class="flex gap-2"><label class="w-11 h-11 rounded-xl bg-white border flex items-center justify-center cursor-pointer text-slate-500"><i class="fa-solid fa-paperclip"></i><input id="file" type="file" class="hidden"></label><button id="voice" type="button" title="تسجيل رسالة صوتية" class="min-w-[72px] h-11 px-3 rounded-xl bg-white border border-slate-200 text-slate-600 text-xs font-bold flex items-center justify-center gap-1 hover:bg-slate-100"><i class="fa-solid fa-microphone"></i><span>صوت</span></button><button id="enable-mic" type="button" class="h-11 px-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-700 text-xs font-bold">تفعيل الميكروفون</button><input id="text" class="flex-1 border rounded-xl px-3 text-sm outline-none focus:border-[#563D5D]" placeholder="اكتب رسالتك..."><button class="w-11 h-11 rounded-xl bg-[#563D5D] text-white"><i class="fa-solid fa-paper-plane"></i></button></div><p id="file-name" class="text-xs text-slate-400 mt-2"></p></form><section id="actions" class="hidden p-4 border-t flex gap-2"><button id="approve" class="flex-1 rounded-xl bg-emerald-600 text-white py-3 text-sm font-bold">اعتماد التصميم</button><button id="revision" class="flex-1 rounded-xl bg-orange-500 text-white py-3 text-sm font-bold">طلب تعديل</button></section></div><p class="text-center text-xs text-slate-400 mt-4">تواصل مع فريق G.PACK من خلال هذه الصفحة</p></main><script src="/js/views/public-design-request.js?v=20260901-4"></script></body></html>
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>طلب التصميم | G.PACK</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;font-family:Cairo,sans-serif}
+body{margin:0;background:#f1f5f9;color:#334155}
+.chat-shell{width:min(100%,900px);margin:0 auto;padding:24px 16px}
+.chat-card{background:#fff;border:1px solid #e2e8f0;border-radius:22px;overflow:hidden;box-shadow:0 12px 35px rgba(71,48,80,.08)}
+.chat-header{background:#563d5d;color:#fff;padding:20px 22px}
+.chat-header-main{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.chat-title{min-width:0}.chat-title h1{margin:3px 0 0;font-size:21px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chat-status{flex:0 0 auto;background:rgba(255,255,255,.16);border-radius:999px;padding:5px 11px;font-size:11px;white-space:nowrap}
+.chat-meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:16px 22px;background:#f8fafc;border-bottom:1px solid #e2e8f0}
+.chat-meta small{display:block;color:#94a3b8;font-size:11px}.chat-meta b{display:block;color:#0f172a;font-size:13px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#brief{margin:12px 0 0;color:#64748b;font-size:12px;line-height:1.7;white-space:pre-wrap}
+#versions{padding:14px 18px;background:#fff}
+#messages{height:460px;overflow-y:auto;padding:20px 18px;background:#fff;display:flex;flex-direction:column;gap:10px}
+#messages>div{width:100%}
+.message-bubble{max-width:min(78%,560px);padding:9px 13px;border-radius:16px;font-size:13px;line-height:1.7;overflow-wrap:anywhere}
+.message-bubble small{display:block;font-size:10px;opacity:.65;margin-bottom:2px}
+.message-own{background:#563d5d;color:#fff;border-bottom-right-radius:5px}
+.message-other{background:#f1f5f9;color:#334155;border-bottom-left-radius:5px}
+.message-row-own{display:flex;justify-content:flex-start}.message-row-other{display:flex;justify-content:flex-end}
+.composer{padding:12px 16px calc(12px + env(safe-area-inset-bottom));background:#f8fafc;border-top:1px solid #e2e8f0}
+.composer-recording{font-size:11px;color:#dc2626;margin:0 0 8px;text-align:right}
+.composer-main{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:8px;align-items:center}
+.composer-input{width:100%;height:44px;border:1px solid #dbe2ea;border-radius:13px;padding:0 13px;background:#fff;outline:none;font-size:13px;min-width:0}.composer-input:focus{border-color:#563d5d;box-shadow:0 0 0 3px rgba(86,61,93,.1)}
+.action-button{height:44px;border-radius:13px;border:1px solid #dbe2ea;background:#fff;color:#475569;padding:0 12px;font-size:12px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;white-space:nowrap}.action-button:hover{background:#f1f5f9}
+.send-button{width:44px;padding:0;background:#563d5d;color:#fff;border-color:#563d5d}.send-button:hover{background:#452f4b}
+.permission-button{margin-top:9px;height:32px;border-radius:9px;border:1px solid #fde68a;background:#fffbeb;color:#a16207;padding:0 10px;font-size:11px;font-weight:700;cursor:pointer}.permission-button.hidden{display:none}
+.file-name{font-size:11px;color:#94a3b8;margin:7px 2px 0;min-height:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#actions{padding:14px 16px!important;border-top:1px solid #e2e8f0!important}
+@media (max-width:600px){.chat-shell{padding:8px 6px}.chat-card{border-radius:16px}.chat-header{padding:16px}.chat-title h1{font-size:17px}.chat-status{font-size:10px;padding:4px 8px}.chat-meta{padding:13px 16px;gap:8px}.chat-meta b{font-size:12px}#messages{height:calc(100dvh - 365px);min-height:330px;padding:16px 12px}.message-bubble{max-width:84%;font-size:12px;padding:8px 11px}.composer{padding:10px 10px calc(10px + env(safe-area-inset-bottom))}.composer-main{grid-template-columns:auto minmax(0,1fr) auto;gap:6px}.action-button{height:42px;padding:0 9px;font-size:11px}.action-button span{display:inline}.send-button{width:42px;padding:0}.permission-button{width:100%;margin-top:8px}.permission-button.hidden{display:none}}
+@media (max-width:360px){.action-button{padding:0 7px}.action-button span{display:none}.message-bubble{max-width:88%}}
+</style>
+</head>
+<body>
+<main id="app" class="chat-shell">
+<div class="chat-card">
+<header class="chat-header"><div class="chat-header-main"><div class="chat-title"><p class="text-[10px] text-white/60 m-0">G.PACK</p><h1 id="title">طلب التصميم</h1></div><span id="status" class="chat-status"></span></div></header>
+<section class="chat-meta"><div><small>العميل</small><b id="client">—</b></div><div><small>المقاس</small><b id="size">—</b></div><p id="brief" class="col-span-2"></p></section>
+<section id="versions" class="space-y-3"></section>
+<section id="messages"><p class="text-center text-slate-400 text-sm py-16">جاري تحميل المحادثة...</p></section>
+<form id="message-form" class="composer"><p id="recording" class="composer-recording hidden">جاري التسجيل... اضغط إيقاف عند الانتهاء</p><div class="composer-main"><label class="action-button" title="إرفاق ملف"><i class="fa-solid fa-paperclip"></i><span>ملف</span><input id="file" type="file" class="hidden"></label><input id="text" class="composer-input" autocomplete="off" placeholder="اكتب رسالتك..."><button id="voice" type="button" title="تسجيل رسالة صوتية" class="action-button"><i class="fa-solid fa-microphone"></i><span>صوت</span></button><button type="submit" class="action-button send-button" title="إرسال"><i class="fa-solid fa-paper-plane"></i></button></div><button id="enable-mic" type="button" class="permission-button">تفعيل الميكروفون للسماح بإرسال الصوت</button><p id="file-name" class="file-name"></p></form>
+<section id="actions" class="hidden flex gap-2"><button id="approve" class="flex-1 rounded-xl bg-emerald-600 text-white py-3 text-sm font-bold">اعتماد التصميم</button><button id="revision" class="flex-1 rounded-xl bg-orange-500 text-white py-3 text-sm font-bold">طلب تعديل</button></section>
+</div><p class="text-center text-xs text-slate-400 mt-4">تواصل مع فريق G.PACK من خلال هذه الصفحة</p>
+</main>
+<script src="/js/views/public-design-request.js?v=20260901-5"></script>
+</body>
+</html>

@@ -65,7 +65,7 @@ function publicRequest(row) {
 function shareLinks(row) {
     const clientToken = decryptShareToken(row.client_token_encrypted);
     const designerToken = decryptShareToken(row.designer_token_encrypted);
-    return clientToken && designerToken ? { client: `/views/public-design-request.html?token=${clientToken}&v=20260901-4`, designer: `/views/public-design-request.html?token=${designerToken}&v=20260901-4` } : null;
+    return clientToken && designerToken ? { client: `/views/public-design-request.html?token=${clientToken}&v=20260901-5`, designer: `/views/public-design-request.html?token=${designerToken}&v=20260901-5` } : null;
 }
 async function ensureShareTokens(row) {
     if (row.client_token_encrypted && row.designer_token_encrypted) return row;
