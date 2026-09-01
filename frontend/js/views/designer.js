@@ -833,8 +833,9 @@
             }
             try {
                 await _loadTasks();
+                if (_currentTask?.order?.id && !document.activeElement?.matches('input, textarea')) await _openTaskDetail(_currentTask.order.id);
             } catch { /* silent */ }
-        }, 30000);
+        }, 2000);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
