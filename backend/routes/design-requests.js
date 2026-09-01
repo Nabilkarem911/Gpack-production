@@ -31,7 +31,7 @@ const upload = multer({
     storage,
     limits: { fileSize: 50 * 1024 * 1024 },
     fileFilter: (_req, file, cb) => {
-        const allowedExtensions = /\.(jpg|jpeg|jpe|png|gif|webp|avif|jfif|heic|heif|pdf|ai|psd|eps|svg|tif|tiff|doc|docx|xls|xlsx|mp3|wav|m4a|ogg|webm)$/i;
+        const allowedExtensions = /\.(jpg|jpeg|jpe|png|gif|webp|avif|jfif|heic|heif|pdf|ai|psd|eps|svg|cdr|ind|indd|idml|fig|sketch|xd|tif|tiff|dwg|dxf|zip|rar|7z|doc|docx|xls|xlsx|ppt|pptx|mp3|wav|m4a|ogg|webm)$/i;
         const allowedMimeTypes = /^(image\/(jpeg|png|gif|webp|avif|heic|heif|tiff|bmp)|application\/pdf|audio\/(mpeg|wav|mp4|x-m4a|ogg|webm)|application\/msword|application\/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|spreadsheetml\.sheet)|application\/vnd\.ms-excel)$/i;
         if (allowedExtensions.test(path.extname(file.originalname)) || allowedMimeTypes.test(file.mimetype || '')) return cb(null, true);
         return cb(new Error('نوع الملف غير مدعوم. ارفع صورة أو PDF أو ملف تصميم أو تسجيل صوتي.'), false);
