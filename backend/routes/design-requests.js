@@ -292,4 +292,15 @@ router.post('/:id([0-9a-fA-F-]{36})/convert', authenticate, authorize(['admin', 
     } catch (err) { await tx.query('ROLLBACK'); console.error('[DesignRequests] convert:', err.message); res.status(400).json({ error: err.message || 'فشل التحويل' }); } finally { tx.release(); }
 });
 
+router.post('/:id([0-9a-fA-F-]{36})/complete', authenticate, authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
+    try {
+        const request = await requestById(req.params.id);
+        if (!request) return res.status(404).json({ error: 'طلب التصميم غير موجود' });
+        if (request.status !== 'approved') return res.status(400).json({ error: 'يجب اعتماد كل التصاميم قبل إغلاق الطلب' });
+        await db.query(`UPDATE design_requests SET status='completed', completed_at=NOW() WHERE id=$1`, [req.params.id]);
+        await db.query(`INSERT INTO design_request_messages (request_id,sender_type,sender_id,sender_name,message) VALUES ($1,'system',$2,$3,$4)`, [req.params.id, req.user.id, req.user.name || 'النظام', 'تم إغلاق طلب التصميم']);
+        res.json({ success: true });
+    } catch (err) { console.error('[DesignRequests] complete:', err.message); res.status(500).json({ error: 'فشل إغلاق الطلب' }); }
+});
+
 module.exports = router;
