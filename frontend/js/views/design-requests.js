@@ -39,5 +39,6 @@
     async function convert() { const catalog = await window.apiFetch('/api/products?include_variants=true&status=active'); const variants = (catalog.data || []).flatMap(product => (product.variants || []).map(variant => ({ ...variant, product_name: product.name }))); if (!variants.length) return window.showToast('لا توجد أصناف نشطة للاختيار', 'warning'); const choice = prompt(`اختر رقم الصنف من القائمة:\n${variants.map((v, i) => `${i + 1}. ${v.product_name} — ${v.size_name || ''}`).join('\n')}`); const variant = variants[Number(choice) - 1]; if (!variant) return; const quantity = prompt('الكمية', '1'); const price = prompt('سعر الوحدة', '0'); const result = await window.apiFetch(`/api/design-requests/${selected.request.id}/convert`, { method: 'POST', body: { variant_id: variant.id, quantity, unit_price: price } }); window.showToast(`تم إنشاء عرض السعر رقم ${result.quotation.order_number}`, 'success'); await load(); showDetails(selected.request.id); }
     function openModal() { get('dr-modal').classList.remove('hidden'); }
     function closeModal() { get('dr-modal').classList.add('hidden'); selected = null; }
+    window.loadDesignRequests = load;
     init();
 })();

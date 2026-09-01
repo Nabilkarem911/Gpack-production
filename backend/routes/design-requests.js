@@ -49,6 +49,15 @@ function hash(value) { return crypto.createHash('sha256').update(value).digest('
 function fileData(file) {
     return file ? { path: `/uploads/design-requests/${path.basename(path.dirname(file.path))}/${file.filename}`, original_name: file.originalname, mime_type: file.mimetype, size: file.size } : null;
 }
+function moveToRequestFolder(file, requestId) {
+    if (!file) return null;
+    const targetDir = path.join(uploadRoot, requestId);
+    fs.mkdirSync(targetDir, { recursive: true });
+    const targetPath = path.join(targetDir, file.filename);
+    if (file.path !== targetPath) fs.renameSync(file.path, targetPath);
+    file.path = targetPath;
+    return fileData(file);
+}
 function publicRequest(row) {
     return { id: row.id, request_number: `DES-${String(row.request_number).padStart(5, '0')}`, item_name: row.item_name, item_size: row.item_size, brief: row.brief, status: row.status, client_name: row.client_name, designer_name: row.designer_name, created_at: row.created_at, started_at: row.started_at, approved_at: row.approved_at, converted_quotation_id: row.converted_quotation_id, selected_product_id: row.selected_product_id };
 }
@@ -61,7 +70,7 @@ async function details(request, includeInternal) {
         db.query(`SELECT id, sender_type, sender_id, sender_name, message, attachment, is_internal, created_at FROM design_request_messages WHERE request_id = $1 ${includeInternal ? '' : 'AND is_internal = FALSE'} ORDER BY created_at`, [request.id]),
         db.query(`SELECT * FROM design_request_versions WHERE request_id = $1 ORDER BY version_number DESC`, [request.id]),
         db.query(`SELECT * FROM design_request_revisions WHERE request_id = $1 ORDER BY created_at DESC`, [request.id]),
-        db.query(`SELECT id, variant_id, product_name, size_name, notes, sort_order FROM design_request_items WHERE request_id = $1 ORDER BY sort_order`, [request.id]),
+        db.query(`SELECT id, variant_id, product_name, size_name, notes, attachments, sort_order FROM design_request_items WHERE request_id = $1 ORDER BY sort_order`, [request.id]),
     ]);
     return { request: publicRequest(request), messages: messages.rows, versions: versions.rows, revisions: revisions.rows, items: items.rows };
 }
@@ -74,7 +83,7 @@ router.get('/', authenticate, authorize(['admin', 'manager', 'super_admin']), as
     } catch (err) { console.error('[DesignRequests] list:', err.message); res.status(500).json({ error: 'فشل تحميل طلبات التصميم' }); }
 });
 
-router.post('/', authenticate, authorize(['admin', 'manager', 'super_admin']), safeUpload(upload.array('brief_files', 10)), async (req, res) => {
+router.post('/', authenticate, authorize(['admin', 'manager', 'super_admin']), safeUpload(upload.any()), async (req, res) => {
     const { client_id, designer_id, item_name, item_size, brief } = req.body;
     let requestedItems = req.body.items;
     if (typeof requestedItems === 'string') { try { requestedItems = JSON.parse(requestedItems); } catch { requestedItems = []; } }
@@ -95,9 +104,10 @@ router.post('/', authenticate, authorize(['admin', 'manager', 'super_admin']), s
             const item = requestedItems[index];
             const variant = await client.query(`SELECT pv.id, pv.size_name, p.name AS product_name FROM product_variants pv JOIN products p ON p.id = pv.product_id WHERE pv.id = $1 AND pv.status = 'active'`, [item.variant_id]);
             if (!variant.rows[0]) throw new Error('أحد الأصناف المختارة غير موجود أو غير نشط');
-            await client.query(`INSERT INTO design_request_items (request_id, variant_id, product_name, size_name, notes, sort_order) VALUES ($1,$2,$3,$4,$5,$6)`, [requestId, variant.rows[0].id, variant.rows[0].product_name, variant.rows[0].size_name, item.notes || null, index]);
+            const itemFiles = (req.files || []).filter(file => file.fieldname === `item_files_${index}`).map(file => moveToRequestFolder(file, requestId));
+            await client.query(`INSERT INTO design_request_items (request_id, variant_id, product_name, size_name, notes, attachments, sort_order) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [requestId, variant.rows[0].id, variant.rows[0].product_name, variant.rows[0].size_name, item.notes || null, JSON.stringify(itemFiles), index]);
         }
-        for (const file of req.files || []) await client.query(`INSERT INTO design_request_messages (request_id, sender_type, sender_id, sender_name, attachment) VALUES ($1,'manager',$2,$3,$4)`, [requestId, req.user.id, req.user.name || 'المدير', JSON.stringify(fileData(file))]);
+        for (const file of (req.files || []).filter(file => file.fieldname === 'brief_files')) await client.query(`INSERT INTO design_request_messages (request_id, sender_type, sender_id, sender_name, attachment) VALUES ($1,'manager',$2,$3,$4)`, [requestId, req.user.id, req.user.name || 'المدير', JSON.stringify(moveToRequestFolder(file, requestId))]);
         await client.query('COMMIT');
         res.status(201).json({ request: result.rows[0], client_token: clientToken, designer_token: designerToken });
     } catch (err) { await client.query('ROLLBACK'); console.error('[DesignRequests] create:', err.message); res.status(500).json({ error: 'فشل إنشاء طلب التصميم' }); } finally { client.release(); }
