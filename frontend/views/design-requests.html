@@ -1,0 +1,34 @@
+<div class="p-4 lg:p-6 max-w-7xl mx-auto">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+        <div>
+            <p class="text-sm text-brand-600 font-semibold mb-1">إدارة دورة التصميم</p>
+            <h1 class="text-2xl font-bold text-slate-800">طلبات التصميم</h1>
+            <p class="text-sm text-slate-500 mt-1">أنشئ الطلب قبل عرض السعر وتابع العميل والمصمم من مكان واحد.</p>
+        </div>
+        <button id="dr-new-btn" class="px-4 py-2.5 rounded-xl bg-brand-700 hover:bg-brand-800 text-white text-sm font-semibold flex items-center gap-2 shadow-sm"><i class="fa-solid fa-plus"></i>طلب تصميم جديد</button>
+    </div>
+
+    <div id="dr-stats" class="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6"></div>
+    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="p-4 border-b border-slate-100 flex flex-col sm:flex-row gap-3 justify-between">
+            <div class="flex flex-wrap gap-2" id="dr-filters">
+                <button data-status="all" class="dr-filter px-3 py-1.5 rounded-lg bg-brand-50 text-brand-700 text-xs font-semibold">كل الطلبات</button>
+                <button data-status="waiting_design" class="dr-filter px-3 py-1.5 rounded-lg text-slate-500 text-xs">بانتظار التصميم</button>
+                <button data-status="in_progress" class="dr-filter px-3 py-1.5 rounded-lg text-slate-500 text-xs">قيد التنفيذ</button>
+                <button data-status="client_review" class="dr-filter px-3 py-1.5 rounded-lg text-slate-500 text-xs">بانتظار العميل</button>
+                <button data-status="revision_requested" class="dr-filter px-3 py-1.5 rounded-lg text-slate-500 text-xs">طلب تعديل</button>
+                <button data-status="approved" class="dr-filter px-3 py-1.5 rounded-lg text-slate-500 text-xs">مكتمل</button>
+            </div>
+            <input id="dr-search" class="border border-slate-200 rounded-lg px-3 py-2 text-xs outline-none focus:border-brand-500" placeholder="بحث بالعميل أو رقم الطلب...">
+        </div>
+        <div id="dr-table" class="overflow-x-auto"><div class="p-12 text-center text-slate-400"><i class="fa-solid fa-spinner fa-spin text-2xl"></i></div></div>
+    </div>
+</div>
+
+<div id="dr-modal" class="hidden fixed inset-0 z-50 bg-slate-950/50 p-4 flex items-center justify-center">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] overflow-hidden flex flex-col">
+        <div class="px-5 py-4 border-b flex justify-between items-center"><div><h2 id="dr-modal-title" class="font-bold text-slate-800"></h2><p id="dr-modal-subtitle" class="text-xs text-slate-500 mt-1"></p></div><button id="dr-modal-close" class="text-slate-400 hover:text-slate-700"><i class="fa-solid fa-xmark text-xl"></i></button></div>
+        <div id="dr-modal-body" class="p-5 overflow-y-auto"></div>
+    </div>
+</div>
+<script src="/js/views/design-requests.js"></script>

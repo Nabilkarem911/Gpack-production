@@ -8,7 +8,7 @@
 // =============================================================================
 
 // Public views that don't require authentication (attached to window to avoid redeclaration)
-window.PUBLIC_VIEWS = window.PUBLIC_VIEWS || ['public-client-statement', 'public-invoice', 'public-client-portal'];
+window.PUBLIC_VIEWS = window.PUBLIC_VIEWS || ['public-client-statement', 'public-invoice', 'public-client-portal', 'public-design-request'];
 
 function _isPublicRoute() {
     const hash = window.location.hash || '';

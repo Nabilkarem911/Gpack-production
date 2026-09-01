@@ -408,6 +408,8 @@ _mountRoute('/forecast',            authenticate, require('./routes/forecast'));
 _mountRoute('/reports',             authenticate, require('./routes/reports'));
 _mountRoute('/ai-assistant',        authenticate, require('./routes/ai-assistant'));
 _mountRoute('/designer',            authenticate, require('./routes/designer'));
+_mountRoute('/design-requests',     require('./routes/design-requests'));
+_mountRoute('/public/design-requests', publicLimiter, require('./routes/design-requests'));
 _mountRoute('/notifications',       authenticate, require('./routes/notifications'));
 _mountRoute('/public',              publicLimiter, require('./routes/public-statement')); // No auth required
 _mountRoute('/public/invoice',      publicLimiter, require('./routes/public-invoice'));   // No auth required

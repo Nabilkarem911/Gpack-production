@@ -42,6 +42,8 @@ var NAV_ITEMS = [ // var allows re-declaration if script loads more than once in
     { view: 'production_orders', label: 'أوامر التشغيل',    icon: 'fa-industry',      permission: 'production_orders' }, // ✅ production_orders.html
     { view: 'print-templates',   label: 'قوالب الطباعة',    icon: 'fa-print',         permission: 'production_orders' }, // ✅ print-templates.html
     { view: 'designer',          label: 'المصمم',           icon: 'fa-pen-ruler',     permission: 'designer' }, // ✅ designer.html
+    { view: 'design-requests',    label: 'طلبات التصميم',    icon: 'fa-comments',       permission: 'designer' }, // ✅ design-requests.html
+    { view: 'public-design-request', label: 'طلب تصميم عام', icon: 'fa-link', permission: null, hidden: true, public: true }, // ✅ public-design-request.html
     { view: 'forecast',            label: 'مركز الذكاء الاصطناعي',  icon: 'fa-brain',         permission: 'forecast' }, // ✅ forecast.html
 
     // ─────────────────────────────────────────────────────────────────────────────
