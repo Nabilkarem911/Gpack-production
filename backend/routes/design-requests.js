@@ -83,11 +83,25 @@ async function requestById(id) {
 async function details(request, includeInternal) {
     const [messages, versions, revisions, items] = await Promise.all([
         db.query(`SELECT id, sender_type, sender_id, sender_name, message, attachment, is_internal, created_at FROM design_request_messages WHERE request_id = $1 ${includeInternal ? '' : 'AND is_internal = FALSE'} ORDER BY created_at`, [request.id]),
-        db.query(`SELECT * FROM design_request_versions WHERE request_id = $1 ORDER BY version_number DESC`, [request.id]),
+        db.query(`SELECT * FROM design_request_versions WHERE request_id = $1 ORDER BY item_id NULLS LAST, version_number DESC`, [request.id]),
         db.query(`SELECT * FROM design_request_revisions WHERE request_id = $1 ORDER BY created_at DESC`, [request.id]),
-        db.query(`SELECT id, variant_id, product_name, size_name, notes, attachments, sort_order FROM design_request_items WHERE request_id = $1 ORDER BY sort_order`, [request.id]),
+        db.query(`SELECT id, variant_id, product_name, size_name, notes, attachments, sort_order, status, current_version_id, approved_version_id, approved_at FROM design_request_items WHERE request_id = $1 ORDER BY sort_order`, [request.id]),
     ]);
-    return { request: publicRequest(request), messages: messages.rows, versions: versions.rows, revisions: revisions.rows, items: items.rows };
+    const itemRows = items.rows.map(item => ({ ...item, versions: versions.rows.filter(version => String(version.item_id) === String(item.id)), revisions: revisions.rows.filter(revision => String(revision.item_id) === String(item.id)) }));
+    return { request: publicRequest(request), messages: messages.rows, versions: versions.rows, revisions: revisions.rows, items: itemRows };
+}
+
+async function recalcRequestStatus(client, requestId) {
+    const result = await client.query(`SELECT status, COUNT(*)::int AS count FROM design_request_items WHERE request_id=$1 GROUP BY status`, [requestId]);
+    const counts = Object.fromEntries(result.rows.map(row => [row.status, row.count]));
+    const total = result.rows.reduce((sum, row) => sum + row.count, 0);
+    const approved = counts.approved || 0;
+    const revisions = counts.revision_requested || 0;
+    const reviews = counts.client_review || 0;
+    const active = counts.in_progress || 0;
+    const next = total > 0 && approved === total ? 'approved' : revisions > 0 ? 'revision_requested' : reviews > 0 || active > 0 ? (reviews > 0 && active === 0 ? 'client_review' : 'in_progress') : 'waiting_design';
+    await client.query('UPDATE design_requests SET status=$1, approved_at=CASE WHEN $1=\'approved\' THEN COALESCE(approved_at,NOW()) ELSE NULL END WHERE id=$2', [next, requestId]);
+    return next;
 }
 
 // Independent requests assigned to the logged-in designer.
@@ -152,11 +166,27 @@ router.put('/:id([0-9a-fA-F-]{36})/start', authenticate, async (req, res) => {
 });
 
 router.post('/:id([0-9a-fA-F-]{36})/message', authenticate, safeUpload(upload.single('attachment')), async (req, res) => {
-    try { const request = await requestById(req.params.id); if (!request) return res.status(404).json({ error: 'الطلب غير موجود' }); const allowed = ['admin', 'manager', 'super_admin'].includes(req.user.role) || (req.user.role === 'designer' && request.designer_id === req.user.id); if (!allowed) return res.status(403).json({ error: 'غير مصرح لك' }); if (!req.body.message && !req.file) return res.status(400).json({ error: 'اكتب رسالة أو أرفق ملفًا' }); const senderType = ['admin', 'manager', 'super_admin'].includes(req.user.role) ? 'manager' : 'designer'; const result = await db.query(`INSERT INTO design_request_messages (request_id,sender_type,sender_id,sender_name,message,attachment,is_internal) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`, [req.params.id, senderType, req.user.id, req.user.name || senderType, req.body.message || null, req.file ? JSON.stringify(fileData(req.file)) : null, req.body.is_internal === 'true' && senderType === 'manager']); res.status(201).json({ message: result.rows[0] }); } catch (err) { res.status(500).json({ error: 'فشل إرسال الرسالة' }); }
+    try { const request = await requestById(req.params.id); if (!request) return res.status(404).json({ error: 'الطلب غير موجود' }); const allowed = ['admin', 'manager', 'super_admin'].includes(req.user.role) || (req.user.role === 'designer' && request.designer_id === req.user.id); if (!allowed) return res.status(403).json({ error: 'غير مصرح لك' }); if (!req.body.message && !req.file) return res.status(400).json({ error: 'اكتب رسالة أو أرفق ملفًا' }); const senderType = ['admin', 'manager', 'super_admin'].includes(req.user.role) ? 'manager' : 'designer'; const itemId = req.body.item_id || null; const result = await db.query(`INSERT INTO design_request_messages (request_id,item_id,sender_type,sender_id,sender_name,message,attachment,is_internal) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`, [req.params.id, itemId, senderType, req.user.id, req.user.name || senderType, req.body.message || null, req.file ? JSON.stringify(fileData(req.file)) : null, req.body.is_internal === 'true' && senderType === 'manager']); res.status(201).json({ message: result.rows[0] }); } catch (err) { res.status(500).json({ error: 'فشل إرسال الرسالة' }); }
 });
 
 router.post('/:id([0-9a-fA-F-]{36})/version', authenticate, safeUpload(upload.single('design_file')), async (req, res) => {
-    try { const request = await requestById(req.params.id); if (!request || request.designer_id !== req.user.id) return res.status(403).json({ error: 'غير مصرح لك' }); if (!req.file) return res.status(400).json({ error: 'ملف التصميم مطلوب' }); const next = await db.query('SELECT COALESCE(MAX(version_number),0)+1 AS number FROM design_request_versions WHERE request_id=$1', [req.params.id]); const result = await db.query(`INSERT INTO design_request_versions (request_id,version_number,file,designer_notes,created_by) VALUES ($1,$2,$3,$4,$5) RETURNING *`, [req.params.id, next.rows[0].number, JSON.stringify(fileData(req.file)), req.body.designer_notes || null, req.user.id]); await db.query(`UPDATE design_requests SET status='client_review' WHERE id=$1`, [req.params.id]); res.status(201).json({ version: result.rows[0] }); } catch (err) { res.status(500).json({ error: 'فشل رفع إصدار التصميم' }); }
+    const { item_id } = req.body;
+    if (!item_id) return res.status(400).json({ error: 'يجب اختيار الصنف قبل رفع التصميم' });
+    const tx = await db.getClient();
+    try {
+        await tx.query('BEGIN');
+        const request = (await tx.query('SELECT * FROM design_requests WHERE id=$1 FOR UPDATE', [req.params.id])).rows[0];
+        if (!request || request.designer_id !== req.user.id) throw new Error('غير مصرح لك');
+        if (!req.file) throw new Error('ملف التصميم مطلوب');
+        const item = (await tx.query('SELECT id FROM design_request_items WHERE id=$1 AND request_id=$2 FOR UPDATE', [item_id, req.params.id])).rows[0];
+        if (!item) throw new Error('الصنف غير موجود داخل طلب التصميم');
+        const next = await tx.query('SELECT COALESCE(MAX(version_number),0)+1 AS number FROM design_request_versions WHERE request_id=$1 AND item_id=$2', [req.params.id, item_id]);
+        const version = await tx.query(`INSERT INTO design_request_versions (request_id,item_id,version_number,file,designer_notes,created_by) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`, [req.params.id, item_id, next.rows[0].number, JSON.stringify(fileData(req.file)), req.body.designer_notes || null, req.user.id]);
+        await tx.query(`UPDATE design_request_items SET status='client_review', current_version_id=$1 WHERE id=$2`, [version.rows[0].id, item_id]);
+        await recalcRequestStatus(tx, req.params.id);
+        await tx.query('COMMIT');
+        res.status(201).json({ version: version.rows[0] });
+    } catch (err) { await tx.query('ROLLBACK'); res.status(400).json({ error: err.message || 'فشل رفع إصدار التصميم' }); } finally { tx.release(); }
 });
 
 // Public customer token endpoints. The token grants access only to this request.
@@ -165,7 +195,7 @@ router.get('/:token', async (req, res) => {
 });
 
 router.post('/:token/message', safeUpload(upload.single('attachment')), async (req, res) => {
-    try { const result = await db.query(`SELECT *, (designer_token_hash = $1) AS is_designer_link FROM design_requests WHERE client_token_hash=$1 OR designer_token_hash=$1`, [hash(req.params.token)]); const request = result.rows[0]; if (!request) return res.status(404).json({ error: 'الرابط غير صالح' }); if (!req.body.message && !req.file) return res.status(400).json({ error: 'اكتب رسالة أو أرفق ملفًا' }); const senderType = request.is_designer_link ? 'designer' : 'client'; const senderName = request.is_designer_link ? 'المصمم' : 'العميل'; const inserted = await db.query(`INSERT INTO design_request_messages (request_id,sender_type,sender_name,message,attachment) VALUES ($1,$2,$3,$4,$5) RETURNING *`, [request.id, senderType, senderName, req.body.message || null, req.file ? JSON.stringify(fileData(req.file)) : null]); res.status(201).json({ message: inserted.rows[0] }); } catch (err) { res.status(500).json({ error: 'فشل إرسال الرسالة' }); }
+    try { const result = await db.query(`SELECT *, (designer_token_hash = $1) AS is_designer_link FROM design_requests WHERE client_token_hash=$1 OR designer_token_hash=$1`, [hash(req.params.token)]); const request = result.rows[0]; if (!request) return res.status(404).json({ error: 'الرابط غير صالح' }); if (!req.body.message && !req.file) return res.status(400).json({ error: 'اكتب رسالة أو أرفق ملفًا' }); const senderType = request.is_designer_link ? 'designer' : 'client'; const senderName = request.is_designer_link ? 'المصمم' : 'العميل'; const itemId = req.body.item_id || null; const inserted = await db.query(`INSERT INTO design_request_messages (request_id,item_id,sender_type,sender_name,message,attachment) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`, [request.id, itemId, senderType, senderName, req.body.message || null, req.file ? JSON.stringify(fileData(req.file)) : null]); res.status(201).json({ message: inserted.rows[0] }); } catch (err) { res.status(500).json({ error: 'فشل إرسال الرسالة' }); }
 });
 
 router.put('/:token/start', async (req, res) => {
@@ -173,10 +203,52 @@ router.put('/:token/start', async (req, res) => {
 });
 
 router.post('/:token/version', safeUpload(upload.single('design_file')), async (req, res) => {
-    try { const request = (await db.query(`SELECT * FROM design_requests WHERE designer_token_hash=$1`, [hash(req.params.token)])).rows[0]; if (!request) return res.status(404).json({ error: 'الرابط غير صالح' }); if (!req.file) return res.status(400).json({ error: 'ملف التصميم مطلوب' }); const next = await db.query('SELECT COALESCE(MAX(version_number),0)+1 AS number FROM design_request_versions WHERE request_id=$1', [request.id]); const version = await db.query(`INSERT INTO design_request_versions (request_id,version_number,file,designer_notes) VALUES ($1,$2,$3,$4) RETURNING *`, [request.id, next.rows[0].number, JSON.stringify(fileData(req.file)), req.body.designer_notes || null]); await db.query(`UPDATE design_requests SET status='client_review' WHERE id=$1`, [request.id]); res.status(201).json({ version: version.rows[0] }); } catch (err) { res.status(500).json({ error: 'فشل رفع التصميم' }); }
+    const { item_id } = req.body;
+    if (!item_id) return res.status(400).json({ error: 'يجب اختيار الصنف قبل رفع التصميم' });
+    const tx = await db.getClient();
+    try {
+        await tx.query('BEGIN');
+        const request = (await tx.query(`SELECT * FROM design_requests WHERE designer_token_hash=$1 FOR UPDATE`, [hash(req.params.token)])).rows[0];
+        if (!request) throw new Error('الرابط غير صالح');
+        if (!req.file) throw new Error('ملف التصميم مطلوب');
+        const item = (await tx.query('SELECT id FROM design_request_items WHERE id=$1 AND request_id=$2 FOR UPDATE', [item_id, request.id])).rows[0];
+        if (!item) throw new Error('الصنف غير موجود داخل طلب التصميم');
+        const next = await tx.query('SELECT COALESCE(MAX(version_number),0)+1 AS number FROM design_request_versions WHERE request_id=$1 AND item_id=$2', [request.id, item_id]);
+        const version = await tx.query(`INSERT INTO design_request_versions (request_id,item_id,version_number,file,designer_notes) VALUES ($1,$2,$3,$4,$5) RETURNING *`, [request.id, item_id, next.rows[0].number, JSON.stringify(fileData(req.file)), req.body.designer_notes || null]);
+        await tx.query(`UPDATE design_request_items SET status='client_review', current_version_id=$1 WHERE id=$2`, [version.rows[0].id, item_id]);
+        await recalcRequestStatus(tx, request.id);
+        await tx.query('COMMIT');
+        res.status(201).json({ version: version.rows[0] });
+    } catch (err) { await tx.query('ROLLBACK'); res.status(400).json({ error: err.message || 'فشل رفع التصميم' }); } finally { tx.release(); }
 });
 
 router.post('/:token/respond', async (req, res) => {
+    const { action, notes, item_id, version_id } = req.body;
+    if (!['approve', 'revision'].includes(action) || !item_id) return res.status(400).json({ error: 'الصنف والإجراء مطلوبان' });
+    const tx = await db.getClient();
+    try {
+        await tx.query('BEGIN');
+        const request = (await tx.query('SELECT id FROM design_requests WHERE client_token_hash=$1 FOR UPDATE', [hash(req.params.token)])).rows[0];
+        if (!request) throw new Error('الرابط غير صالح');
+        const item = (await tx.query('SELECT id, current_version_id FROM design_request_items WHERE id=$1 AND request_id=$2 FOR UPDATE', [item_id, request.id])).rows[0];
+        if (!item) throw new Error('الصنف غير موجود داخل الطلب');
+        const targetVersion = version_id || item.current_version_id;
+        if (!targetVersion) throw new Error('لا يوجد إصدار لهذا الصنف');
+        if (action === 'revision') {
+            await tx.query(`UPDATE design_request_items SET status='revision_requested' WHERE id=$1`, [item.id]);
+            await tx.query(`UPDATE design_request_versions SET status='revision_requested' WHERE id=$1`, [targetVersion]);
+            await tx.query(`INSERT INTO design_request_revisions (request_id,item_id,version_id,notes,created_by) VALUES ($1,$2,$3,$4,NULL)`, [request.id, item.id, targetVersion, notes || 'طلب تعديل من العميل']);
+        } else {
+            await tx.query(`UPDATE design_request_items SET status='approved', approved_version_id=$1, approved_at=NOW() WHERE id=$2`, [targetVersion, item.id]);
+            await tx.query(`UPDATE design_request_versions SET status='approved' WHERE id=$1`, [targetVersion]);
+        }
+        await recalcRequestStatus(tx, request.id);
+        await tx.query('COMMIT');
+        res.json({ success: true });
+    } catch (err) { await tx.query('ROLLBACK'); res.status(400).json({ error: err.message || 'فشل تسجيل الرد' }); } finally { tx.release(); }
+});
+
+router.post('/:token/respond-legacy', async (req, res) => {
     const { action, notes } = req.body;
     if (!['approve', 'revision'].includes(action)) return res.status(400).json({ error: 'الإجراء غير صحيح' });
     try { const result = await db.query(`SELECT * FROM design_requests WHERE client_token_hash=$1`, [hash(req.params.token)]); const request = result.rows[0]; if (!request) return res.status(404).json({ error: 'الرابط غير صالح' }); if (action === 'revision') { await db.query(`UPDATE design_requests SET status='revision_requested' WHERE id=$1`, [request.id]); await db.query(`INSERT INTO design_request_revisions (request_id,notes) VALUES ($1,$2)`, [request.id, notes || 'طلب تعديل من العميل']); } else { const version = await db.query(`SELECT id FROM design_request_versions WHERE request_id=$1 ORDER BY version_number DESC LIMIT 1`, [request.id]); if (!version.rows[0]) return res.status(400).json({ error: 'لا يوجد إصدار يمكن اعتماده' }); await db.query(`UPDATE design_request_versions SET status='approved' WHERE id=$1`, [version.rows[0].id]); await db.query(`UPDATE design_request_versions SET status='superseded' WHERE request_id=$1 AND id<>$2 AND status<>'approved'`, [request.id, version.rows[0].id]); await db.query(`UPDATE design_requests SET status='approved', approved_version_id=$2, approved_at=NOW(), completed_at=NOW() WHERE id=$1`, [request.id, version.rows[0].id]); } res.json({ success: true }); } catch (err) { res.status(500).json({ error: 'فشل تسجيل الرد' }); }
