@@ -272,7 +272,7 @@ router.post('/:id([0-9a-fA-F-]{36})/convert', authenticate, authorize(['admin', 
     const tx = await db.getClient();
     try {
         await tx.query('BEGIN');
-        const requestRes = await tx.query(`SELECT dr.*, dv.file, dv.id AS version_id FROM design_requests dr LEFT JOIN design_request_versions dv ON dv.id = dr.approved_version_id WHERE dr.id=$1 FOR UPDATE`, [req.params.id]);
+        const requestRes = await tx.query(`SELECT dr.*, dri.id AS item_id, dri.product_name AS item_name, dri.size_name AS item_size, dv.file, dv.id AS version_id FROM design_requests dr JOIN design_request_items dri ON dri.request_id = dr.id AND dri.variant_id = $2 LEFT JOIN design_request_versions dv ON dv.id = dri.approved_version_id WHERE dr.id=$1 FOR UPDATE`, [req.params.id, variant_id]);
         const request = requestRes.rows[0];
         if (!request || request.status !== 'approved' || !request.version_id) throw new Error('يجب اعتماد تصميم قبل التحويل');
         if (request.converted_quotation_id) throw new Error('تم تحويل طلب التصميم إلى عرض سعر من قبل');
