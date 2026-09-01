@@ -112,7 +112,7 @@ async function recalcRequestStatus(client, requestId) {
     } else if (reviews > 0) {
         next = 'client_review';
     }
-    await client.query('UPDATE design_requests SET status=$1, approved_at=CASE WHEN $1 = \'approved\'::varchar THEN COALESCE(approved_at,NOW()) ELSE NULL END WHERE id=$2', [next, requestId]);
+    await client.query('UPDATE design_requests SET status=$1::varchar, approved_at=CASE WHEN $1::varchar = \'approved\' THEN COALESCE(approved_at,NOW()) ELSE NULL END WHERE id=$2', [next, requestId]);
     return next;
 }
 
