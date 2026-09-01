@@ -41,7 +41,7 @@ function fileData(file) {
     return file ? { path: `/uploads/design-requests/${path.basename(path.dirname(file.path))}/${file.filename}`, original_name: file.originalname, mime_type: file.mimetype, size: file.size } : null;
 }
 function publicRequest(row) {
-    return { id: row.id, request_number: `DES-${String(row.request_number).padStart(5, '0')}`, item_name: row.item_name, item_size: row.item_size, brief: row.brief, status: row.status, client_name: row.client_name, designer_name: row.designer_name, created_at: row.created_at, started_at: row.started_at, approved_at: row.approved_at };
+    return { id: row.id, request_number: `DES-${String(row.request_number).padStart(5, '0')}`, item_name: row.item_name, item_size: row.item_size, brief: row.brief, status: row.status, client_name: row.client_name, designer_name: row.designer_name, created_at: row.created_at, started_at: row.started_at, approved_at: row.approved_at, converted_quotation_id: row.converted_quotation_id, selected_product_id: row.selected_product_id };
 }
 async function requestById(id) {
     const result = await db.query(`SELECT dr.*, c.name AS client_name, u.name AS designer_name FROM design_requests dr JOIN clients c ON c.id = dr.client_id JOIN users u ON u.id = dr.designer_id WHERE dr.id = $1`, [id]);
@@ -117,6 +117,32 @@ router.post('/:token/respond', async (req, res) => {
     const { action, notes } = req.body;
     if (!['approve', 'revision'].includes(action)) return res.status(400).json({ error: 'الإجراء غير صحيح' });
     try { const result = await db.query(`SELECT * FROM design_requests WHERE client_token_hash=$1`, [hash(req.params.token)]); const request = result.rows[0]; if (!request) return res.status(404).json({ error: 'الرابط غير صالح' }); if (action === 'revision') { await db.query(`UPDATE design_requests SET status='revision_requested' WHERE id=$1`, [request.id]); await db.query(`INSERT INTO design_request_revisions (request_id,notes) VALUES ($1,$2)`, [request.id, notes || 'طلب تعديل من العميل']); } else { const version = await db.query(`SELECT id FROM design_request_versions WHERE request_id=$1 ORDER BY version_number DESC LIMIT 1`, [request.id]); if (!version.rows[0]) return res.status(400).json({ error: 'لا يوجد إصدار يمكن اعتماده' }); await db.query(`UPDATE design_request_versions SET status='approved' WHERE id=$1`, [version.rows[0].id]); await db.query(`UPDATE design_request_versions SET status='superseded' WHERE request_id=$1 AND id<>$2 AND status<>'approved'`, [request.id, version.rows[0].id]); await db.query(`UPDATE design_requests SET status='approved', approved_version_id=$2, approved_at=NOW(), completed_at=NOW() WHERE id=$1`, [request.id, version.rows[0].id]); } res.json({ success: true }); } catch (err) { res.status(500).json({ error: 'فشل تسجيل الرد' }); }
+});
+
+router.post('/:id([0-9a-fA-F-]{36})/convert', authenticate, authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
+    const { variant_id, quantity = 1, unit_price = 0 } = req.body;
+    if (!variant_id || Number(quantity) <= 0 || Number(unit_price) < 0) return res.status(400).json({ error: 'الصنف والكمية والسعر مطلوبة بشكل صحيح' });
+    const tx = await db.getClient();
+    try {
+        await tx.query('BEGIN');
+        const requestRes = await tx.query(`SELECT dr.*, dv.file, dv.id AS version_id FROM design_requests dr LEFT JOIN design_request_versions dv ON dv.id = dr.approved_version_id WHERE dr.id=$1 FOR UPDATE`, [req.params.id]);
+        const request = requestRes.rows[0];
+        if (!request || request.status !== 'approved' || !request.version_id) throw new Error('يجب اعتماد تصميم قبل التحويل');
+        if (request.converted_quotation_id) throw new Error('تم تحويل طلب التصميم إلى عرض سعر من قبل');
+        const variantRes = await tx.query(`SELECT pv.id, p.id AS product_id, p.name AS product_name, pv.size_name FROM product_variants pv JOIN products p ON p.id=pv.product_id WHERE pv.id=$1 AND pv.status='active'`, [variant_id]);
+        if (!variantRes.rows[0]) throw new Error('الصنف المختار غير موجود أو غير نشط');
+        const q = await tx.query(`INSERT INTO orders (client_id,status,pricing_status,order_date,valid_until,subtotal,tax_amount,grand_total,client_notes,internal_notes,created_by) VALUES ($1,'quote','pending',CURRENT_DATE,CURRENT_DATE + INTERVAL '45 days',0,0,0,$2,$3,$4) RETURNING id, order_number`, [request.client_id, `طلب تصميم ${request.item_name}`, `تم التحويل من ${`DES-${String(request.request_number).padStart(5, '0')}`}`, req.user.id]);
+        const order = q.rows[0];
+        const item = await tx.query(`INSERT INTO order_items (order_id,variant_id,quantity,unit_price,design_status,notes) VALUES ($1,$2,$3,$4,'approved',$5) RETURNING id`, [order.id, variant_id, Number(quantity), Number(unit_price), `من طلب التصميم DES-${String(request.request_number).padStart(5, '0')}`]);
+        await tx.query('LOCK TABLE client_designs IN SHARE ROW EXCLUSIVE MODE');
+        const numberRes = await tx.query(`SELECT COALESCE(MAX(design_number),0)+1 AS number FROM client_designs WHERE client_id=$1 AND variant_id=$2`, [request.client_id, variant_id]);
+        const design = await tx.query(`INSERT INTO client_designs (client_id,variant_id,design_number,design_name,description,is_active) VALUES ($1,$2,$3,$4,$5,TRUE) RETURNING id`, [request.client_id, variant_id, numberRes.rows[0].number, request.item_name, `تم اعتماد التصميم من طلب ${`DES-${String(request.request_number).padStart(5, '0')}`}`]);
+        await tx.query(`INSERT INTO client_design_files (design_id,file_type,file_path,original_name,file_size,mime_type,uploaded_by) VALUES ($1,'source',$2,$3,$4,$5,$6)`, [design.rows[0].id, request.file.path, request.file.original_name || 'approved-design', request.file.size || 0, request.file.mime_type || 'application/octet-stream', req.user.id]);
+        await tx.query(`UPDATE order_items SET design_id=$1 WHERE id=$2`, [design.rows[0].id, item.rows[0].id]);
+        await tx.query(`UPDATE design_requests SET selected_product_id=$2, converted_quotation_id=$3, completed_at=NOW() WHERE id=$1`, [request.id, variantRes.rows[0].product_id, order.id]);
+        await tx.query('COMMIT');
+        res.status(201).json({ quotation: order, design_id: design.rows[0].id, product: variantRes.rows[0] });
+    } catch (err) { await tx.query('ROLLBACK'); console.error('[DesignRequests] convert:', err.message); res.status(400).json({ error: err.message || 'فشل التحويل' }); } finally { tx.release(); }
 });
 
 module.exports = router;
