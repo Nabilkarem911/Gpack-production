@@ -95,11 +95,23 @@ async function recalcRequestStatus(client, requestId) {
     const result = await client.query(`SELECT status, COUNT(*)::int AS count FROM design_request_items WHERE request_id=$1 GROUP BY status`, [requestId]);
     const counts = Object.fromEntries(result.rows.map(row => [row.status, row.count]));
     const total = result.rows.reduce((sum, row) => sum + row.count, 0);
-    const approved = counts.approved || 0;
-    const revisions = counts.revision_requested || 0;
-    const reviews = counts.client_review || 0;
+    const waiting = counts.waiting_design || 0;
     const active = counts.in_progress || 0;
-    const next = total > 0 && approved === total ? 'approved' : revisions > 0 ? 'revision_requested' : reviews > 0 || active > 0 ? (reviews > 0 && active === 0 ? 'client_review' : 'in_progress') : 'waiting_design';
+    const reviews = counts.client_review || 0;
+    const revisions = counts.revision_requested || 0;
+    const approved = counts.approved || 0;
+    let next = 'waiting_design';
+    if (total === 0) {
+        next = 'waiting_design';
+    } else if (approved === total) {
+        next = 'approved';
+    } else if (revisions > 0) {
+        next = 'revision_requested';
+    } else if (active > 0 || waiting > 0) {
+        next = 'in_progress';
+    } else if (reviews > 0) {
+        next = 'client_review';
+    }
     await client.query('UPDATE design_requests SET status=$1, approved_at=CASE WHEN $1=\'approved\' THEN COALESCE(approved_at,NOW()) ELSE NULL END WHERE id=$2', [next, requestId]);
     return next;
 }

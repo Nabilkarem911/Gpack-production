@@ -63,15 +63,16 @@ WHERE r.item_id IS NULL
   AND i.request_id = r.request_id
   AND (SELECT COUNT(*) FROM design_request_items i2 WHERE i2.request_id = r.request_id) = 1;
 
+-- Backfill per-item status from the latest version (only for items that already have versions).
 UPDATE design_request_items i
 SET current_version_id = latest.id,
     status = CASE WHEN latest.status = 'approved' THEN 'approved' ELSE 'client_review' END,
     approved_version_id = CASE WHEN latest.status = 'approved' THEN latest.id ELSE NULL END,
     approved_at = CASE WHEN latest.status = 'approved' THEN latest.created_at ELSE NULL END
-FROM LATERAL (
-    SELECT v.id, v.status, v.created_at
-    FROM design_request_versions v
-    WHERE v.item_id = i.id
-    ORDER BY v.version_number DESC
-    LIMIT 1
-) latest;
+FROM (
+    SELECT DISTINCT ON (item_id) item_id, id, status, created_at
+    FROM design_request_versions
+    WHERE item_id IS NOT NULL
+    ORDER BY item_id, version_number DESC
+) latest
+WHERE i.id = latest.item_id;
