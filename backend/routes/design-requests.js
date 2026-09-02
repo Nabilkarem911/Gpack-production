@@ -145,7 +145,7 @@ router.post('/', authenticate, authorize(['admin', 'manager', 'super_admin']), s
         else requestedItems = [];
     }
     if (!client_id || !designer_id || requestedItems.length === 0) return res.status(400).json({ error: 'العميل والمصمم وصنف واحد على الأقل مطلوبة' });
-    if (requestedItems.some(item => !item.variant_id)) return res.status(400).json({ error: 'يجب اختيار الصنف من قائمة الأصناف الفعلية' });
+    if (requestedItems.some(item => !item.variant_id && !item.product_name)) return res.status(400).json({ error: 'يجب اختيار صنف أو كتابة اسم التصميم' });
     const client = await db.getClient();
     const clientToken = token();
     const designerToken = token();
@@ -155,15 +155,44 @@ router.post('/', authenticate, authorize(['admin', 'manager', 'super_admin']), s
         const requestId = result.rows[0].id;
         for (let index = 0; index < requestedItems.length; index++) {
             const item = requestedItems[index];
-            const variant = await client.query(`SELECT pv.id, pv.size_name, p.name AS product_name FROM product_variants pv JOIN products p ON p.id = pv.product_id WHERE pv.id = $1 AND pv.status = 'active'`, [item.variant_id]);
-            if (!variant.rows[0]) throw new Error('أحد الأصناف المختارة غير موجود أو غير نشط');
+            let variantId = item.variant_id || null;
+            let productName = item.product_name;
+            let sizeName = item.size_name || null;
+            if (item.variant_id) {
+                const variant = await client.query(`SELECT pv.id, pv.size_name, p.name AS product_name FROM product_variants pv JOIN products p ON p.id = pv.product_id WHERE pv.id = $1 AND pv.status = 'active'`, [item.variant_id]);
+                if (!variant.rows[0]) throw new Error('أحد الأصناف المختارة غير موجود أو غير نشط');
+                variantId = variant.rows[0].id;
+                productName = variant.rows[0].product_name;
+                sizeName = variant.rows[0].size_name;
+            }
             const itemFiles = (req.files || []).filter(file => file.fieldname === `item_files_${index}`).map(file => moveToRequestFolder(file, requestId));
-            await client.query(`INSERT INTO design_request_items (request_id, variant_id, product_name, size_name, notes, attachments, sort_order) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [requestId, variant.rows[0].id, variant.rows[0].product_name, variant.rows[0].size_name, item.notes || null, JSON.stringify(itemFiles), index]);
+            await client.query(`INSERT INTO design_request_items (request_id, variant_id, product_name, size_name, notes, attachments, sort_order) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [requestId, variantId, productName, sizeName, item.notes || null, JSON.stringify(itemFiles), index]);
         }
         for (const file of (req.files || []).filter(file => file.fieldname === 'brief_files')) await client.query(`INSERT INTO design_request_messages (request_id, sender_type, sender_id, sender_name, attachment) VALUES ($1,'manager',$2,$3,$4)`, [requestId, req.user.id, req.user.name || 'المدير', JSON.stringify(moveToRequestFolder(file, requestId))]);
         await client.query('COMMIT');
         res.status(201).json({ request: result.rows[0], client_token: clientToken, designer_token: designerToken });
     } catch (err) { await client.query('ROLLBACK'); console.error('[DesignRequests] create:', err.message); res.status(500).json({ error: 'فشل إنشاء طلب التصميم' }); } finally { client.release(); }
+});
+
+router.post('/:id([0-9a-fA-F-]{36})/items', authenticate, async (req, res) => {
+    try {
+        const request = await requestById(req.params.id);
+        if (!request) return res.status(404).json({ error: 'طلب التصميم غير موجود' });
+        if (['completed', 'cancelled'].includes(request.status)) return res.status(400).json({ error: 'لا يمكن إضافة تصاميم لطلب مغلق' });
+        const allowed = ['admin', 'manager', 'super_admin'].includes(req.user.role) || (req.user.role === 'designer' && request.designer_id === req.user.id);
+        if (!allowed) return res.status(403).json({ error: 'غير مصرح لك' });
+        const { product_name, size_name, notes } = req.body;
+        if (!product_name) return res.status(400).json({ error: 'اسم التصميم مطلوب' });
+        const tx = await db.getClient();
+        try {
+            await tx.query('BEGIN');
+            const orderResult = await tx.query(`SELECT COALESCE(MAX(sort_order),0)+1 AS next FROM design_request_items WHERE request_id=$1`, [req.params.id]);
+            await tx.query(`INSERT INTO design_request_items (request_id, variant_id, product_name, size_name, notes, attachments, sort_order, status) VALUES ($1,$2,$3,$4,$5,$6,$7,'waiting_design')`, [req.params.id, null, product_name, size_name || null, notes || null, JSON.stringify([]), orderResult.rows[0].next]);
+            await recalcRequestStatus(tx, req.params.id);
+            await tx.query('COMMIT');
+            res.status(201).json({ success: true });
+        } catch (err) { await tx.query('ROLLBACK'); throw err; } finally { tx.release(); }
+    } catch (err) { console.error('[DesignRequests] add item:', err.message); res.status(500).json({ error: err.message || 'فشل إضافة التصميم' }); }
 });
 
 router.get('/:id([0-9a-fA-F-]{36})', authenticate, async (req, res) => {
