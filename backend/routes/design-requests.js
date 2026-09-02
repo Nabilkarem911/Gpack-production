@@ -266,6 +266,18 @@ router.post('/:token/respond-legacy', async (req, res) => {
     try { const result = await db.query(`SELECT * FROM design_requests WHERE client_token_hash=$1`, [hash(req.params.token)]); const request = result.rows[0]; if (!request) return res.status(404).json({ error: 'الرابط غير صالح' }); if (action === 'revision') { await db.query(`UPDATE design_requests SET status='revision_requested' WHERE id=$1`, [request.id]); await db.query(`INSERT INTO design_request_revisions (request_id,notes) VALUES ($1,$2)`, [request.id, notes || 'طلب تعديل من العميل']); } else { const version = await db.query(`SELECT id FROM design_request_versions WHERE request_id=$1 ORDER BY version_number DESC LIMIT 1`, [request.id]); if (!version.rows[0]) return res.status(400).json({ error: 'لا يوجد إصدار يمكن اعتماده' }); await db.query(`UPDATE design_request_versions SET status='approved' WHERE id=$1`, [version.rows[0].id]); await db.query(`UPDATE design_request_versions SET status='superseded' WHERE request_id=$1 AND id<>$2 AND status<>'approved'`, [request.id, version.rows[0].id]); await db.query(`UPDATE design_requests SET status='approved', approved_version_id=$2, approved_at=NOW(), completed_at=NOW() WHERE id=$1`, [request.id, version.rows[0].id]); } res.json({ success: true }); } catch (err) { res.status(500).json({ error: 'فشل تسجيل الرد' }); }
 });
 
+router.post('/:token/complete', async (req, res) => {
+    try {
+        const result = await db.query(`SELECT * FROM design_requests WHERE designer_token_hash=$1 FOR UPDATE`, [hash(req.params.token)]);
+        const request = result.rows[0];
+        if (!request) return res.status(404).json({ error: 'الرابط غير صالح' });
+        if (request.status !== 'approved') return res.status(400).json({ error: 'يجب اعتماد كل التصاميم قبل إغلاق الطلب' });
+        await db.query(`UPDATE design_requests SET status='completed', completed_at=NOW() WHERE id=$1`, [request.id]);
+        await db.query(`INSERT INTO design_request_messages (request_id,sender_type,sender_name,message) VALUES ($1,'system','النظام','تم إغلاق طلب التصميم')`, [request.id]);
+        res.json({ success: true });
+    } catch (err) { res.status(500).json({ error: 'فشل إغلاق الطلب' }); }
+});
+
 router.post('/:id([0-9a-fA-F-]{36})/convert', authenticate, authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
     const { variant_id, quantity = 1, unit_price = 0 } = req.body;
     if (!variant_id || Number(quantity) <= 0 || Number(unit_price) < 0) return res.status(400).json({ error: 'الصنف والكمية والسعر مطلوبة بشكل صحيح' });
@@ -292,10 +304,12 @@ router.post('/:id([0-9a-fA-F-]{36})/convert', authenticate, authorize(['admin', 
     } catch (err) { await tx.query('ROLLBACK'); console.error('[DesignRequests] convert:', err.message); res.status(400).json({ error: err.message || 'فشل التحويل' }); } finally { tx.release(); }
 });
 
-router.post('/:id([0-9a-fA-F-]{36})/complete', authenticate, authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
+router.post('/:id([0-9a-fA-F-]{36})/complete', authenticate, async (req, res) => {
     try {
         const request = await requestById(req.params.id);
         if (!request) return res.status(404).json({ error: 'طلب التصميم غير موجود' });
+        const allowed = ['admin', 'manager', 'super_admin'].includes(req.user.role) || (req.user.role === 'designer' && request.designer_id === req.user.id);
+        if (!allowed) return res.status(403).json({ error: 'غير مصرح لك' });
         if (request.status !== 'approved') return res.status(400).json({ error: 'يجب اعتماد كل التصاميم قبل إغلاق الطلب' });
         await db.query(`UPDATE design_requests SET status='completed', completed_at=NOW() WHERE id=$1`, [req.params.id]);
         await db.query(`INSERT INTO design_request_messages (request_id,sender_type,sender_id,sender_name,message) VALUES ($1,'system',$2,$3,$4)`, [req.params.id, req.user.id, req.user.name || 'النظام', 'تم إغلاق طلب التصميم']);
