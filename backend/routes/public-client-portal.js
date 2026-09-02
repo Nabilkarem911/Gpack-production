@@ -34,6 +34,17 @@ const ORDER_STATUS_LABELS = {
     draft: { label: 'مسودة', color: 'bg-slate-100 text-slate-500' },
 };
 
+const DESIGN_STATUS_LABELS = {
+    waiting_design: { label: 'بانتظار التصميم', color: 'bg-slate-100 text-slate-600' },
+    in_progress: { label: 'قيد التنفيذ', color: 'bg-blue-100 text-blue-700' },
+    designer_review: { label: 'مراجعة التصميم', color: 'bg-purple-100 text-purple-700' },
+    client_review: { label: 'بانتظار اعتمادك', color: 'bg-amber-100 text-amber-700' },
+    revision_requested: { label: 'تعديلات مطلوبة', color: 'bg-orange-100 text-orange-700' },
+    approved: { label: 'معتمد', color: 'bg-emerald-100 text-emerald-700' },
+    completed: { label: 'مكتمل', color: 'bg-teal-100 text-teal-700' },
+    cancelled: { label: 'ملغي', color: 'bg-red-100 text-red-700' },
+};
+
 function _orderBadge(status) {
     return ORDER_STATUS_LABELS[status] || { label: status || '—', color: 'bg-slate-100 text-slate-600' };
 }
@@ -349,6 +360,34 @@ router.get('/client-portal/:token', async (req, res) => {
             [client.id]
         );
 
+        const baseUrl = `${req.protocol}://${req.get('host')}`;
+        const designRes = await db.query(
+            `SELECT dr.id, dr.request_number, dr.item_name, dr.item_size, dr.brief, dr.status, dr.created_at, dr.updated_at, dr.client_token_encrypted, u.name AS designer_name
+             FROM design_requests dr
+             JOIN users u ON u.id = dr.designer_id
+             WHERE dr.client_id = $1
+             ORDER BY dr.created_at DESC`,
+            [client.id]
+        );
+        const designRequests = designRes.rows.map(dr => {
+            const token = decryptShareToken(dr.client_token_encrypted);
+            const statusMeta = DESIGN_STATUS_LABELS[dr.status] || { label: dr.status, color: 'bg-slate-100 text-slate-500' };
+            return {
+                id: dr.id,
+                request_number: dr.request_number,
+                item_name: dr.item_name,
+                item_size: dr.item_size,
+                brief: dr.brief,
+                status: dr.status,
+                status_label: statusMeta.label,
+                status_color: statusMeta.color,
+                designer_name: dr.designer_name,
+                created_at: dr.created_at,
+                updated_at: dr.updated_at,
+                design_url: token ? `${baseUrl}/views/public-design-request.html?token=${encodeURIComponent(token)}` : null,
+            };
+        });
+
         return success(res, {
             client: {
                 id: client.id,
@@ -360,6 +399,7 @@ router.get('/client-portal/:token', async (req, res) => {
                 status: client.status,
             },
             orders,
+            design_requests: designRequests,
             payments: paymentRes.rows,
             summary: {
                 ...(summaryRes.rows[0] || {}),

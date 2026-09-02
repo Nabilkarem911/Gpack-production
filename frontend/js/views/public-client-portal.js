@@ -28,6 +28,7 @@
     let _token = null;
     let _clientData = null;
     let _orders = [];
+    let _designRequests = [];
     let _currentOrderId = null;
 
     function _badge(status) {
@@ -78,9 +79,11 @@
             const data = payload.data || payload;
             _clientData = data.client || null;
             _orders = data.orders || [];
+            _designRequests = data.design_requests || [];
 
             _renderHeader();
             _renderOrders();
+            _renderDesigns();
 
             _setLoading(false);
             _el('cp-main')?.classList.remove('hidden');
@@ -131,6 +134,48 @@
                         </span>
                     </td>
                 </tr>`;
+        }).join('');
+    }
+
+    function _renderDesigns() {
+        const list = _el('designs-list');
+        const empty = _el('designs-empty');
+        const badge = _el('designs-badge');
+        const count = _el('designs-count');
+
+        if (badge) badge.textContent = String(_designRequests.length);
+        if (count) count.textContent = String(_designRequests.length);
+
+        if (!_designRequests.length) {
+            if (list) list.innerHTML = '';
+            empty?.classList.remove('hidden');
+            return;
+        }
+
+        empty?.classList.add('hidden');
+        if (!list) return;
+
+        list.innerHTML = _designRequests.map(dr => {
+            const url = dr.design_url ? `href="${esc(dr.design_url)}" target="_blank"` : '';
+            const title = esc(dr.item_name || `طلب تصميم #${dr.request_number}`);
+            const size = dr.item_size ? `<p class="text-xs text-slate-400 mt-1"><i class="fa-solid fa-ruler-combined ml-1"></i>${esc(dr.item_size)}</p>` : '';
+            const subtitle = dr.brief ? `<p class="text-xs text-slate-500 mt-2 line-clamp-2">${esc(dr.brief)}</p>` : '';
+            return `
+                <a ${url} class="block rounded-2xl border border-slate-200 bg-white p-4 hover:border-brand-300 hover:shadow-md transition-all">
+                    <div class="flex items-start justify-between gap-2">
+                        <div>
+                            <p class="font-mono text-xs text-slate-400">#${esc(String(dr.request_number).padStart(5, '0'))}</p>
+                            <h3 class="text-sm font-bold text-slate-800 mt-1">${title}</h3>
+                            ${size}
+                        </div>
+                        <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold whitespace-nowrap ${dr.status_color || 'bg-slate-100 text-slate-500'}">${esc(dr.status_label || dr.status)}</span>
+                    </div>
+                    ${subtitle}
+                    <div class="mt-3 flex items-center justify-between text-xs text-slate-500">
+                        <span><i class="fa-solid fa-user-pen ml-1"></i>${esc(dr.designer_name || '—')}</span>
+                        <span>${dr.created_at ? new Date(dr.created_at).toLocaleDateString('ar-SA-u-nu-latn') : '—'}</span>
+                    </div>
+                </a>`;
         }).join('');
     }
 

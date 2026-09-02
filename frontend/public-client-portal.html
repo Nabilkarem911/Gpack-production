@@ -71,7 +71,7 @@
             <button onclick="cpTab('designs')" id="tab-designs" class="cp-tab">
                 <i class="fa-solid fa-palette"></i>
                 <span>التصميم</span>
-                <span class="cp-badge bg-slate-100 text-slate-500">قريباً</span>
+                <span id="designs-badge" class="cp-badge bg-brand-100 text-brand-700">0</span>
             </button>
         </div>
 
@@ -110,14 +110,22 @@
             </div>
         </div>
 
-        <!-- Design placeholder -->
-        <div id="panel-designs" class="cp-panel hidden p-8 md:p-10 text-center">
-            <div class="max-w-md mx-auto">
-                <div class="w-16 h-16 rounded-2xl bg-brand-50 flex items-center justify-center mx-auto mb-4">
-                    <i class="fa-solid fa-palette text-2xl text-brand-600"></i>
+        <!-- Designs Tab -->
+        <div id="panel-designs" class="cp-panel hidden p-4 md:p-6">
+            <div class="flex flex-col lg:flex-row lg:items-center gap-3 mb-4">
+                <div class="flex items-center gap-2 text-slate-500 text-sm">
+                    <i class="fa-solid fa-circle-info text-brand-500"></i>
+                    <span>اضغط على أي تصميم لفتح صفحة العمل والتواصل مع المصمم.</span>
                 </div>
-                <h3 class="text-xl font-black text-slate-800 mb-2">قسم التصميم</h3>
-                <p class="text-sm text-slate-500">هذا القسم جاهز للبنية الأساسية، وسيتم تفعيله لاحقاً.</p>
+                <div class="flex-1"></div>
+                <div class="text-xs text-slate-400"><span id="designs-count">0</span> تصميم</div>
+            </div>
+
+            <div id="designs-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+
+            <div id="designs-empty" class="hidden py-14 text-center text-slate-400">
+                <i class="fa-solid fa-palette text-4xl text-slate-200 mb-3 block"></i>
+                <p class="text-sm">لا توجد تصاميم حالياً</p>
             </div>
         </div>
     </div>
