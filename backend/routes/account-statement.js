@@ -61,7 +61,7 @@ router.get('/client/:clientId', async (req, res) => {
                     COALESCE(i.notes, '') as notes,
                     NULL as reference_id
                 FROM invoices i
-                WHERE i.client_id = $1 AND i.source = 'orders' AND i.status = 'issued'
+                WHERE i.client_id = $1 AND i.source IN ('orders', 'warehouse') AND i.status IN ('issued', 'archived')
                     ${dateFilter.replace(/date/g, 'i.invoice_date')}
                 
                 UNION ALL

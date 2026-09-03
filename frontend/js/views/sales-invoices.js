@@ -15,6 +15,7 @@
     let _clients = [];
     let _readyOrders = [];
     let _orderItems = [];
+    let _warehouseStock = [];
 
     const fmt  = (v) => parseFloat(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const qty  = (v) => parseFloat(v || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 3 });
@@ -29,6 +30,7 @@
             issued: { label: 'معتمدة', class: 'bg-emerald-100 text-emerald-700' },
             paid: { label: 'مدفوعة', class: 'bg-blue-100 text-blue-700' },
             cancelled: { label: 'ملغية', class: 'bg-red-100 text-red-700' },
+            archived: { label: 'مؤرشفة', class: 'bg-slate-100 text-slate-600' },
             overdue: { label: 'متأخرة', class: 'bg-amber-100 text-amber-700' },
             final: { label: 'نهائية', class: 'bg-emerald-100 text-emerald-700' },
         };
@@ -84,7 +86,7 @@
     // ── Fetch invoices for active tab ───────────────────────────────────────────
     async function _loadInvoices(page = 0) {
         _currentPage = page;
-        const status = _currentTab === 'archive' ? 'issued' : 'draft';
+        const status = _currentTab === 'archive' ? 'archive' : 'active';
         const tbody = _el('si-tbody');
         const empty = _el('si-empty');
 
@@ -376,6 +378,108 @@
     };
 
     _el('si-m-tax')?.addEventListener('input', _calcModalTotals);
+
+    window.siCreateWarehouseInvoice = async function() {
+        const modal = _el('si-warehouse-modal');
+        if (!modal) return;
+        _warehouseStock = [];
+        modal.classList.remove('hidden');
+        _el('si-w-date').value = new Date().toISOString().split('T')[0];
+        _el('si-w-stock-items').innerHTML = '<tr><td colspan="6" class="py-8 text-center text-slate-400">اختر العميل والمستودع أولاً</td></tr>';
+        const clientSel = _el('si-w-client');
+        clientSel.innerHTML = '<option value="">— اختر العميل —</option>' + _clients.map(c => `<option value="${esc(c.id)}">${esc(c.parent_name ? `${c.name} — ${c.parent_name}` : c.name)}</option>`).join('');
+    };
+
+    window.siCloseWarehouseInvoice = function() {
+        _el('si-warehouse-modal')?.classList.add('hidden');
+        _warehouseStock = [];
+    };
+
+    window.siWarehouseClientChanged = async function() {
+        const clientId = _el('si-w-client')?.value;
+        const warehouseSel = _el('si-w-warehouse');
+        _warehouseStock = [];
+        if (!warehouseSel) return;
+        warehouseSel.innerHTML = '<option value="">— اختر المستودع —</option>';
+        warehouseSel.disabled = !clientId;
+        _el('si-w-stock-items').innerHTML = '<tr><td colspan="6" class="py-8 text-center text-slate-400">اختر المستودع</td></tr>';
+        if (!clientId) return;
+        try {
+            const res = await window.apiFetch(`/api/inventory/warehouses?client_id=${encodeURIComponent(clientId)}&status=active`);
+            warehouseSel.innerHTML += (res.data || []).filter(w => w.client_id === clientId).map(w => `<option value="${esc(w.id)}">${esc(w.name)}</option>`).join('');
+        } catch (err) {
+            alert(`❌ تعذر تحميل مستودعات العميل: ${err.message}`);
+        }
+    };
+
+    window.siWarehouseChanged = async function() {
+        const clientId = _el('si-w-client')?.value;
+        const warehouseId = _el('si-w-warehouse')?.value;
+        const body = _el('si-w-stock-items');
+        _warehouseStock = [];
+        if (!clientId || !warehouseId) {
+            body.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-slate-400">اختر العميل والمستودع أولاً</td></tr>';
+            return;
+        }
+        body.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-slate-400"><i class="fa-solid fa-circle-notch fa-spin"></i> جاري تحميل المخزون...</td></tr>';
+        try {
+            const res = await window.apiFetch(`/api/inventory/stock?client_id=${encodeURIComponent(clientId)}&warehouse_id=${encodeURIComponent(warehouseId)}&limit=1000`);
+            _warehouseStock = (res.data || []).filter(s => s.client_id === clientId && parseFloat(s.available_qty || 0) > 0);
+            _el('si-w-stock-count').textContent = `${_warehouseStock.length} صنف`;
+            body.innerHTML = _warehouseStock.length ? _warehouseStock.map((s, i) => `<tr class="border-b border-slate-100" data-index="${i}"><td class="py-2 px-3 font-semibold">${esc(s.product_name || '—')}</td><td class="py-2 px-3 text-slate-500">${esc(s.variant_size || '—')}</td><td class="py-2 px-3 text-center font-bold text-emerald-600">${qty(s.available_qty)}</td><td class="py-2 px-3 text-center"><input class="si-w-qty w-24 border border-slate-200 rounded-lg px-2 py-1.5 text-center" type="number" min="0" max="${s.available_qty}" step="0.001" value="0" data-index="${i}" oninput="window.siWarehouseCalc()"></td><td class="py-2 px-3 text-center"><input class="si-w-price w-28 border border-slate-200 rounded-lg px-2 py-1.5 text-center" type="number" min="0" step="0.01" value="${Number(s.selling_price || 0).toFixed(2)}" data-index="${i}" oninput="window.siWarehouseCalc()"></td><td class="py-2 px-3 text-center font-mono" data-line-total="${i}">0.00</td></tr>`).join('') : '<tr><td colspan="6" class="py-8 text-center text-slate-400">لا يوجد رصيد متاح في المستودع</td></tr>';
+        } catch (err) {
+            body.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-red-400">${esc(err.message)}</td></tr>`;
+        }
+    };
+
+    window.siWarehouseCalc = function() {
+        let subtotal = 0;
+        document.querySelectorAll('#si-w-stock-items tr[data-index]').forEach(row => {
+            const i = Number(row.dataset.index);
+            const quantity = parseFloat(row.querySelector('.si-w-qty')?.value || 0);
+            const price = parseFloat(row.querySelector('.si-w-price')?.value || 0);
+            const total = quantity * price;
+            subtotal += total;
+            const line = row.querySelector('[data-line-total]');
+            if (line) line.textContent = fmt(total);
+        });
+        const tax = subtotal * (parseFloat(_el('si-w-tax')?.value || 15) / 100);
+        _el('si-w-subtotal').textContent = fmt(subtotal);
+        _el('si-w-tax-amount').textContent = fmt(tax);
+        _el('si-w-grand').textContent = fmt(subtotal + tax);
+    };
+
+    window.siSaveWarehouseInvoice = async function() {
+        const clientId = _el('si-w-client')?.value;
+        const warehouseId = _el('si-w-warehouse')?.value;
+        const items = [];
+        document.querySelectorAll('#si-w-stock-items tr[data-index]').forEach(row => {
+            const stock = _warehouseStock[Number(row.dataset.index)];
+            const quantity = parseFloat(row.querySelector('.si-w-qty')?.value || 0);
+            const price = parseFloat(row.querySelector('.si-w-price')?.value || 0);
+            if (stock && quantity > 0) items.push({ stock_id: stock.stock_id, variant_id: stock.variant_id, quantity, unit_price: price });
+        });
+        if (!clientId || !warehouseId) return alert('اختر العميل والمستودع أولاً');
+        if (!items.length) return alert('أدخل كمية لصنف واحد على الأقل');
+        const btn = _el('si-w-save');
+        if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> جاري الإصدار...'; }
+        try {
+            const res = await window.apiFetch('/api/invoices', { method: 'POST', body: {
+                client_id: clientId, warehouse_id: warehouseId, source: 'warehouse',
+                invoice_date: _el('si-w-date')?.value, due_date: _el('si-w-due')?.value || null,
+                tax_rate: parseFloat(_el('si-w-tax')?.value || 15) / 100,
+                notes: _el('si-w-notes')?.value || '', items,
+            }});
+            const invoice = res.data || res;
+            alert(`✅ تم إصدار الفاتورة #${invoice.invoice_number} وإنشاء أمر الفسح`);
+            window.siCloseWarehouseInvoice();
+            window.navigateTo(`sales-invoice-detail?id=${invoice.id}`);
+        } catch (err) {
+            alert(`❌ خطأ: ${err.message}`);
+        } finally {
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-file-invoice ml-1"></i> إصدار الفاتورة وإنشاء أمر الفسح'; }
+        }
+    };
 
     // ── Save Invoice ─────────────────────────────────────────────────────────
     window.siSaveInvoice = async function() {

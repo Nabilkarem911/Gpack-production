@@ -108,6 +108,7 @@
             final: { bg: 'bg-emerald-100', text: 'text-emerald-700', label: 'نهائية' },
             issued: { bg: 'bg-emerald-100', text: 'text-emerald-700', label: 'نهائية' },
             cancelled: { bg: 'bg-red-100', text: 'text-red-700', label: 'ملغية' },
+            archived: { bg: 'bg-slate-100', text: 'text-slate-600', label: 'مؤرشفة' },
         };
         const st = statusColors[inv.status] || statusColors.draft;
 

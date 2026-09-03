@@ -29,7 +29,7 @@ const restrictEdit  = authorize('sales', 'edit');
 // Query params: client_id, status, source, from, to, search, limit, offset
 router.get('/', async (req, res) => {
     try {
-        const { client_id, status, source, from, to, search, limit = 50, offset = 0 } = req.query;
+        const { client_id, status, source, delivery_status, from, to, search, limit = 50, offset = 0 } = req.query;
 
         let where = ['i.id IS NOT NULL']; // always true base
         const params = [];
@@ -46,9 +46,17 @@ router.get('/', async (req, res) => {
             where.push(`i.client_id = $${paramIdx++}`);
             params.push(client_id);
         }
-        if (status) {
+        if (status === 'active') {
+            where.push(`(i.status = 'draft' OR (i.source = 'warehouse' AND i.status = 'issued' AND COALESCE(i.delivery_status, 'pending') <> 'completed'))`);
+        } else if (status === 'archive') {
+            where.push(`((i.status = 'issued' AND i.source <> 'warehouse') OR (i.source = 'warehouse' AND i.status = 'archived' AND COALESCE(i.delivery_status, 'pending') = 'completed'))`);
+        } else if (status) {
             where.push(`i.status = $${paramIdx++}`);
             params.push(status);
+        }
+        if (delivery_status) {
+            where.push(`i.delivery_status = $${paramIdx++}`);
+            params.push(delivery_status);
         }
         if (source) {
             where.push(`i.source = $${paramIdx++}`);
@@ -75,6 +83,7 @@ router.get('/', async (req, res) => {
             SELECT COUNT(*)::int AS total
             FROM invoices i
             LEFT JOIN clients c ON c.id = i.client_id
+            LEFT JOIN orders o ON o.id = i.order_id
             WHERE ${whereClause}
         `, params);
 
@@ -84,6 +93,7 @@ router.get('/', async (req, res) => {
                 i.id, i.invoice_number, i.invoice_date, i.due_date,
                 i.subtotal, i.tax_rate, i.tax_amount, i.grand_total,
                 i.status, i.notes, i.created_at,
+                i.source, i.warehouse_id, i.delivery_note_id, i.delivery_status,
                 c.id AS client_id, c.name AS client_name,
                 o.id AS order_id, o.order_number,
                 u.name AS created_by_name
@@ -122,6 +132,7 @@ router.get('/:id', async (req, res) => {
                 i.subtotal, i.tax_rate, i.tax_amount, i.additional_expenses, i.grand_total,
                 i.status, i.payment_terms, i.notes, i.created_at,
                 i.source, i.external_invoice_number, i.external_issued_at,
+                i.warehouse_id, i.delivery_note_id, i.delivery_status,
                 c.id AS client_id, c.name AS client_name, c.phone AS client_phone,
                 o.id AS order_id, o.order_number,
                 u.name AS created_by_name
@@ -140,7 +151,7 @@ router.get('/:id', async (req, res) => {
 
         // DATA SCOPING: sales_rep can only view invoices for their own orders
         const isSalesRep = req.user.role === 'sales_rep';
-        if (isSalesRep) {
+        if (isSalesRep && invoice.order_id) {
             const orderCheck = await db.query(
                 'SELECT created_by FROM orders WHERE id = $1',
                 [invoice.order_id]
@@ -153,7 +164,7 @@ router.get('/:id', async (req, res) => {
         // Invoice items
         const itemsRes = await db.query(`
             SELECT
-                ii.id, ii.quantity, ii.unit_price, ii.discount_percent, ii.line_total,
+                ii.id, ii.quantity, ii.unit_price, ii.discount_percent, ii.line_total, ii.source_stock_id,
                 pv.id AS variant_id, pv.size_name,
                 p.id AS product_id, p.name AS product_name,
                 oi.id AS order_item_id
@@ -243,6 +254,8 @@ router.post('/', restrictWrite, validateBody(invoiceCreate), async (req, res) =>
         const {
             client_id,
             order_id = null,
+            warehouse_id = null,
+            source = 'sales_invoices',
             invoice_date,
             due_date,
             items = [],
@@ -277,20 +290,57 @@ router.post('/', restrictWrite, validateBody(invoiceCreate), async (req, res) =>
         const taxAmount = parseFloat((subtotal * effectiveTaxRate).toFixed(2));
         const grandTotal = parseFloat((subtotal + taxAmount + parseFloat(additional_expenses) - discount).toFixed(2));
 
-        const source = 'sales_invoices';
-        const status = 'draft';
+        const isWarehouseInvoice = source === 'warehouse' || Boolean(warehouse_id);
+        const invoiceSource = isWarehouseInvoice ? 'warehouse' : 'sales_invoices';
+        const status = isWarehouseInvoice ? 'issued' : 'draft';
+
+        if (isWarehouseInvoice) {
+            if (!warehouse_id) throw new Error('يجب اختيار المستودع.');
+            const warehouseRes = await client.query(
+                `SELECT id FROM warehouses
+                 WHERE id = $1
+                   AND (client_id = $2 OR client_id = (SELECT parent_id FROM clients WHERE id = $2))`,
+                [warehouse_id, client_id]
+            );
+            if (warehouseRes.rowCount === 0) throw new Error('المستودع غير مرتبط بالعميل المحدد.');
+
+            for (const item of items) {
+                const stockRes = await client.query(
+                    `SELECT id, quantity, reserved_qty
+                     FROM warehouse_stock
+                     WHERE id = COALESCE($1::uuid, id)
+                       AND warehouse_id = $2
+                       AND variant_id = $3
+                       AND client_id = $4
+                     FOR UPDATE`,
+                    [item.stock_id || null, warehouse_id, item.variant_id, client_id]
+                );
+                if (stockRes.rowCount === 0) throw new Error('سجل المخزون غير موجود في المستودع المحدد.');
+                const stock = stockRes.rows[0];
+                const available = parseFloat(stock.quantity || 0) - parseFloat(stock.reserved_qty || 0);
+                if (parseFloat(item.quantity) > available) {
+                    throw new Error(`الكمية المطلوبة تتجاوز المتاح للصنف (${available}).`);
+                }
+                item.stock_id = stock.id;
+                await client.query(
+                    `UPDATE warehouse_stock SET reserved_qty = reserved_qty + $1, last_updated = NOW() WHERE id = $2`,
+                    [item.quantity, stock.id]
+                );
+            }
+        }
 
         // Insert invoice
         const invRes = await client.query(`
             INSERT INTO invoices
-                (client_id, order_id, invoice_date, due_date, subtotal, tax_rate, tax_amount,
-                 additional_expenses, discount_amount, grand_total, status, source, notes, created_by)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                (client_id, order_id, warehouse_id, invoice_date, due_date, subtotal, tax_rate, tax_amount,
+                 additional_expenses, discount_amount, grand_total, status, source, delivery_status, notes, created_by)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
             RETURNING id, invoice_number
         `, [
-            client_id, order_id, invoice_date || new Date().toISOString().split('T')[0],
-            due_date, subtotal, effectiveTaxRate, taxAmount,
-            additional_expenses, discount, grandTotal, status, source, notes, userId,
+            client_id, order_id, isWarehouseInvoice ? warehouse_id : null,
+            invoice_date || new Date().toISOString().split('T')[0], due_date,
+            subtotal, effectiveTaxRate, taxAmount, additional_expenses, discount,
+            grandTotal, status, invoiceSource, isWarehouseInvoice ? 'pending' : 'none', notes, userId,
         ]);
 
         const invoiceId = invRes.rows[0].id;
@@ -299,12 +349,34 @@ router.post('/', restrictWrite, validateBody(invoiceCreate), async (req, res) =>
         // Insert invoice items
         for (const item of items) {
             await client.query(`
-                INSERT INTO invoice_items (invoice_id, variant_id, order_item_id, quantity, unit_price, discount_percent)
-                VALUES ($1, $2, $3, $4, $5, $6)
+                INSERT INTO invoice_items (invoice_id, variant_id, order_item_id, source_stock_id, quantity, unit_price, discount_percent)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
             `, [
-                invoiceId, item.variant_id, item.order_item_id || null,
+                invoiceId, item.variant_id, item.order_item_id || null, item.stock_id || null,
                 item.quantity, item.unit_price, item.discount_percent || 0,
             ]);
+        }
+
+        let deliveryNoteId = null;
+        if (isWarehouseInvoice) {
+            const noteRes = await client.query(`
+                INSERT INTO delivery_notes (client_id, warehouse_id, invoice_id, status, notes, created_by)
+                VALUES ($1, $2, $3, 'pending', $4, $5)
+                RETURNING id, note_number
+            `, [client_id, warehouse_id, invoiceId, notes || null, userId]);
+            deliveryNoteId = noteRes.rows[0].id;
+
+            for (const item of items) {
+                await client.query(`
+                    INSERT INTO delivery_note_items
+                        (delivery_note_id, variant_id, requested_qty, delivered_qty, source_stock_id, notes, created_at)
+                    VALUES ($1, $2, $3, 0, $4, $5, NOW())
+                `, [deliveryNoteId, item.variant_id, item.quantity, item.stock_id, item.notes || null]);
+            }
+            await client.query(
+                `UPDATE invoices SET delivery_note_id = $1 WHERE id = $2`,
+                [deliveryNoteId, invoiceId]
+            );
         }
 
         if (additional_expenses > 0) {
@@ -328,7 +400,7 @@ router.post('/', restrictWrite, validateBody(invoiceCreate), async (req, res) =>
 
         await client.query('COMMIT');
 
-        return created(res, { id: invoiceId, invoice_number: invoiceNumber }, 'تم إنشاء الفاتورة بنجاح');
+        return created(res, { id: invoiceId, invoice_number: invoiceNumber, delivery_note_id: deliveryNoteId }, 'تم إنشاء الفاتورة بنجاح');
 
     } catch (err) {
         await client.query('ROLLBACK');

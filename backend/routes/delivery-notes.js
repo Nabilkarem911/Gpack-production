@@ -74,6 +74,7 @@ router.get('/', async (req, res) => {
                 dn.order_id,
                 o.order_number,
                 dn.client_id,
+                dn.invoice_id,
                 c.name AS client_name,
                 pc.name AS parent_client_name,
                 dn.status,
@@ -138,7 +139,7 @@ router.get('/', async (req, res) => {
             params.push(order_id);
         }
         
-        query += ` GROUP BY dn.id, dn.note_number, dn.order_id, o.order_number, dn.client_id, c.name, pc.name, dn.status, dn.notes, dn.created_at, dn.updated_at`;
+        query += ` GROUP BY dn.id, dn.note_number, dn.order_id, o.order_number, dn.client_id, dn.invoice_id, c.name, pc.name, dn.status, dn.notes, dn.created_at, dn.updated_at`;
         query += ` ORDER BY dn.created_at DESC`;
         
         const result = await db.query(query, params);
@@ -353,6 +354,7 @@ router.get('/:id', async (req, res) => {
                 dn.order_id,
                 o.order_number,
                 dn.client_id,
+                dn.invoice_id,
                 c.name AS client_name,
                 pc.name AS parent_client_name,
                 dn.warehouse_id,
@@ -468,7 +470,8 @@ router.post('/:id/dispatch', restrictWrite, validateBody(deliveryNoteDispatch), 
 
                 // Get variant + order item (use LEFT JOIN since standalone notes have no order_item_id)
                 const itemResult = await client.query(
-                    `SELECT dni.order_item_id, COALESCE(dni.variant_id, oi.variant_id) AS variant_id
+                    `SELECT dni.order_item_id, dni.source_stock_id,
+                            COALESCE(dni.variant_id, oi.variant_id) AS variant_id
                      FROM delivery_note_items dni
                      LEFT JOIN order_items oi ON oi.id = dni.order_item_id
                      WHERE dni.id = $1`,
@@ -476,27 +479,35 @@ router.post('/:id/dispatch', restrictWrite, validateBody(deliveryNoteDispatch), 
                 );
                 if (itemResult.rowCount === 0) continue;
 
-                const { order_item_id: orderItemId, variant_id: variantId } = itemResult.rows[0];
+                const { order_item_id: orderItemId, source_stock_id: sourceStockId, variant_id: variantId } = itemResult.rows[0];
                 if (!variantId) continue;
 
-                // Validate: sufficient stock (include parent client's stock + warehouses belonging to client)
                 const stockResult = await client.query(
-                    `SELECT id, quantity FROM warehouse_stock
-                     WHERE variant_id = $1
-                     AND (
-                         client_id = $2
-                         OR client_id IS NULL
-                         OR client_id IN (SELECT parent_id FROM clients WHERE id = $2)
-                     )
-                     ORDER BY quantity DESC LIMIT 1`,
-                    [variantId, dn.client_id]
+                    `SELECT ws.id, ws.quantity, ws.reserved_qty
+                     FROM warehouse_stock ws
+                     WHERE ws.variant_id = $1
+                       AND ($2::uuid IS NULL OR ws.id = $2)
+                       AND ($3::uuid IS NULL OR ws.warehouse_id = $3)
+                       AND (
+                           ws.client_id = $4
+                           OR (ws.client_id IS NULL AND $2::uuid IS NULL)
+                           OR (ws.client_id IN (SELECT parent_id FROM clients WHERE id = $4) AND $2::uuid IS NULL)
+                       )
+                     ORDER BY CASE WHEN ws.client_id = $4 THEN 0 ELSE 1 END, ws.quantity DESC
+                     LIMIT 1
+                     FOR UPDATE`,
+                    [sourceStockId || null, sourceStockId || null, dn.warehouse_id || null, dn.client_id]
                 );
-                if (stockResult.rowCount === 0 || parseFloat(stockResult.rows[0].quantity) < item.quantity) {
-                    const available = stockResult.rowCount > 0 ? stockResult.rows[0].quantity : 0;
+                if (stockResult.rowCount === 0) throw new Error('سجل المخزون غير موجود في المستودع المحدد.');
+                const stock = stockResult.rows[0];
+                const quantity = parseFloat(stock.quantity || 0);
+                const reserved = parseFloat(stock.reserved_qty || 0);
+                const available = sourceStockId && reserved >= item.quantity ? quantity : quantity - reserved;
+                if (item.quantity > available) {
                     throw new Error(`المخزون غير كافٍ — المتاح: ${available}، المطلوب: ${item.quantity}.`);
                 }
 
-                const stockId = stockResult.rows[0].id;
+                const stockId = stock.id;
 
                 // Record this item in the dispatch
                 await client.query(
@@ -521,8 +532,12 @@ router.post('/:id/dispatch', restrictWrite, validateBody(deliveryNoteDispatch), 
 
                 // Deduct from stock
                 await client.query(
-                    `UPDATE warehouse_stock SET quantity = quantity - $1, last_updated = NOW() WHERE id = $2`,
-                    [item.quantity, stockId]
+                    `UPDATE warehouse_stock
+                     SET quantity = quantity - $1,
+                         reserved_qty = CASE WHEN $3::boolean THEN GREATEST(0, reserved_qty - $1) ELSE reserved_qty END,
+                         last_updated = NOW()
+                     WHERE id = $2`,
+                    [item.quantity, stockId, Boolean(sourceStockId)]
                 );
 
                 // Create inventory transaction
@@ -548,8 +563,19 @@ router.post('/:id/dispatch', restrictWrite, validateBody(deliveryNoteDispatch), 
             );
 
             // Auto-complete parent order when all delivery notes are finalized
-            if (newStatus === 'completed' && dn.order_id) {
-                await _autoCompleteOrderOnDelivery(client, dn.order_id);
+            if (newStatus === 'completed') {
+                if (dn.order_id) await _autoCompleteOrderOnDelivery(client, dn.order_id);
+                if (dn.invoice_id) {
+                    await client.query(
+                        `UPDATE invoices SET delivery_status = 'completed', status = 'archived' WHERE id = $1 AND status <> 'cancelled'`,
+                        [dn.invoice_id]
+                    );
+                }
+            } else if (dn.invoice_id) {
+                await client.query(
+                    `UPDATE invoices SET delivery_status = 'partial' WHERE id = $1 AND status <> 'cancelled'`,
+                    [dn.invoice_id]
+                );
             }
 
             return { status: newStatus, dispatch_id: dispatchId, dispatch_number: dispatchNumber };
@@ -709,7 +735,8 @@ router.post('/:id/confirm', restrictWrite, validateBody(deliveryNoteDispatch), a
 
                 // Get variant + order item (use LEFT JOIN since standalone notes have no order_item_id)
                 const itemResult = await client.query(
-                    `SELECT dni.order_item_id, COALESCE(dni.variant_id, oi.variant_id) AS variant_id
+                    `SELECT dni.order_item_id, dni.source_stock_id,
+                            COALESCE(dni.variant_id, oi.variant_id) AS variant_id
                      FROM delivery_note_items dni
                      LEFT JOIN order_items oi ON oi.id = dni.order_item_id
                      WHERE dni.id = $1`,
@@ -719,28 +746,30 @@ router.post('/:id/confirm', restrictWrite, validateBody(deliveryNoteDispatch), a
                 if (itemResult.rowCount === 0) continue;
                 
                 const orderItemId = itemResult.rows[0].order_item_id;
+                const sourceStockId = itemResult.rows[0].source_stock_id;
                 const variantId = itemResult.rows[0].variant_id;
                 if (!variantId) continue;
 
-                // ── Validate: sufficient stock (include parent client's stock) ──
                 const stockResult = await client.query(
-                    `SELECT id, quantity FROM warehouse_stock
+                    `SELECT id, quantity, reserved_qty FROM warehouse_stock
                      WHERE variant_id = $1
-                     AND (
-                         client_id = $2
-                         OR client_id IS NULL
-                         OR client_id IN (SELECT parent_id FROM clients WHERE id = $2)
-                     )
-                     ORDER BY quantity DESC LIMIT 1`,
-                    [variantId, dn.client_id]
+                       AND ($2::uuid IS NULL OR id = $2)
+                       AND ($3::uuid IS NULL OR warehouse_id = $3)
+                       AND (client_id = $4 OR (client_id IS NULL AND $2::uuid IS NULL) OR (client_id IN (SELECT parent_id FROM clients WHERE id = $4) AND $2::uuid IS NULL))
+                     LIMIT 1 FOR UPDATE`,
+                    [variantId, sourceStockId || null, dn.warehouse_id || null, dn.client_id]
                 );
 
-                if (stockResult.rowCount === 0 || parseFloat(stockResult.rows[0].quantity) < item.quantity) {
-                    const available = stockResult.rowCount > 0 ? stockResult.rows[0].quantity : 0;
+                if (stockResult.rowCount === 0) throw new Error('سجل المخزون غير موجود في المستودع المحدد.');
+                const stock = stockResult.rows[0];
+                const quantity = parseFloat(stock.quantity || 0);
+                const reserved = parseFloat(stock.reserved_qty || 0);
+                const available = sourceStockId && reserved >= item.quantity ? quantity : quantity - reserved;
+                if (item.quantity > available) {
                     throw new Error(`المخزون غير كافٍ — المتاح: ${available}، المطلوب: ${item.quantity}.`);
                 }
 
-                const stockId = stockResult.rows[0].id;
+                const stockId = stock.id;
 
                 // Update delivered quantity
                 await client.query(
@@ -760,10 +789,12 @@ router.post('/:id/confirm', restrictWrite, validateBody(deliveryNoteDispatch), a
                 
                 // Deduct from stock
                 await client.query(
-                    `UPDATE warehouse_stock 
-                     SET quantity = quantity - $1, last_updated = NOW()
+                    `UPDATE warehouse_stock
+                     SET quantity = quantity - $1,
+                         reserved_qty = CASE WHEN $3::boolean THEN GREATEST(0, reserved_qty - $1) ELSE reserved_qty END,
+                         last_updated = NOW()
                      WHERE id = $2`,
-                    [item.quantity, stockId]
+                    [item.quantity, stockId, Boolean(sourceStockId)]
                 );
                 
                 // Create inventory transaction
@@ -796,9 +827,19 @@ router.post('/:id/confirm', restrictWrite, validateBody(deliveryNoteDispatch), a
                 [newStatus, deliveryNotes || null, id]
             );
 
-            // Auto-complete parent order when all delivery notes are finalized
-            if (newStatus === 'completed' && dn.order_id) {
-                await _autoCompleteOrderOnDelivery(client, dn.order_id);
+            if (newStatus === 'completed') {
+                if (dn.order_id) await _autoCompleteOrderOnDelivery(client, dn.order_id);
+                if (dn.invoice_id) {
+                    await client.query(
+                        `UPDATE invoices SET delivery_status = 'completed', status = 'archived' WHERE id = $1 AND status <> 'cancelled'`,
+                        [dn.invoice_id]
+                    );
+                }
+            } else if (dn.invoice_id) {
+                await client.query(
+                    `UPDATE invoices SET delivery_status = 'partial' WHERE id = $1 AND status <> 'cancelled'`,
+                    [dn.invoice_id]
+                );
             }
         });
         
@@ -824,7 +865,7 @@ router.post('/:id/reverse', restrictWrite, async (req, res) => {
     try {
         const result = await db.withTransaction(async (client) => {
             const dnCheck = await client.query(
-                `SELECT dn.id, dn.status, dn.note_number, dn.client_id
+                `SELECT dn.id, dn.status, dn.note_number, dn.client_id, dn.warehouse_id, dn.invoice_id
                  FROM delivery_notes dn WHERE dn.id = $1 FOR UPDATE`,
                 [id]
             );
@@ -834,7 +875,7 @@ router.post('/:id/reverse', restrictWrite, async (req, res) => {
 
             // Get all items with their delivered_qty and variant info
             const itemsRes = await client.query(
-                `SELECT dni.id, dni.order_item_id, dni.variant_id, dni.delivered_qty,
+                `SELECT dni.id, dni.order_item_id, dni.variant_id, dni.source_stock_id, dni.delivered_qty,
                         oi.id AS oi_id
                  FROM delivery_note_items dni
                  LEFT JOIN order_items oi ON oi.id = dni.order_item_id
@@ -846,22 +887,23 @@ router.post('/:id/reverse', restrictWrite, async (req, res) => {
                 const delQty = parseFloat(item.delivered_qty);
                 if (delQty <= 0) continue;
 
-                // Return stock (include parent client's stock)
                 const stockRes = await client.query(
                     `SELECT id, quantity FROM warehouse_stock
                      WHERE variant_id = $1
-                     AND (
-                         client_id = $2
-                         OR client_id IS NULL
-                         OR client_id IN (SELECT parent_id FROM clients WHERE id = $2)
-                     )
-                     ORDER BY quantity DESC LIMIT 1`,
-                    [item.variant_id, dn.client_id]
+                       AND ($2::uuid IS NULL OR id = $2)
+                       AND ($3::uuid IS NULL OR warehouse_id = $3)
+                       AND (client_id = $4 OR (client_id IS NULL AND $2::uuid IS NULL) OR (client_id IN (SELECT parent_id FROM clients WHERE id = $4) AND $2::uuid IS NULL))
+                     LIMIT 1 FOR UPDATE`,
+                    [item.variant_id, item.source_stock_id || null, dn.warehouse_id || null, dn.client_id]
                 );
                 if (stockRes.rowCount > 0) {
                     await client.query(
-                        `UPDATE warehouse_stock SET quantity = quantity + $1, last_updated = NOW() WHERE id = $2`,
-                        [delQty, stockRes.rows[0].id]
+                        `UPDATE warehouse_stock
+                         SET quantity = quantity + $1,
+                             reserved_qty = CASE WHEN $3::boolean THEN reserved_qty + $1 ELSE reserved_qty END,
+                             last_updated = NOW()
+                         WHERE id = $2`,
+                        [delQty, stockRes.rows[0].id, Boolean(item.source_stock_id)]
                     );
                 } else {
                     // Re-create stock record — use parent client_id if this is a branch
@@ -902,6 +944,12 @@ router.post('/:id/reverse', restrictWrite, async (req, res) => {
                 `UPDATE delivery_notes SET status = 'pending', updated_at = NOW() WHERE id = $1`,
                 [id]
             );
+            if (dn.invoice_id) {
+                await client.query(
+                    `UPDATE invoices SET status = 'issued', delivery_status = 'pending' WHERE id = $1 AND status <> 'cancelled'`,
+                    [dn.invoice_id]
+                );
+            }
 
             return { note_number: dn.note_number, reversed_items: itemsRes.rowCount };
         });

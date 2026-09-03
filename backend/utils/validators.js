@@ -57,6 +57,8 @@ const orderCreate = z.object({
 const invoiceCreate = z.object({
     client_id: z.string().uuid(),
     order_id: z.string().uuid().optional().nullable(),
+    warehouse_id: z.string().uuid().optional().nullable(),
+    source: z.enum(['sales_invoices', 'warehouse']).optional(),
     invoice_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     due_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
     tax_rate: z.coerce.number().min(0).max(1).optional().nullable(),
@@ -70,6 +72,7 @@ const invoiceCreate = z.object({
         unit_price: z.coerce.number().min(0),
         discount_percent: z.coerce.number().min(0).max(100).optional().default(0),
         order_item_id: z.string().uuid().optional().nullable(),
+        stock_id: z.string().uuid().optional().nullable(),
     }).passthrough()).min(1, 'At least one item is required'),
 }).passthrough();
 

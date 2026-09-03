@@ -207,8 +207,8 @@ router.get('/:id/profile', async (req, res) => {
             `SELECT i.id, i.invoice_number, i.grand_total, i.status, i.created_at,
                     o.order_number
              FROM invoices i
-             JOIN orders o ON o.id = i.order_id
-             WHERE i.client_id = $1 AND i.source = 'orders'
+             LEFT JOIN orders o ON o.id = i.order_id
+             WHERE i.client_id = $1 AND i.source IN ('orders', 'warehouse')
              ORDER BY i.created_at DESC`,
             [id]
         );
