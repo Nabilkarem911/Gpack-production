@@ -159,11 +159,12 @@ router.get('/', authenticate, authorize(['admin', 'manager', 'super_admin', 'des
     try {
         const isDesigner = req.user.role === 'designer';
         const result = await db.query(`SELECT dr.*, c.name AS client_name, u.name AS designer_name, i.product_name AS item_product_name, i.size_name AS item_size_name FROM design_requests dr JOIN clients c ON c.id = dr.client_id JOIN users u ON u.id = dr.designer_id LEFT JOIN LATERAL (SELECT product_name, size_name FROM design_request_items WHERE request_id = dr.id ORDER BY sort_order LIMIT 1) i ON true ${isDesigner ? 'WHERE dr.designer_id = $1' : ''} ORDER BY dr.created_at DESC`, isDesigner ? [req.user.id] : []);
-        if (!isDesigner) for (const row of result.rows) await ensureShareTokens(row);
+        for (const row of result.rows) await ensureShareTokens(row);
         res.json({ requests: result.rows.map(row => {
             if ((!row.item_name || !row.item_name.trim()) && row.item_product_name) row.item_name = row.item_product_name;
             if (!row.item_size && row.item_size_name) row.item_size = row.item_size_name;
-            return { ...publicRequest(row), ...(isDesigner ? {} : { share_links: shareLinks(row) }) };
+            const links = shareLinks(row);
+            return { ...publicRequest(row), ...(isDesigner ? { designer_link: links?.designer } : { share_links: links }) };
         }) });
     } catch (err) { console.error('[DesignRequests] list:', err.message); res.status(500).json({ error: 'فشل تحميل طلبات التصميم' }); }
 });
