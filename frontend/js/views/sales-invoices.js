@@ -16,6 +16,8 @@
     let _readyOrders = [];
     let _orderItems = [];
     let _warehouseStock = [];
+    let _warehouseClientSearchable = null;
+    let _warehouseSearchable = null;
 
     const fmt  = (v) => parseFloat(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const qty  = (v) => parseFloat(v || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 3 });
@@ -388,6 +390,10 @@
         _el('si-w-stock-items').innerHTML = '<tr><td colspan="6" class="py-8 text-center text-slate-400">اختر العميل والمستودع أولاً</td></tr>';
         const clientSel = _el('si-w-client');
         clientSel.innerHTML = '<option value="">— اختر العميل —</option>' + _clients.map(c => `<option value="${esc(c.id)}">${esc(c.parent_name ? `${c.name} — ${c.parent_name}` : c.name)}</option>`).join('');
+        if (!_warehouseClientSearchable && window.makeSelectSearchable) {
+            _warehouseClientSearchable = window.makeSelectSearchable(clientSel, '🔍 ابحث عن العميل...');
+        }
+        if (_warehouseClientSearchable) _warehouseClientSearchable.refresh();
     };
 
     window.siCloseWarehouseInvoice = function() {
@@ -407,6 +413,10 @@
         try {
             const res = await window.apiFetch(`/api/inventory/warehouses?client_id=${encodeURIComponent(clientId)}&status=active`);
             warehouseSel.innerHTML += (res.data || []).filter(w => w.client_id === clientId).map(w => `<option value="${esc(w.id)}">${esc(w.name)}</option>`).join('');
+            if (!_warehouseSearchable && window.makeSelectSearchable) {
+                _warehouseSearchable = window.makeSelectSearchable(warehouseSel, '🔍 ابحث عن المستودع...');
+            }
+            if (_warehouseSearchable) _warehouseSearchable.refresh();
         } catch (err) {
             alert(`❌ تعذر تحميل مستودعات العميل: ${err.message}`);
         }
