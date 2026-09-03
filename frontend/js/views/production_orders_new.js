@@ -538,6 +538,7 @@
         const nextSteps = STATUS_FLOW[_hubOrder.status] || [];
         const actionsEl = _el('hub-status-actions');
         if (actionsEl) {
+            const canCloseOrder = ['production', 'processing'].includes(_hubOrder.status);
             const canRevertOrder = ['production', 'processing'].includes(_hubOrder.status) && !_hubOrder.direct_receipt_id;
             const canRevertExecution = _hubOrder.status === 'processing';
             const hasMOs = _hubMOs && _hubMOs.length > 0;
@@ -549,6 +550,13 @@
                          class="flex items-center gap-2 px-4 py-2.5 text-sm font-bold rounded-xl shadow transition-all active:scale-[0.98] ${s.cls}">
                      <i class="fa-solid fa-arrow-right"></i> ${s.label}
                  </button>`).join('');
+            const closeOrderBtn = canCloseOrder
+                ? `<button onclick="window.poView.closeOrder()"
+                           class="flex items-center gap-2 px-4 py-2.5 text-sm font-bold rounded-xl shadow bg-emerald-600 hover:bg-emerald-700 text-white transition-all active:scale-[0.98]"
+                           title="إغلاق الطلب ونقله إلى المكتملة">
+                       <i class="fa-solid fa-circle-check"></i> إغلاق الطلب
+                   </button>`
+                : '';
             const revertExecBtn = canRevertExecution
                 ? `<button onclick="window.poView.revertExecution()"
                            class="flex items-center gap-2 px-4 py-2.5 text-sm font-bold rounded-xl border-2 border-amber-300 text-amber-600 hover:bg-amber-50 transition-all active:scale-[0.98]"
@@ -563,8 +571,8 @@
                        <i class="fa-solid fa-rotate-left"></i> تراجع وأرشفة
                    </button>`
                 : '';
-            actionsEl.innerHTML = (nextBtns || revertBtn || revertExecBtn || autoHint)
-                ? nextBtns + revertExecBtn + revertBtn + autoHint
+            actionsEl.innerHTML = (nextBtns || closeOrderBtn || revertBtn || revertExecBtn || autoHint)
+                ? nextBtns + closeOrderBtn + revertExecBtn + revertBtn + autoHint
                 : '<span class="text-xs text-slate-400">لا يوجد إجراء متاح</span>';
         }
 
@@ -891,6 +899,23 @@
         } catch (err) {
             console.error('[poView] delivery:', err);
             _el('hub-delivery-tbody').innerHTML = '<tr><td colspan="5" class="py-6 text-center text-red-400 text-xs">فشل تحميل السندات</td></tr>';
+        }
+    }
+
+    async function _closeOrder() {
+        const orderNum = _hubOrder?.order_number || '';
+        if (!confirm(`هل أنت متأكد من إغلاق الطلب #${orderNum}؟\n\nسيتم نقله مباشرة إلى قائمة الطلبات المكتملة.`)) return;
+        try {
+            await window.apiFetch(`/api/orders/${_hubOrderId}/status`, {
+                method: 'PATCH',
+                body: { status: 'completed' },
+            });
+            _toast('تم إغلاق الطلب ونقله إلى المكتملة');
+            await _loadOrders();
+            await _openHub(_hubOrderId);
+        } catch (err) {
+            console.error('[poView] closeOrder:', err);
+            _toast(err.message || 'فشل إغلاق الطلب', 'error');
         }
     }
 
@@ -3950,6 +3975,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         closeHub:           () => _hideModal('po-hub-modal'),
         switchHubTab:       _switchHubTab,
         updateStatus:       _updateStatus,
+        closeOrder:         _closeOrder,
         updateMOStatus:     _updateMOStatus,
         revertSendToSupplier: _revertSendToSupplier,
         editMO:             _editMO,
