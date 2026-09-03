@@ -997,6 +997,58 @@
     }
 
     // ==========================================================================
+    function _setRowProductCode(row, product) {
+        const codeInput = row?.querySelector('.row-product-code');
+        if (codeInput && product) codeInput.value = product.sku || '';
+    }
+
+    function _setRowProductCodeHint(row, message, type = 'muted') {
+        const hint = row?.querySelector('.row-product-code-hint');
+        if (!hint) return;
+        const color = type === 'error' ? 'text-red-500' : type === 'success' ? 'text-emerald-600' : 'text-slate-400';
+        hint.className = `row-product-code-hint text-[10px] mt-1 min-h-[1rem] ${color}`;
+        hint.textContent = message || '';
+    }
+
+    function _refreshRowProductSearch(row) {
+        const productSel = row?.querySelector('select.row-product');
+        const wrap = productSel?.closest('.searchable-wrap');
+        if (!productSel || !wrap) return;
+        const input = wrap.querySelector('input[type="text"]');
+        const dd = wrap.querySelector('.searchable-dd');
+        if (input) input.value = productSel.selectedOptions[0]?.textContent || '';
+        if (dd) dd.classList.add('hidden');
+    }
+
+    window._onRowProductCodeInput = function (inputEl) {
+        const row = inputEl?.closest('.quote-item-row');
+        if (!row) return;
+        const code = (inputEl.value || '').trim().toLowerCase();
+        if (!code) {
+            _setRowProductCodeHint(row, '');
+            return;
+        }
+
+        const product = _products.find(p => String(p.sku || '').trim().toLowerCase() === code);
+        if (!product) {
+            _setRowProductCodeHint(row, 'لم يتم العثور على صنف بهذا الرقم', 'error');
+            return;
+        }
+
+        const categorySel = row.querySelector('select.row-category');
+        const productSel = row.querySelector('select.row-product');
+        if (categorySel && product.category_id && categorySel.value !== product.category_id) {
+            categorySel.value = product.category_id;
+            window._onRowCategoryChange(categorySel);
+        }
+        if (productSel) {
+            productSel.value = product.id;
+            productSel.dispatchEvent(new Event('change'));
+            _refreshRowProductSearch(row);
+        }
+        _setRowProductCodeHint(row, product.name, 'success');
+    };
+
     // window.addQuoteItemRow(prefill?)
     // Creates and appends a dynamic item row to #quote-items-container.
     // prefill: { product_id, product_variant_id, quantity, unit_price }
@@ -1027,7 +1079,7 @@
         const designVal = prefill.design_id || prefill.design_status || 'new';
 
         const row = document.createElement('div');
-        row.className = 'quote-item-row grid grid-cols-1 sm:grid-cols-[1.4fr_2fr_2fr_1fr_1.2fr_1.2fr_1.2fr_auto] gap-2 items-start bg-white border border-slate-200 rounded-xl px-3 py-2.5';
+        row.className = 'quote-item-row grid grid-cols-1 sm:grid-cols-[1.2fr_1.2fr_2fr_2fr_1fr_1.2fr_1.2fr_1.2fr_auto] gap-2 items-start bg-white border border-slate-200 rounded-xl px-3 py-2.5';
         row.dataset.rowId = rowId;
         row.dataset.clientId = document.getElementById('quote-client')?.value || '';
         row.dataset.variantId = prefill.product_variant_id || '';
@@ -1041,6 +1093,19 @@
                                focus:ring-2 focus:ring-brand-500/20 transition-all appearance-none">
                     ${_buildCategoryOptions()}
                 </select>
+            </div>
+
+            <div class="min-w-0">
+                <label class="sm:hidden block text-[10px] font-semibold text-slate-500 mb-1">رقم الصنف</label>
+                <input type="text"
+                       class="row-product-code w-full px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-lg
+                              text-sm text-slate-800 font-mono outline-none focus:border-brand-500
+                              focus:ring-2 focus:ring-brand-500/20 transition-all"
+                       placeholder="رقم الصنف"
+                       value="${_escapeAttr(prefill.product_code || prefill.product_sku || '')}"
+                       autocomplete="off"
+                       inputmode="text" />
+                <div class="row-product-code-hint text-[10px] mt-1 min-h-[1rem]"></div>
             </div>
 
             <!-- Product Select -->
@@ -1162,19 +1227,26 @@
         // If product is prefilled, set the select value
         if (prefill.product_id) {
             const productSel = row.querySelector('select.row-product');
+            const product = _products.find(p => p.id === prefill.product_id);
             if (productSel) productSel.value = prefill.product_id;
+            if (product && !prefill.product_code && !prefill.product_sku) _setRowProductCode(row, product);
         }
 
         container.appendChild(row);
 
         // Wire change handlers via addEventListener (more reliable with searchable dropdown)
         const cSel = row.querySelector('select.row-category');
+        const codeInput = row.querySelector('.row-product-code');
         const pSel = row.querySelector('select.row-product');
         const vSel = row.querySelector('select.row-variant');
         if (cSel) {
             cSel.addEventListener('change', () => window._onRowCategoryChange(cSel));
             const cs = _makeSearchable(cSel, '🔍 التصنيف...');
             if (cs) cs.refresh();
+        }
+        if (codeInput) {
+            codeInput.addEventListener('input', () => window._onRowProductCodeInput(codeInput));
+            codeInput.addEventListener('blur', () => window._onRowProductCodeInput(codeInput));
         }
         if (pSel) {
             pSel.addEventListener('change', () => window._onRowProductChange(pSel, rowId));
@@ -1224,8 +1296,10 @@
             variantSel.innerHTML = '<option value="">— اختر المقاس —</option>';
         }
 
-        // Clear price
+        const codeInput = row.querySelector('.row-product-code');
         const priceInput = row.querySelector('.row-price');
+        if (codeInput) codeInput.value = '';
+        _setRowProductCodeHint(row, '');
         if (priceInput) priceInput.value = '';
         window.calculateOrderTotals();
 
@@ -1267,6 +1341,14 @@
 
         const variantSel = row.querySelector('select.row-variant');
         const priceInput = row.querySelector('.row-price');
+        const product = _products.find(p => p.id === productId);
+
+        _setRowProductCode(row, product);
+        if (!product) {
+            const codeInput = row.querySelector('.row-product-code');
+            if (codeInput) codeInput.value = '';
+        }
+        _setRowProductCodeHint(row, product ? product.name : '');
 
         if (!variantSel) return;
 
@@ -1497,6 +1579,7 @@
                 order.items.forEach(item => {
                     window.addQuoteItemRow({
                         product_id:          item.product_id,
+                        product_code:        item.product_code || item.product_sku || '',
                         product_variant_id:  item.product_variant_id,
                         quantity:            item.quantity,
                         unit_price:          item.unit_price,
@@ -2356,6 +2439,7 @@
                 order.items.forEach(item => {
                     window.addQuoteItemRow({
                         product_id:         item.product_id,
+                        product_code:       item.product_code || item.product_sku || '',
                         product_variant_id: item.product_variant_id,
                         quantity:           item.quantity,
                         unit_price:         item.unit_price,

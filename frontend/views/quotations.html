@@ -193,17 +193,18 @@
         #quote-modal .quote-item-row > div:nth-child(1),
         #quote-modal .quote-item-row > div:nth-child(2),
         #quote-modal .quote-item-row > div:nth-child(3),
-        #quote-modal .quote-item-row > div:nth-child(7) {
+        #quote-modal .quote-item-row > div:nth-child(4),
+        #quote-modal .quote-item-row > div:nth-child(8) {
             grid-column: 1 / -1;
         }
 
-        #quote-modal .quote-item-row > div:nth-child(4),
         #quote-modal .quote-item-row > div:nth-child(5),
-        #quote-modal .quote-item-row > div:nth-child(6) {
+        #quote-modal .quote-item-row > div:nth-child(6),
+        #quote-modal .quote-item-row > div:nth-child(7) {
             min-width: 0;
         }
 
-        #quote-modal .quote-item-row > div:nth-child(8) {
+        #quote-modal .quote-item-row > div:nth-child(9) {
             position: absolute;
             top: 0.75rem;
             left: 0.75rem;
@@ -244,7 +245,7 @@
             bg-black/60 opacity-0 transition-opacity duration-200">
 
     <div class="modal-panel bg-white w-full sm:rounded-2xl shadow-2xl
-                sm:max-w-5xl max-h-screen sm:max-h-[95vh] flex flex-col
+                sm:max-w-7xl max-h-screen sm:max-h-[95vh] flex flex-col
                 transform scale-95 transition-transform duration-200">
 
         <!-- Modal Header -->
@@ -424,8 +425,9 @@
                 </div>
 
                 <!-- Items Table Header -->
-                <div class="hidden sm:grid grid-cols-[1.4fr_2fr_2fr_1fr_1.2fr_1.2fr_1.2fr_auto] gap-2 px-3 mb-1.5">
+                <div class="hidden sm:grid grid-cols-[1.2fr_1.2fr_2fr_2fr_1fr_1.2fr_1.2fr_1.2fr_auto] gap-2 px-3 mb-1.5">
                     <span class="text-xs font-bold text-slate-500">التصنيف</span>
+                    <span class="text-xs font-bold text-slate-500">رقم الصنف</span>
                     <span class="text-xs font-bold text-slate-500">المنتج</span>
                     <span class="text-xs font-bold text-slate-500">المقاس</span>
                     <span class="text-xs font-bold text-slate-500">الكمية</span>
