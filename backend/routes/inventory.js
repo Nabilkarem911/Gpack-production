@@ -48,7 +48,9 @@ router.get('/warehouses', async (req, res) => {
                 OR w.client_id IS NULL
                 OR w.id IN (SELECT DISTINCT warehouse_id FROM warehouse_stock WHERE client_id = $${params.length})
                 OR w.client_id IN (SELECT parent_id FROM clients WHERE id = $${params.length})
+                OR w.client_id IN (SELECT id FROM clients WHERE parent_id = $${params.length})
                 OR w.id IN (SELECT DISTINCT warehouse_id FROM warehouse_stock WHERE client_id IN (SELECT parent_id FROM clients WHERE id = $${params.length}))
+                OR w.id IN (SELECT DISTINCT warehouse_id FROM warehouse_stock WHERE client_id IN (SELECT id FROM clients WHERE parent_id = $${params.length}))
             )`);
         }
 
@@ -307,6 +309,7 @@ router.get('/stock', async (req, res) => {
                 u.abbreviation              AS unit_abbreviation,
                 p.id                        AS product_id,
                 p.name                      AS product_name,
+                p.sku                       AS product_sku,
                 p.category_id,
                 cat.name                    AS category_name,
                 ws.quantity                 AS qty_on_hand,

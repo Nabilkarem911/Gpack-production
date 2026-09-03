@@ -386,6 +386,8 @@
         if (!modal) return;
         _warehouseStock = [];
         modal.classList.remove('hidden');
+        const stockSearch = _el('si-w-stock-search');
+        if (stockSearch) { stockSearch.value = ''; stockSearch.disabled = true; }
         _el('si-w-date').value = new Date().toISOString().split('T')[0];
         _el('si-w-stock-items').innerHTML = '<tr><td colspan="6" class="py-8 text-center text-slate-400">اختر العميل والمستودع أولاً</td></tr>';
         const clientSel = _el('si-w-client');
@@ -408,11 +410,20 @@
         if (!warehouseSel) return;
         warehouseSel.innerHTML = '<option value="">— اختر المستودع —</option>';
         warehouseSel.disabled = !clientId;
+        const stockSearch = _el('si-w-stock-search');
+        if (stockSearch) { stockSearch.value = ''; stockSearch.disabled = true; }
         _el('si-w-stock-items').innerHTML = '<tr><td colspan="6" class="py-8 text-center text-slate-400">اختر المستودع</td></tr>';
         if (!clientId) return;
         try {
             const res = await window.apiFetch(`/api/inventory/warehouses?client_id=${encodeURIComponent(clientId)}&status=active`);
-            warehouseSel.innerHTML += (res.data || []).filter(w => w.client_id === clientId).map(w => `<option value="${esc(w.id)}">${esc(w.name)}</option>`).join('');
+            const selectedClient = _clients.find(c => c.id === clientId);
+            const allowedClientIds = new Set([
+                clientId,
+                selectedClient?.parent_id,
+                ..._clients.filter(c => c.parent_id === clientId).map(c => c.id),
+            ].filter(Boolean));
+            const visibleWarehouses = (res.data || []).filter(w => allowedClientIds.has(w.client_id));
+            warehouseSel.innerHTML += visibleWarehouses.map(w => `<option value="${esc(w.id)}">${esc(w.name)}</option>`).join('');
             if (!_warehouseSearchable && window.makeSelectSearchable) {
                 _warehouseSearchable = window.makeSelectSearchable(warehouseSel, '🔍 ابحث عن المستودع...');
             }
@@ -422,11 +433,31 @@
         }
     };
 
+    function _renderWarehouseStock() {
+        const body = _el('si-w-stock-items');
+        const search = (_el('si-w-stock-search')?.value || '').trim().toLowerCase();
+        if (!body) return;
+        if (!search) {
+            body.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-slate-400">اكتب اسم الصنف أو رقمه لعرض النتائج</td></tr>';
+            return;
+        }
+        const matches = _warehouseStock.filter(s => [s.product_name, s.product_sku, s.variant_sku, s.variant_size].some(v => String(v || '').toLowerCase().includes(search)));
+        body.innerHTML = matches.length ? matches.map(s => {
+            const i = _warehouseStock.indexOf(s);
+            return `<tr class="border-b border-slate-100" data-index="${i}"><td class="py-2 px-3 font-semibold">${esc(s.product_name || '—')}</td><td class="py-2 px-3 text-slate-500">${esc(s.variant_size || '—')}</td><td class="py-2 px-3 text-center font-bold text-emerald-600">${qty(s.available_qty)}</td><td class="py-2 px-3 text-center"><input class="si-w-qty w-24 border border-slate-200 rounded-lg px-2 py-1.5 text-center" type="number" min="0" max="${s.available_qty}" step="0.001" value="${s.selectedQty || 0}" data-index="${i}" oninput="window.siWarehouseCalc()"></td><td class="py-2 px-3 text-center"><input class="si-w-price w-28 border border-slate-200 rounded-lg px-2 py-1.5 text-center" type="number" min="0" step="0.01" value="${s.selectedPrice ?? Number(s.selling_price || 0).toFixed(2)}" data-index="${i}" oninput="window.siWarehouseCalc()"></td><td class="py-2 px-3 text-center font-mono" data-line-total="${i}">${fmt((s.selectedQty || 0) * (s.selectedPrice ?? s.selling_price ?? 0))}</td></tr>`;
+        }).join('') : '<tr><td colspan="6" class="py-8 text-center text-slate-400">لا توجد نتائج مطابقة</td></tr>';
+        window.siWarehouseCalc();
+    }
+
+    window.siWarehouseStockSearch = function() { _renderWarehouseStock(); };
+
     window.siWarehouseChanged = async function() {
         const clientId = _el('si-w-client')?.value;
         const warehouseId = _el('si-w-warehouse')?.value;
         const body = _el('si-w-stock-items');
+        const stockSearch = _el('si-w-stock-search');
         _warehouseStock = [];
+        if (stockSearch) { stockSearch.value = ''; stockSearch.disabled = !warehouseId; }
         if (!clientId || !warehouseId) {
             body.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-slate-400">اختر العميل والمستودع أولاً</td></tr>';
             return;
@@ -435,8 +466,8 @@
         try {
             const res = await window.apiFetch(`/api/inventory/stock?client_id=${encodeURIComponent(clientId)}&warehouse_id=${encodeURIComponent(warehouseId)}&limit=1000`);
             _warehouseStock = (res.data || []).filter(s => s.client_id === clientId && parseFloat(s.available_qty || 0) > 0);
-            _el('si-w-stock-count').textContent = `${_warehouseStock.length} صنف`;
-            body.innerHTML = _warehouseStock.length ? _warehouseStock.map((s, i) => `<tr class="border-b border-slate-100" data-index="${i}"><td class="py-2 px-3 font-semibold">${esc(s.product_name || '—')}</td><td class="py-2 px-3 text-slate-500">${esc(s.variant_size || '—')}</td><td class="py-2 px-3 text-center font-bold text-emerald-600">${qty(s.available_qty)}</td><td class="py-2 px-3 text-center"><input class="si-w-qty w-24 border border-slate-200 rounded-lg px-2 py-1.5 text-center" type="number" min="0" max="${s.available_qty}" step="0.001" value="0" data-index="${i}" oninput="window.siWarehouseCalc()"></td><td class="py-2 px-3 text-center"><input class="si-w-price w-28 border border-slate-200 rounded-lg px-2 py-1.5 text-center" type="number" min="0" step="0.01" value="${Number(s.selling_price || 0).toFixed(2)}" data-index="${i}" oninput="window.siWarehouseCalc()"></td><td class="py-2 px-3 text-center font-mono" data-line-total="${i}">0.00</td></tr>`).join('') : '<tr><td colspan="6" class="py-8 text-center text-slate-400">لا يوجد رصيد متاح في المستودع</td></tr>';
+            _el('si-w-stock-count').textContent = `${_warehouseStock.length} صنف متاح`;
+            _renderWarehouseStock();
         } catch (err) {
             body.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-red-400">${esc(err.message)}</td></tr>`;
         }
@@ -448,6 +479,8 @@
             const i = Number(row.dataset.index);
             const quantity = parseFloat(row.querySelector('.si-w-qty')?.value || 0);
             const price = parseFloat(row.querySelector('.si-w-price')?.value || 0);
+            const stock = _warehouseStock[i];
+            if (stock) { stock.selectedQty = quantity; stock.selectedPrice = price; }
             const total = quantity * price;
             subtotal += total;
             const line = row.querySelector('[data-line-total]');
@@ -462,13 +495,14 @@
     window.siSaveWarehouseInvoice = async function() {
         const clientId = _el('si-w-client')?.value;
         const warehouseId = _el('si-w-warehouse')?.value;
-        const items = [];
-        document.querySelectorAll('#si-w-stock-items tr[data-index]').forEach(row => {
-            const stock = _warehouseStock[Number(row.dataset.index)];
-            const quantity = parseFloat(row.querySelector('.si-w-qty')?.value || 0);
-            const price = parseFloat(row.querySelector('.si-w-price')?.value || 0);
-            if (stock && quantity > 0) items.push({ stock_id: stock.stock_id, variant_id: stock.variant_id, quantity, unit_price: price });
-        });
+        const items = _warehouseStock
+            .filter(stock => parseFloat(stock.selectedQty || 0) > 0)
+            .map(stock => ({
+                stock_id: stock.stock_id,
+                variant_id: stock.variant_id,
+                quantity: parseFloat(stock.selectedQty),
+                unit_price: parseFloat(stock.selectedPrice ?? stock.selling_price ?? 0),
+            }));
         if (!clientId || !warehouseId) return alert('اختر العميل والمستودع أولاً');
         if (!items.length) return alert('أدخل كمية لصنف واحد على الأقل');
         const btn = _el('si-w-save');
