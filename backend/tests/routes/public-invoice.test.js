@@ -28,7 +28,7 @@ describe('Public Invoice Routes', () => {
     });
 
     test('should return 404 for non-existent invoice by hash', async () => {
-        mockQuery.mockResolvedValueOnce({ rows: [] });
+        mockQuery.mockResolvedValue({ rows: [] });
 
         const res = await request(app)
             .get('/api/public/invoice/inv-123')
@@ -41,20 +41,24 @@ describe('Public Invoice Routes', () => {
         const shareToken = 'abc123def456';
         const tokenHash = hashToken(shareToken);
 
-        mockQuery.mockResolvedValueOnce({
-            rows: [{
-                id: '550e8400-e29b-41d4-a716-446655440000',
-                invoice_number: 1001,
-                invoice_date: '2026-06-16',
-                due_date: '2026-06-30',
-                status: 'unpaid',
-                subtotal: '1000.00',
-                tax_amount: '150.00',
-                grand_total: '1150.00',
-                client_name: 'Test Client',
-                share_token: null,
-                items: [],
-            }],
+        const invoice = {
+            id: '550e8400-e29b-41d4-a716-446655440000',
+            invoice_number: 1001,
+            invoice_date: '2026-06-16',
+            due_date: '2026-06-30',
+            status: 'unpaid',
+            subtotal: '1000.00',
+            tax_amount: '150.00',
+            grand_total: '1150.00',
+            client_name: 'Test Client',
+            share_token: null,
+            order_id: null,
+            items: [],
+        };
+
+        mockQuery.mockImplementation((sql) => {
+            if (sql.includes('FROM invoices i')) return Promise.resolve({ rows: [invoice] });
+            return Promise.resolve({ rows: [] });
         });
 
         const res = await request(app)
@@ -62,7 +66,7 @@ describe('Public Invoice Routes', () => {
             .query({ token: shareToken });
 
         expect(res.status).toBe(200);
-        expect(res.body.invoice).toMatchObject({
+        expect(res.body.data).toMatchObject({
             invoice_number: 1001,
             client_name: 'Test Client',
         });

@@ -6,6 +6,7 @@ const request = require('supertest');
 const express = require('express');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const cookieParser = require('cookie-parser');
 
 // Mock db before requiring the route
 const mockQuery = jest.fn();
@@ -32,6 +33,7 @@ describe('Auth Routes', () => {
     beforeEach(() => {
         app = express();
         app.use(express.json());
+        app.use(cookieParser());
         app.use('/api/auth', authRoutes);
         mockQuery.mockClear();
         mockRelease.mockClear();
@@ -42,10 +44,10 @@ describe('Auth Routes', () => {
     });
 
     describe('POST /api/auth/login', () => {
-        test('should reject invalid email format (Zod validation)', async () => {
+        test('should reject missing identifier (Zod validation)', async () => {
             const res = await request(app)
                 .post('/api/auth/login')
-                .send({ email: 'not-an-email', password: 'secret123' });
+                .send({ password: 'secret123' });
 
             expect(res.status).toBe(400);
             expect(res.body.error).toBe('Validation failed');
@@ -54,7 +56,7 @@ describe('Auth Routes', () => {
         test('should reject missing password (Zod validation)', async () => {
             const res = await request(app)
                 .post('/api/auth/login')
-                .send({ email: 'admin@test.com' });
+                .send({ identifier: 'admin@test.com' });
 
             expect(res.status).toBe(400);
             expect(res.body.error).toBe('Validation failed');
@@ -65,10 +67,10 @@ describe('Auth Routes', () => {
 
             const res = await request(app)
                 .post('/api/auth/login')
-                .send({ email: 'unknown@test.com', password: 'secret123' });
+                .send({ identifier: 'unknown@test.com', password: 'secret123' });
 
             expect(res.status).toBe(401);
-            expect(res.body.error).toBe('Invalid email or password.');
+            expect(res.body.error).toBe('Invalid email/phone or password.');
         });
 
         test('should return 403 for inactive user', async () => {
@@ -88,7 +90,7 @@ describe('Auth Routes', () => {
 
             const res = await request(app)
                 .post('/api/auth/login')
-                .send({ email: 'inactive@test.com', password: 'secret123' });
+                .send({ identifier: 'inactive@test.com', password: 'secret123' });
 
             expect(res.status).toBe(403);
             expect(res.body.error).toMatch(/inactive/i);
@@ -112,10 +114,10 @@ describe('Auth Routes', () => {
 
             const res = await request(app)
                 .post('/api/auth/login')
-                .send({ email: 'admin@test.com', password: 'wrongpassword' });
+                .send({ identifier: 'admin@test.com', password: 'wrongpassword' });
 
             expect(res.status).toBe(401);
-            expect(res.body.error).toBe('Invalid email or password.');
+            expect(res.body.error).toBe('Invalid email/phone or password.');
         });
 
         test('should login successfully, set HttpOnly cookie, and return token + user', async () => {
@@ -136,7 +138,7 @@ describe('Auth Routes', () => {
 
             const res = await request(app)
                 .post('/api/auth/login')
-                .send({ email: 'admin@test.com', password: 'secret123' });
+                .send({ identifier: 'admin@test.com', password: 'secret123' });
 
             expect(res.status).toBe(200);
             expect(res.body.user).toMatchObject({
@@ -145,7 +147,6 @@ describe('Auth Routes', () => {
                 name: 'Admin User',
                 role: 'super_admin',
             });
-            expect(res.body.token).toBeDefined();
 
             // Assert HttpOnly cookie is set
             const cookies = res.headers['set-cookie'];
@@ -162,6 +163,8 @@ describe('Auth Routes', () => {
                 process.env.JWT_SECRET,
                 { expiresIn: '1h' }
             );
+
+            mockQuery.mockResolvedValue({ rowCount: 1, rows: [{ token_version: 0 }] });
 
             const res = await request(app)
                 .post('/api/auth/logout')

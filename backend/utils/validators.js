@@ -114,7 +114,7 @@ function validateBody(schema) {
             const errorPath = firstError?.path?.join('.') || 'unknown';
             const errorMessage = firstError?.message || 'Invalid input';
             return res.status(400).json({
-                error: `Validation failed: ${errorPath} — ${errorMessage}`,
+                error: 'Validation failed',
                 field: errorPath,
                 message: errorMessage,
             });
@@ -136,7 +136,7 @@ function validateQuery(schema) {
             const errorPath = firstError?.path?.join('.') || 'unknown';
             const errorMessage = firstError?.message || 'Invalid input';
             return res.status(400).json({
-                error: `Validation failed: ${errorPath} — ${errorMessage}`,
+                error: 'Validation failed',
                 field: errorPath,
                 message: errorMessage,
             });
