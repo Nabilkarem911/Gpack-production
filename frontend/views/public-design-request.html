@@ -96,10 +96,10 @@ body{margin:0;background:#f1f5f9;color:#334155}
     </header>
 
     <!-- Main grid: preview + chat -->
-    <div class="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-4">
+    <div class="grid grid-cols-1 lg:grid-cols-[400px_1fr] gap-4">
 
       <!-- Left column: preview, history, item controls -->
-      <section class="space-y-4">
+      <section class="space-y-4 order-1 lg:order-2">
 
         <!-- Current preview -->
         <div id="preview-card" class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden hidden">
@@ -144,7 +144,7 @@ body{margin:0;background:#f1f5f9;color:#334155}
       </section>
 
       <!-- Right column: chat -->
-      <section id="chat-panel" class="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col h-[calc(100dvh-160px)] lg:h-[calc(100dvh-160px)] lg:sticky lg:top-4">
+      <section id="chat-panel" class="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col h-[calc(100dvh-160px)] lg:h-[calc(100dvh-160px)] lg:sticky lg:top-4 order-2 lg:order-1">
         <div class="p-4 border-b border-slate-100 flex items-center gap-2">
           <i class="fa-solid fa-comments text-[#563D5D]"></i>
           <h2 class="text-sm font-bold text-slate-700">المحادثة</h2>
