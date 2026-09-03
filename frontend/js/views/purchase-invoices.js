@@ -292,18 +292,21 @@
 
     // ── Approve Modal ─────────────────────────────────────────────────────────
     let _aprItems = [];
+    let _aprExpenses = [];
 
     window.piOpenApproveModal = async function(invId) {
         try {
             const res   = await window.apiFetch(`/api/purchase-invoices/${invId}`);
             const inv   = res.data?.invoice || res.invoice;
             const items = res.data?.items || res.items || [];
+            const expenses = res.data?.expenses || res.expenses || [];
 
             if (!inv || inv.status !== 'draft') {
                 alert('الفاتورة ليست مسودة');
                 return;
             }
 
+            _aprExpenses = expenses.map(e => ({ label: e.label || '', amount: parseFloat(e.amount || 0) }));
             _aprItems = items.map(i => ({
                 id:           i.id,
                 product_name: i.product_name,
@@ -338,6 +341,7 @@
         _el('pi-approve-overlay')?.classList.add('hidden');
         _el('pi-approve-modal')?.classList.add('hidden');
         _aprItems = [];
+        _aprExpenses = [];
     };
 
     function _renderAprItems() {
@@ -358,7 +362,22 @@
                 <td class="py-3 px-3 text-center font-mono text-sm font-bold text-emerald-600" id="pi-apr-line-${i}">0.00</td>
             </tr>`;
         }).join('');
+        _renderAprExpenses();
     }
+
+    function _renderAprExpenses() {
+        const tbody = _el('pi-apr-expenses');
+        if (!tbody) return;
+        tbody.innerHTML = _aprExpenses.map((expense, i) => `<tr>
+            <td class="py-2 px-3"><input type="text" value="${esc(expense.label)}" oninput="window.piAprUpdateExpense(${i}, 'label', this.value)" class="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm" placeholder="شحن، جمارك..." maxlength="255"></td>
+            <td class="py-2 px-3"><input type="number" min="0" step="0.01" value="${expense.amount || ''}" oninput="window.piAprUpdateExpense(${i}, 'amount', this.value)" class="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm text-center font-mono" placeholder="0.00"></td>
+            <td class="py-2 px-3 text-center"><button type="button" onclick="window.piAprRemoveExpense(${i})" class="text-red-500 hover:text-red-700"><i class="fa-solid fa-trash"></i></button></td>
+        </tr>`).join('');
+    }
+
+    window.piAprAddExpense = function() { _aprExpenses.push({ label: '', amount: 0 }); _renderAprExpenses(); };
+    window.piAprRemoveExpense = function(idx) { _aprExpenses.splice(idx, 1); _renderAprExpenses(); _piAprUpdateTotals(); };
+    window.piAprUpdateExpense = function(idx, field, value) { _aprExpenses[idx][field] = field === 'amount' ? (parseFloat(value) || 0) : value; _piAprUpdateTotals(); };
 
     window.piAprUpdatePrice = function(idx, value) {
         _aprItems[idx].unit_cost = parseFloat(value) || 0;
@@ -373,10 +392,12 @@
         for (const item of _aprItems) subtotal += item.line_total;
         const hasTax = _el('pi-apr-tax-toggle')?.checked || false;
         const taxRate = hasTax ? 0.15 : 0;
-        const taxAmt = subtotal * taxRate;
-        const grand = subtotal + taxAmt;
+        const expensesTotal = _aprExpenses.reduce((sum, expense) => sum + (parseFloat(expense.amount) || 0), 0);
+        const taxAmt = (subtotal + expensesTotal) * taxRate;
+        const grand = subtotal + expensesTotal + taxAmt;
         const _s = (id, v) => { const el = _el(id); if (el) el.textContent = v; };
         _s('pi-apr-subtotal', fmt(subtotal));
+        _s('pi-apr-expenses-total', fmt(expensesTotal));
         _s('pi-apr-tax-amount', hasTax ? fmt(taxAmt) : '0.00');
         _s('pi-apr-grand', fmt(grand));
     }
@@ -416,6 +437,7 @@
                 method: 'POST',
                 body: {
                     items: _aprItems.map(i => ({ id: i.id, unit_cost: i.unit_cost })),
+                    expenses: _aprExpenses.filter(e => e.label.trim() && e.amount > 0),
                     tax_rate: hasTax ? 0.15 : 0,
                     pay_now: payNow,
                     pay_amount: payNow ? payAmount : 0,
@@ -436,12 +458,14 @@
 
     // ── Edit Modal ───────────────────────────────────────────────────────────
     let _edtItems = [];
+    let _edtExpenses = [];
 
     window.piOpenEditModal = async function(invId) {
         try {
             const res   = await window.apiFetch(`/api/purchase-invoices/${invId}`);
             const inv   = res.data?.invoice || res.invoice;
             const items = res.data?.items || res.items || [];
+            const expenses = res.data?.expenses || res.expenses || [];
 
             if (!inv) {
                 alert('الفاتورة غير موجودة');
@@ -456,6 +480,7 @@
                 return;
             }
 
+            _edtExpenses = expenses.map(e => ({ label: e.label || '', amount: parseFloat(e.amount || 0) }));
             _edtItems = items.map(i => ({
                 id:           i.id,
                 product_name: i.product_name,
@@ -491,6 +516,7 @@
         _el('pi-edit-overlay')?.classList.add('hidden');
         _el('pi-edit-modal')?.classList.add('hidden');
         _edtItems = [];
+        _edtExpenses = [];
     };
 
     function _renderEdtItems() {
@@ -511,7 +537,22 @@
                 <td class="py-3 px-3 text-center font-mono text-sm font-bold text-amber-600" id="pi-edt-line-${i}">${fmt(item.line_total)}</td>
             </tr>`;
         }).join('');
+        _renderEdtExpenses();
     }
+
+    function _renderEdtExpenses() {
+        const tbody = _el('pi-edt-expenses');
+        if (!tbody) return;
+        tbody.innerHTML = _edtExpenses.map((expense, i) => `<tr>
+            <td class="py-2 px-3"><input type="text" value="${esc(expense.label)}" oninput="window.piEdtUpdateExpense(${i}, 'label', this.value)" class="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm" placeholder="شحن، جمارك..." maxlength="255"></td>
+            <td class="py-2 px-3"><input type="number" min="0" step="0.01" value="${expense.amount || ''}" oninput="window.piEdtUpdateExpense(${i}, 'amount', this.value)" class="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm text-center font-mono" placeholder="0.00"></td>
+            <td class="py-2 px-3 text-center"><button type="button" onclick="window.piEdtRemoveExpense(${i})" class="text-red-500 hover:text-red-700"><i class="fa-solid fa-trash"></i></button></td>
+        </tr>`).join('');
+    }
+
+    window.piEdtAddExpense = function() { _edtExpenses.push({ label: '', amount: 0 }); _renderEdtExpenses(); };
+    window.piEdtRemoveExpense = function(idx) { _edtExpenses.splice(idx, 1); _renderEdtExpenses(); _piEdtUpdateTotals(); };
+    window.piEdtUpdateExpense = function(idx, field, value) { _edtExpenses[idx][field] = field === 'amount' ? (parseFloat(value) || 0) : value; _piEdtUpdateTotals(); };
 
     window.piEdtUpdatePrice = function(idx, value) {
         _edtItems[idx].unit_cost = parseFloat(value) || 0;
@@ -526,10 +567,12 @@
         for (const item of _edtItems) subtotal += item.line_total;
         const hasTax = _el('pi-edt-tax-toggle')?.checked || false;
         const taxRate = hasTax ? 0.15 : 0;
-        const taxAmt = subtotal * taxRate;
-        const grand = subtotal + taxAmt;
+        const expensesTotal = _edtExpenses.reduce((sum, expense) => sum + (parseFloat(expense.amount) || 0), 0);
+        const taxAmt = (subtotal + expensesTotal) * taxRate;
+        const grand = subtotal + expensesTotal + taxAmt;
         const _s = (id, v) => { const el = _el(id); if (el) el.textContent = v; };
         _s('pi-edt-subtotal', fmt(subtotal));
+        _s('pi-edt-expenses-total', fmt(expensesTotal));
         _s('pi-edt-tax-amount', hasTax ? fmt(taxAmt) : '0.00');
         _s('pi-edt-grand', fmt(grand));
     }
@@ -571,6 +614,7 @@
                 method: 'POST',
                 body: {
                     items: _edtItems.map(i => ({ id: i.id, unit_cost: i.unit_cost })),
+                    expenses: _edtExpenses.filter(e => e.label.trim() && e.amount > 0),
                     tax_rate: hasTax ? 0.15 : 0,
                     pay_now: payNow,
                     pay_amount: payNow ? payAmount : 0,
@@ -595,6 +639,7 @@
             const res   = await window.apiFetch(`/api/purchase-invoices/${id}`);
             const inv   = res.data?.invoice || res.invoice;
             const items = res.data?.items || res.items || [];
+            const expenses = res.data?.expenses || res.expenses || [];
 
             const statusLabels = { draft: 'مسودة', unpaid: 'غير مدفوعة', partially_paid: 'مدفوعة جزئياً', paid: 'مدفوعة', cancelled: 'ملغية', merged: 'مدمجة', posted: 'معتمدة' };
             const statusColors = { draft: '#2563eb', unpaid: '#dc2626', partially_paid: '#d97706', paid: '#15803d', cancelled: '#64748b', merged: '#7c3aed', posted: '#15803d' };
@@ -613,6 +658,10 @@
                     <td style="padding:8px 10px;border:1px solid #e2e8f0;text-align:left;font-family:monospace;font-weight:700;color:#15803d">${fmt(item.total_cost || item.line_total)}</td>
                 </tr>`).join('');
 
+            const expensesRows = expenses.map(expense => `
+                <tr><td colspan="5" style="padding:8px 10px;border:1px solid #e2e8f0;font-weight:600">${esc(expense.label)}</td>
+                    <td style="padding:8px 10px;border:1px solid #e2e8f0;text-align:left;font-family:monospace;font-weight:700;color:#7c3aed">${fmt(expense.amount)}</td></tr>`).join('');
+            const expensesTotal = expenses.reduce((sum, expense) => sum + (parseFloat(expense.amount) || 0), 0);
             const remaining = parseFloat(inv.grand_total || 0) - parseFloat(inv.paid_amount || 0);
 
             const html = `<!DOCTYPE html>
@@ -669,13 +718,17 @@
         <th style="padding:8px 10px;border:1px solid #e2e8f0;text-align:left;font-size:11px">الإجمالي</th>
       </tr>
     </thead>
-    <tbody>${itemsRows}</tbody>
+    <tbody>${itemsRows}${expensesRows}</tbody>
   </table>
   <div style="display:flex;justify-content:flex-end;margin-top:20px">
     <div style="width:280px">
       <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:13px">
         <span style="color:#64748b">المجموع الفرعي</span>
         <span style="font-family:monospace;font-weight:600">${fmt(inv.subtotal)} ريال</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:13px">
+        <span style="color:#64748b">البنود الإضافية</span>
+        <span style="font-family:monospace;font-weight:600">${fmt(expensesTotal)} ريال</span>
       </div>
       <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:13px">
         <span style="color:#64748b">الضريبة (${Math.round((parseFloat(inv.tax_rate)||0)*100)}%)</span>

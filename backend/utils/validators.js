@@ -474,6 +474,10 @@ const purchaseInvoiceCreate = z.object({
     due_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
     tax_rate: z.coerce.number().min(0).max(1).optional().nullable(),
     notes: z.string().max(2000).optional().nullable(),
+    expenses: z.array(z.object({
+        label: z.string().trim().min(1).max(255),
+        amount: z.coerce.number().positive(),
+    }).passthrough()).optional().default([]),
     items: z.array(z.object({
         variant_id: z.string().uuid(),
         quantity: z.coerce.number().positive(),

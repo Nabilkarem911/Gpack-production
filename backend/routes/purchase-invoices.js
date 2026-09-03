@@ -103,6 +103,7 @@ router.get('/', async (req, res) => {
             SELECT pi.id, pi.invoice_number, pi.invoice_date, pi.supplier_invoice_ref,
                    pi.subtotal, pi.tax_rate, pi.tax_amount, pi.grand_total, pi.paid_amount,
                    pi.status, pi.has_supplier_invoice, pi.notes, pi.created_at,
+                   COALESCE((SELECT SUM(pie.amount) FROM purchase_invoice_expenses pie WHERE pie.purchase_invoice_id = pi.id), 0) AS expenses_total,
                    pi.merged_into_invoice_id,
                    (EXISTS(SELECT 1 FROM purchase_invoice_mo_links WHERE purchase_invoice_id = pi.id)) AS is_consolidated,
                    (EXISTS(SELECT 1 FROM direct_receipts WHERE purchase_invoice_id = pi.id)) AS is_from_direct_receipt,
@@ -191,10 +192,19 @@ router.get('/:id([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})',
             ORDER BY pii.created_at
         `, [id]);
 
+        const expensesRes = await db.query(`
+            SELECT pie.id, pie.label, pie.amount, pie.account_id, a.code AS account_code, a.name AS account_name
+            FROM purchase_invoice_expenses pie
+            JOIN accounts a ON a.id = pie.account_id
+            WHERE pie.purchase_invoice_id = $1
+            ORDER BY pie.created_at, pie.id
+        `, [id]);
+
         res.json({
             data: {
                 invoice: invRes.rows[0],
                 items: itemsRes.rows,
+                expenses: expensesRes?.rows || [],
             }
         });
 
@@ -584,7 +594,7 @@ router.get('/mergeable', async (req, res) => {
 
 async function _getAccountIds(client) {
     const res = await client.query(
-        `SELECT code, id FROM accounts WHERE code IN ('1400','2100','1200','2200')`
+        `SELECT code, id FROM accounts WHERE code IN ('1400','2100','1200','2200','6100')`
     );
     const map = {};
     for (const r of res.rows) map[r.code] = r.id;
@@ -593,12 +603,13 @@ async function _getAccountIds(client) {
         payable:   map['2100'],
         bank:      map['1200'],
         vatInput:  map['2200'],
+        operatingExpense: map['6100'],
     };
 }
 
 router.post('/:id/approve', restrictEdit, async (req, res) => {
     const { id } = req.params;
-    const { items, tax_rate = 0, pay_now = false, pay_amount = 0, pay_notes = '' } = req.body;
+    const { items, expenses = [], tax_rate = 0, pay_now = false, pay_amount = 0, pay_notes = '' } = req.body;
 
     if (!items || !Array.isArray(items) || !items.length) {
         return res.status(400).json({ error: 'يجب إدخال أسعار الأصناف' });
@@ -650,9 +661,32 @@ router.post('/:id/approve', restrictEdit, async (req, res) => {
             );
         }
 
-        // 3. Update invoice totals and status
-        const taxAmt = subtotal * parseFloat(tax_rate || 0);
-        const grandTotal = subtotal + taxAmt;
+        // 3. Save additional expense lines and include them in the invoice total.
+        const normalizedExpenses = expenses.map(expense => ({
+            label: String(expense.label || '').trim(),
+            amount: parseFloat(expense.amount || 0),
+        })).filter(expense => expense.label && expense.amount > 0);
+        if (normalizedExpenses.some(expense => !Number.isFinite(expense.amount))) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'قيمة المصروف يجب أن تكون رقماً صحيحاً' });
+        }
+        if (normalizedExpenses.length && !acct.operatingExpense) {
+            await client.query('ROLLBACK');
+            return res.status(500).json({ error: 'حساب مصاريف الشحن واللوجستيات غير موجود (6100)' });
+        }
+        const expensesTotal = normalizedExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+        for (const expense of normalizedExpenses) {
+            await client.query(
+                `INSERT INTO purchase_invoice_expenses (purchase_invoice_id, label, amount, account_id)
+                 VALUES ($1, $2, $3, $4)`,
+                [id, expense.label, expense.amount, acct.operatingExpense]
+            );
+        }
+
+        // 4. Update invoice totals and status. Expenses are taxable invoice charges.
+        const preTaxTotal = subtotal + expensesTotal;
+        const taxAmt = preTaxTotal * parseFloat(tax_rate || 0);
+        const grandTotal = preTaxTotal + taxAmt;
 
         await client.query(
             `UPDATE purchase_invoices
@@ -682,6 +716,15 @@ router.post('/:id/approve', restrictEdit, async (req, res) => {
              VALUES ($1, $2, $3, 0, 'purchase_invoice', $4, $5)`,
             [voucherId, acct.inventory, subtotal, id, `تكلفة بضاعة — فاتورة #${inv.invoice_number}`]
         );
+
+        // DR each additional expense account (shipping, customs, etc.).
+        for (const expense of normalizedExpenses) {
+            await client.query(
+                `INSERT INTO accounting_voucher_lines (voucher_id, account_id, debit, credit, sub_account_type, sub_account_id, description)
+                 VALUES ($1, $2, $3, 0, 'purchase_invoice', $4, $5)`,
+                [voucherId, acct.operatingExpense, expense.amount, id, `${expense.label} — فاتورة #${inv.invoice_number}`]
+            );
+        }
 
         // DR VAT Input (if tax > 0)
         if (taxAmt > 0) {
@@ -762,7 +805,7 @@ router.post('/:id/approve', restrictEdit, async (req, res) => {
 // =============================================================================
 router.post('/:id/edit', restrictEdit, async (req, res) => {
     const { id } = req.params;
-    const { items, tax_rate = 0, pay_now = false, pay_amount = 0, pay_notes = '' } = req.body;
+    const { items, expenses = [], tax_rate = 0, pay_now = false, pay_amount = 0, pay_notes = '' } = req.body;
 
     if (!items || !Array.isArray(items) || !items.length) {
         return res.status(400).json({ error: 'يجب إدخال أسعار الأصناف' });
@@ -809,7 +852,29 @@ router.post('/:id/edit', restrictEdit, async (req, res) => {
             await client.query(`DELETE FROM accounting_vouchers WHERE id = $1`, [v.id]);
         }
 
-        // 3. Update each invoice item with new unit_cost
+        // 3. Replace additional expense lines atomically with the invoice edit.
+        const normalizedExpenses = expenses.map(expense => ({
+            label: String(expense.label || '').trim(),
+            amount: parseFloat(expense.amount || 0),
+        })).filter(expense => expense.label && expense.amount > 0);
+        if (normalizedExpenses.some(expense => !Number.isFinite(expense.amount))) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'قيمة المصروف يجب أن تكون رقماً صحيحاً' });
+        }
+        if (normalizedExpenses.length && !acct.operatingExpense) {
+            await client.query('ROLLBACK');
+            return res.status(500).json({ error: 'حساب مصاريف الشحن واللوجستيات غير موجود (6100)' });
+        }
+        await client.query(`DELETE FROM purchase_invoice_expenses WHERE purchase_invoice_id = $1`, [id]);
+        for (const expense of normalizedExpenses) {
+            await client.query(
+                `INSERT INTO purchase_invoice_expenses (purchase_invoice_id, label, amount, account_id)
+                 VALUES ($1, $2, $3, $4)`,
+                [id, expense.label, expense.amount, acct.operatingExpense]
+            );
+        }
+
+        // 4. Update each invoice item with new unit_cost
         let subtotal = 0;
         for (const item of items) {
             const unitCost = parseFloat(item.unit_cost || 0);
@@ -828,9 +893,11 @@ router.post('/:id/edit', restrictEdit, async (req, res) => {
             );
         }
 
-        // 4. Update invoice totals
-        const taxAmt = subtotal * parseFloat(tax_rate || 0);
-        const grandTotal = subtotal + taxAmt;
+        // 5. Update invoice totals. Expenses are taxable invoice charges.
+        const expensesTotal = normalizedExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+        const preTaxTotal = subtotal + expensesTotal;
+        const taxAmt = preTaxTotal * parseFloat(tax_rate || 0);
+        const grandTotal = preTaxTotal + taxAmt;
 
         await client.query(
             `UPDATE purchase_invoices
@@ -860,6 +927,15 @@ router.post('/:id/edit', restrictEdit, async (req, res) => {
              VALUES ($1, $2, $3, 0, 'purchase_invoice', $4, $5)`,
             [voucherId, acct.inventory, subtotal, id, `تكلفة بضاعة — فاتورة #${inv.invoice_number} (تعديل)`]
         );
+
+        // DR each additional expense account (shipping, customs, etc.).
+        for (const expense of normalizedExpenses) {
+            await client.query(
+                `INSERT INTO accounting_voucher_lines (voucher_id, account_id, debit, credit, sub_account_type, sub_account_id, description)
+                 VALUES ($1, $2, $3, 0, 'purchase_invoice', $4, $5)`,
+                [voucherId, acct.operatingExpense, expense.amount, id, `${expense.label} — فاتورة #${inv.invoice_number} (تعديل)`]
+            );
+        }
 
         // DR VAT Input (if tax > 0)
         if (taxAmt > 0) {

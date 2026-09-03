@@ -271,6 +271,15 @@
                 </table>
             </div>
 
+            <!-- Additional invoice charges -->
+            <div class="border border-slate-200 rounded-xl overflow-hidden mb-4">
+                <div class="flex items-center justify-between bg-slate-50 px-3 py-2">
+                    <span class="text-sm font-bold text-slate-700"><i class="fa-solid fa-receipt ml-1 text-purple-500"></i> بنود إضافية (شحن، جمارك، وغيرها)</span>
+                    <button type="button" onclick="window.piAprAddExpense()" class="text-xs font-bold text-purple-600 hover:text-purple-800"><i class="fa-solid fa-plus ml-1"></i> إضافة بند</button>
+                </div>
+                <table class="w-full text-sm"><thead class="bg-white"><tr><th class="py-2 px-3 text-right text-xs text-slate-500">البيان</th><th class="py-2 px-3 text-center text-xs text-slate-500 w-36">المبلغ</th><th class="w-12"></th></tr></thead><tbody id="pi-apr-expenses"></tbody></table>
+            </div>
+
             <!-- Tax + Payment -->
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                 <div class="bg-slate-50 border border-slate-200 rounded-xl p-3">
@@ -302,6 +311,10 @@
                 <div class="flex justify-between items-center mb-2">
                     <span class="text-sm text-slate-500">المجموع قبل الضريبة:</span>
                     <span class="text-sm font-bold text-slate-700" id="pi-apr-subtotal">0.00</span>
+                </div>
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-sm text-slate-500">البنود الإضافية:</span>
+                    <span class="text-sm font-bold text-purple-600" id="pi-apr-expenses-total">0.00</span>
                 </div>
                 <div class="flex justify-between items-center mb-2">
                     <span class="text-sm text-slate-500">الضريبة (15%):</span>
@@ -385,6 +398,15 @@
                 </table>
             </div>
 
+            <!-- Additional invoice charges -->
+            <div class="border border-slate-200 rounded-xl overflow-hidden mb-4">
+                <div class="flex items-center justify-between bg-slate-50 px-3 py-2">
+                    <span class="text-sm font-bold text-slate-700"><i class="fa-solid fa-receipt ml-1 text-amber-500"></i> بنود إضافية (شحن، جمارك، وغيرها)</span>
+                    <button type="button" onclick="window.piEdtAddExpense()" class="text-xs font-bold text-amber-600 hover:text-amber-800"><i class="fa-solid fa-plus ml-1"></i> إضافة بند</button>
+                </div>
+                <table class="w-full text-sm"><thead class="bg-white"><tr><th class="py-2 px-3 text-right text-xs text-slate-500">البيان</th><th class="py-2 px-3 text-center text-xs text-slate-500 w-36">المبلغ</th><th class="w-12"></th></tr></thead><tbody id="pi-edt-expenses"></tbody></table>
+            </div>
+
             <!-- Tax + Payment -->
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                 <div class="bg-slate-50 border border-slate-200 rounded-xl p-3">
@@ -416,6 +438,10 @@
                 <div class="flex justify-between items-center mb-2">
                     <span class="text-sm text-slate-500">المجموع قبل الضريبة:</span>
                     <span class="text-sm font-bold text-slate-700" id="pi-edt-subtotal">0.00</span>
+                </div>
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-sm text-slate-500">البنود الإضافية:</span>
+                    <span class="text-sm font-bold text-amber-600" id="pi-edt-expenses-total">0.00</span>
                 </div>
                 <div class="flex justify-between items-center mb-2">
                     <span class="text-sm text-slate-500">الضريبة (15%):</span>
