@@ -149,7 +149,6 @@ async function runMigrations() {
             // the root cause of "unterminated dollar-quoted string" errors.
             const statements = splitSqlStatements(rawSql);
 
-            let skippedAny = false;
             let failedAny = false;
 
             for (const stmt of statements) {
@@ -157,29 +156,13 @@ async function runMigrations() {
                     await client.query(stmt);
                 } catch (err) {
                     const msg = err.message || '';
-                    const alreadyExists = /already exists/i.test(msg);
-                    const duplicateColumn = /column .* already exists/i.test(msg);
-                    const duplicateObject = /duplicate/i.test(msg);
-                    const notFound = /does not exist/i.test(msg);
-
-                    if (alreadyExists || duplicateColumn || duplicateObject) {
-                        // Benign — object/column already exists, skip
-                        skippedAny = true;
-                        continue;
-                    }
-                    if (notFound && /DROP CONSTRAINT|DROP INDEX|DROP TRIGGER|DROP POLICY/i.test(stmt)) {
-                        // Benign — trying to drop something that doesn't exist
-                        skippedAny = true;
-                        continue;
-                    }
-                    // RLS policy already exists — benign
-                    if (/policy .* already exists/i.test(msg)) {
-                        skippedAny = true;
-                        continue;
-                    }
-                    // Real error — log and abort
                     console.error(`[Migrate] Failed statement in ${file}: ${msg}`);
                     console.error(`[Migrate] Statement: ${stmt.substring(0, 200)}...`);
+                    // End any active transaction so the connection is not left in an
+                    // aborted state. This prevents subsequent migrations and the
+                    // database health check from failing with "current transaction is
+                    // aborted, commands ignored until end of transaction block".
+                    await client.query('ROLLBACK').catch(() => {});
                     failedAny = true;
                     break;
                 }
@@ -195,11 +178,7 @@ async function runMigrations() {
                 'INSERT INTO schema_migrations (filename) VALUES ($1) ON CONFLICT DO NOTHING',
                 [file]
             );
-            if (skippedAny) {
-                console.warn(`[Migrate] Done with warnings: ${file} (some statements skipped)`);
-            } else {
-                console.log(`[Migrate] Done: ${file}`);
-            }
+            console.log(`[Migrate] Done: ${file}`);
         }
 
         console.log('[Migrate] All migrations applied successfully.');
