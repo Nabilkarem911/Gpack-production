@@ -428,6 +428,12 @@
                 _warehouseSearchable = window.makeSelectSearchable(warehouseSel, '🔍 ابحث عن المستودع...');
             }
             if (_warehouseSearchable) _warehouseSearchable.refresh();
+            const preferredWarehouse = visibleWarehouses.find(w => w.client_id === clientId) || visibleWarehouses[0];
+            if (preferredWarehouse) {
+                warehouseSel.value = preferredWarehouse.id;
+                if (_warehouseSearchable) _warehouseSearchable.refresh();
+                await window.siWarehouseChanged();
+            }
         } catch (err) {
             alert(`❌ تعذر تحميل مستودعات العميل: ${err.message}`);
         }
