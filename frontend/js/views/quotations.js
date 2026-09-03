@@ -1029,9 +1029,15 @@
             return;
         }
 
-        const product = _products.find(p => String(p.sku || '').trim().toLowerCase() === code);
+        const productsByCode = _products.filter(p => String(p.sku || '').trim().toLowerCase().includes(code));
+        const exactProduct = productsByCode.find(p => String(p.sku || '').trim().toLowerCase() === code);
+        const product = exactProduct || (productsByCode.length === 1 ? productsByCode[0] : null);
         if (!product) {
-            _setRowProductCodeHint(row, 'لم يتم العثور على صنف بهذا الرقم', 'error');
+            _setRowProductCodeHint(
+                row,
+                productsByCode.length > 1 ? 'يوجد أكثر من صنف مطابق، اكتب رقمًا أكثر تحديدًا' : 'لم يتم العثور على صنف بهذا الرقم',
+                'error'
+            );
             return;
         }
 
@@ -1086,15 +1092,6 @@
         row.dataset.designId = prefill.design_id || '';
 
         row.innerHTML = `
-            <!-- Category Select -->
-            <div class="min-w-0">
-                <select class="row-category w-full px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-lg
-                               text-sm text-slate-800 outline-none focus:border-brand-500
-                               focus:ring-2 focus:ring-brand-500/20 transition-all appearance-none">
-                    ${_buildCategoryOptions()}
-                </select>
-            </div>
-
             <div class="min-w-0">
                 <label class="sm:hidden block text-[10px] font-semibold text-slate-500 mb-1">رقم الصنف</label>
                 <input type="text"
@@ -1106,6 +1103,15 @@
                        autocomplete="off"
                        inputmode="text" />
                 <div class="row-product-code-hint text-[10px] mt-1 min-h-[1rem]"></div>
+            </div>
+
+            <!-- Category Select -->
+            <div class="min-w-0">
+                <select class="row-category w-full px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-lg
+                               text-sm text-slate-800 outline-none focus:border-brand-500
+                               focus:ring-2 focus:ring-brand-500/20 transition-all appearance-none">
+                    ${_buildCategoryOptions()}
+                </select>
             </div>
 
             <!-- Product Select -->
@@ -1245,8 +1251,13 @@
             if (cs) cs.refresh();
         }
         if (codeInput) {
-            codeInput.addEventListener('input', () => window._onRowProductCodeInput(codeInput));
             codeInput.addEventListener('blur', () => window._onRowProductCodeInput(codeInput));
+            codeInput.addEventListener('keydown', event => {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    window._onRowProductCodeInput(codeInput);
+                }
+            });
         }
         if (pSel) {
             pSel.addEventListener('change', () => window._onRowProductChange(pSel, rowId));
