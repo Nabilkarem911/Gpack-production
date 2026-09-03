@@ -471,7 +471,7 @@
         body.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-slate-400"><i class="fa-solid fa-circle-notch fa-spin"></i> جاري تحميل المخزون...</td></tr>';
         try {
             const res = await window.apiFetch(`/api/inventory/stock?client_id=${encodeURIComponent(clientId)}&warehouse_id=${encodeURIComponent(warehouseId)}&limit=1000`);
-            _warehouseStock = (res.data || []).filter(s => s.client_id === clientId && parseFloat(s.available_qty || 0) > 0);
+            _warehouseStock = (res.data || []).filter(s => parseFloat(s.available_qty || 0) > 0);
             _el('si-w-stock-count').textContent = `${_warehouseStock.length} صنف متاح`;
             _renderWarehouseStock();
         } catch (err) {

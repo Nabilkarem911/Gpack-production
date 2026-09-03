@@ -306,12 +306,17 @@ router.post('/', restrictWrite, validateBody(invoiceCreate), async (req, res) =>
 
             for (const item of items) {
                 const stockRes = await client.query(
-                    `SELECT id, quantity, reserved_qty
-                     FROM warehouse_stock
-                     WHERE id = COALESCE($1::uuid, id)
-                       AND warehouse_id = $2
-                       AND variant_id = $3
-                       AND client_id = $4
+                    `SELECT ws.id, ws.quantity, ws.reserved_qty
+                     FROM warehouse_stock ws
+                     WHERE ws.id = COALESCE($1::uuid, ws.id)
+                       AND ws.warehouse_id = $2
+                       AND ws.variant_id = $3
+                       AND (
+                           ws.client_id = $4
+                           OR ws.client_id IS NULL
+                           OR ws.client_id = (SELECT parent_id FROM clients WHERE id = $4)
+                           OR ws.client_id IN (SELECT id FROM clients WHERE parent_id = $4)
+                       )
                      FOR UPDATE`,
                     [item.stock_id || null, warehouse_id, item.variant_id, client_id]
                 );
