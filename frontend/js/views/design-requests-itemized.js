@@ -27,7 +27,37 @@
         $('dr-item-rows').appendChild(row); const product = row.querySelector('.dr-product'); const variant = row.querySelector('.dr-variant'); product.addEventListener('change', () => { const selected = products.find(p => p.id === product.value); variant.disabled = !selected; variant.innerHTML = selected ? `<option value="">— اختر المقاس —</option>${(selected.variants || []).map(v => `<option value="${v.id}">${esc(v.size_name || 'بدون مقاس')}${v.sku ? ` — ${esc(v.sku)}` : ''}</option>`).join('')}` : '<option value="">— اختر الصنف أولًا —</option>'; }); row.querySelector('.dr-files').addEventListener('change', event => { row.querySelector('.dr-file-count').textContent = event.target.files.length ? `${event.target.files.length} ملف محدد` : 'لا توجد ملفات'; }); if (window.makeSelectSearchable) window.makeSelectSearchable(product, '🔍 ابحث عن الصنف...');
     }
     async function submit(event) {
-        event.preventDefault(); const form = event.currentTarget; const rows = [...form.querySelectorAll('.dr-item-row')]; const items = []; const body = new FormData(form); rows.forEach((row, index) => { const variant = row.querySelector('.dr-variant'); if (!variant.value) return; items.push({ variant_id: variant.value, notes: row.querySelector('.dr-notes').value.trim() || null }); [...row.querySelector('.dr-files').files].forEach(file => body.append(`item_files_${index}`, file)); }); if (items.length !== rows.length) return window.showToast('اختر الصنف والمقاس لكل سطر', 'warning'); body.set('items', JSON.stringify(items)); const response = await fetch('/api/design-requests', { method: 'POST', credentials: 'include', body }); const result = await response.json(); if (!response.ok) return window.showToast(result.error || 'فشل إنشاء الطلب', 'error'); close(); window.showToast('تم إنشاء طلب التصميم بنجاح', 'success'); if (typeof window.loadDesignRequests === 'function') window.loadDesignRequests();
+        event.preventDefault(); const form = event.currentTarget; const rows = [...form.querySelectorAll('.dr-item-row')]; const items = []; const body = new FormData(form); rows.forEach((row, index) => { const variant = row.querySelector('.dr-variant'); if (!variant.value) return; items.push({ variant_id: variant.value, notes: row.querySelector('.dr-notes').value.trim() || null }); [...row.querySelector('.dr-files').files].forEach(file => body.append(`item_files_${index}`, file)); }); if (items.length !== rows.length) return window.showToast('اختر الصنف والمقاس لكل سطر', 'warning'); body.set('items', JSON.stringify(items)); const response = await fetch('/api/design-requests', { method: 'POST', credentials: 'include', body }); const result = await response.json(); if (!response.ok) return window.showToast(result.error || 'فشل إنشاء الطلب', 'error');
+        const base = location.origin;
+        const v = '20260901-7';
+        const clientUrl = `${base}/views/public-design-request.html?token=${encodeURIComponent(result.client_token)}&v=${v}`;
+        const designerUrl = `${base}/views/public-design-request.html?token=${encodeURIComponent(result.designer_token)}&v=${v}`;
+        const requestNumber = result.request?.request_number || 'DES-00000';
+        $('dr-modal-title').textContent = `تم إنشاء ${requestNumber}`;
+        $('dr-modal-subtitle').textContent = 'أرسل كل رابط للطرف المسؤول عنه';
+        $('dr-modal-body').innerHTML = `
+            <div class="space-y-4 fade-in">
+                <div class="rounded-xl bg-blue-50 border border-blue-100 p-4">
+                    <b class="text-sm text-blue-800 flex items-center gap-2"><i class="fa-solid fa-user"></i> رابط العميل</b>
+                    <div class="flex gap-2 mt-2">
+                        <input id="dr-client-link" readonly value="${esc(clientUrl)}" class="flex-1 text-xs border rounded-lg px-2 py-2 bg-white text-slate-600 outline-none focus:border-blue-300">
+                        <button data-copy="dr-client-link" class="dr-copy-btn px-3 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700">نسخ</button>
+                    </div>
+                </div>
+                <div class="rounded-xl bg-purple-50 border border-purple-100 p-4">
+                    <b class="text-sm text-purple-800 flex items-center gap-2"><i class="fa-solid fa-pen-nib"></i> رابط المصمم</b>
+                    <div class="flex gap-2 mt-2">
+                        <input id="dr-designer-link" readonly value="${esc(designerUrl)}" class="flex-1 text-xs border rounded-lg px-2 py-2 bg-white text-slate-600 outline-none focus:border-purple-300">
+                        <button data-copy="dr-designer-link" class="dr-copy-btn px-3 rounded-lg bg-purple-600 text-white text-xs font-bold hover:bg-purple-700">نسخ</button>
+                    </div>
+                </div>
+                <div class="flex justify-end gap-2 pt-2">
+                    <button id="dr-close-links" class="px-4 py-2 rounded-lg bg-slate-100 text-slate-600 text-sm font-semibold hover:bg-slate-200">إغلاق</button>
+                </div>
+            </div>
+        `;
+        document.querySelectorAll('.dr-copy-btn').forEach(btn => btn.addEventListener('click', () => { const input = document.getElementById(btn.dataset.copy); if (input) { input.select(); navigator.clipboard?.writeText(input.value); window.showToast('تم النسخ', 'success'); } }));
+        document.getElementById('dr-close-links')?.addEventListener('click', () => { close(); if (typeof window.loadDesignRequests === 'function') window.loadDesignRequests(); });
     }
     init();
 })();

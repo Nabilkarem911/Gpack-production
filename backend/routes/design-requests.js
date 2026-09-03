@@ -99,6 +99,11 @@ async function details(request, includeInternal) {
         db.query(`SELECT id, variant_id, product_name, size_name, notes, attachments, sort_order, status, current_version_id, approved_version_id, approved_at FROM design_request_items WHERE request_id = $1 ORDER BY sort_order`, [request.id]),
     ]);
     const itemRows = items.rows.map(item => ({ ...item, versions: versions.rows.filter(version => String(version.item_id) === String(item.id)), revisions: revisions.rows.filter(revision => String(revision.item_id) === String(item.id)) }));
+    const primaryItem = itemRows[0];
+    if (primaryItem) {
+        if ((!request.item_name || !request.item_name.trim()) && primaryItem.product_name) request.item_name = primaryItem.product_name;
+        if (!request.item_size && primaryItem.size_name) request.item_size = primaryItem.size_name;
+    }
     return { request: publicRequest(request), messages: messages.rows, versions: versions.rows, revisions: revisions.rows, items: itemRows };
 }
 
@@ -139,9 +144,13 @@ async function recalcRequestStatus(client, requestId) {
 router.get('/designer/my-requests', authenticate, async (req, res) => {
     try {
         const manager = ['admin', 'manager', 'super_admin'].includes(req.user.role);
-        const result = await db.query(`SELECT dr.*, c.name AS client_name, u.name AS designer_name FROM design_requests dr JOIN clients c ON c.id=dr.client_id JOIN users u ON u.id=dr.designer_id WHERE $1 OR dr.designer_id=$2 ORDER BY dr.updated_at DESC`, [manager, req.user.id]);
+        const result = await db.query(`SELECT dr.*, c.name AS client_name, u.name AS designer_name, i.product_name AS item_product_name, i.size_name AS item_size_name FROM design_requests dr JOIN clients c ON c.id=dr.client_id JOIN users u ON u.id=dr.designer_id LEFT JOIN LATERAL (SELECT product_name, size_name FROM design_request_items WHERE request_id = dr.id ORDER BY sort_order LIMIT 1) i ON true WHERE $1 OR dr.designer_id=$2 ORDER BY dr.updated_at DESC`, [manager, req.user.id]);
         for (const row of result.rows) await ensureShareTokens(row);
-        res.json({ requests: result.rows.map(row => ({ ...publicRequest(row), designer_link: shareLinks(row)?.designer || null })) });
+        res.json({ requests: result.rows.map(row => {
+            if ((!row.item_name || !row.item_name.trim()) && row.item_product_name) row.item_name = row.item_product_name;
+            if (!row.item_size && row.item_size_name) row.item_size = row.item_size_name;
+            return { ...publicRequest(row), designer_link: shareLinks(row)?.designer || null };
+        }) });
     } catch (err) { res.status(500).json({ error: 'فشل تحميل طلبات التصميم المستقلة' }); }
 });
 
@@ -149,44 +158,51 @@ router.get('/designer/my-requests', authenticate, async (req, res) => {
 router.get('/', authenticate, authorize(['admin', 'manager', 'super_admin', 'designer']), async (req, res) => {
     try {
         const isDesigner = req.user.role === 'designer';
-        const result = await db.query(`SELECT dr.*, c.name AS client_name, u.name AS designer_name FROM design_requests dr JOIN clients c ON c.id = dr.client_id JOIN users u ON u.id = dr.designer_id ${isDesigner ? 'WHERE dr.designer_id = $1' : ''} ORDER BY dr.created_at DESC`, isDesigner ? [req.user.id] : []);
+        const result = await db.query(`SELECT dr.*, c.name AS client_name, u.name AS designer_name, i.product_name AS item_product_name, i.size_name AS item_size_name FROM design_requests dr JOIN clients c ON c.id = dr.client_id JOIN users u ON u.id = dr.designer_id LEFT JOIN LATERAL (SELECT product_name, size_name FROM design_request_items WHERE request_id = dr.id ORDER BY sort_order LIMIT 1) i ON true ${isDesigner ? 'WHERE dr.designer_id = $1' : ''} ORDER BY dr.created_at DESC`, isDesigner ? [req.user.id] : []);
         if (!isDesigner) for (const row of result.rows) await ensureShareTokens(row);
-        res.json({ requests: result.rows.map(row => ({ ...publicRequest(row), ...(isDesigner ? {} : { share_links: shareLinks(row) }) })) });
+        res.json({ requests: result.rows.map(row => {
+            if ((!row.item_name || !row.item_name.trim()) && row.item_product_name) row.item_name = row.item_product_name;
+            if (!row.item_size && row.item_size_name) row.item_size = row.item_size_name;
+            return { ...publicRequest(row), ...(isDesigner ? {} : { share_links: shareLinks(row) }) };
+        }) });
     } catch (err) { console.error('[DesignRequests] list:', err.message); res.status(500).json({ error: 'فشل تحميل طلبات التصميم' }); }
 });
 
 router.post('/', authenticate, authorize(['admin', 'manager', 'super_admin']), safeUpload(upload.any()), async (req, res) => {
-    const { client_id, designer_id, item_name, item_size, brief } = req.body;
+    const { client_id, designer_id, brief } = req.body;
     let requestedItems = req.body.items;
     if (typeof requestedItems === 'string') { try { requestedItems = JSON.parse(requestedItems); } catch { requestedItems = []; } }
-    if (!Array.isArray(requestedItems) || requestedItems.length === 0) {
-        if (item_name) requestedItems = [{ variant_id: null, product_name: item_name.trim(), size_name: item_size || null }];
-        else requestedItems = [];
-    }
-    if (!client_id || !designer_id || requestedItems.length === 0) return res.status(400).json({ error: 'العميل والمصمم وصنف واحد على الأقل مطلوبة' });
+    if (!Array.isArray(requestedItems) || requestedItems.length === 0) return res.status(400).json({ error: 'العميل والمصمم وصنف واحد على الأقل مطلوبة' });
     if (requestedItems.length > 1) return res.status(400).json({ error: 'كل طلب تصميم يخص صنفًا واحدًا' });
-    if (requestedItems.some(item => !item.variant_id && !item.product_name)) return res.status(400).json({ error: 'يجب اختيار صنف أو كتابة اسم التصميم' });
     const client = await db.getClient();
     const clientToken = token();
     const designerToken = token();
     try {
         await client.query('BEGIN');
-        const result = await client.query(`INSERT INTO design_requests (client_id, designer_id, item_name, item_size, brief, client_token_hash, designer_token_hash, client_token_encrypted, designer_token_encrypted, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id, request_number`, [client_id, designer_id, requestedItems.map(item => item.product_name).join('، '), requestedItems.map(item => item.size_name).filter(Boolean).join('، ') || null, brief || null, hash(clientToken), hash(designerToken), encryptToken(clientToken), encryptToken(designerToken), req.user.id]);
-        const requestId = result.rows[0].id;
-        for (let index = 0; index < requestedItems.length; index++) {
-            const item = requestedItems[index];
-            let variantId = item.variant_id || null;
-            let productName = item.product_name;
-            let sizeName = item.size_name || null;
+        // Resolve the requested item from the catalog. item_name and item_size are
+        // derived from the canonical product/variant data, not from any UI-supplied text.
+        const resolvedItems = [];
+        for (const item of requestedItems) {
+            let resolved;
             if (item.variant_id) {
                 const variant = await client.query(`SELECT pv.id, pv.size_name, p.name AS product_name FROM product_variants pv JOIN products p ON p.id = pv.product_id WHERE pv.id = $1 AND pv.status = 'active'`, [item.variant_id]);
                 if (!variant.rows[0]) throw new Error('أحد الأصناف المختارة غير موجود أو غير نشط');
-                variantId = variant.rows[0].id;
-                productName = variant.rows[0].product_name;
-                sizeName = variant.rows[0].size_name;
+                resolved = { variant_id: variant.rows[0].id, product_name: variant.rows[0].product_name, size_name: variant.rows[0].size_name, notes: item.notes || null };
+            } else if (item.product_name && item.product_name.trim()) {
+                resolved = { variant_id: null, product_name: item.product_name.trim(), size_name: item.size_name || null, notes: item.notes || null };
+            } else {
+                throw new Error('يجب اختيار صنف أو كتابة اسم التصميم');
             }
+            resolvedItems.push(resolved);
+        }
+        const itemName = resolvedItems.map(item => item.product_name).join('، ') || null;
+        const itemSize = resolvedItems.map(item => item.size_name).filter(Boolean).join('، ') || null;
+        const result = await client.query(`INSERT INTO design_requests (client_id, designer_id, item_name, item_size, brief, client_token_hash, designer_token_hash, client_token_encrypted, designer_token_encrypted, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id, request_number`, [client_id, designer_id, itemName, itemSize, brief || null, hash(clientToken), hash(designerToken), encryptToken(clientToken), encryptToken(designerToken), req.user.id]);
+        const requestId = result.rows[0].id;
+        for (let index = 0; index < resolvedItems.length; index++) {
+            const item = resolvedItems[index];
             const itemFiles = (req.files || []).filter(file => file.fieldname === `item_files_${index}`).map(file => moveToRequestFolder(file, requestId));
-            await client.query(`INSERT INTO design_request_items (request_id, variant_id, product_name, size_name, notes, attachments, sort_order) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [requestId, variantId, productName, sizeName, item.notes || null, JSON.stringify(itemFiles), index]);
+            await client.query(`INSERT INTO design_request_items (request_id, variant_id, product_name, size_name, notes, attachments, sort_order) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [requestId, item.variant_id, item.product_name, item.size_name, item.notes, JSON.stringify(itemFiles), index]);
         }
         for (const file of (req.files || []).filter(file => file.fieldname === 'brief_files')) await client.query(`INSERT INTO design_request_messages (request_id, sender_type, sender_id, sender_name, attachment) VALUES ($1,'manager',$2,$3,$4)`, [requestId, req.user.id, req.user.name || 'المدير', JSON.stringify(moveToRequestFolder(file, requestId))]);
         await client.query('COMMIT');
@@ -358,7 +374,7 @@ router.post('/:id([0-9a-fA-F-]{36})/convert', authenticate, authorize(['admin', 
         await tx.query('BEGIN');
         const requestRes = await tx.query('SELECT * FROM design_requests WHERE id=$1 FOR UPDATE', [req.params.id]);
         const request = requestRes.rows[0];
-        if (!request || request.status !== 'approved') throw new Error('يجب اعتماد تصميم قبل التحويل');
+        if (!request || !['approved', 'completed'].includes(request.status)) throw new Error('يجب اعتماد تصميم أو إغلاق الطلب قبل التحويل');
         if (request.converted_quotation_id) throw new Error('تم تحويل طلب التصميم إلى عرض سعر من قبل');
         const itemRes = await tx.query('SELECT id, variant_id, product_name, size_name, approved_version_id FROM design_request_items WHERE request_id=$1 FOR UPDATE', [req.params.id]);
         const designItem = itemRes.rows[0];

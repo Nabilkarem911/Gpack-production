@@ -114,7 +114,7 @@ describe('Design Requests', () => {
             const req = makeRequest();
 
             mockQuery.mockImplementation((sql) => {
-                if (sql.includes('SELECT dr.*, c.name AS client_name, u.name AS designer_name FROM design_requests')) {
+                if (sql.includes('FROM design_requests dr JOIN clients c ON c.id')) {
                     return Promise.resolve({ rows: [req] });
                 }
                 return Promise.resolve({ rows: [] });
@@ -140,7 +140,7 @@ describe('Design Requests', () => {
             const req = makeRequest();
 
             mockQuery.mockImplementation((sql, params) => {
-                if (sql.includes('SELECT dr.*, c.name AS client_name, u.name AS designer_name FROM design_requests')) {
+                if (sql.includes('FROM design_requests dr JOIN clients c ON c.id')) {
                     return Promise.resolve({ rows: [req] });
                 }
                 if (sql.includes('SELECT COUNT(*)::int AS count FROM design_request_items WHERE request_id=$1')) {
@@ -166,7 +166,7 @@ describe('Design Requests', () => {
             constraintError.code = '23505';
 
             mockQuery.mockImplementation((sql, params) => {
-                if (sql.includes('SELECT dr.*, c.name AS client_name, u.name AS designer_name FROM design_requests')) {
+                if (sql.includes('FROM design_requests dr JOIN clients c ON c.id')) {
                     return Promise.resolve({ rows: [req] });
                 }
                 if (sql.includes('SELECT COUNT(*)::int AS count FROM design_request_items WHERE request_id=$1')) {
@@ -377,11 +377,156 @@ describe('Design Requests', () => {
         });
     });
 
+    describe('POST /api/design-requests', () => {
+        function setupCreateScenario({ withVariant = true } = {}) {
+            mockQuery.mockImplementation((sql, params) => {
+                if (sql === 'BEGIN' || sql === 'COMMIT') return Promise.resolve({ rows: [] });
+                if (sql.includes('FROM product_variants pv JOIN products p')) {
+                    return Promise.resolve({ rows: [{ id: params[0], product_name: 'تيشيرت', size_name: 'أوفر سايز' }] });
+                }
+                if (sql.includes('INSERT INTO design_requests')) {
+                    return Promise.resolve({ rows: [{ id: '00000000-0000-0000-0000-000000000001', request_number: 42 }] });
+                }
+                if (sql.includes('INSERT INTO design_request_items')) return Promise.resolve({ rows: [] });
+                return Promise.resolve({ rows: [] });
+            });
+            return withVariant
+                ? [{ variant_id: 'c79542ee-a4a3-44b8-9c16-c34b7c148b59', notes: 'اختبار' }]
+                : [{ product_name: 'تصميم مفتوح', size_name: 'A4', notes: 'اختبار' }];
+        }
+
+        test('derives item_name and item_size from catalog when only variant_id is sent', async () => {
+            const items = setupCreateScenario({ withVariant: true });
+
+            const res = await request(app)
+                .post('/api/design-requests')
+                .set('Content-Type', 'application/json')
+                .send({ client_id: '22222222-2222-2222-2222-222222222222', designer_id: '33333333-3333-3333-3333-333333333333', items });
+
+            expect(res.status).toBe(201);
+            const requestInsert = mockQuery.mock.calls.find(([sql]) => sql.includes('INSERT INTO design_requests'));
+            expect(requestInsert).toBeTruthy();
+            // item_name is the 3rd param, item_size the 4th
+            expect(requestInsert[1][2]).toBe('تيشيرت');
+            expect(requestInsert[1][3]).toBe('أوفر سايز');
+            const itemInsert = mockQuery.mock.calls.find(([sql]) => sql.includes('INSERT INTO design_request_items'));
+            expect(itemInsert[1][2]).toBe('تيشيرت');
+            expect(itemInsert[1][3]).toBe('أوفر سايز');
+        });
+
+        test('uses supplied product_name and size_name for open-ended items', async () => {
+            const items = setupCreateScenario({ withVariant: false });
+
+            const res = await request(app)
+                .post('/api/design-requests')
+                .set('Content-Type', 'application/json')
+                .send({ client_id: '22222222-2222-2222-2222-222222222222', designer_id: '33333333-3333-3333-3333-333333333333', items });
+
+            expect(res.status).toBe(201);
+            const requestInsert = mockQuery.mock.calls.find(([sql]) => sql.includes('INSERT INTO design_requests'));
+            expect(requestInsert[1][2]).toBe('تصميم مفتوح');
+            expect(requestInsert[1][3]).toBe('A4');
+        });
+
+        test('rejects missing client, designer, or items', async () => {
+            const res = await request(app)
+                .post('/api/design-requests')
+                .set('Content-Type', 'application/json')
+                .send({ client_id: '22222222-2222-2222-2222-222222222222' });
+
+            expect(res.status).toBe(400);
+            expect(res.body.error).toMatch(/العميل والمصمم وصنف/);
+        });
+
+        test('rejects more than one item', async () => {
+            const res = await request(app)
+                .post('/api/design-requests')
+                .set('Content-Type', 'application/json')
+                .send({ client_id: '22222222-2222-2222-2222-222222222222', designer_id: '33333333-3333-3333-3333-333333333333', items: [{ product_name: 'A' }, { product_name: 'B' }] });
+
+            expect(res.status).toBe(400);
+            expect(res.body.error).toMatch(/صنف/);
+        });
+    });
+
+    describe('GET /api/design-requests/:id fallback', () => {
+        test('fills empty item_name and null item_size from design_request_items', async () => {
+            const req = makeRequest({ item_name: '', item_size: null });
+            const item = makeItem({ product_name: 'تيشيرت', size_name: 'أوفر سايز' });
+
+            mockQuery.mockImplementation((sql, params) => {
+                if (sql.includes('FROM design_requests dr JOIN clients c ON c.id = dr.client_id JOIN users u ON u.id = dr.designer_id WHERE dr.id = $1')) return Promise.resolve({ rows: [req] });
+                if (sql.includes('SELECT id, sender_type, sender_id, sender_name, message, attachment, is_internal, created_at FROM design_request_messages')) return Promise.resolve({ rows: [] });
+                if (sql.includes('SELECT * FROM design_request_versions WHERE request_id = $1')) return Promise.resolve({ rows: [] });
+                if (sql.includes('SELECT * FROM design_request_revisions WHERE request_id = $1')) return Promise.resolve({ rows: [] });
+                if (sql.includes('SELECT id, variant_id, product_name, size_name, notes, attachments, sort_order, status, current_version_id, approved_version_id, approved_at FROM design_request_items WHERE request_id = $1')) return Promise.resolve({ rows: [item] });
+                return Promise.resolve({ rows: [] });
+            });
+
+            const res = await request(app)
+                .get('/api/design-requests/00000000-0000-0000-0000-000000000001');
+
+            expect(res.status).toBe(200);
+            expect(res.body.request.item_name).toBe('تيشيرت');
+            expect(res.body.request.item_size).toBe('أوفر سايز');
+        });
+    });
+
+    describe('GET /api/design-requests list fallback', () => {
+        test('fills empty item_name and item_size from design_request_items without duplication or field leakage', async () => {
+            const req = makeRequest({
+                item_name: '',
+                item_size: null,
+                client_token_encrypted: 'enc-client-token-1',
+                designer_token_encrypted: 'enc-designer-token-1',
+                converted_quotation_id: '99999999-9999-9999-9999-999999999999',
+                selected_product_id: '88888888-8888-8888-8888-888888888888',
+            });
+
+            mockQuery.mockImplementation((sql, params) => {
+                if (sql.includes('LEFT JOIN LATERAL') || sql.includes('FROM design_requests dr JOIN clients c')) return Promise.resolve({
+                    rows: [{
+                        ...req,
+                        item_product_name: 'تيشيرت',
+                        item_size_name: 'أوفر سايز',
+                    }],
+                });
+                return Promise.resolve({ rows: [] });
+            });
+
+            const res = await request(app)
+                .get('/api/design-requests');
+
+            expect(res.status).toBe(200);
+            expect(res.body.requests).toHaveLength(1);
+            expect(res.body.requests[0].item_name).toBe('تيشيرت');
+            expect(res.body.requests[0].item_size).toBe('أوفر سايز');
+            expect(res.body.requests[0].converted_quotation_id).toBeUndefined();
+            expect(res.body.requests[0].selected_product_id).toBeUndefined();
+            expect(res.body.requests[0].is_converted).toBe(true);
+        });
+
+        test('does not duplicate rows when a request has multiple items', async () => {
+            const req = makeRequest({ client_token_encrypted: 'enc-client-token-1', designer_token_encrypted: 'enc-designer-token-1' });
+
+            mockQuery.mockImplementation((sql, params) => {
+                if (sql.includes('LEFT JOIN LATERAL') || sql.includes('FROM design_requests dr JOIN clients c')) return Promise.resolve({ rows: [{ ...req, item_product_name: 'تيشيرت', item_size_name: 'L' }] });
+                return Promise.resolve({ rows: [] });
+            });
+
+            const res = await request(app)
+                .get('/api/design-requests');
+
+            expect(res.status).toBe(200);
+            expect(res.body.requests).toHaveLength(1);
+        });
+    });
+
     describe('Field leakage', () => {
         test('public list does not expose converted_quotation_id or selected_product_id', async () => {
             const req = makeRequest({ converted_quotation_id: '99999999-9999-9999-9999-999999999999', selected_product_id: '88888888-8888-8888-8888-888888888888' });
             mockQuery.mockImplementation((sql) => {
-                if (sql.includes('SELECT dr.*, c.name AS client_name, u.name AS designer_name FROM design_requests')) return Promise.resolve({ rows: [req] });
+                if (sql.includes('FROM design_requests dr JOIN clients c ON c.id')) return Promise.resolve({ rows: [req] });
                 return Promise.resolve({ rows: [] });
             });
 
@@ -397,7 +542,7 @@ describe('Design Requests', () => {
         test('manager detail exposes converted_quotation_id and selected_product_id', async () => {
             const req = makeRequest({ status: 'approved', converted_quotation_id: '99999999-9999-9999-9999-999999999999', selected_product_id: '88888888-8888-8888-8888-888888888888' });
             mockQuery.mockImplementation((sql, params) => {
-                if (sql.includes('SELECT dr.*, c.name AS client_name, u.name AS designer_name FROM design_requests dr JOIN clients c ON c.id = dr.client_id JOIN users u ON u.id = dr.designer_id WHERE dr.id = $1')) return Promise.resolve({ rows: [req] });
+                if (sql.includes('FROM design_requests dr JOIN clients c ON c.id = dr.client_id JOIN users u ON u.id = dr.designer_id WHERE dr.id = $1')) return Promise.resolve({ rows: [req] });
                 if (sql.includes('SELECT id, sender_type, sender_id, sender_name, message, attachment, is_internal, created_at FROM design_request_messages')) return Promise.resolve({ rows: [] });
                 if (sql.includes('SELECT * FROM design_request_versions WHERE request_id = $1')) return Promise.resolve({ rows: [] });
                 if (sql.includes('SELECT * FROM design_request_revisions WHERE request_id = $1')) return Promise.resolve({ rows: [] });

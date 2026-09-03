@@ -8,49 +8,172 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
-*{box-sizing:border-box;font-family:Cairo,sans-serif}
+*{box-sizing:border-box;font-family:'Cairo',sans-serif}
 body{margin:0;background:#f1f5f9;color:#334155}
-.chat-shell{width:min(100%,900px);margin:0 auto;padding:24px 16px}
-.chat-card{background:#fff;border:1px solid #e2e8f0;border-radius:22px;overflow:hidden;box-shadow:0 12px 35px rgba(71,48,80,.08)}
-.chat-header{background:#563d5d;color:#fff;padding:20px 22px}
-.chat-header-main{display:flex;align-items:center;justify-content:space-between;gap:12px}
-.chat-title{min-width:0}.chat-title h1{margin:3px 0 0;font-size:21px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.chat-status{flex:0 0 auto;background:rgba(255,255,255,.16);border-radius:999px;padding:5px 11px;font-size:11px;white-space:nowrap}
-.chat-meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:16px 22px;background:#f8fafc;border-bottom:1px solid #e2e8f0}
-.chat-meta small{display:block;color:#94a3b8;font-size:11px}.chat-meta b{display:block;color:#0f172a;font-size:13px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#brief{margin:12px 0 0;color:#64748b;font-size:12px;line-height:1.7;white-space:pre-wrap}
-#versions{padding:14px 18px;background:#fff}
-#messages{height:460px;overflow-y:auto;padding:20px 18px;background:#fff;display:flex;flex-direction:column;gap:10px}
-#messages>div{width:100%}
-.message-bubble{max-width:min(78%,560px);padding:9px 13px;border-radius:16px;font-size:13px;line-height:1.7;overflow-wrap:anywhere}
-.message-bubble small{display:block;font-size:10px;opacity:.65;margin-bottom:2px}
+#app{min-height:100vh}
+.message-bubble{max-width:min(80%,480px);padding:10px 14px;border-radius:16px;font-size:13px;line-height:1.7;overflow-wrap:anywhere}
+.message-bubble small{display:block;font-size:10px;opacity:.65;margin-bottom:3px}
 .message-own{background:#563d5d;color:#fff;border-bottom-right-radius:5px}
 .message-other{background:#f1f5f9;color:#334155;border-bottom-left-radius:5px}
 .message-row-own{display:flex;justify-content:flex-start}.message-row-other{display:flex;justify-content:flex-end}
-.composer{padding:12px 16px calc(12px + env(safe-area-inset-bottom));background:#f8fafc;border-top:1px solid #e2e8f0}
-.composer-recording{font-size:11px;color:#dc2626;margin:0 0 8px;text-align:right}
-.composer-main{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:8px;align-items:center}
-.composer-input{width:100%;height:44px;border:1px solid #dbe2ea;border-radius:13px;padding:0 13px;background:#fff;outline:none;font-size:13px;min-width:0}.composer-input:focus{border-color:#563d5d;box-shadow:0 0 0 3px rgba(86,61,93,.1)}
-.action-button{height:44px;border-radius:13px;border:1px solid #dbe2ea;background:#fff;color:#475569;padding:0 12px;font-size:12px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;white-space:nowrap}.action-button:hover{background:#f1f5f9}
-.send-button{width:44px;padding:0;background:#563d5d;color:#fff;border-color:#563d5d}.send-button:hover{background:#452f4b}
-.permission-button{margin-top:9px;height:32px;border-radius:9px;border:1px solid #fde68a;background:#fffbeb;color:#a16207;padding:0 10px;font-size:11px;font-weight:700;cursor:pointer}.permission-button.hidden{display:none}
-.file-name{font-size:11px;color:#94a3b8;margin:7px 2px 0;min-height:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#actions{padding:14px 16px!important;border-top:1px solid #e2e8f0!important}
-@media (max-width:600px){.chat-shell{padding:8px 6px}.chat-card{border-radius:16px}.chat-header{padding:16px}.chat-title h1{font-size:17px}.chat-status{font-size:10px;padding:4px 8px}.chat-meta{padding:13px 16px;gap:8px}.chat-meta b{font-size:12px}#messages{height:calc(100dvh - 365px);min-height:330px;padding:16px 12px}.message-bubble{max-width:84%;font-size:12px;padding:8px 11px}.composer{padding:10px 10px calc(10px + env(safe-area-inset-bottom))}.composer-main{grid-template-columns:auto minmax(0,1fr) auto;gap:6px}.action-button{height:42px;padding:0 9px;font-size:11px}.action-button span{display:inline}.send-button{width:42px;padding:0}.permission-button{width:100%;margin-top:8px}.permission-button.hidden{display:none}}
-@media (max-width:360px){.action-button{padding:0 7px}.action-button span{display:none}.message-bubble{max-width:88%}}
+.preview-media{max-height:520px;width:100%;object-fit:contain;background:#f8fafc}
+.version-thumb{width:72px;height:72px;object-fit:cover;border-radius:10px;background:#f1f5f9;cursor:pointer;border:2px solid transparent;transition:all .15s}
+.version-thumb:hover{border-color:#563d5d}
+.version-thumb.active{border-color:#563d5d;background:#f3eff4}
+@media (max-width:1024px){
+  #chat-panel{height:auto;min-height:420px}
+  .preview-media{max-height:360px}
+}
+@media (max-width:640px){
+  .message-bubble{max-width:88%;font-size:12px;padding:8px 11px}
+  .preview-media{max-height:260px}
+}
 </style>
 </head>
 <body>
-<main id="app" class="chat-shell">
-<div class="chat-card">
-<header class="chat-header"><div class="chat-header-main"><div class="chat-title"><p class="text-[10px] text-white/60 m-0">G.PACK</p><h1 id="title">طلب التصميم</h1></div><span id="status" class="chat-status"></span></div></header>
-<section class="chat-meta"><div><small>العميل</small><b id="client">—</b></div><div><small>المقاس</small><b id="size">—</b></div><p id="brief" class="col-span-2"></p></section>
-<section id="versions" class="space-y-3"></section>
-<section id="messages"><p class="text-center text-slate-400 text-sm py-16">جاري تحميل المحادثة...</p></section>
-<form id="message-form" class="composer"><p id="recording" class="composer-recording hidden">جاري التسجيل... اضغط إيقاف عند الانتهاء</p><div class="composer-main"><label class="action-button" title="إرفاق ملف"><i class="fa-solid fa-paperclip"></i><span>ملف</span><input id="file" type="file" class="hidden" accept="image/*,audio/*,application/pdf,.zip,.rar,.7z,.doc,.docx,.xls,.xlsx,.ppt,.pptx"></label><input id="text" class="composer-input" autocomplete="off" placeholder="اكتب رسالتك..."><button id="voice" type="button" title="تسجيل رسالة صوتية" class="action-button"><i class="fa-solid fa-microphone"></i><span>صوت</span></button><button type="submit" class="action-button send-button" title="إرسال"><i class="fa-solid fa-paper-plane"></i></button></div><button id="enable-mic" type="button" class="permission-button">تفعيل الميكروفون للسماح بإرسال الصوت</button><p id="file-name" class="file-name"></p></form>
-<section id="actions" class="hidden flex gap-2"><button id="approve" class="flex-1 rounded-xl bg-emerald-600 text-white py-3 text-sm font-bold">اعتماد التصميم</button><button id="revision" class="flex-1 rounded-xl bg-orange-500 text-white py-3 text-sm font-bold">طلب تعديل</button></section>
-</div><p class="text-center text-xs text-slate-400 mt-4">تواصل مع فريق G.PACK من خلال هذه الصفحة</p>
+<main id="app" class="max-w-6xl mx-auto p-4 md:p-6">
+
+  <!-- Loading -->
+  <div id="loading" class="fixed inset-0 bg-white flex flex-col items-center justify-center z-50">
+    <div class="w-14 h-14 border-4 border-[#563D5D] border-t-transparent rounded-full animate-spin mb-4"></div>
+    <p class="text-slate-500 text-sm">جاري تحميل طلب التصميم...</p>
+  </div>
+
+  <!-- Error State -->
+  <div id="error-state" class="hidden fixed inset-0 bg-slate-100 flex flex-col items-center justify-center p-6 z-50" aria-live="polite">
+    <div class="bg-white rounded-2xl shadow-lg p-10 max-w-md w-full text-center">
+      <div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+        <i class="fa-solid fa-link-slash text-2xl text-red-500"></i>
+      </div>
+      <h2 class="text-xl font-bold text-slate-800 mb-2">الرابط غير صالح</h2>
+      <p id="error-msg" class="text-slate-500 text-sm">انتهت صلاحية هذا الرابط أو أنه غير موجود.</p>
+    </div>
+  </div>
+
+  <!-- Main Content -->
+  <div id="main-content" class="hidden space-y-4">
+
+    <!-- Header: two columns -->
+    <header class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+      <div class="p-5 md:p-6 grid grid-cols-1 md:grid-cols-2 gap-5">
+        <!-- Product / request info -->
+        <div class="min-w-0">
+          <div class="flex items-center gap-2 text-xs text-slate-400 mb-2">
+            <span id="request-number">—</span>
+            <span class="text-slate-300">•</span>
+            <span id="request-date">—</span>
+          </div>
+          <h1 id="title" class="text-xl md:text-2xl font-extrabold text-slate-800 leading-tight">طلب تصميم</h1>
+          <p class="text-sm text-slate-500 mt-2 flex flex-wrap items-center gap-2">
+            <span id="size" class="inline-block">—</span>
+            <span class="text-slate-300">|</span>
+            <span id="revisions-count" class="inline-block">0 تعديل</span>
+          </p>
+          <div id="status" class="mt-3 inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-600" aria-live="polite">—</div>
+          <p id="brief" class="mt-3 text-sm text-slate-600 leading-relaxed whitespace-pre-wrap"></p>
+        </div>
+
+        <!-- Client / designer / dates -->
+        <div class="grid grid-cols-2 gap-3 content-start">
+          <div class="bg-slate-50 rounded-xl p-3">
+            <small class="block text-xs text-slate-400 mb-1">العميل</small>
+            <b id="client" class="block text-sm font-bold text-slate-800 truncate">—</b>
+          </div>
+          <div class="bg-slate-50 rounded-xl p-3">
+            <small class="block text-xs text-slate-400 mb-1">المصمم</small>
+            <b id="designer" class="block text-sm font-bold text-slate-800 truncate">—</b>
+          </div>
+          <div class="bg-slate-50 rounded-xl p-3">
+            <small class="block text-xs text-slate-400 mb-1">تاريخ الإنشاء</small>
+            <b id="created-at" class="block text-sm font-bold text-slate-800">—</b>
+          </div>
+          <div class="bg-slate-50 rounded-xl p-3">
+            <small class="block text-xs text-slate-400 mb-1">آخر نشاط</small>
+            <b id="last-activity" class="block text-sm font-bold text-slate-800">—</b>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main grid: preview + chat -->
+    <div class="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-4">
+
+      <!-- Left column: preview, history, item controls -->
+      <section class="space-y-4">
+
+        <!-- Current preview -->
+        <div id="preview-card" class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden hidden">
+          <div class="p-4 border-b border-slate-100 flex items-center justify-between flex-wrap gap-2">
+            <h2 class="text-sm font-bold text-slate-700"><i class="fa-solid fa-eye ml-1 text-[#563D5D]"></i> معاينة التصميم الحالي</h2>
+            <span id="preview-version" class="text-xs text-slate-400">—</span>
+          </div>
+          <div id="preview-body" class="bg-slate-50 min-h-[320px] flex items-center justify-center p-4">
+            <!-- Media injected here -->
+          </div>
+          <div id="designer-notes" class="p-4 text-sm text-slate-600 border-t border-slate-100 hidden"></div>
+        </div>
+
+        <!-- No preview -->
+        <div id="no-preview" class="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 text-center">
+          <div class="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-3">
+            <i class="fa-solid fa-pen-ruler text-2xl text-slate-400"></i>
+          </div>
+          <p class="text-slate-500 text-sm">لم يُرفع تصميم بعد. ستظهر المعاينة هنا بمجرد تسليم المصمم للإصدار.</p>
+        </div>
+
+        <!-- Version history -->
+        <div id="version-history" class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden hidden">
+          <div class="p-4 border-b border-slate-100 flex items-center justify-between">
+            <h2 class="text-sm font-bold text-slate-700">سجل الإصدارات</h2>
+            <span id="version-count" class="text-xs text-slate-400">0</span>
+          </div>
+          <div id="version-list" class="p-3 grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-3 max-h-64 overflow-y-auto"></div>
+        </div>
+
+        <!-- Item details + controls -->
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+          <div class="p-4 border-b border-slate-100 flex items-center justify-between flex-wrap gap-2">
+            <h2 class="text-sm font-bold text-slate-700"><i class="fa-solid fa-layer-group ml-1 text-[#563D5D]"></i> تفاصيل الصنف</h2>
+            <span id="item-status" class="text-xs px-2.5 py-1 rounded-full bg-slate-100 text-slate-600" aria-live="polite">—</span>
+          </div>
+          <div id="item-body" class="p-4 space-y-4">
+            <!-- Injected by JS -->
+          </div>
+        </div>
+
+      </section>
+
+      <!-- Right column: chat -->
+      <section id="chat-panel" class="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col h-[calc(100dvh-160px)] lg:h-[calc(100dvh-160px)] lg:sticky lg:top-4">
+        <div class="p-4 border-b border-slate-100 flex items-center gap-2">
+          <i class="fa-solid fa-comments text-[#563D5D]"></i>
+          <h2 class="text-sm font-bold text-slate-700">المحادثة</h2>
+        </div>
+        <div id="messages" class="flex-1 overflow-y-auto p-4 space-y-3 min-h-[260px]">
+          <p class="text-center text-slate-400 text-sm py-16">جاري تحميل المحادثة...</p>
+        </div>
+        <form id="message-form" class="p-4 border-t border-slate-100 bg-slate-50">
+          <p id="recording" class="text-xs text-red-600 mb-2 hidden">جاري التسجيل... اضغط إيقاف عند الانتهاء</p>
+          <div class="flex items-center gap-2">
+            <label class="shrink-0 w-10 h-10 flex items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 cursor-pointer hover:bg-slate-50" title="إرفاق ملف" aria-label="إرفاق ملف">
+              <i class="fa-solid fa-paperclip"></i>
+              <input id="file" type="file" class="hidden" accept="image/*,audio/*,application/pdf,.zip,.rar,.7z,.doc,.docx,.xls,.xlsx,.ppt,.pptx">
+            </label>
+            <input id="text" class="flex-1 h-10 border border-slate-200 rounded-xl px-3 text-sm outline-none focus:border-[#563D5D] focus:ring-2 focus:ring-[#563D5D]/10" autocomplete="off" placeholder="اكتب رسالتك...">
+            <button id="voice" type="button" class="shrink-0 w-10 h-10 rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50" title="تسجيل رسالة صوتية" aria-label="تسجيل رسالة صوتية"><i class="fa-solid fa-microphone"></i></button>
+            <button type="submit" class="shrink-0 w-10 h-10 rounded-xl bg-[#563D5D] text-white hover:bg-[#452f4b]" title="إرسال" aria-label="إرسال"><i class="fa-solid fa-paper-plane"></i></button>
+          </div>
+          <button id="enable-mic" type="button" class="mt-2 w-full h-9 rounded-lg border border-amber-200 bg-amber-50 text-amber-700 text-xs font-bold hidden">تفعيل الميكروفون للسماح بإرسال الصوت</button>
+          <p id="file-name" class="text-xs text-slate-400 mt-2 min-h-4"></p>
+        </form>
+      </section>
+
+    </div>
+
+    <p class="text-center text-xs text-slate-400">تواصل مع فريق G.PACK من خلال هذه الصفحة</p>
+  </div>
 </main>
+
 <script src="/js/views/public-design-request.js?v=20260901-7"></script>
 </body>
 </html>

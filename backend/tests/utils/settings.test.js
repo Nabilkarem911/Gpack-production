@@ -2,23 +2,37 @@
 // Tests: utils/settings.js  (D-001)
 // =============================================================================
 
-const { getVatRate } = require('../../utils/settings');
+jest.mock('../../db', () => ({
+    query: jest.fn(),
+    pool: { end: jest.fn() },
+}));
+
+const { getVatRate, invalidateCache } = require('../../utils/settings');
+const { query } = require('../../db');
 
 describe('settings utils', () => {
-    // Note: These tests depend on the DB. In a full CI setup we would mock db.query.
-    // Here we at least verify the function signature and caching behavior.
+    afterEach(() => {
+        jest.clearAllMocks();
+        invalidateCache('vat_rate');
+    });
 
     test('getVatRate returns a number between 0 and 1', async () => {
-        // This may connect to the real DB if running locally;
-        // if DB is unavailable the fallback 0.15 should still be returned.
-        try {
-            const rate = await getVatRate();
-            expect(typeof rate).toBe('number');
-            expect(rate).toBeGreaterThanOrEqual(0);
-            expect(rate).toBeLessThanOrEqual(1);
-        } catch (err) {
-            // If DB is down, verify graceful fallback
-            expect(err.message).not.toMatch(/Internal server error/);
-        }
+        query.mockResolvedValueOnce({ rows: [{ value: '0.15', data_type: 'number' }] });
+
+        const rate = await getVatRate();
+
+        expect(typeof rate).toBe('number');
+        expect(rate).toBeGreaterThanOrEqual(0);
+        expect(rate).toBeLessThanOrEqual(1);
+    });
+
+    test('getVatRate falls back to default on db error', async () => {
+        query.mockRejectedValueOnce(new Error('DB unavailable'));
+
+        const rate = await getVatRate();
+
+        expect(typeof rate).toBe('number');
+        expect(rate).toBeGreaterThanOrEqual(0);
+        expect(rate).toBeLessThanOrEqual(1);
     });
 });
