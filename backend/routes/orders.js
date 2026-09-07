@@ -164,9 +164,10 @@ router.get('/', async (req, res) => {
                 COALESCE(mo_stats.mo_count, 0)::int AS mo_count,
                 COALESCE(mo_stats.total_mo_qty, 0)::numeric AS total_mo_qty,
                 COALESCE(mo_stats.total_received, 0)::numeric AS total_received,
+                COALESCE(mo_stats.all_items_closed, false) AS all_items_closed,
                 CASE
                     WHEN mo_stats.mo_count IS NULL OR mo_stats.mo_count = 0 THEN 'none'
-                    WHEN mo_stats.total_received >= mo_stats.total_mo_qty THEN 'full'
+                    WHEN mo_stats.all_items_closed THEN 'full'
                     WHEN mo_stats.total_received > 0 THEN 'partial'
                     ELSE 'ordered'
                 END AS receive_status,
@@ -197,7 +198,18 @@ router.get('/', async (req, res) => {
                      mo.order_id,
                      COUNT(DISTINCT mo.id)::int AS mo_count,
                      COALESCE(SUM(moi.mo_quantity), 0) AS total_mo_qty,
-                     COALESCE(SUM(moi.received_qty), 0) AS total_received
+                     COALESCE(SUM(moi.received_qty), 0) AS total_received,
+                     COALESCE(BOOL_AND(
+                         COALESCE(moi.received_qty, 0) >= COALESCE(moi.mo_quantity, 0)
+                         OR EXISTS (
+                             SELECT 1
+                             FROM mo_receipt_session_items si
+                             JOIN mo_receipt_sessions rs ON rs.id = si.session_id
+                             WHERE si.manufacturer_order_item_id = moi.id
+                               AND si.is_final = true
+                               AND rs.status <> 'reversed'
+                         )
+                     ), false) AS all_items_closed
                  FROM manufacturer_orders mo
                  LEFT JOIN manufacturer_order_items moi ON moi.manufacturer_order_id = mo.id
                  WHERE mo.status NOT IN ('cancelled')
@@ -214,7 +226,7 @@ router.get('/', async (req, res) => {
                  GROUP BY mo2.order_id
              ) sup_stats ON sup_stats.order_id = o.id
              ${whereClause}
-             GROUP BY o.id, c.name, p.name, o.paid_amount, o.pricing_status, o.pricing_notes, o.design_status, o.design_client_status, mo_stats.mo_count, mo_stats.total_mo_qty, mo_stats.total_received, sup_stats.supplier_names, sup_stats.supplier_ids
+             GROUP BY o.id, c.name, p.name, o.paid_amount, o.pricing_status, o.pricing_notes, o.design_status, o.design_client_status, mo_stats.mo_count, mo_stats.total_mo_qty, mo_stats.total_received, mo_stats.all_items_closed, sup_stats.supplier_names, sup_stats.supplier_ids
              ORDER BY o.created_at DESC
              LIMIT $${limitParam} OFFSET $${offsetParam}`,
             params

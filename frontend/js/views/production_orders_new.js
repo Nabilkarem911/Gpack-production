@@ -357,7 +357,9 @@
         // Receiving status config
         const RECV_CFG = {
             none:    { label: '—',       cls: 'text-slate-400',         icon: '' },
+            ordered: { label: 'لم يُستلم', cls: 'bg-amber-100 text-amber-700', icon: 'fa-clock' },
             sent:    { label: 'مُرسَل', cls: 'bg-amber-100 text-amber-700', icon: 'fa-paper-plane' },
+            partial: { label: 'جزئي',  cls: 'bg-blue-100 text-blue-700',   icon: 'fa-truck-ramp-box' },
             partially_received: { label: 'جزئي',  cls: 'bg-blue-100 text-blue-700',   icon: 'fa-truck-ramp-box' },
             full:    { label: 'كامل',  cls: 'bg-emerald-100 text-emerald-700', icon: 'fa-check-circle' }
         };
@@ -368,7 +370,9 @@
             const pd  = parseFloat(o.paid_amount  || 0);
             const rem = Math.max(0, gt - pd);
             const recv = RECV_CFG[o.receive_status] || RECV_CFG.none;
-            const recvPct = o.total_mo_qty > 0 ? Math.round((o.total_received / o.total_mo_qty) * 100) : 0;
+            const recvPct = o.receive_status === 'full' || o.all_items_closed
+                ? 100
+                : (o.total_mo_qty > 0 ? Math.min(99, Math.round((o.total_received / o.total_mo_qty) * 100)) : 0);
             const rowBg = idx % 2 === 0 ? 'bg-white' : 'bg-slate-100';
 
             return `<tr class="border-b border-slate-50 ${rowBg} hover:bg-brand-50/30 transition-colors cursor-pointer"
@@ -669,7 +673,7 @@
             // Calculate receive status color
             const totalQty = (mo.items || []).reduce((s, i) => s + parseFloat(i.mo_quantity || i.po_quantity || 0), 0);
             const recQty = (mo.items || []).reduce((s, i) => s + parseFloat(i.received_qty || 0), 0);
-            const pct = totalQty > 0 ? (recQty / totalQty) : 0;
+            const pct = mo.status === 'received' ? 1 : (totalQty > 0 ? Math.min(1, recQty / totalQty) : 0);
             let recvColor = '🔴'; // red - no receive
             let recvText = 'مفيش استلام';
             if (pct >= 1) {
@@ -689,7 +693,9 @@
                 const moQty  = parseFloat(i.mo_quantity  || i.po_quantity || 0);
                 const recQty = parseFloat(i.received_qty || 0);
                 const remQty = Math.max(0, moQty - recQty);
-                const pct    = moQty > 0 ? Math.round((recQty / moQty) * 100) : 0;
+                const pct    = mo.status === 'received'
+                    ? 100
+                    : (moQty > 0 ? Math.min(99, Math.round((recQty / moQty) * 100)) : 0);
                 const barColor = pct >= 100 ? 'bg-emerald-500' : pct > 0 ? 'bg-blue-500' : 'bg-slate-200';
                 const pColors = Array.isArray(i.pantone_colors) && i.pantone_colors.length
                     ? i.pantone_colors
