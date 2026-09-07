@@ -107,7 +107,11 @@
         const wrap = _el('as-party-wrap');
         const select = _el('as-party-select');
         if (!wrap || !select) return;
-        const parties = children.filter(c => c.sub_account_type === 'client' || c.sub_account_type === 'supplier');
+        const query = (_el('as-party-search')?.value || '').trim().toLowerCase();
+        const selectedValue = select.value;
+        const parties = children
+            .filter(c => c.sub_account_type === 'client' || c.sub_account_type === 'supplier')
+            .filter(c => !query || `${c.name} ${c.phone || ''} ${c.city || ''}`.toLowerCase().includes(query));
         if (!parties.length) {
             wrap.classList.add('hidden');
             select.innerHTML = '<option value="">— اختر العميل أو المورد —</option>';
@@ -117,7 +121,13 @@
         select.innerHTML = '<option value="">— اختر العميل أو المورد —</option>' + parties.map(p =>
             `<option value="${esc(p.sub_account_id)}" data-type="${esc(p.sub_account_type)}">${p.sub_account_type === 'client' ? 'عميل' : 'مورد'}: ${esc(p.name)}</option>`
         ).join('');
+        if (selectedValue && select.querySelector(`option[value="${selectedValue}"]`)) select.value = selectedValue;
     }
+
+    window.asFilterParty = function(query) {
+        if (!_selectedChild) return;
+        _renderPartySelector(_accountsTree.children.filter(c => c.parent_id === _selectedChild.id));
+    };
 
     // ── Child Dropdown ─────────────────────────────────────────────────────────
     window.asToggleChildDropdown = function() {
@@ -181,12 +191,14 @@
             _selectedChild = { id: _selectedParent.id, code: _selectedParent.code, name: _selectedParent.name, isParent: true, subAccountId: null, subAccountType: null };
             _el('as-child-label').textContent = 'كل الحسابات الفرعية';
             _el('as-party-wrap')?.classList.add('hidden');
+            _el('as-party-search').value = '';
         } else {
             _selectedChild = { id, code, name, isParent: false, subAccountId: subAccountId || null, subAccountType: subAccountType || null };
             _el('as-child-label').textContent = `${code} — ${name}`;
             if (subAccountId) {
                 _el('as-party-wrap')?.classList.add('hidden');
             } else {
+                _el('as-party-search').value = '';
                 _renderPartySelector(_accountsTree.children.filter(c => c.parent_id === id));
             }
         }

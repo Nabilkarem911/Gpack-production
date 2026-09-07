@@ -177,6 +177,9 @@
                     </select>
                 </div>
                 <div id="je-line-party-wrap-${idx}" class="hidden mt-1">
+                    <input id="je-line-party-search-${idx}" type="search" oninput="window.jeFilterParty(${idx}, this.value)"
+                           placeholder="ابحث باسم العميل أو المورد..." autocomplete="off"
+                           class="w-full mb-1 px-2 py-2 border border-emerald-200 rounded-lg text-xs focus:border-brand-500 outline-none" />
                     <select id="je-line-party-${idx}" onchange="window.jePartyChanged(${idx})"
                             class="w-full px-2 py-2 border border-emerald-200 bg-emerald-50 rounded-lg text-xs focus:border-brand-500 outline-none">
                         <option value="">— اختر العميل / المورد —</option>
@@ -271,19 +274,30 @@
     function _renderJournalPartySelector(idx, accountId) {
         const wrap = _el(`je-line-party-wrap-${idx}`);
         const select = _el(`je-line-party-${idx}`);
-        const parties = _treeChildren.filter(c => c.parent_id === accountId && (c.sub_account_type === 'client' || c.sub_account_type === 'supplier'));
+        const query = (_el(`je-line-party-search-${idx}`)?.value || '').trim().toLowerCase();
+        const parties = _treeChildren
+            .filter(c => c.parent_id === accountId && (c.sub_account_type === 'client' || c.sub_account_type === 'supplier'))
+            .filter(c => !query || `${c.name} ${c.phone || ''} ${c.city || ''}`.toLowerCase().includes(query));
         if (!wrap || !select || !parties.length) {
             wrap?.classList.add('hidden');
             return;
         }
         wrap.classList.remove('hidden');
+        const selectedValue = select.value;
         select.innerHTML = '<option value="">— اختر العميل / المورد —</option>' + parties.map(p =>
             `<option value="${p.sub_account_id}" data-type="${p.sub_account_type}">${p.sub_account_type === 'client' ? 'عميل' : 'مورد'}: ${esc(p.name)}</option>`
         ).join('');
+        if (selectedValue && select.querySelector(`option[value="${selectedValue}"]`)) select.value = selectedValue;
         delete select.dataset.accountId;
         delete select.dataset.subAccountType;
         delete select.dataset.subAccountId;
     }
+
+    window.jeFilterParty = function (idx, query) {
+        const child = _el(`je-line-child-${idx}`);
+        if (!child?.value) return;
+        _renderJournalPartySelector(idx, child.value);
+    };
 
     window.jePartyChanged = function (idx) {
         const party = _el(`je-line-party-${idx}`);

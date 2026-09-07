@@ -68,6 +68,9 @@
             </div>
             <div id="as-party-wrap" class="hidden mt-3">
                 <label class="block text-xs font-bold text-slate-500 mb-2">العميل / المورد</label>
+                <input id="as-party-search" type="search" oninput="window.asFilterParty(this.value)"
+                       placeholder="ابحث باسم العميل أو المورد..." autocomplete="off"
+                       class="border border-slate-200 rounded-xl px-3 py-2.5 text-sm w-full mb-2 focus:border-brand-400 outline-none">
                 <select id="as-party-select" class="border border-slate-200 rounded-xl px-3 py-2.5 text-sm w-full focus:border-brand-400 outline-none">
                     <option value="">— اختر العميل أو المورد —</option>
                 </select>

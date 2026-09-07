@@ -320,7 +320,11 @@
         const wrap = _el('rv-party-wrap');
         const select = _el('rv-party-select');
         if (!wrap || !select) return;
-        const parties = children.filter(c => c.sub_account_type === 'client' || c.sub_account_type === 'supplier');
+        const query = (_el('rv-party-search')?.value || '').trim().toLowerCase();
+        const selectedValue = select.value;
+        const parties = children
+            .filter(c => c.sub_account_type === 'client' || c.sub_account_type === 'supplier')
+            .filter(c => !query || `${c.name} ${c.phone || ''} ${c.city || ''}`.toLowerCase().includes(query));
         if (!parties.length) {
             wrap.classList.add('hidden');
             select.innerHTML = '<option value="">— اختر العميل أو المورد —</option>';
@@ -330,7 +334,13 @@
         select.innerHTML = '<option value="">— اختر العميل أو المورد —</option>' + parties.map(p =>
             `<option value="${esc(p.sub_account_id)}" data-type="${esc(p.sub_account_type)}">${p.sub_account_type === 'client' ? 'عميل' : 'مورد'}: ${esc(p.name)}</option>`
         ).join('');
+        if (selectedValue && select.querySelector(`option[value="${selectedValue}"]`)) select.value = selectedValue;
     }
+
+    window.rvFilterParty = function(query) {
+        if (!_selectedChild) return;
+        _renderPartySelector(_accountsTree.children.filter(c => c.parent_id === _selectedChild.id));
+    };
 
     // ── Child Account Dropdown ─────────────────────────────────────────────────
     window.rvToggleChildDropdown = function() {
@@ -394,6 +404,7 @@
         } else {
             _el('rv-client-id').value = '';
             _el('rv-client-type').value = '';
+            _el('rv-party-search').value = '';
             _renderPartySelector(_accountsTree.children.filter(c => c.parent_id === id));
         }
     };
@@ -466,6 +477,7 @@
         _el('rv-child-label').classList.remove('text-slate-700');
         _el('rv-child-dropdown').classList.add('hidden');
         _el('rv-party-wrap')?.classList.add('hidden');
+        _el('rv-party-search').value = '';
         _el('rv-party-select').innerHTML = '<option value="">— اختر العميل أو المورد —</option>';
         _el('rv-client-id').value = '';
         _el('rv-client-type').value = '';

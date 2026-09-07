@@ -291,7 +291,11 @@
         const wrap = _el('pv-party-wrap');
         const select = _el('pv-party-select');
         if (!wrap || !select) return;
-        const parties = children.filter(c => c.sub_account_type === 'client' || c.sub_account_type === 'supplier');
+        const query = (_el('pv-party-search')?.value || '').trim().toLowerCase();
+        const selectedValue = select.value;
+        const parties = children
+            .filter(c => c.sub_account_type === 'client' || c.sub_account_type === 'supplier')
+            .filter(c => !query || `${c.name} ${c.phone || ''} ${c.city || ''}`.toLowerCase().includes(query));
         if (!parties.length) {
             wrap.classList.add('hidden');
             select.innerHTML = '<option value="">— اختر العميل أو المورد —</option>';
@@ -301,7 +305,13 @@
         select.innerHTML = '<option value="">— اختر العميل أو المورد —</option>' + parties.map(p =>
             `<option value="${esc(p.sub_account_id)}" data-type="${esc(p.sub_account_type)}">${p.sub_account_type === 'client' ? 'عميل' : 'مورد'}: ${esc(p.name)}</option>`
         ).join('');
+        if (selectedValue && select.querySelector(`option[value="${selectedValue}"]`)) select.value = selectedValue;
     }
+
+    window.pvFilterParty = function(query) {
+        if (!_selectedChild) return;
+        _renderPartySelector(_accountsTree.children.filter(c => c.parent_id === _selectedChild.id));
+    };
 
     // ── Child Account Dropdown ─────────────────────────────────────────────────
     window.pvToggleChildDropdown = function() {
@@ -364,6 +374,7 @@
         } else {
             _el('pv-supplier-id').value = '';
             _el('pv-payee-type').value = '';
+            _el('pv-party-search').value = '';
             _renderPartySelector(_accountsTree.children.filter(c => c.parent_id === id));
         }
 
@@ -469,6 +480,7 @@
         _el('pv-child-label').classList.remove('text-slate-700');
         _el('pv-child-dropdown').classList.add('hidden');
         _el('pv-party-wrap')?.classList.add('hidden');
+        _el('pv-party-search').value = '';
         _el('pv-party-select').innerHTML = '<option value="">— اختر العميل أو المورد —</option>';
         _el('pv-supplier-id').value = '';
         _el('pv-payee-type').value = '';
