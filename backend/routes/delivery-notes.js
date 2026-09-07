@@ -486,17 +486,22 @@ router.post('/:id/dispatch', restrictWrite, validateBody(deliveryNoteDispatch), 
                     `SELECT ws.id, ws.quantity, ws.reserved_qty
                      FROM warehouse_stock ws
                      WHERE ws.variant_id = $1
-                       AND ($2::uuid IS NULL OR ws.id = $2)
-                       AND ($3::uuid IS NULL OR ws.warehouse_id = $3)
                        AND (
-                           ws.client_id = $4
-                           OR (ws.client_id IS NULL AND $2::uuid IS NULL)
-                           OR (ws.client_id IN (SELECT parent_id FROM clients WHERE id = $4) AND $2::uuid IS NULL)
+                           ($2::uuid IS NOT NULL AND ws.id = $2)
+                           OR (
+                               $2::uuid IS NULL
+                               AND ($3::uuid IS NULL OR ws.warehouse_id = $3)
+                               AND (
+                                   ws.client_id = $4
+                                   OR ws.client_id IS NULL
+                                   OR ws.client_id IN (SELECT parent_id FROM clients WHERE id = $4)
+                               )
+                           )
                        )
                      ORDER BY CASE WHEN ws.client_id = $4 THEN 0 ELSE 1 END, ws.quantity DESC
                      LIMIT 1
                      FOR UPDATE`,
-                    [sourceStockId || null, sourceStockId || null, dn.warehouse_id || null, dn.client_id]
+                    [variantId, sourceStockId || null, dn.warehouse_id || null, dn.client_id]
                 );
                 if (stockResult.rowCount === 0) throw new Error('سجل المخزون غير موجود في المستودع المحدد.');
                 const stock = stockResult.rows[0];
