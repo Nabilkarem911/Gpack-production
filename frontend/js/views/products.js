@@ -128,7 +128,13 @@
             return `
             <tr class="border-b border-slate-100 hover:bg-slate-50/60 transition-colors">
                 <td class="py-3.5 px-4">
-                    <div class="font-semibold text-slate-800 text-sm">${p.name}</div>
+                    <button type="button"
+                            onclick="window.openProductLifecycle('${p.id}')"
+                            title="فتح بطاقة الصنف (دورة الحياة)"
+                            class="font-semibold text-slate-800 text-sm hover:text-brand-600
+                                   hover:underline decoration-dotted underline-offset-4 transition-colors text-right">
+                        ${p.name}
+                    </button>
                 </td>
                 <td class="py-3.5 px-4 hidden sm:table-cell text-sm text-slate-600">${catText}</td>
                 <td class="py-3.5 px-4 hidden md:table-cell">${skuText}</td>
@@ -1379,6 +1385,12 @@
         const variantsDoneBtn  = document.getElementById('variants-modal-done-btn');
         if (variantsCloseBtn) variantsCloseBtn.addEventListener('click', window.closeVariantsModal);
         if (variantsDoneBtn)  variantsDoneBtn.addEventListener('click',  window.closeVariantsModal);
+
+        // Product lifecycle modal close + edit buttons
+        const plcCloseBtn = document.getElementById('plc-close-btn');
+        const plcEditBtn  = document.getElementById('plc-edit-btn');
+        if (plcCloseBtn) plcCloseBtn.addEventListener('click', window.closeProductLifecycle);
+        if (plcEditBtn)  plcEditBtn.addEventListener('click',  window.plcEditProduct);
         // Category tab add button
         const addCatTabBtn = document.getElementById('add-category-tab-btn');
         if (addCatTabBtn) addCatTabBtn.addEventListener('click', () => window.openCategoryEditModal());
@@ -1487,6 +1499,618 @@
     // Wire the button after DOM is ready (called from initProductsView)
     var _priceBtn = document.getElementById('ai-priceuggest-btn');
     if (_priceBtn) _priceBtn.addEventListener('click', _suggestPrice);
+
+    // ==========================================================================
+    // PRODUCT LIFECYCLE MODAL (بطاقة الصنف)
+    // Sections are lazy-loaded per tab via GET /api/products/:id/lifecycle?section=
+    // ==========================================================================
+    let _plcProductId      = null;
+    let _plcProduct        = null;
+    let _plcVariants       = [];
+    let _plcActiveTab      = 'overview';
+    let _plcLoadedSections = {};
+
+    const _plcEsc  = (s) => String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const _plcFmt  = (v) => v === null || v === undefined || v === ''
+        ? '—' : parseFloat(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const _plcQty  = (v) => parseFloat(v || 0).toLocaleString('en-US', { maximumFractionDigits: 3 });
+    const _plcDate = (v) => v ? new Date(v).toLocaleDateString('en-GB') : '—';
+    const _plcEl   = (id) => document.getElementById(id);
+
+    const _plcStatusBadge = (status) => status === 'active'
+        ? '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700">نشط</span>'
+        : '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-500">غير نشط</span>';
+
+    const _plcOrderStatus = {
+        quote: 'عرض سعر', confirmed: 'مؤكد', production: 'إنتاج', processing: 'معالجة',
+        completed: 'مكتمل', delivered: 'مُسلَّم', cancelled: 'ملغي', draft: 'مسودة',
+    };
+    const _plcMoStatus = {
+        pending: 'قيد الانتظار', sent: 'مُرسل', in_production: 'قيد الإنتاج',
+        partially_received: 'استلام جزئي', received: 'مستلم', completed: 'مكتمل', cancelled: 'ملغي',
+    };
+
+    function _plcLoading(section) {
+        const panel = _plcEl(`plc-panel-${section}`);
+        if (panel) {
+            panel.innerHTML = '<div class="py-16 text-center text-slate-400"><i class="fa-solid fa-circle-notch fa-spin text-2xl"></i></div>';
+        }
+    }
+
+    function _plcError(section, msg) {
+        const panel = _plcEl(`plc-panel-${section}`);
+        if (panel) {
+            panel.innerHTML = `<div class="py-12 text-center text-red-400 text-sm">
+                <i class="fa-solid fa-circle-exclamation ml-1"></i>${_plcEsc(msg)}</div>`;
+        }
+    }
+
+    function _plcForbidden(section) {
+        const panel = _plcEl(`plc-panel-${section}`);
+        if (panel) {
+            panel.innerHTML = `<div class="py-12 text-center text-slate-400">
+                <i class="fa-solid fa-lock text-3xl mb-2 block text-slate-300"></i>
+                <p class="text-sm font-semibold">غير مصرح بعرض هذا القسم</p></div>`;
+        }
+    }
+
+    function _plcEmpty(section, msg) {
+        const panel = _plcEl(`plc-panel-${section}`);
+        if (panel) {
+            panel.innerHTML = `<div class="py-12 text-center text-slate-400">
+                <i class="fa-solid fa-inbox text-3xl mb-2 block text-slate-200"></i>
+                <p class="text-sm font-semibold">${_plcEsc(msg)}</p></div>`;
+        }
+    }
+
+    // ── Open / Close ──────────────────────────────────────────────────────────
+    window.openProductLifecycle = async function (productId) {
+        _plcProductId      = productId;
+        _plcProduct        = null;
+        _plcVariants       = [];
+        _plcLoadedSections = {};
+        _plcActiveTab      = 'overview';
+
+        const modal = _plcEl('plc-modal');
+        if (!modal) return;
+        modal.style.display = 'flex';
+        requestAnimationFrame(() => {
+            modal.classList.add('opacity-100');
+            modal.querySelector('.modal-panel').classList.add('scale-100');
+        });
+
+        _plcEl('plc-product-name').textContent     = '...';
+        _plcEl('plc-product-sku').textContent      = '';
+        _plcEl('plc-product-category').textContent = '';
+        _plcEl('plc-status-badge').innerHTML       = '';
+
+        const perms   = window.GpackPerms || {};
+        const canEdit = perms.all_access || perms.products?.edit;
+        const editBtn = _plcEl('plc-edit-btn');
+        if (editBtn) {
+            editBtn.classList.toggle('hidden', !canEdit);
+            editBtn.classList.toggle('flex',   !!canEdit);
+        }
+
+        _plcSwitchTabUI('overview');
+        _plcLoading('overview');
+
+        try {
+            const res = await window.apiFetch(`/api/products/${productId}/lifecycle?section=overview`);
+            _plcProduct  = res.data.product;
+            _plcVariants = res.data.variants || [];
+            _plcLoadedSections.overview = true;
+            _plcRenderHeader();
+            _plcRenderOverview();
+        } catch (err) {
+            _plcError('overview', err.message || 'تعذر تحميل بيانات الصنف.');
+        }
+    };
+
+    window.closeProductLifecycle = function () {
+        const modal = _plcEl('plc-modal');
+        if (!modal) return;
+        modal.classList.remove('opacity-100');
+        modal.querySelector('.modal-panel').classList.remove('scale-100');
+        setTimeout(() => {
+            modal.style.display = 'none';
+            _plcProductId = null;
+        }, 200);
+    };
+
+    function _plcRenderHeader() {
+        if (!_plcProduct) return;
+        _plcEl('plc-product-name').textContent     = _plcProduct.name || '—';
+        _plcEl('plc-product-sku').textContent      = _plcProduct.sku ? `SKU: ${_plcProduct.sku}` : '';
+        _plcEl('plc-product-category').textContent = _plcProduct.category_name ? `الفئة: ${_plcProduct.category_name}` : '';
+        _plcEl('plc-status-badge').innerHTML       = _plcStatusBadge(_plcProduct.status);
+    }
+
+    // ── Tab switching ─────────────────────────────────────────────────────────
+    function _plcSwitchTabUI(section) {
+        _plcActiveTab = section;
+        document.querySelectorAll('.plc-tab').forEach(btn => {
+            btn.classList.toggle('plc-tab-active', btn.dataset.plcTab === section);
+        });
+        ['overview','variants','stock','movements','sales','purchases','prices'].forEach(sec => {
+            const panel = _plcEl(`plc-panel-${sec}`);
+            if (panel) panel.classList.toggle('hidden', sec !== section);
+        });
+    }
+
+    window.plcSwitchTab = async function (section) {
+        if (!_plcProductId || section === _plcActiveTab && _plcLoadedSections[section]) {
+            _plcSwitchTabUI(section);
+            return;
+        }
+        _plcSwitchTabUI(section);
+
+        // Variants tab is rendered from already-loaded overview data
+        if (section === 'variants') {
+            _plcRenderVariants();
+            return;
+        }
+        if (_plcLoadedSections[section]) return;
+
+        _plcLoading(section);
+        try {
+            const res = await window.apiFetch(`/api/products/${_plcProductId}/lifecycle?section=${section}`);
+            _plcLoadedSections[section] = true;
+            const d = res.data;
+            if      (section === 'stock')     _plcRenderStock(d);
+            else if (section === 'movements') _plcRenderMovements(d);
+            else if (section === 'sales')     _plcRenderSales(d);
+            else if (section === 'purchases') _plcRenderPurchases(d);
+            else if (section === 'prices')    _plcRenderPrices(d);
+        } catch (err) {
+            if (err.message && err.message.includes('غير مصرح')) _plcForbidden(section);
+            else _plcError(section, err.message || 'تعذر تحميل البيانات.');
+        }
+    };
+
+    // ── Section renderers ─────────────────────────────────────────────────────
+    function _plcRenderOverview() {
+        const panel = _plcEl('plc-panel-overview');
+        if (!panel || !_plcProduct) return;
+        const p = _plcProduct;
+        const activeVars   = _plcVariants.filter(v => v.status === 'active').length;
+        const inactiveVars = _plcVariants.length - activeVars;
+
+        const row = (label, value) => `
+            <div class="flex items-center justify-between py-2.5 border-b border-slate-100">
+                <span class="text-xs font-semibold text-slate-500">${label}</span>
+                <span class="text-sm font-bold text-slate-800">${value || '<span class="text-slate-300">—</span>'}</span>
+            </div>`;
+
+        panel.innerHTML = `
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+                <div class="plc-kpi"><div class="v text-brand-600">${_plcVariants.length}</div><div class="l">إجمالي المقاسات</div></div>
+                <div class="plc-kpi"><div class="v text-emerald-600">${activeVars}</div><div class="l">مقاسات نشطة</div></div>
+                <div class="plc-kpi"><div class="v text-slate-500">${inactiveVars}</div><div class="l">مقاسات غير نشطة</div></div>
+                <div class="plc-kpi"><div class="v text-slate-700">${_plcQty(_plcVariants.length)}</div><div class="l">وحدات SKU</div></div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+                ${row('اسم الصنف',        _plcEsc(p.name))}
+                ${row('SKU',             p.sku ? `<span class="font-mono">${_plcEsc(p.sku)}</span>` : null)}
+                ${row('الباركود',        p.barcode ? `<span class="font-mono">${_plcEsc(p.barcode)}</span>` : null)}
+                ${row('الفئة',           _plcEsc(p.category_name))}
+                ${row('الحالة',          _plcStatusBadge(p.status))}
+                ${row('أنشئ بواسطة',     _plcEsc(p.created_by_name))}
+                ${row('تاريخ الإنشاء',   _plcDate(p.created_at))}
+                ${row('آخر تعديل',       _plcDate(p.updated_at))}
+            </div>
+            <div class="mt-4 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                <p class="text-xs font-bold text-slate-500 mb-1">الوصف</p>
+                <p class="text-sm text-slate-700">${_plcEsc(p.description) || '<span class="text-slate-300">لا يوجد وصف</span>'}</p>
+            </div>`;
+    }
+
+    function _plcRenderVariants() {
+        const panel = _plcEl('plc-panel-variants');
+        if (!panel) return;
+        _plcLoadedSections.variants = true;
+
+        const canManage = (window.GpackPerms || {}).all_access || (window.GpackPerms || {}).products?.edit;
+
+        const rows = _plcVariants.map(v => `
+            <tr>
+                <td class="font-semibold text-slate-800">${_plcEsc(v.size_name)}</td>
+                <td class="font-mono text-slate-500">${_plcEsc(v.sku) || '—'}</td>
+                <td class="font-mono text-slate-500">${_plcEsc(v.barcode) || '—'}</td>
+                <td>${_plcEsc(v.unit_name || '—')}${v.unit_abbreviation ? ` (${_plcEsc(v.unit_abbreviation)})` : ''}</td>
+                <td class="font-mono">${_plcFmt(v.cost_price)}</td>
+                <td class="font-mono">${_plcFmt(v.selling_price)}</td>
+                <td class="font-mono">${v.min_stock_level ?? '—'}</td>
+                <td>${_plcStatusBadge(v.status)}</td>
+            </tr>`).join('');
+
+        panel.innerHTML = `
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="text-sm font-bold text-slate-700">جميع المقاسات (${_plcVariants.length})</h3>
+                ${canManage ? `
+                <button onclick="window.viewProductVariants('${_plcProductId}')"
+                        class="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-emerald-600
+                               hover:bg-emerald-700 rounded-xl transition-colors">
+                    <i class="fa-solid fa-cubes"></i> إدارة المقاسات
+                </button>` : ''}
+            </div>
+            <div class="overflow-x-auto rounded-xl border border-slate-200">
+                <table class="w-full plc-table">
+                    <thead><tr>
+                        <th>المقاس</th><th>SKU</th><th>الباركود</th><th>الوحدة</th>
+                        <th>التكلفة</th><th>سعر البيع</th><th>الحد الأدنى</th><th>الحالة</th>
+                    </tr></thead>
+                    <tbody>${rows || `<tr><td colspan="8" class="py-10 text-center text-slate-400">لا توجد مقاسات لهذا الصنف</td></tr>`}</tbody>
+                </table>
+            </div>`;
+    }
+
+    function _plcRenderStock(d) {
+        const panel = _plcEl('plc-panel-stock');
+        if (!panel) return;
+        const rows = d.stock || [];
+
+        if (!rows.length) { _plcEmpty('stock', 'لا يوجد مخزون مسجل لهذا الصنف'); return; }
+
+        const totalQ = rows.reduce((a, r) => a + parseFloat(r.quantity || 0), 0);
+        const totalR = rows.reduce((a, r) => a + parseFloat(r.reserved_qty || 0), 0);
+        const totalA = rows.reduce((a, r) => a + parseFloat(r.available_qty || 0), 0);
+
+        const perms    = window.GpackPerms || {};
+        const canAdjust = perms.all_access || perms.inventory?.edit || perms.inventory?.create;
+
+        // Cache rows keyed by stock_id so the adjust button stays quote-safe
+        window._plcStockRows = {};
+        rows.forEach(r => { window._plcStockRows[r.stock_id] = r; });
+
+        const body = rows.map(r => {
+            const lowStock = r.min_stock_level != null && parseFloat(r.available_qty) <= parseFloat(r.min_stock_level) && parseFloat(r.available_qty) > 0;
+            const outStock = parseFloat(r.available_qty) <= 0;
+            const flag = outStock
+                ? '<span class="text-xs font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">نفد</span>'
+                : lowStock
+                    ? '<span class="text-xs font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">منخفض</span>'
+                    : '<span class="text-xs text-slate-300">—</span>';
+            const clientLabel = r.client_name
+                ? `${_plcEsc(r.client_name)}${r.client_parent_name ? ` <span class="text-xs text-slate-400">(${_plcEsc(r.client_parent_name)})</span>` : ''}`
+                : '<span class="text-slate-400">مخزون عام</span>';
+            return `<tr>
+                <td class="font-semibold">${_plcEsc(r.size_name || '—')}</td>
+                <td>${_plcEsc(r.warehouse_name || '—')}</td>
+                <td>${clientLabel}</td>
+                <td class="font-mono font-bold">${_plcQty(r.quantity)}</td>
+                <td class="font-mono text-slate-500">${_plcQty(r.reserved_qty)}</td>
+                <td class="font-mono font-bold ${outStock ? 'text-red-600' : 'text-emerald-700'}">${_plcQty(r.available_qty)}</td>
+                <td>${flag}</td>
+                <td class="text-xs text-slate-400">${_plcDate(r.last_updated)}</td>
+                <td>${canAdjust ? `
+                    <button onclick="window.plcAdjustStock('${r.stock_id}')"
+                            title="تسوية يدوية"
+                            class="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400
+                                   hover:text-amber-600 hover:bg-amber-50 transition-colors">
+                        <i class="fa-solid fa-sliders text-xs"></i>
+                    </button>` : ''}</td>
+            </tr>`;
+        }).join('');
+
+        panel.innerHTML = `
+            <div class="grid grid-cols-3 gap-3 mb-4">
+                <div class="plc-kpi"><div class="v text-slate-700">${_plcQty(totalQ)}</div><div class="l">إجمالي الكمية</div></div>
+                <div class="plc-kpi"><div class="v text-amber-600">${_plcQty(totalR)}</div><div class="l">المحجوزة</div></div>
+                <div class="plc-kpi"><div class="v text-emerald-600">${_plcQty(totalA)}</div><div class="l">المتاحة</div></div>
+            </div>
+            <div class="overflow-x-auto rounded-xl border border-slate-200">
+                <table class="w-full plc-table">
+                    <thead><tr>
+                        <th>المقاس</th><th>المستودع</th><th>العميل</th>
+                        <th>الكمية</th><th>المحجوزة</th><th>المتاحة</th>
+                        <th>حالة المخزون</th><th>آخر تحديث</th><th></th>
+                    </tr></thead>
+                    <tbody>${body}</tbody>
+                </table>
+            </div>`;
+    }
+
+    window.plcAdjustStock = async function (stockId) {
+        const row = (window._plcStockRows || {})[stockId];
+        if (!row) return;
+        const sizeName   = row.size_name || '';
+        const currentQty = _plcQty(row.quantity);
+        const input = prompt(`تسوية مخزون — ${sizeName}\nالكمية الحالية: ${currentQty}\n\nأدخل قيمة التعديل (موجبة للزيادة، سالبة للنقص):`);
+        if (input === null) return;
+        const adjustment = parseFloat(input);
+        if (isNaN(adjustment) || adjustment === 0) {
+            window.showToast('قيمة التعديل غير صالحة.', 'warning');
+            return;
+        }
+        const reason = prompt('سبب التسوية (اختياري):', 'تسوية من بطاقة الصنف');
+        if (reason === null) return;
+
+        try {
+            await window.apiFetch('/api/inventory/stock/adjust', {
+                method: 'POST',
+                body:   { stock_id: stockId, adjustment, reason: reason || 'تسوية من بطاقة الصنف' },
+            });
+            window.showToast('تمت التسوية بنجاح.', 'success');
+            _plcLoadedSections.stock = false;
+            window.plcSwitchTab('stock');
+        } catch (err) {
+            window.showToast(err.message || 'فشل تنفيذ التسوية.', 'error');
+        }
+    };
+
+    function _plcRenderMovements(d) {
+        const panel = _plcEl('plc-panel-movements');
+        if (!panel) return;
+        const rows = d.movements || [];
+
+        if (!rows.length) { _plcEmpty('movements', 'لا توجد حركات مخزنية لهذا الصنف'); return; }
+
+        const typeMap = {
+            receipt:  { label: 'استلام',  cls: 'bg-emerald-100 text-emerald-700', sign: '+' },
+            dispense: { label: 'صرف',     cls: 'bg-amber-100 text-amber-700',     sign: '-' },
+            return:   { label: 'مرتجع',   cls: 'bg-blue-100 text-blue-700',       sign: '+' },
+            transfer: { label: 'تحويل',   cls: 'bg-slate-100 text-slate-600',     sign: '⇄' },
+            adjust:   { label: 'تسوية',   cls: 'bg-purple-100 text-purple-700',   sign: '±' },
+        };
+
+        const body = rows.map(r => {
+            const t = typeMap[r.transaction_type] || { label: r.transaction_type, cls: 'bg-slate-100 text-slate-600', sign: '' };
+            const counterpart = r.supplier_name || r.client_name || '—';
+            const ref = r.mo_number
+                ? `<span class="font-mono text-xs">MO-${r.mo_number}</span>`
+                : r.delivery_note_number
+                    ? `<span class="font-mono text-xs">DN-${r.delivery_note_number}</span>`
+                    : (r.reference_type ? `<span class="text-xs text-slate-400">${_plcEsc(r.reference_type)}</span>` : '—');
+            return `<tr>
+                <td class="text-slate-500 whitespace-nowrap">${_plcDate(r.created_at)}</td>
+                <td><span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${t.cls}">${t.label}</span></td>
+                <td>${_plcEsc(r.size_name || '—')}</td>
+                <td class="font-mono font-bold">${t.sign}${_plcQty(r.quantity)}</td>
+                <td class="font-mono">${_plcFmt(r.unit_cost)}</td>
+                <td>${_plcEsc(counterpart)}</td>
+                <td>${ref}</td>
+                <td class="text-xs text-slate-400 max-w-[160px] truncate" title="${_plcEsc(r.notes)}">${_plcEsc(r.notes) || '—'}</td>
+            </tr>`;
+        }).join('');
+
+        panel.innerHTML = `
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="text-sm font-bold text-slate-700">آخر ${rows.length} حركة مخزنية</h3>
+                <button onclick="window.plcGoToMovements()"
+                        class="text-xs font-bold text-brand-600 hover:text-brand-800 transition-colors">
+                    <i class="fa-solid fa-arrow-up-left-from-box ml-1"></i> فتح صفحة حركات الأصناف الكاملة
+                </button>
+            </div>
+            <div class="overflow-x-auto rounded-xl border border-slate-200">
+                <table class="w-full plc-table">
+                    <thead><tr>
+                        <th>التاريخ</th><th>النوع</th><th>المقاس</th><th>الكمية</th>
+                        <th>تكلفة الوحدة</th><th>الطرف الآخر</th><th>المرجع</th><th>ملاحظات</th>
+                    </tr></thead>
+                    <tbody>${body}</tbody>
+                </table>
+            </div>`;
+    }
+
+    function _plcRenderSales(d) {
+        const panel = _plcEl('plc-panel-sales');
+        if (!panel) return;
+        const byVariant  = d.by_variant   || [];
+        const monthly    = d.monthly      || [];
+        const topClients = d.top_clients  || [];
+        const recent     = d.recent_lines || [];
+
+        const totalQty  = byVariant.reduce((a, r) => a + parseFloat(r.qty_sold || 0), 0);
+        const totalRev  = byVariant.reduce((a, r) => a + parseFloat(r.revenue  || 0), 0);
+        const totalOrds = byVariant.reduce((a, r) => a + parseInt(r.order_count || 0, 10), 0);
+
+        if (!totalQty && !recent.length) { _plcEmpty('sales', 'لا توجد مبيعات مسجلة لهذا الصنف'); return; }
+
+        const prices = byVariant.map(r => parseFloat(r.avg_price)).filter(v => !isNaN(v) && v !== null);
+        const minP   = byVariant.reduce((m, r) => r.min_price !== null && (m === null || parseFloat(r.min_price) < m) ? parseFloat(r.min_price) : m, null);
+        const maxP   = byVariant.reduce((m, r) => r.max_price !== null && (m === null || parseFloat(r.max_price) > m) ? parseFloat(r.max_price) : m, null);
+        const avgP   = prices.length ? prices.reduce((a, b) => a + b, 0) / prices.length : null;
+
+        const monthlyRows = monthly.map(m => `<tr>
+            <td>${_plcEsc(m.month)}</td>
+            <td class="font-mono">${_plcQty(m.qty)}</td>
+            <td class="font-mono font-bold">${_plcFmt(m.revenue)}</td>
+        </tr>`).join('');
+
+        const clientsRows = topClients.map(c => `<tr>
+            <td class="font-semibold">${_plcEsc(c.name)}</td>
+            <td class="font-mono">${_plcQty(c.qty)}</td>
+            <td class="font-mono font-bold">${_plcFmt(c.revenue)}</td>
+        </tr>`).join('');
+
+        const variantRows = byVariant.map(r => `<tr>
+            <td class="font-semibold">${_plcEsc(r.size_name)}</td>
+            <td class="font-mono">${_plcQty(r.qty_sold)}</td>
+            <td class="font-mono font-bold">${_plcFmt(r.revenue)}</td>
+            <td class="font-mono">${r.order_count || 0}</td>
+            <td class="font-mono">${_plcFmt(r.avg_price)}</td>
+            <td class="font-mono">${_plcFmt(r.min_price)}</td>
+            <td class="font-mono">${_plcFmt(r.max_price)}</td>
+        </tr>`).join('');
+
+        const recentRows = recent.map(r => `<tr>
+            <td class="text-slate-500">${_plcDate(r.order_date)}</td>
+            <td class="font-mono">#${r.order_number || '—'}</td>
+            <td>${_plcEsc(r.client_name || '—')}</td>
+            <td>${_plcEsc(r.size_name || '—')}</td>
+            <td class="font-mono">${_plcQty(r.quantity)}</td>
+            <td class="font-mono">${_plcFmt(r.unit_price)}</td>
+            <td class="font-mono font-bold">${_plcFmt(r.line_total)}</td>
+            <td><span class="text-xs font-semibold text-slate-600">${_plcOrderStatus[r.status] || r.status}</span></td>
+        </tr>`).join('');
+
+        panel.innerHTML = `
+            <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-5">
+                <div class="plc-kpi"><div class="v text-brand-600">${_plcQty(totalQty)}</div><div class="l">إجمالي المباع</div></div>
+                <div class="plc-kpi"><div class="v text-emerald-600">${_plcFmt(totalRev)}</div><div class="l">إجمالي الإيراد (ر.س)</div></div>
+                <div class="plc-kpi"><div class="v text-slate-700">${totalOrds}</div><div class="l">عدد الطلبات</div></div>
+                <div class="plc-kpi"><div class="v text-amber-600">${avgP !== null ? _plcFmt(avgP) : '—'}</div><div class="l">متوسط سعر البيع</div></div>
+                <div class="plc-kpi"><div class="v text-slate-600 text-xs font-bold leading-5">${minP !== null ? _plcFmt(minP) : '—'} / ${maxP !== null ? _plcFmt(maxP) : '—'}</div><div class="l">أدنى / أعلى سعر</div></div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-5">
+                <div>
+                    <h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fa-solid fa-chart-line ml-1"></i> دوران المبيعات الشهري (آخر 12 شهر)</h4>
+                    <div class="overflow-x-auto rounded-xl border border-slate-200">
+                        <table class="w-full plc-table">
+                            <thead><tr><th>الشهر</th><th>الكمية</th><th>الإيراد (ر.س)</th></tr></thead>
+                            <tbody>${monthlyRows || `<tr><td colspan="3" class="py-8 text-center text-slate-400">لا توجد مبيعات في الفترة</td></tr>`}</tbody>
+                        </table>
+                    </div>
+                </div>
+                <div>
+                    <h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fa-solid fa-users ml-1"></i> أفضل العملاء</h4>
+                    <div class="overflow-x-auto rounded-xl border border-slate-200">
+                        <table class="w-full plc-table">
+                            <thead><tr><th>العميل</th><th>الكمية</th><th>الإيراد (ر.س)</th></tr></thead>
+                            <tbody>${clientsRows || `<tr><td colspan="3" class="py-8 text-center text-slate-400">لا يوجد عملاء</td></tr>`}</tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fa-solid fa-cubes ml-1"></i> المبيعات حسب المقاس</h4>
+            <div class="overflow-x-auto rounded-xl border border-slate-200 mb-5">
+                <table class="w-full plc-table">
+                    <thead><tr>
+                        <th>المقاس</th><th>الكمية المباعة</th><th>الإيراد</th><th>الطلبات</th>
+                        <th>متوسط السعر</th><th>أدنى سعر</th><th>أعلى سعر</th>
+                    </tr></thead>
+                    <tbody>${variantRows || `<tr><td colspan="7" class="py-8 text-center text-slate-400">لا توجد مبيعات</td></tr>`}</tbody>
+                </table>
+            </div>
+
+            <h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fa-solid fa-file-invoice ml-1"></i> آخر بنود الطلبات</h4>
+            <div class="overflow-x-auto rounded-xl border border-slate-200">
+                <table class="w-full plc-table">
+                    <thead><tr>
+                        <th>التاريخ</th><th>رقم الطلب</th><th>العميل</th><th>المقاس</th>
+                        <th>الكمية</th><th>سعر الوحدة</th><th>الإجمالي</th><th>الحالة</th>
+                    </tr></thead>
+                    <tbody>${recentRows || `<tr><td colspan="8" class="py-8 text-center text-slate-400">لا توجد بنود</td></tr>`}</tbody>
+                </table>
+            </div>`;
+    }
+
+    function _plcRenderPurchases(d) {
+        const panel = _plcEl('plc-panel-purchases');
+        if (!panel) return;
+        const suppliers = d.suppliers || [];
+        const openMos   = d.open_manufacturer_orders || [];
+        const lastCost  = d.last_cost;
+
+        if (!suppliers.length && !openMos.length) { _plcEmpty('purchases', 'لا توجد مشتريات مسجلة لهذا الصنف'); return; }
+
+        const totalOrdered  = suppliers.reduce((a, r) => a + parseFloat(r.total_ordered  || 0), 0);
+        const totalReceived = suppliers.reduce((a, r) => a + parseFloat(r.total_received || 0), 0);
+
+        const supplierRows = suppliers.map(s => `<tr>
+            <td class="font-semibold">${_plcEsc(s.company_name)}</td>
+            <td class="font-mono">${_plcQty(s.total_ordered)}</td>
+            <td class="font-mono">${_plcQty(s.total_received)}</td>
+            <td class="text-slate-500">${_plcDate(s.last_order_at)}</td>
+        </tr>`).join('');
+
+        const moRows = openMos.map(m => `<tr>
+            <td class="font-mono">MO-${m.mo_number}</td>
+            <td>${_plcEsc(m.company_name)}</td>
+            <td class="font-mono">${_plcQty(m.qty)}</td>
+            <td class="font-mono">${_plcQty(m.received)}</td>
+            <td><span class="text-xs font-semibold text-slate-600">${_plcMoStatus[m.status] || m.status}</span></td>
+            <td class="text-slate-500">${_plcDate(m.expected_delivery_date)}</td>
+        </tr>`).join('');
+
+        panel.innerHTML = `
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+                <div class="plc-kpi"><div class="v text-brand-600">${suppliers.length}</div><div class="l">عدد الموردين</div></div>
+                <div class="plc-kpi"><div class="v text-slate-700">${_plcQty(totalOrdered)}</div><div class="l">إجمالي المطلوب</div></div>
+                <div class="plc-kpi"><div class="v text-emerald-600">${_plcQty(totalReceived)}</div><div class="l">إجمالي المستلم</div></div>
+                <div class="plc-kpi"><div class="v text-amber-600">${lastCost ? _plcFmt(lastCost.unit_cost) : '—'}</div><div class="l">آخر سعر توريد ${lastCost ? `<span class="block text-[9px] font-normal text-slate-400">${_plcDate(lastCost.created_at)}</span>` : ''}</div></div>
+            </div>
+
+            <h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fa-solid fa-truck ml-1"></i> الموردون</h4>
+            <div class="overflow-x-auto rounded-xl border border-slate-200 mb-5">
+                <table class="w-full plc-table">
+                    <thead><tr><th>المورد</th><th>إجمالي المطلوب</th><th>إجمالي المستلم</th><th>آخر طلب</th></tr></thead>
+                    <tbody>${supplierRows || `<tr><td colspan="4" class="py-8 text-center text-slate-400">لا يوجد موردون</td></tr>`}</tbody>
+                </table>
+            </div>
+
+            <h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fa-solid fa-industry ml-1"></i> أوامر التشغيل المفتوحة</h4>
+            <div class="overflow-x-auto rounded-xl border border-slate-200">
+                <table class="w-full plc-table">
+                    <thead><tr><th>رقم الأمر</th><th>المورد</th><th>الكمية المطلوبة</th><th>المستلم</th><th>الحالة</th><th>التسليم المتوقع</th></tr></thead>
+                    <tbody>${moRows || `<tr><td colspan="6" class="py-8 text-center text-slate-400">لا توجد أوامر تشغيل مفتوحة</td></tr>`}</tbody>
+                </table>
+            </div>`;
+    }
+
+    function _plcRenderPrices(d) {
+        const panel = _plcEl('plc-panel-prices');
+        if (!panel) return;
+        const rows = d.prices || [];
+
+        if (!rows.length) { _plcEmpty('prices', 'لا توجد مقاسات/أسعار لهذا الصنف'); return; }
+
+        const body = rows.map(r => {
+            const margin = r.selling_price && r.cost_price
+                ? (((parseFloat(r.selling_price) - parseFloat(r.cost_price)) / parseFloat(r.cost_price)) * 100).toFixed(1)
+                : null;
+            const marginBadge = margin === null ? '—'
+                : `<span class="text-xs font-bold ${parseFloat(margin) >= 0 ? 'text-emerald-600' : 'text-red-600'}">${margin}%</span>`;
+            return `<tr>
+                <td class="font-semibold">${_plcEsc(r.size_name)}</td>
+                <td class="font-mono">${_plcEsc(r.sku) || '—'}</td>
+                <td>${_plcEsc(r.unit_name || '—')}</td>
+                <td class="font-mono">${_plcFmt(r.cost_price)}</td>
+                <td class="font-mono font-bold">${_plcFmt(r.selling_price)}</td>
+                <td>${marginBadge}</td>
+                <td class="font-mono">${_plcFmt(r.avg_price)}</td>
+                <td class="font-mono">${_plcFmt(r.min_price)}</td>
+                <td class="font-mono">${_plcFmt(r.max_price)}</td>
+                <td>${_plcStatusBadge(r.status)}</td>
+            </tr>`;
+        }).join('');
+
+        panel.innerHTML = `
+            <div class="overflow-x-auto rounded-xl border border-slate-200">
+                <table class="w-full plc-table">
+                    <thead><tr>
+                        <th>المقاس</th><th>SKU</th><th>الوحدة</th>
+                        <th>سعر التكلفة</th><th>سعر البيع</th><th>هامش الربح</th>
+                        <th>متوسط سعر البيع</th><th>أدنى سعر</th><th>أعلى سعر</th><th>الحالة</th>
+                    </tr></thead>
+                    <tbody>${body}</tbody>
+                </table>
+            </div>
+            <p class="text-xs text-slate-400 mt-3">
+                <i class="fa-solid fa-circle-info ml-1"></i>
+                متوسط/أدنى/أعلى سعر البيع محسوبة من بنود الطلبات المؤكدة. لتعديل الأسعار استخدم «إدارة المقاسات» من تبويب المقاسات.
+            </p>`;
+    }
+
+    // ── Movements tab → jump to the full product-movements page ───────────────
+    window.plcGoToMovements = function () {
+        if (!_plcProductId) return;
+        const name = _plcProduct ? _plcProduct.name : '';
+        window.closeProductLifecycle();
+        window.openProductMovements(_plcProductId, name);
+    };
+
+    // ── Edit button inside lifecycle modal → reuse existing product modal ─────
+    window.plcEditProduct = function () {
+        if (!_plcProductId) return;
+        const id = _plcProductId;
+        window.closeProductLifecycle();
+        window.openProductModal(id);
+    };
 
     // ── Auto-execute ──────────────────────────────────────────────────────────
     initProductsView();

@@ -151,7 +151,7 @@ router.get('/', async (req, res) => {
 
 router.get('/movements', async (req, res) => {
     try {
-        const { search, category_id, variant_id, type, client_id, supplier_id, from, to } = req.query;
+        const { search, category_id, variant_id, product_id, type, client_id, supplier_id, from, to } = req.query;
         const limit  = Math.min(parseInt(req.query.limit  || '200', 10), 500);
         const offset = parseInt(req.query.offset || '0', 10);
 
@@ -165,6 +165,10 @@ router.get('/movements', async (req, res) => {
         if (variant_id) {
             params.push(variant_id);
             conditions.push(`it.variant_id = $${params.length}`);
+        }
+        if (product_id) {
+            params.push(product_id);
+            conditions.push(`p.id = $${params.length}`);
         }
         if (category_id) {
             params.push(category_id);
@@ -366,6 +370,423 @@ router.get('/:id', async (req, res) => {
         return res.status(200).json({ data: product });
     } catch (err) {
         console.error('[Products] GET /:id error:', err.message);
+        return res.status(500).json({ error: 'Internal server error.' });
+    }
+});
+
+// =============================================================================
+// GET /api/products/:id/lifecycle
+// Product Lifecycle Card — returns per-section data for the lifecycle modal.
+// Query params:
+//   ?section=overview   — product info + ALL variants (active & inactive). Default.
+//   ?section=stock      — warehouse_stock rows for this product's variants.
+//                         Requires inventory/warehouses/vmi_dispatch/receiving view.
+//                         Optional &client_id=<uuid> to scope rows.
+//   ?section=movements  — recent inventory_transactions for this product's variants.
+//                         Same permission as stock. Optional &variant_id=<uuid>, &limit=<n>.
+//   ?section=sales      — order_items aggregates: per-variant totals, monthly
+//                         breakdown (last 12 months), top clients, recent lines.
+//                         Requires sales/quotations/production_orders/reports view.
+//   ?section=purchases  — suppliers, ordered/received totals, last supply cost,
+//                         open manufacturer orders. Requires purchasing/receiving/suppliers view.
+//   ?section=prices     — per-variant current cost/sell prices + historical stats.
+// =============================================================================
+
+// Per-section view-permission gate (mirrors the style of inventory.js scoping).
+function _lifecycleSectionAllowed(req, section) {
+    const role  = req.user && req.user.role;
+    const perms = (req.user && req.user.permissions) || {};
+    if (role === 'super_admin' || role === 'admin') return true;
+    if (perms.all_access === true) return true;
+
+    const _hasView = (key) => perms[key] && (perms[key].view === true || perms[key] === true || (Array.isArray(perms[key]) && perms[key].includes('view')));
+    const SECTION_PERMS = {
+        overview:   ['products', 'inventory', 'warehouses', 'vmi_dispatch', 'receiving'],
+        stock:      ['inventory', 'warehouses', 'vmi_dispatch', 'receiving'],
+        movements:  ['inventory', 'warehouses', 'vmi_dispatch', 'receiving'],
+        sales:      ['sales', 'quotations', 'production_orders', 'reports'],
+        purchases:  ['purchasing', 'receiving', 'suppliers', 'reports'],
+        prices:     ['products', 'inventory', 'warehouses', 'vmi_dispatch', 'receiving', 'sales', 'quotations'],
+    };
+    const keys = SECTION_PERMS[section] || SECTION_PERMS.overview;
+    return keys.some(_hasView);
+}
+
+router.get('/:id/lifecycle', async (req, res) => {
+    try {
+        const productId = req.params.id;
+        const section   = req.query.section || 'overview';
+        const ALLOWED   = ['overview', 'stock', 'movements', 'sales', 'purchases', 'prices'];
+        if (!ALLOWED.includes(section)) {
+            return res.status(400).json({ error: 'قسم غير معروف. الأقسام المتاحة: ' + ALLOWED.join(', ') });
+        }
+
+        if (!_lifecycleSectionAllowed(req, section)) {
+            return res.status(403).json({ error: 'غير مصرح بعرض هذا القسم.' });
+        }
+
+        // Verify product exists (single cheap lookup for every section)
+        const productRes = await db.query(
+            `SELECT
+                p.id, p.name, p.description, p.category_id, p.sku, p.barcode,
+                p.status, p.created_by, p.created_at, p.updated_at,
+                c.name AS category_name,
+                u.name AS created_by_name
+             FROM products p
+             LEFT JOIN categories c ON c.id = p.category_id
+             LEFT JOIN users u      ON u.id = p.created_by
+             WHERE p.id = $1
+             LIMIT 1`,
+            [productId]
+        );
+        if (productRes.rowCount === 0) {
+            return res.status(404).json({ error: 'المنتج غير موجود.' });
+        }
+        const product = productRes.rows[0];
+
+        if (section === 'overview') {
+            const variantsRes = await db.query(
+                `SELECT
+                    pv.id, pv.product_id, pv.size_name, pv.sku, pv.barcode,
+                    pv.unit_id, u.name AS unit_name, u.abbreviation AS unit_abbreviation,
+                    pv.selling_price, pv.cost_price,
+                    pv.min_stock_level, pv.max_stock_level,
+                    pv.weight, pv.dimensions, pv.status, pv.created_at, pv.updated_at
+                 FROM product_variants pv
+                 LEFT JOIN units u ON u.id = pv.unit_id
+                 WHERE pv.product_id = $1
+                 ORDER BY pv.created_at ASC`,
+                [productId]
+            );
+            return res.status(200).json({
+                data: { section, product, variants: variantsRes.rows },
+            });
+        }
+
+        if (section === 'stock') {
+            const { client_id } = req.query;
+            const params  = [productId];
+            let whereExtra = '';
+            if (client_id) {
+                params.push(client_id);
+                whereExtra = ` AND ws.client_id = $${params.length}`;
+            }
+
+            const stockRes = await db.query(
+                `SELECT
+                    ws.id AS stock_id,
+                    ws.warehouse_id,
+                    w.name              AS warehouse_name,
+                    ws.client_id,
+                    c.name              AS client_name,
+                    cp.name             AS client_parent_name,
+                    ws.variant_id,
+                    pv.size_name,
+                    pv.sku              AS variant_sku,
+                    pv.min_stock_level,
+                    pv.max_stock_level,
+                    u.name              AS unit_name,
+                    u.abbreviation      AS unit_abbreviation,
+                    ws.quantity,
+                    ws.reserved_qty,
+                    (ws.quantity - ws.reserved_qty) AS available_qty,
+                    ws.last_updated
+                 FROM warehouse_stock ws
+                 JOIN product_variants pv ON pv.id = ws.variant_id
+                 JOIN warehouses w        ON w.id  = ws.warehouse_id
+                 LEFT JOIN units u        ON u.id  = pv.unit_id
+                 LEFT JOIN clients c      ON c.id  = ws.client_id
+                 LEFT JOIN clients cp     ON cp.id = c.parent_id
+                 WHERE pv.product_id = $1 ${whereExtra}
+                 ORDER BY pv.size_name ASC, c.name ASC, w.name ASC`,
+                params
+            );
+
+            // Aggregates per variant for the summary strip
+            const totals = {};
+            stockRes.rows.forEach(r => {
+                if (!totals[r.variant_id]) {
+                    totals[r.variant_id] = { variant_id: r.variant_id, size_name: r.size_name, quantity: 0, reserved_qty: 0, available_qty: 0 };
+                }
+                totals[r.variant_id].quantity     += parseFloat(r.quantity     || 0);
+                totals[r.variant_id].reserved_qty += parseFloat(r.reserved_qty || 0);
+                totals[r.variant_id].available_qty += parseFloat(r.available_qty || 0);
+            });
+
+            return res.status(200).json({
+                data: {
+                    section,
+                    product: { id: product.id, name: product.name, sku: product.sku },
+                    stock: stockRes.rows,
+                    totals: Object.values(totals),
+                },
+            });
+        }
+
+        if (section === 'movements') {
+            const { variant_id } = req.query;
+            const limit = Math.min(parseInt(req.query.limit || '100', 10), 500);
+            const params = [productId];
+            let whereExtra = '';
+            if (variant_id) {
+                params.push(variant_id);
+                whereExtra = ` AND it.variant_id = $${params.length}`;
+            }
+            params.push(limit);
+
+            const movRes = await db.query(
+                `SELECT
+                    it.id,
+                    it.transaction_type,
+                    it.quantity,
+                    it.unit_cost,
+                    it.created_at,
+                    it.notes,
+                    it.reference_type,
+                    it.reference_id,
+                    pv.size_name,
+                    c.name            AS client_name,
+                    wf.name           AS warehouse_from_name,
+                    wt.name           AS warehouse_to_name,
+                    mo.mo_number,
+                    mo.manufacturer_id,
+                    s.company_name    AS supplier_name,
+                    dn.note_number    AS delivery_note_number
+                 FROM inventory_transactions it
+                 JOIN product_variants pv ON pv.id = it.variant_id
+                 LEFT JOIN clients c       ON c.id = it.client_id
+                 LEFT JOIN warehouses wf   ON wf.id = it.warehouse_from
+                 LEFT JOIN warehouses wt   ON wt.id = it.warehouse_to
+                 LEFT JOIN manufacturer_orders mo
+                    ON mo.id = it.reference_id AND it.reference_type = 'manufacturer_order'
+                 LEFT JOIN suppliers s     ON s.id = mo.manufacturer_id
+                 LEFT JOIN delivery_notes dn
+                    ON dn.id = it.reference_id AND it.reference_type = 'delivery_note'
+                 WHERE pv.product_id = $1 ${whereExtra}
+                 ORDER BY it.created_at DESC
+                 LIMIT $${params.length}`,
+                params
+            );
+
+            return res.status(200).json({
+                data: {
+                    section,
+                    product: { id: product.id, name: product.name, sku: product.sku },
+                    movements: movRes.rows,
+                },
+            });
+        }
+
+        if (section === 'sales') {
+            const [perVariantRes, monthlyRes, topClientsRes, recentRes] = await Promise.all([
+                // Per-variant sales totals + price stats (excludes quotes/drafts/VMI-null orders)
+                db.query(
+                    `SELECT
+                        pv.id AS variant_id,
+                        pv.size_name,
+                        COALESCE(SUM(oi.quantity)   FILTER (WHERE o.id IS NOT NULL), 0) AS qty_sold,
+                        COALESCE(SUM(oi.line_total) FILTER (WHERE o.id IS NOT NULL), 0) AS revenue,
+                        COUNT(DISTINCT o.id) AS order_count,
+                        AVG(oi.unit_price)   FILTER (WHERE o.id IS NOT NULL) AS avg_price,
+                        MIN(oi.unit_price)   FILTER (WHERE o.id IS NOT NULL) AS min_price,
+                        MAX(oi.unit_price)   FILTER (WHERE o.id IS NOT NULL) AS max_price
+                     FROM product_variants pv
+                     LEFT JOIN order_items oi ON oi.variant_id = pv.id
+                     LEFT JOIN orders o ON o.id = oi.order_id
+                        AND o.status NOT IN ('quote', 'draft', 'cancelled')
+                        AND o.grand_total IS NOT NULL
+                     WHERE pv.product_id = $1
+                     GROUP BY pv.id, pv.size_name
+                     ORDER BY qty_sold DESC`,
+                    [productId]
+                ),
+                // Monthly breakdown — last 12 months
+                db.query(
+                    `SELECT
+                        TO_CHAR(o.order_date, 'YYYY-MM') AS month,
+                        SUM(oi.quantity)   AS qty,
+                        SUM(oi.line_total) AS revenue
+                     FROM order_items oi
+                     JOIN orders o          ON o.id = oi.order_id
+                     JOIN product_variants pv ON pv.id = oi.variant_id
+                     WHERE pv.product_id = $1
+                       AND o.status NOT IN ('quote', 'draft', 'cancelled')
+                       AND o.grand_total IS NOT NULL
+                       AND o.order_date >= NOW() - INTERVAL '12 months'
+                     GROUP BY TO_CHAR(o.order_date, 'YYYY-MM')
+                     ORDER BY month ASC`,
+                    [productId]
+                ),
+                // Top clients by revenue
+                db.query(
+                    `SELECT
+                        c.id, c.name,
+                        SUM(oi.quantity)   AS qty,
+                        SUM(oi.line_total) AS revenue
+                     FROM order_items oi
+                     JOIN orders o          ON o.id = oi.order_id
+                     JOIN clients c         ON c.id = o.client_id
+                     JOIN product_variants pv ON pv.id = oi.variant_id
+                     WHERE pv.product_id = $1
+                       AND o.status NOT IN ('quote', 'draft', 'cancelled')
+                       AND o.grand_total IS NOT NULL
+                     GROUP BY c.id, c.name
+                     ORDER BY revenue DESC
+                     LIMIT 5`,
+                    [productId]
+                ),
+                // Recent order lines for this product
+                db.query(
+                    `SELECT
+                        o.id          AS order_id,
+                        o.order_number,
+                        o.order_date,
+                        o.status,
+                        c.name        AS client_name,
+                        pv.size_name,
+                        oi.quantity,
+                        oi.unit_price,
+                        oi.line_total
+                     FROM order_items oi
+                     JOIN orders o          ON o.id = oi.order_id
+                     LEFT JOIN clients c    ON c.id = o.client_id
+                     JOIN product_variants pv ON pv.id = oi.variant_id
+                     WHERE pv.product_id = $1
+                       AND o.status NOT IN ('quote', 'draft', 'cancelled')
+                       AND o.grand_total IS NOT NULL
+                     ORDER BY o.order_date DESC, o.id DESC
+                     LIMIT 20`,
+                    [productId]
+                ),
+            ]);
+
+            return res.status(200).json({
+                data: {
+                    section,
+                    product: { id: product.id, name: product.name, sku: product.sku },
+                    by_variant:   perVariantRes.rows,
+                    monthly:      monthlyRes.rows,
+                    top_clients:  topClientsRes.rows,
+                    recent_lines: recentRes.rows,
+                },
+            });
+        }
+
+        if (section === 'purchases') {
+            const [suppliersRes, lastCostRes, openMoRes] = await Promise.all([
+                // Suppliers aggregated via manufacturer orders
+                db.query(
+                    `SELECT
+                        s.id, s.company_name,
+                        SUM(moi.mo_quantity)  AS total_ordered,
+                        SUM(moi.received_qty) AS total_received,
+                        MAX(mo.created_at)    AS last_order_at
+                     FROM manufacturer_order_items moi
+                     JOIN manufacturer_orders mo ON mo.id = moi.manufacturer_order_id
+                     JOIN suppliers s            ON s.id  = mo.manufacturer_id
+                     JOIN product_variants pv    ON pv.id = moi.variant_id
+                     WHERE pv.product_id = $1
+                       AND mo.status <> 'cancelled'
+                     GROUP BY s.id, s.company_name
+                     ORDER BY total_ordered DESC`,
+                    [productId]
+                ),
+                // Last supply cost across MO items, purchase invoices, receiving vouchers
+                db.query(
+                    `SELECT unit_cost, created_at, src FROM (
+                        SELECT moi.unit_cost, mo.created_at, 'manufacturer_order' AS src
+                        FROM manufacturer_order_items moi
+                        JOIN manufacturer_orders mo ON mo.id = moi.manufacturer_order_id
+                        JOIN product_variants pv ON pv.id = moi.variant_id
+                        WHERE pv.product_id = $1 AND mo.status <> 'cancelled' AND moi.unit_cost IS NOT NULL
+                        UNION ALL
+                        SELECT pii.unit_cost, pi.created_at, 'purchase_invoice' AS src
+                        FROM purchase_invoice_items pii
+                        JOIN purchase_invoices pi ON pi.id = pii.purchase_invoice_id
+                        JOIN product_variants pv ON pv.id = pii.variant_id
+                        WHERE pv.product_id = $1 AND pii.unit_cost IS NOT NULL
+                        UNION ALL
+                        SELECT rvi.unit_cost, rv.created_at, 'receiving_voucher' AS src
+                        FROM receiving_voucher_items rvi
+                        JOIN receiving_vouchers rv ON rv.id = rvi.receiving_voucher_id
+                        JOIN product_variants pv ON pv.id = rvi.variant_id
+                        WHERE pv.product_id = $1 AND rvi.unit_cost IS NOT NULL
+                     ) t
+                     ORDER BY created_at DESC
+                     LIMIT 1`,
+                    [productId]
+                ),
+                // Open manufacturer orders (not fully received / cancelled / completed)
+                db.query(
+                    `SELECT
+                        mo.id, mo.mo_number, mo.status, mo.expected_delivery_date,
+                        s.company_name,
+                        SUM(moi.mo_quantity)  AS qty,
+                        SUM(moi.received_qty) AS received
+                     FROM manufacturer_order_items moi
+                     JOIN manufacturer_orders mo ON mo.id = moi.manufacturer_order_id
+                     JOIN suppliers s            ON s.id  = mo.manufacturer_id
+                     JOIN product_variants pv    ON pv.id = moi.variant_id
+                     WHERE pv.product_id = $1
+                       AND mo.status NOT IN ('cancelled', 'completed', 'received')
+                     GROUP BY mo.id, mo.mo_number, mo.status, mo.expected_delivery_date, s.company_name, mo.created_at
+                     ORDER BY mo.created_at DESC
+                     LIMIT 20`,
+                    [productId]
+                ),
+            ]);
+
+            return res.status(200).json({
+                data: {
+                    section,
+                    product: { id: product.id, name: product.name, sku: product.sku },
+                    suppliers:      suppliersRes.rows,
+                    last_cost:      lastCostRes.rows[0] || null,
+                    open_manufacturer_orders: openMoRes.rows,
+                },
+            });
+        }
+
+        // section === 'prices'
+        const pricesRes = await db.query(
+            `SELECT
+                pv.id, pv.size_name, pv.sku, pv.barcode,
+                pv.cost_price, pv.selling_price,
+                pv.min_stock_level, pv.max_stock_level,
+                pv.status,
+                u.name AS unit_name, u.abbreviation AS unit_abbreviation,
+                stats.avg_price, stats.min_price, stats.max_price,
+                stats.qty_sold, stats.revenue
+             FROM product_variants pv
+             LEFT JOIN units u ON u.id = pv.unit_id
+             LEFT JOIN (
+                SELECT
+                    oi.variant_id,
+                    AVG(oi.unit_price)   AS avg_price,
+                    MIN(oi.unit_price)   AS min_price,
+                    MAX(oi.unit_price)   AS max_price,
+                    SUM(oi.quantity)     AS qty_sold,
+                    SUM(oi.line_total)   AS revenue
+                FROM order_items oi
+                JOIN orders o ON o.id = oi.order_id
+                WHERE o.status NOT IN ('quote', 'draft', 'cancelled')
+                  AND o.grand_total IS NOT NULL
+                GROUP BY oi.variant_id
+             ) stats ON stats.variant_id = pv.id
+             WHERE pv.product_id = $1
+             ORDER BY pv.created_at ASC`,
+            [productId]
+        );
+
+        return res.status(200).json({
+            data: {
+                section,
+                product: { id: product.id, name: product.name, sku: product.sku },
+                prices: pricesRes.rows,
+            },
+        });
+    } catch (err) {
+        console.error('[Products] GET /:id/lifecycle error:', err.message);
         return res.status(500).json({ error: 'Internal server error.' });
     }
 });
