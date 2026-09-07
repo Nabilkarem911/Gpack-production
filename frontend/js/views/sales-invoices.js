@@ -391,7 +391,8 @@
         const stockSearch = _el('si-w-stock-search');
         if (stockSearch) { stockSearch.value = ''; stockSearch.disabled = true; }
         _el('si-w-date').value = new Date().toISOString().split('T')[0];
-        _el('si-w-stock-items').innerHTML = '<tr><td colspan="6" class="py-8 text-center text-slate-400">اختر العميل والمستودع أولاً</td></tr>';
+        _el('si-w-search-results').innerHTML = '<tr><td colspan="4" class="py-8 text-center text-slate-400">اختر العميل والمستودع أولاً</td></tr>';
+        _el('si-w-stock-items').innerHTML = '<tr><td colspan="7" class="py-8 text-center text-slate-400">لم تتم إضافة أصناف للفاتورة بعد</td></tr>';
         const clientSel = _el('si-w-client');
         clientSel.innerHTML = '<option value="">— اختر العميل —</option>' + _clients.map(c => `<option value="${esc(c.id)}">${esc(c.parent_name ? `${c.name} — ${c.parent_name}` : c.name)}</option>`).join('');
         if (!_warehouseClientSearchable && window.makeSelectSearchable) {
@@ -416,7 +417,8 @@
         warehouseSel.disabled = !clientId;
         const stockSearch = _el('si-w-stock-search');
         if (stockSearch) { stockSearch.value = ''; stockSearch.disabled = true; }
-        _el('si-w-stock-items').innerHTML = '<tr><td colspan="6" class="py-8 text-center text-slate-400">اختر المستودع</td></tr>';
+        _el('si-w-search-results').innerHTML = '<tr><td colspan="4" class="py-8 text-center text-slate-400">اختر المستودع</td></tr>';
+        _el('si-w-stock-items').innerHTML = '<tr><td colspan="7" class="py-8 text-center text-slate-400">لم تتم إضافة أصناف للفاتورة بعد</td></tr>';
         if (!clientId) return;
         try {
             const res = await window.apiFetch(`/api/inventory/warehouses?client_id=${encodeURIComponent(clientId)}&status=active`);
@@ -443,45 +445,66 @@
         }
     };
 
-    function _renderWarehouseStock() {
-        const body = _el('si-w-stock-items');
+    function _renderWarehouseSearchResults() {
+        const body = _el('si-w-search-results');
         const search = (_el('si-w-stock-search')?.value || '').trim().toLowerCase();
         if (!body) return;
         if (!search) {
-            body.innerHTML = '<tr><td colspan="7" class="py-8 text-center text-slate-400">اكتب اسم الصنف أو رقمه لعرض النتائج</td></tr>';
+            body.innerHTML = '<tr><td colspan="4" class="py-6 text-center text-slate-400">اكتب اسم الصنف أو رقمه لعرض نتائج البحث</td></tr>';
             return;
         }
         const matches = _warehouseStock.filter(s => [s.product_name, s.product_sku, s.variant_sku, s.variant_size].some(v => String(v || '').toLowerCase().includes(search)));
         body.innerHTML = matches.length ? matches.map(s => {
-            const i = _warehouseStock.indexOf(s);
             const selected = _warehouseSelectedStockIds.has(s.stock_id);
-            const price = s.selectedPrice ?? Number(s.selling_price || 0).toFixed(2);
-            return `<tr class="border-b border-slate-100 ${selected ? 'bg-emerald-50/40' : ''}" data-index="${i}">
+            return `<tr class="border-b border-slate-100">
                 <td class="py-2 px-3 font-semibold">${esc(s.product_name || '—')}</td>
                 <td class="py-2 px-3 text-slate-500">${esc(s.variant_size || '—')}</td>
                 <td class="py-2 px-3 text-center font-bold text-emerald-600">${qty(s.available_qty)}</td>
-                <td class="py-2 px-3 text-center"><input class="si-w-qty w-24 border border-slate-200 rounded-lg px-2 py-1.5 text-center" type="number" min="0" max="${s.available_qty}" step="0.001" value="${s.selectedQty || 0}" data-index="${i}" oninput="window.siWarehouseCalc()" ${selected ? '' : 'disabled'}></td>
-                <td class="py-2 px-3 text-center"><input class="si-w-price w-28 border border-slate-200 rounded-lg px-2 py-1.5 text-center" type="number" min="0" step="0.01" value="${price}" data-index="${i}" oninput="window.siWarehouseCalc()" ${selected ? '' : 'disabled'}></td>
-                <td class="py-2 px-3 text-center font-mono" data-line-total="${i}">${fmt((s.selectedQty || 0) * (s.selectedPrice ?? s.selling_price ?? 0))}</td>
-                <td class="py-2 px-3 text-center"><button type="button" class="px-2.5 py-1 rounded-lg text-xs font-bold ${selected ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'bg-brand-50 text-brand-700 hover:bg-brand-100'}" onclick="window.siToggleWarehouseStock('${esc(s.stock_id)}')">${selected ? 'إلغاء الاختيار' : 'اختيار'}</button></td>
+                <td class="py-2 px-3 text-center"><button type="button" class="px-3 py-1.5 rounded-lg text-xs font-bold ${selected ? 'bg-slate-100 text-slate-400' : 'bg-brand-50 text-brand-700 hover:bg-brand-100'}" onclick="window.siAddWarehouseStock('${esc(s.stock_id)}')" ${selected ? 'disabled' : ''}>${selected ? 'تمت الإضافة' : 'إضافة للفاتورة'}</button></td>
             </tr>`;
-        }).join('') : '<tr><td colspan="7" class="py-8 text-center text-slate-400">لا توجد نتائج مطابقة</td></tr>';
+        }).join('') : '<tr><td colspan="4" class="py-6 text-center text-slate-400">لا توجد نتائج مطابقة</td></tr>';
+    }
+
+    function _renderWarehouseSelectedItems() {
+        const body = _el('si-w-stock-items');
+        if (!body) return;
+        const selected = _warehouseStock.filter(stock => _warehouseSelectedStockIds.has(stock.stock_id));
+        body.innerHTML = selected.length ? selected.map(stock => {
+            const i = _warehouseStock.indexOf(stock);
+            const price = stock.selectedPrice ?? Number(stock.selling_price || 0).toFixed(2);
+            return `<tr class="border-b border-slate-100" data-index="${i}">
+                <td class="py-2 px-3 font-semibold">${esc(stock.product_name || '—')}</td>
+                <td class="py-2 px-3 text-slate-500">${esc(stock.variant_size || '—')}</td>
+                <td class="py-2 px-3 text-center font-bold text-emerald-600">${qty(stock.available_qty)}</td>
+                <td class="py-2 px-3 text-center"><input class="si-w-qty w-24 border border-slate-200 rounded-lg px-2 py-1.5 text-center" type="number" min="0" max="${stock.available_qty}" step="0.001" value="${stock.selectedQty || 0}" data-index="${i}" oninput="window.siWarehouseCalc()"></td>
+                <td class="py-2 px-3 text-center"><input class="si-w-price w-28 border border-slate-200 rounded-lg px-2 py-1.5 text-center" type="number" min="0" step="0.01" value="${price}" data-index="${i}" oninput="window.siWarehouseCalc()"></td>
+                <td class="py-2 px-3 text-center font-mono" data-line-total="${i}">${fmt((stock.selectedQty || 0) * (stock.selectedPrice ?? stock.selling_price ?? 0))}</td>
+                <td class="py-2 px-3 text-center"><button type="button" class="px-2.5 py-1 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 text-xs font-bold" onclick="window.siRemoveWarehouseStock('${esc(stock.stock_id)}')">حذف</button></td>
+            </tr>`;
+        }).join('') : '<tr><td colspan="7" class="py-6 text-center text-slate-400">لم تتم إضافة أصناف للفاتورة بعد</td></tr>';
         window.siWarehouseCalc();
     }
 
-    window.siToggleWarehouseStock = function(stockId) {
+    window.siAddWarehouseStock = function(stockId) {
         const stock = _warehouseStock.find(item => item.stock_id === stockId);
         if (!stock) return;
-        if (_warehouseSelectedStockIds.has(stockId)) {
-            _warehouseSelectedStockIds.delete(stockId);
-            stock.selectedQty = 0;
-        } else {
-            _warehouseSelectedStockIds.add(stockId);
-        }
-        _renderWarehouseStock();
+        _warehouseSelectedStockIds.add(stockId);
+        _renderWarehouseSearchResults();
+        _renderWarehouseSelectedItems();
     };
 
-    window.siWarehouseStockSearch = function() { _renderWarehouseStock(); };
+    window.siRemoveWarehouseStock = function(stockId) {
+        const stock = _warehouseStock.find(item => item.stock_id === stockId);
+        if (stock) {
+            stock.selectedQty = 0;
+            stock.selectedPrice = undefined;
+        }
+        _warehouseSelectedStockIds.delete(stockId);
+        _renderWarehouseSearchResults();
+        _renderWarehouseSelectedItems();
+    };
+
+    window.siWarehouseStockSearch = function() { _renderWarehouseSearchResults(); };
 
     window.siWarehouseChanged = async function() {
         const clientId = _el('si-w-client')?.value;
@@ -500,9 +523,11 @@
             const res = await window.apiFetch(`/api/inventory/stock?client_id=${encodeURIComponent(clientId)}&warehouse_id=${encodeURIComponent(warehouseId)}&limit=1000`);
             _warehouseStock = (res.data || []).filter(s => parseFloat(s.available_qty || 0) > 0);
             _el('si-w-stock-count').textContent = `${_warehouseStock.length} صنف متاح`;
-            _renderWarehouseStock();
+            _renderWarehouseSearchResults();
+            _renderWarehouseSelectedItems();
         } catch (err) {
-            body.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-red-400">${esc(err.message)}</td></tr>`;
+            _el('si-w-search-results').innerHTML = `<tr><td colspan="4" class="py-8 text-center text-red-400">${esc(err.message)}</td></tr>`;
+            body.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-red-400">${esc(err.message)}</td></tr>`;
         }
     };
 
