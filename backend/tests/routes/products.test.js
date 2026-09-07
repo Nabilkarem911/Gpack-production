@@ -71,6 +71,10 @@ function setupMock() {
                 order_count: 1, avg_price: '55', min_price: '45', max_price: '60',
             }] };
         }
+        // prices query (contains stats.avg_price + pcost LATERAL with UNION ALL)
+        if (sql.includes('stats.avg_price')) {
+            return { rows: [{ ...VARIANT_ROW, avg_price: '55', min_price: '45', max_price: '60', qty_sold: '10', revenue: '550', avg_purchase_cost: '28', last_purchase_cost: '30' }] };
+        }
         // purchases — 3 sub-queries
         if (sql.includes('UNION ALL')) {
             return { rows: [{ unit_cost: '30', created_at: '2026-01-03', src: 'manufacturer_order' }] };
@@ -109,10 +113,7 @@ function setupMock() {
                 quantity: '10', reserved_qty: '2', available_qty: '8', last_updated: '2026-01-05',
             }] };
         }
-        // overview variants + prices (both read product_variants for the product)
-        if (sql.includes('FROM product_variants pv') && sql.includes('stats.avg_price')) {
-            return { rows: [{ ...VARIANT_ROW, avg_price: '55', min_price: '45', max_price: '60', qty_sold: '10', revenue: '550' }] };
-        }
+        // overview variants
         if (sql.includes('FROM product_variants pv')) {
             return { rows: [VARIANT_ROW] };
         }

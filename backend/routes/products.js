@@ -674,7 +674,8 @@ router.get('/:id/lifecycle', async (req, res) => {
 
         if (section === 'purchases') {
             const [suppliersRes, lastCostRes, openMoRes] = await Promise.all([
-                // Suppliers aggregated via manufacturer orders
+                // Suppliers aggregated via manufacturer orders.
+                // NOTE: manufacturer_order_items has NO variant_id — link through order_items.
                 db.query(
                     `SELECT
                         s.id, s.company_name,
@@ -684,7 +685,8 @@ router.get('/:id/lifecycle', async (req, res) => {
                      FROM manufacturer_order_items moi
                      JOIN manufacturer_orders mo ON mo.id = moi.manufacturer_order_id
                      JOIN suppliers s            ON s.id  = mo.manufacturer_id
-                     JOIN product_variants pv    ON pv.id = moi.variant_id
+                     JOIN order_items oi         ON oi.id = moi.order_item_id
+                     JOIN product_variants pv    ON pv.id = oi.variant_id
                      WHERE pv.product_id = $1
                        AND mo.status <> 'cancelled'
                      GROUP BY s.id, s.company_name
@@ -697,7 +699,8 @@ router.get('/:id/lifecycle', async (req, res) => {
                         SELECT moi.unit_cost, mo.created_at, 'manufacturer_order' AS src
                         FROM manufacturer_order_items moi
                         JOIN manufacturer_orders mo ON mo.id = moi.manufacturer_order_id
-                        JOIN product_variants pv ON pv.id = moi.variant_id
+                        JOIN order_items oi        ON oi.id = moi.order_item_id
+                        JOIN product_variants pv   ON pv.id = oi.variant_id
                         WHERE pv.product_id = $1 AND mo.status <> 'cancelled' AND moi.unit_cost IS NOT NULL
                         UNION ALL
                         SELECT pii.unit_cost, pi.created_at, 'purchase_invoice' AS src
@@ -726,7 +729,8 @@ router.get('/:id/lifecycle', async (req, res) => {
                      FROM manufacturer_order_items moi
                      JOIN manufacturer_orders mo ON mo.id = moi.manufacturer_order_id
                      JOIN suppliers s            ON s.id  = mo.manufacturer_id
-                     JOIN product_variants pv    ON pv.id = moi.variant_id
+                     JOIN order_items oi         ON oi.id = moi.order_item_id
+                     JOIN product_variants pv    ON pv.id = oi.variant_id
                      WHERE pv.product_id = $1
                        AND mo.status NOT IN ('cancelled', 'completed', 'received')
                      GROUP BY mo.id, mo.mo_number, mo.status, mo.expected_delivery_date, s.company_name, mo.created_at
@@ -756,7 +760,8 @@ router.get('/:id/lifecycle', async (req, res) => {
                 pv.status,
                 u.name AS unit_name, u.abbreviation AS unit_abbreviation,
                 stats.avg_price, stats.min_price, stats.max_price,
-                stats.qty_sold, stats.revenue
+                stats.qty_sold, stats.revenue,
+                pcost.avg_purchase_cost, pcost.last_purchase_cost
              FROM product_variants pv
              LEFT JOIN units u ON u.id = pv.unit_id
              LEFT JOIN (
@@ -773,6 +778,31 @@ router.get('/:id/lifecycle', async (req, res) => {
                   AND o.grand_total IS NOT NULL
                 GROUP BY oi.variant_id
              ) stats ON stats.variant_id = pv.id
+             -- Real purchase cost per variant: MO items (via order_items), purchase
+             -- invoice items, and receiving voucher items. Used as margin basis when
+             -- product_variants.cost_price is zero/missing.
+             LEFT JOIN LATERAL (
+                SELECT
+                    AVG(t.unit_cost) AS avg_purchase_cost,
+                    (ARRAY_AGG(t.unit_cost ORDER BY t.created_at DESC))[1] AS last_purchase_cost
+                FROM (
+                    SELECT moi.unit_cost, mo.created_at
+                    FROM manufacturer_order_items moi
+                    JOIN manufacturer_orders mo ON mo.id = moi.manufacturer_order_id
+                    JOIN order_items oi2 ON oi2.id = moi.order_item_id
+                    WHERE oi2.variant_id = pv.id AND mo.status <> 'cancelled' AND moi.unit_cost > 0
+                    UNION ALL
+                    SELECT pii.unit_cost, pi.created_at
+                    FROM purchase_invoice_items pii
+                    JOIN purchase_invoices pi ON pi.id = pii.purchase_invoice_id
+                    WHERE pii.variant_id = pv.id AND pii.unit_cost > 0
+                    UNION ALL
+                    SELECT rvi.unit_cost, rv.created_at
+                    FROM receiving_voucher_items rvi
+                    JOIN receiving_vouchers rv ON rv.id = rvi.receiving_voucher_id
+                    WHERE rvi.variant_id = pv.id AND rvi.unit_cost > 0
+                ) t
+             ) pcost ON true
              WHERE pv.product_id = $1
              ORDER BY pv.created_at ASC`,
             [productId]

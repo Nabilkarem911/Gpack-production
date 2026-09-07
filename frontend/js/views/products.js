@@ -2060,16 +2060,25 @@
         if (!rows.length) { _plcEmpty('prices', 'لا توجد مقاسات/أسعار لهذا الصنف'); return; }
 
         const body = rows.map(r => {
-            const margin = r.selling_price && r.cost_price
-                ? (((parseFloat(r.selling_price) - parseFloat(r.cost_price)) / parseFloat(r.cost_price)) * 100).toFixed(1)
+            const sell     = parseFloat(r.selling_price) || 0;
+            const declared = parseFloat(r.cost_price)    || 0;
+            // Effective cost: declared cost_price, falling back to actual purchase
+            // costs recorded on purchase invoices / manufacturer orders / vouchers.
+            const effCost  = declared > 0
+                ? declared
+                : (parseFloat(r.last_purchase_cost) || parseFloat(r.avg_purchase_cost) || 0);
+            const margin = sell > 0 && effCost > 0
+                ? (((sell - effCost) / effCost) * 100).toFixed(1)
                 : null;
             const marginBadge = margin === null ? '—'
                 : `<span class="text-xs font-bold ${parseFloat(margin) >= 0 ? 'text-emerald-600' : 'text-red-600'}">${margin}%</span>`;
+            const purchaseCost = r.last_purchase_cost || r.avg_purchase_cost;
             return `<tr>
                 <td class="font-semibold">${_plcEsc(r.size_name)}</td>
                 <td class="font-mono">${_plcEsc(r.sku) || '—'}</td>
                 <td>${_plcEsc(r.unit_name || '—')}</td>
                 <td class="font-mono">${_plcFmt(r.cost_price)}</td>
+                <td class="font-mono">${_plcFmt(purchaseCost)}</td>
                 <td class="font-mono font-bold">${_plcFmt(r.selling_price)}</td>
                 <td>${marginBadge}</td>
                 <td class="font-mono">${_plcFmt(r.avg_price)}</td>
@@ -2084,7 +2093,8 @@
                 <table class="w-full plc-table">
                     <thead><tr>
                         <th>المقاس</th><th>SKU</th><th>الوحدة</th>
-                        <th>سعر التكلفة</th><th>سعر البيع</th><th>هامش الربح</th>
+                        <th>سعر التكلفة المسجل</th><th>تكلفة الشراء الفعلية</th>
+                        <th>سعر البيع</th><th>هامش الربح</th>
                         <th>متوسط سعر البيع</th><th>أدنى سعر</th><th>أعلى سعر</th><th>الحالة</th>
                     </tr></thead>
                     <tbody>${body}</tbody>
@@ -2092,7 +2102,7 @@
             </div>
             <p class="text-xs text-slate-400 mt-3">
                 <i class="fa-solid fa-circle-info ml-1"></i>
-                متوسط/أدنى/أعلى سعر البيع محسوبة من بنود الطلبات المؤكدة. لتعديل الأسعار استخدم «إدارة المقاسات» من تبويب المقاسات.
+                متوسط/أدنى/أعلى سعر البيع محسوبة من بنود الطلبات المؤكدة. «تكلفة الشراء الفعلية» محسوبة من أوامر المصنع وفواتير المشتريات وسندات الاستلام، وتُستخدم أساسًا لهامش الربح عند غياب سعر التكلفة المسجل. لتعديل الأسعار استخدم «إدارة المقاسات» من تبويب المقاسات.
             </p>`;
     }
 
