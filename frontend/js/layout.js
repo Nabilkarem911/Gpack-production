@@ -37,6 +37,7 @@ var NAV_ITEMS = [ // var allows re-declaration if script loads more than once in
     { view: 'clients',          label: 'العملاء',          icon: 'fa-users',         permission: 'clients'  }, // ✅ clients.html
     { view: 'client-profile',   label: 'ملف العميل',       icon: 'fa-id-card',       permission: 'clients', hidden: true }, // ✅ client-profile.html
     { view: 'sales-invoices',   label: 'فواتير المبيعات',  icon: 'fa-file-invoice-dollar', permission: 'sales'   }, // ✅ sales-invoices.html
+    { view: 'sales-returns',    label: 'مرتجع المبيعات',   icon: 'fa-rotate-left',       permission: 'sales'   }, // ✅ sales-returns.html
     { view: 'sales-invoice-detail', label: 'تفاصيل الفاتورة', icon: 'fa-file-invoice', permission: null, hidden: true }, // ✅ sales-invoice-detail.html
     { view: 'quotations',       label: 'عروض الأسعار',     icon: 'fa-file-lines',    permission: 'quotations' }, // ✅ quotations.html
     { view: 'production_orders', label: 'أوامر التشغيل',    icon: 'fa-industry',      permission: 'production_orders' }, // ✅ production_orders.html

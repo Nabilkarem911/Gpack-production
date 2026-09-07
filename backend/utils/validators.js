@@ -94,6 +94,18 @@ const invoiceUpdate = z.object({
     }).passthrough()).min(1, 'At least one item is required'),
 }).passthrough();
 
+const salesReturnCreate = z.object({
+    invoice_id: z.string().uuid(),
+    return_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    destination_warehouse_id: z.string().uuid(),
+    return_action: z.enum(['credit_note', 'cash_refund']).default('credit_note'),
+    notes: z.string().max(2000).optional().nullable(),
+    items: z.array(z.object({
+        invoice_item_id: z.string().uuid(),
+        quantity: z.coerce.number().positive(),
+    }).passthrough()).min(1),
+}).passthrough();
+
 const receiptVoucherCreate = z.object({
     client_id: z.string().uuid('Valid client_id is required'),
     client_type: z.enum(['client', 'franchise']).optional().default('client'),
@@ -780,6 +792,7 @@ module.exports = {
     orderCreate,
     invoiceCreate,
     invoiceUpdate,
+    salesReturnCreate,
     receiptVoucherCreate,
     productCreate,
     productUpdate,

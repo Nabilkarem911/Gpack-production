@@ -373,6 +373,7 @@ _mountRoute('/client-pantone-colors', authenticate, require('./routes/client_pan
 _mountRoute('/client-items',          authenticate, require('./routes/client_items'));
 _mountRoute('/vmi',                 authenticate, require('./routes/vmi'));
 _mountRoute('/invoices',            authenticate, require('./routes/invoices'));
+_mountRoute('/sales-returns',       authenticate, require('./routes/sales-returns'));
 _mountRoute('/purchase-invoices',   authenticate, require('./routes/purchase-invoices'));
 _mountRoute('/purchase-returns',    authenticate, require('./routes/purchase-returns'));
 _mountRoute('/receiving-vouchers', authenticate, require('./routes/receiving-vouchers'));

@@ -1,0 +1,54 @@
+<div class="p-6 space-y-6" dir="rtl">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+            <h1 class="text-2xl font-black text-slate-800">مرتجع المبيعات</h1>
+            <p class="text-sm text-slate-500 mt-1">إنشاء مرتجع جزئي أو كامل لفاتورة تم تسليمها فعليًا</p>
+        </div>
+        <button onclick="window.srOpenForm()" class="px-4 py-2.5 rounded-xl bg-brand-600 text-white text-sm font-bold hover:bg-brand-700">
+            <i class="fa-solid fa-plus ml-1"></i> إنشاء مرتجع
+        </button>
+    </div>
+
+    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+            <h2 class="font-bold text-slate-700">سجل المرتجعات</h2>
+            <button onclick="window.srLoadReturns()" class="text-slate-400 hover:text-brand-600"><i class="fa-solid fa-rotate"></i></button>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-slate-50 text-xs text-slate-500"><tr>
+                    <th class="p-3 text-right">رقم المرتجع</th><th class="p-3 text-right">الفاتورة</th><th class="p-3 text-right">العميل</th>
+                    <th class="p-3 text-right">التاريخ</th><th class="p-3 text-right">القيمة</th><th class="p-3 text-right">الإجراء</th><th class="p-3 text-right">الحالة</th>
+                </tr></thead>
+                <tbody id="sr-list"><tr><td colspan="7" class="p-8 text-center text-slate-400">جاري التحميل...</td></tr></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div id="sr-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-black/50" onclick="if(event.target===this) window.srCloseForm()">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] overflow-hidden flex flex-col" onclick="event.stopPropagation()" dir="rtl">
+        <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+            <div><h2 class="font-black text-slate-800">إنشاء مرتجع مبيعات</h2><p class="text-xs text-slate-400 mt-1">لا يمكن إنشاء المرتجع إلا بعد اكتمال سند التسليم</p></div>
+            <button onclick="window.srCloseForm()" class="text-slate-400 hover:text-red-500 text-xl"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <div class="p-6 overflow-y-auto space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div><label class="block text-xs font-bold text-slate-500 mb-1">بحث عن فاتورة مسلّمة</label><input id="sr-invoice-search" oninput="window.srSearchInvoices()" placeholder="رقم الفاتورة أو اسم العميل" class="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-brand-500"></div>
+                <div><label class="block text-xs font-bold text-slate-500 mb-1">الفاتورة</label><select id="sr-invoice" onchange="window.srInvoiceChanged(this.value)" class="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-brand-500"><option value="">— اختر فاتورة —</option></select></div>
+            </div>
+            <div id="sr-invoice-meta" class="hidden grid grid-cols-2 md:grid-cols-4 gap-2 text-sm"></div>
+            <div><label class="block text-xs font-bold text-slate-500 mb-1">مستودع الإرجاع</label><select id="sr-warehouse" class="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm"><option value="">— اختر المستودع —</option></select></div>
+            <div>
+                <label class="block text-xs font-bold text-slate-500 mb-2">أصناف المرتجع</label>
+                <div class="border border-slate-200 rounded-xl overflow-x-auto"><table class="w-full text-sm"><thead class="bg-slate-50 text-xs text-slate-500"><tr><th class="p-3 text-right">الصنف</th><th class="p-3 text-right">المقاس</th><th class="p-3 text-center">المتاح للمرتجع</th><th class="p-3 text-center">الكمية المرتجعة</th><th class="p-3 text-center">القيمة</th></tr></thead><tbody id="sr-items"><tr><td colspan="5" class="p-7 text-center text-slate-400">اختر الفاتورة أولاً</td></tr></tbody></table></div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div><label class="block text-xs font-bold text-slate-500 mb-1">طريقة الأثر المالي</label><select id="sr-action" class="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm"><option value="credit_note">إشعار دائن للعميل</option><option value="cash_refund">رد نقدي للعميل</option></select></div>
+                <div><label class="block text-xs font-bold text-slate-500 mb-1">ملاحظات</label><input id="sr-notes" class="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm" placeholder="سبب المرتجع أو أي ملاحظات"></div>
+            </div>
+            <div class="flex justify-end"><div class="bg-slate-50 rounded-xl px-5 py-3 text-sm"><span class="text-slate-500">إجمالي المرتجع: </span><strong id="sr-total" class="text-emerald-700">0.00</strong></div></div>
+        </div>
+        <div class="px-6 py-4 border-t border-slate-100 flex justify-end gap-2"><button onclick="window.srCloseForm()" class="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100">إلغاء</button><button id="sr-save" onclick="window.srSave()" class="px-5 py-2.5 rounded-xl bg-brand-600 text-white text-sm font-bold hover:bg-brand-700">اعتماد المرتجع</button></div>
+    </div>
+</div>

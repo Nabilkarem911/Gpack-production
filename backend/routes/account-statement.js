@@ -85,6 +85,22 @@ router.get('/client/:clientId', async (req, res) => {
                     AND avl.sub_account_id = $1
                     AND avl.credit > 0
                     ${dateFilter.replace(/date/g, 'av.voucher_date')}
+
+                UNION ALL
+
+                SELECT
+                    sr.id::text as transaction_id,
+                    sr.return_date as trans_date,
+                    'مرتجع مبيعات' as document_type,
+                    sr.return_number::text as document_number,
+                    0 as debit,
+                    sr.total_amount as credit,
+                    sr.status as status,
+                    COALESCE(sr.notes, '') as notes,
+                    sr.id as reference_id
+                FROM sales_returns sr
+                WHERE sr.client_id = $1 AND sr.status = 'completed'
+                    ${dateFilter.replace(/date/g, 'sr.return_date')}
             ) transactions
             ORDER BY trans_date ASC, document_number ASC
             LIMIT $${params.length + 1} OFFSET $${params.length + 2}
@@ -110,7 +126,7 @@ router.get('/client/:clientId', async (req, res) => {
             FROM (
                 SELECT 'invoice' as doc_type, grand_total as amount 
                 FROM invoices 
-                WHERE client_id = $1 AND source = 'orders' AND status = 'issued' ${dateFilter.replace(/date/g, 'invoice_date')}
+                WHERE client_id = $1 AND source IN ('orders', 'warehouse') AND status IN ('issued', 'paid', 'archived') ${dateFilter.replace(/date/g, 'invoice_date')}
                 UNION ALL
                 SELECT 'payment' as doc_type, avl.credit as amount
                 FROM accounting_vouchers av
@@ -121,6 +137,11 @@ router.get('/client/:clientId', async (req, res) => {
                     AND avl.sub_account_id = $1
                     AND avl.credit > 0
                     ${dateFilter.replace(/date/g, 'av.voucher_date')}
+                UNION ALL
+                SELECT 'payment' as doc_type, sr.total_amount as amount
+                FROM sales_returns sr
+                WHERE sr.client_id = $1 AND sr.status = 'completed'
+                    ${dateFilter.replace(/date/g, 'sr.return_date')}
             ) totals
         `, params);
 
