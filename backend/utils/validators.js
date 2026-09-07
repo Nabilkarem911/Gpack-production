@@ -43,6 +43,8 @@ const orderCreate = z.object({
     terms_conditions: z.any().optional().nullable(),
     custom_terms: z.any().optional().nullable(),
     down_payment_required: z.any().optional(),
+    discount_type: z.enum(['percent', 'fixed']).optional().default('percent'),
+    discount_value: z.coerce.number().min(0).optional().default(0),
     pricing_status: z.string().optional().nullable(),
     items: z.array(z.object({
         variant_id: z.string().uuid().optional(),
@@ -547,6 +549,8 @@ const orderUpdate = z.object({
     terms_conditions: z.any().optional().nullable(),
     custom_terms: z.any().optional().nullable(),
     down_payment_required: z.any().optional(),
+    discount_type: z.enum(['percent', 'fixed']).optional().default('percent'),
+    discount_value: z.coerce.number().min(0).optional().default(0),
     pricing_status: z.string().optional().nullable(),
     items: z.array(z.object({
         variant_id: z.string().uuid().optional(),

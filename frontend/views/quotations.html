@@ -495,6 +495,23 @@
                         <span class="text-slate-500 font-medium">المجموع قبل الضريبة</span>
                         <span id="quote-subtotal" class="font-bold text-slate-700 font-mono">0.00 ر.س</span>
                     </div>
+                    <div class="flex items-center justify-between gap-2 text-sm">
+                        <span class="text-slate-500 font-medium whitespace-nowrap">الخصم</span>
+                        <div class="flex items-center gap-1.5">
+                            <select id="quote-discount-type" onchange="window.calculateOrderTotals()"
+                                    class="px-2 py-1 bg-white border border-slate-200 rounded-lg text-xs text-slate-700 outline-none">
+                                <option value="percent">نسبة %</option>
+                                <option value="fixed">مبلغ ثابت</option>
+                            </select>
+                            <input type="number" id="quote-discount-value" min="0" step="0.01" value="0"
+                                   oninput="window.calculateOrderTotals()"
+                                   class="w-20 px-2 py-1 bg-white border border-slate-200 rounded-lg text-xs text-center outline-none focus:border-brand-500" />
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-between text-sm">
+                        <span class="text-slate-500 font-medium">قيمة الخصم</span>
+                        <span id="quote-discount-amount" class="font-bold text-red-600 font-mono">0.00 ر.س</span>
+                    </div>
                     <div class="flex items-center justify-between text-sm">
                         <span class="text-slate-500 font-medium">ضريبة القيمة المضافة (15%)</span>
                         <span id="quote-tax" class="font-bold text-slate-700 font-mono">0.00 ر.س</span>
@@ -983,6 +1000,10 @@
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; color:#64748b;">
                 <span style="font-size:8.5pt;">المجموع قبل الضريبة</span>
                 <span style="font-weight:600; font-family:monospace; direction:ltr;" id="print-subtotal"></span>
+            </div>
+            <div id="print-discount-section" style="display:none; justify-content:space-between; align-items:center; margin-bottom:6px; color:#dc2626;">
+                <span style="font-size:8.5pt;">الخصم</span>
+                <span style="font-weight:600; font-family:monospace; direction:ltr;" id="print-discount"></span>
             </div>
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; color:#64748b;">
                 <span style="font-size:8.5pt;">ضريبة القيمة المضافة (15%)</span>

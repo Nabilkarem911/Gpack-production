@@ -899,6 +899,11 @@
         const downPaymentEl = document.getElementById('quote-down-payment');
         if (downPaymentEl) downPaymentEl.value = '';
 
+        const discountTypeEl = document.getElementById('quote-discount-type');
+        if (discountTypeEl) discountTypeEl.value = 'percent';
+        const discountValueEl = document.getElementById('quote-discount-value');
+        if (discountValueEl) discountValueEl.value = '0';
+
         const dpAutoCheckbox = document.getElementById('quote-auto-down-payment');
         if (dpAutoCheckbox) dpAutoCheckbox.checked = true;
 
@@ -949,15 +954,23 @@
             subtotal += line;
         });
 
-        subtotal         = Math.round(subtotal * 100) / 100;
-        const tax        = Math.round(subtotal * VAT_RATE * 100) / 100;
-        const grandTotal = Math.round((subtotal + tax) * 100) / 100;
+        subtotal = Math.round(subtotal * 100) / 100;
+        const discountType = document.getElementById('quote-discount-type')?.value || 'percent';
+        const discountValue = Math.max(0, parseFloat(document.getElementById('quote-discount-value')?.value) || 0);
+        const discountAmount = discountType === 'fixed'
+            ? Math.min(discountValue, subtotal)
+            : Math.min(discountValue, 100) * subtotal / 100;
+        const netSubtotal = Math.round((subtotal - discountAmount) * 100) / 100;
+        const tax = Math.round(netSubtotal * VAT_RATE * 100) / 100;
+        const grandTotal = Math.round((netSubtotal + tax) * 100) / 100;
 
-        const subEl   = document.getElementById('quote-subtotal');
-        const taxEl   = document.getElementById('quote-tax');
-        const gtEl    = document.getElementById('quote-grand-total');
+        const subEl = document.getElementById('quote-subtotal');
+        const discountEl = document.getElementById('quote-discount-amount');
+        const taxEl = document.getElementById('quote-tax');
+        const gtEl = document.getElementById('quote-grand-total');
 
-        if (subEl)  subEl.textContent  = _fmt(subtotal);
+        if (subEl) subEl.textContent = _fmt(netSubtotal);
+        if (discountEl) discountEl.textContent = _fmt(discountAmount);
         if (taxEl)  taxEl.textContent  = _fmt(tax);
         if (gtEl)   gtEl.textContent   = _fmt(grandTotal);
 
@@ -1577,6 +1590,11 @@
             const downPaymentEl = document.getElementById('quote-down-payment');
             if (downPaymentEl) downPaymentEl.value = order.down_payment_required || '';
 
+            const discountTypeEl = document.getElementById('quote-discount-type');
+            if (discountTypeEl) discountTypeEl.value = order.discount_type || 'percent';
+            const discountValueEl = document.getElementById('quote-discount-value');
+            if (discountValueEl) discountValueEl.value = order.discount_value || 0;
+
             const dpAutoCheckbox = document.getElementById('quote-auto-down-payment');
             if (dpAutoCheckbox) dpAutoCheckbox.checked = false;
 
@@ -1902,9 +1920,13 @@
 
             // Totals
             const pSub = document.getElementById('print-subtotal');
+            const pDiscount = document.getElementById('print-discount');
+            const pDiscountSection = document.getElementById('print-discount-section');
             const pTax = document.getElementById('print-tax');
             const pGT  = document.getElementById('print-grand-total');
-            if (pSub) pSub.textContent = _fmt(order.subtotal);
+            if (pSub) pSub.textContent = _fmt(Number(order.subtotal || 0) + Number(order.discount_amount || 0));
+            if (pDiscount) pDiscount.textContent = `-${_fmt(order.discount_amount || 0)}`;
+            if (pDiscountSection) pDiscountSection.style.display = Number(order.discount_amount || 0) > 0 ? 'flex' : 'none';
             if (pTax) pTax.textContent = _fmt(order.tax_amount);
             if (pGT)  pGT.textContent  = _fmt(order.grand_total);
 
@@ -2047,6 +2069,8 @@
         const customTerms = editedTermsList.length > 0 ? editedTermsList : null;
 
         const downPayment = document.getElementById('quote-down-payment')?.value || null;
+        const discountType = document.getElementById('quote-discount-type')?.value || 'percent';
+        const discountValue = Math.max(0, parseFloat(document.getElementById('quote-discount-value')?.value) || 0);
 
         // Check if any item has zero price (needs manager pricing approval)
         const hasZeroPrice = items.some(item => !item.unit_price || item.unit_price === 0);
@@ -2060,6 +2084,8 @@
             client_notes:          notes    || null,
             internal_notes:        intNotes || null,
             down_payment_required: downPayment,
+            discount_type:         discountType,
+            discount_value:        discountValue,
             terms_conditions:      termsConditions,
             custom_terms:          customTerms,
             items,

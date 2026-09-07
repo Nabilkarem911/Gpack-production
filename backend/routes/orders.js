@@ -124,6 +124,9 @@ router.get('/', async (req, res) => {
                 o.subtotal,
                 o.tax_amount,
                 o.grand_total,
+                o.discount_type,
+                o.discount_value,
+                o.discount_amount,
                 o.paid_amount,
                 o.client_notes,
                 o.internal_notes,
@@ -661,6 +664,9 @@ router.get('/:id', async (req, res) => {
                 o.subtotal,
                 o.tax_amount,
                 o.grand_total,
+                o.discount_type,
+                o.discount_value,
+                o.discount_amount,
                 o.paid_amount,
                 o.client_notes,
                 o.internal_notes,
@@ -794,11 +800,17 @@ router.post('/', restrictWrite, validateBody(orderCreate), async (req, res) => {
         terms_conditions,
         custom_terms,
         down_payment_required,
+        discount_type,
+        discount_value,
         items,
     } = req.validatedBody;
 
     if (!client_id) {
         return res.status(400).json({ error: 'العميل مطلوب.' });
+    }
+
+    if ((discount_type || 'percent') === 'percent' && parseFloat(discount_value || 0) > 100) {
+        return res.status(400).json({ error: 'نسبة الخصم يجب ألا تتجاوز 100%.' });
     }
 
     const vatRate = await getVatRate();
@@ -860,9 +872,10 @@ router.post('/', restrictWrite, validateBody(orderCreate), async (req, res) => {
                 : valid_until || null;
 
             // ── Calculate totals server-side (Commercial only) ────────────────
-            let subtotal    = null;
-            let tax_amount  = null;
-            let grand_total = null;
+            let subtotal       = null;
+            let tax_amount     = null;
+            let grand_total    = null;
+            let discount_amount = null;
             let processedItems;
 
             if (isVmiOrder) {
@@ -873,17 +886,25 @@ router.post('/', restrictWrite, validateBody(orderCreate), async (req, res) => {
                 });
             } else {
                 // Commercial: Calculate financial totals
-                subtotal = 0;
+                const grossSubtotal = items.reduce((sum, item) => {
+                    const qty = parseFloat(item.quantity);
+                    const price = parseFloat(item.unit_price) || 0;
+                    return sum + Math.round(qty * price * 100) / 100;
+                }, 0);
+                const requestedDiscount = parseFloat(discount_value) || 0;
+                const discountType = discount_type || 'percent';
+                discount_amount = discountType === 'fixed'
+                    ? Math.min(requestedDiscount, grossSubtotal)
+                    : Math.min(grossSubtotal, grossSubtotal * Math.min(requestedDiscount, 100) / 100);
+                subtotal = Math.round((grossSubtotal - discount_amount) * 100) / 100;
+                tax_amount = Math.round(subtotal * vatRate * 100) / 100;
+                grand_total = Math.round((subtotal + tax_amount) * 100) / 100;
                 processedItems = items.map(item => {
-                    const qty      = parseFloat(item.quantity);
-                    const price    = parseFloat(item.unit_price) || 0;
+                    const qty = parseFloat(item.quantity);
+                    const price = parseFloat(item.unit_price) || 0;
                     const lineTotal = Math.round(qty * price * 100) / 100;
-                    subtotal += lineTotal;
                     return { ...item, qty, price, lineTotal };
                 });
-                subtotal            = Math.round(subtotal * 100) / 100;
-                tax_amount          = Math.round(subtotal * vatRate * 100) / 100;
-                grand_total         = Math.round((subtotal + tax_amount) * 100) / 100;
             }
 
             // ── Insert order ──────────────────────────────────────────────────
@@ -896,9 +917,10 @@ router.post('/', restrictWrite, validateBody(orderCreate), async (req, res) => {
             const orderInsert = await client.query(
                 `INSERT INTO orders
                     (client_id, status, pricing_status, order_date, valid_until,
-                     subtotal, tax_amount, grand_total,
+                     subtotal, tax_amount, grand_total, discount_type, discount_value, discount_amount,
                      client_notes, internal_notes, terms_conditions, custom_terms, down_payment_required, created_by)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12::jsonb, $13, $14)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+                         $13, $14, $15::jsonb, $16::jsonb, $17, $18)
                  RETURNING *`,
                 [
                     client_id,
@@ -909,6 +931,9 @@ router.post('/', restrictWrite, validateBody(orderCreate), async (req, res) => {
                     subtotal,    // NULL for VMI
                     tax_amount,  // NULL for VMI
                     grand_total, // NULL for VMI
+                    isVmiOrder ? 'percent' : (discount_type || 'percent'),
+                    isVmiOrder ? 0 : (parseFloat(discount_value) || 0),
+                    isVmiOrder ? 0 : Math.round(discount_amount * 100) / 100,
                     client_notes   || null,
                     internal_notes || null,
                     termsJson,
@@ -1053,8 +1078,14 @@ router.put('/:id', restrictEdit, validateBody(orderUpdate), async (req, res) => 
         terms_conditions,
         custom_terms,
         down_payment_required,
+        discount_type,
+        discount_value,
         items,
     } = req.validatedBody;
+
+    if ((discount_type || 'percent') === 'percent' && parseFloat(discount_value || 0) > 100) {
+        return res.status(400).json({ error: 'نسبة الخصم يجب ألا تتجاوز 100%.' });
+    }
 
     const vatRate = await getVatRate();
 
@@ -1062,7 +1093,8 @@ router.put('/:id', restrictEdit, validateBody(orderUpdate), async (req, res) => 
         const existing = await db.query(
             `SELECT id, status, created_by, client_id, order_date, valid_until,
                     client_notes, internal_notes, terms_conditions, custom_terms,
-                    down_payment_required, pricing_status, quotation_revision
+                    down_payment_required, discount_type, discount_value, discount_amount,
+                    pricing_status, quotation_revision
              FROM orders WHERE id = $1 LIMIT 1`,
             [id]
         );
@@ -1123,6 +1155,8 @@ router.put('/:id', restrictEdit, validateBody(orderUpdate), async (req, res) => 
             normalizeJson(order.terms_conditions) !== normalizeJson(Array.isArray(terms_conditions) ? terms_conditions : []),
             normalizeJson(order.custom_terms) !== normalizeJson(custom_terms || null),
             normalize(order.down_payment_required) !== normalize(down_payment_required ? parseFloat(down_payment_required) : null),
+            normalize(order.discount_type || 'percent') !== normalize(discount_type || 'percent'),
+            normalize(order.discount_value || 0) !== normalize(parseFloat(discount_value) || 0),
             req.validatedBody.pricing_status !== undefined && normalize(order.pricing_status) !== normalize(req.validatedBody.pricing_status || null),
             JSON.stringify(storedItems) !== JSON.stringify(incomingItems),
         ].some(Boolean);
@@ -1135,9 +1169,10 @@ router.put('/:id', restrictEdit, validateBody(orderUpdate), async (req, res) => 
             const isVmiOrder = (order.status === 'production' || status === 'production');
 
             // ── Recalculate totals (Commercial only) ─────────────────────────
-            let subtotal    = null;
-            let tax_amount  = null;
-            let grand_total = null;
+            let subtotal       = null;
+            let tax_amount     = null;
+            let grand_total    = null;
+            let discount_amount = null;
             let processedItems;
 
             if (isVmiOrder) {
@@ -1148,17 +1183,25 @@ router.put('/:id', restrictEdit, validateBody(orderUpdate), async (req, res) => 
                 });
             } else {
                 // Commercial: Calculate financial totals
-                subtotal = 0;
+                const grossSubtotal = items.reduce((sum, item) => {
+                    const qty = parseFloat(item.quantity);
+                    const price = parseFloat(item.unit_price) || 0;
+                    return sum + Math.round(qty * price * 100) / 100;
+                }, 0);
+                const requestedDiscount = parseFloat(discount_value) || 0;
+                const discountType = discount_type || 'percent';
+                discount_amount = discountType === 'fixed'
+                    ? Math.min(requestedDiscount, grossSubtotal)
+                    : Math.min(grossSubtotal, grossSubtotal * Math.min(requestedDiscount, 100) / 100);
+                subtotal = Math.round((grossSubtotal - discount_amount) * 100) / 100;
+                tax_amount = Math.round(subtotal * vatRate * 100) / 100;
+                grand_total = Math.round((subtotal + tax_amount) * 100) / 100;
                 processedItems = items.map(item => {
-                    const qty       = parseFloat(item.quantity);
-                    const price     = parseFloat(item.unit_price) || 0;
+                    const qty = parseFloat(item.quantity);
+                    const price = parseFloat(item.unit_price) || 0;
                     const lineTotal = Math.round(qty * price * 100) / 100;
-                    subtotal += lineTotal;
                     return { ...item, qty, price, lineTotal };
                 });
-                subtotal          = Math.round(subtotal * 100) / 100;
-                tax_amount        = Math.round(subtotal * vatRate * 100) / 100;
-                grand_total       = Math.round((subtotal + tax_amount) * 100) / 100;
             }
 
             // ── Update order header ──────────────────────────────────────────
@@ -1171,7 +1214,7 @@ router.put('/:id', restrictEdit, validateBody(orderUpdate), async (req, res) => 
                 `UPDATE orders SET
                     client_id             = $1,
                     status                = $2,
-                    pricing_status        = COALESCE($14, pricing_status),
+                    pricing_status        = COALESCE($17, pricing_status),
                     order_date            = $3,
                     valid_until           = $4,
                     subtotal              = $5,
@@ -1182,13 +1225,16 @@ router.put('/:id', restrictEdit, validateBody(orderUpdate), async (req, res) => 
                     terms_conditions      = $10::jsonb,
                     custom_terms          = $11::jsonb,
                     down_payment_required = $12,
+                    discount_type         = $13,
+                    discount_value       = $14,
+                    discount_amount      = $15,
                     client_response       = ${quoteChanged ? 'NULL' : 'client_response'},
                     rejection_reason      = ${quoteChanged ? 'NULL' : 'rejection_reason'},
                     deposit_receipt       = ${quoteChanged ? 'NULL' : 'deposit_receipt'},
                     responded_at          = ${quoteChanged ? 'NULL' : 'responded_at'},
                     quotation_revision    = ${quoteChanged ? 'quotation_revision + 1' : 'quotation_revision'},
                     updated_at            = NOW()
-                 WHERE id = $13`,
+                 WHERE id = $16`,
                 [
                     client_id,
                     status || 'quote',
@@ -1202,6 +1248,9 @@ router.put('/:id', restrictEdit, validateBody(orderUpdate), async (req, res) => 
                     termsJson,
                     customTermsJson,
                     isVmiOrder ? null : downPaymentAmount,
+                    isVmiOrder ? 'percent' : (discount_type || 'percent'),
+                    isVmiOrder ? 0 : (parseFloat(discount_value) || 0),
+                    isVmiOrder ? 0 : Math.round(discount_amount * 100) / 100,
                     id,
                     req.validatedBody.pricing_status || null,
                 ]
