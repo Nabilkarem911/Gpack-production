@@ -16,6 +16,7 @@
     let _readyOrders = [];
     let _orderItems = [];
     let _warehouseStock = [];
+    let _warehouseSelectedStockIds = new Set();
     let _warehouseClientSearchable = null;
     let _warehouseSearchable = null;
 
@@ -385,6 +386,7 @@
         const modal = _el('si-warehouse-modal');
         if (!modal) return;
         _warehouseStock = [];
+        _warehouseSelectedStockIds = new Set();
         modal.classList.remove('hidden');
         const stockSearch = _el('si-w-stock-search');
         if (stockSearch) { stockSearch.value = ''; stockSearch.disabled = true; }
@@ -401,12 +403,14 @@
     window.siCloseWarehouseInvoice = function() {
         _el('si-warehouse-modal')?.classList.add('hidden');
         _warehouseStock = [];
+        _warehouseSelectedStockIds = new Set();
     };
 
     window.siWarehouseClientChanged = async function() {
         const clientId = _el('si-w-client')?.value;
         const warehouseSel = _el('si-w-warehouse');
         _warehouseStock = [];
+        _warehouseSelectedStockIds = new Set();
         if (!warehouseSel) return;
         warehouseSel.innerHTML = '<option value="">— اختر المستودع —</option>';
         warehouseSel.disabled = !clientId;
@@ -444,16 +448,38 @@
         const search = (_el('si-w-stock-search')?.value || '').trim().toLowerCase();
         if (!body) return;
         if (!search) {
-            body.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-slate-400">اكتب اسم الصنف أو رقمه لعرض النتائج</td></tr>';
+            body.innerHTML = '<tr><td colspan="7" class="py-8 text-center text-slate-400">اكتب اسم الصنف أو رقمه لعرض النتائج</td></tr>';
             return;
         }
         const matches = _warehouseStock.filter(s => [s.product_name, s.product_sku, s.variant_sku, s.variant_size].some(v => String(v || '').toLowerCase().includes(search)));
         body.innerHTML = matches.length ? matches.map(s => {
             const i = _warehouseStock.indexOf(s);
-            return `<tr class="border-b border-slate-100" data-index="${i}"><td class="py-2 px-3 font-semibold">${esc(s.product_name || '—')}</td><td class="py-2 px-3 text-slate-500">${esc(s.variant_size || '—')}</td><td class="py-2 px-3 text-center font-bold text-emerald-600">${qty(s.available_qty)}</td><td class="py-2 px-3 text-center"><input class="si-w-qty w-24 border border-slate-200 rounded-lg px-2 py-1.5 text-center" type="number" min="0" max="${s.available_qty}" step="0.001" value="${s.selectedQty || 0}" data-index="${i}" oninput="window.siWarehouseCalc()"></td><td class="py-2 px-3 text-center"><input class="si-w-price w-28 border border-slate-200 rounded-lg px-2 py-1.5 text-center" type="number" min="0" step="0.01" value="${s.selectedPrice ?? Number(s.selling_price || 0).toFixed(2)}" data-index="${i}" oninput="window.siWarehouseCalc()"></td><td class="py-2 px-3 text-center font-mono" data-line-total="${i}">${fmt((s.selectedQty || 0) * (s.selectedPrice ?? s.selling_price ?? 0))}</td></tr>`;
-        }).join('') : '<tr><td colspan="6" class="py-8 text-center text-slate-400">لا توجد نتائج مطابقة</td></tr>';
+            const selected = _warehouseSelectedStockIds.has(s.stock_id);
+            const price = s.selectedPrice ?? Number(s.selling_price || 0).toFixed(2);
+            return `<tr class="border-b border-slate-100 ${selected ? 'bg-emerald-50/40' : ''}" data-index="${i}">
+                <td class="py-2 px-3 font-semibold">${esc(s.product_name || '—')}</td>
+                <td class="py-2 px-3 text-slate-500">${esc(s.variant_size || '—')}</td>
+                <td class="py-2 px-3 text-center font-bold text-emerald-600">${qty(s.available_qty)}</td>
+                <td class="py-2 px-3 text-center"><input class="si-w-qty w-24 border border-slate-200 rounded-lg px-2 py-1.5 text-center" type="number" min="0" max="${s.available_qty}" step="0.001" value="${s.selectedQty || 0}" data-index="${i}" oninput="window.siWarehouseCalc()" ${selected ? '' : 'disabled'}></td>
+                <td class="py-2 px-3 text-center"><input class="si-w-price w-28 border border-slate-200 rounded-lg px-2 py-1.5 text-center" type="number" min="0" step="0.01" value="${price}" data-index="${i}" oninput="window.siWarehouseCalc()" ${selected ? '' : 'disabled'}></td>
+                <td class="py-2 px-3 text-center font-mono" data-line-total="${i}">${fmt((s.selectedQty || 0) * (s.selectedPrice ?? s.selling_price ?? 0))}</td>
+                <td class="py-2 px-3 text-center"><button type="button" class="px-2.5 py-1 rounded-lg text-xs font-bold ${selected ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'bg-brand-50 text-brand-700 hover:bg-brand-100'}" onclick="window.siToggleWarehouseStock('${esc(s.stock_id)}')">${selected ? 'إلغاء الاختيار' : 'اختيار'}</button></td>
+            </tr>`;
+        }).join('') : '<tr><td colspan="7" class="py-8 text-center text-slate-400">لا توجد نتائج مطابقة</td></tr>';
         window.siWarehouseCalc();
     }
+
+    window.siToggleWarehouseStock = function(stockId) {
+        const stock = _warehouseStock.find(item => item.stock_id === stockId);
+        if (!stock) return;
+        if (_warehouseSelectedStockIds.has(stockId)) {
+            _warehouseSelectedStockIds.delete(stockId);
+            stock.selectedQty = 0;
+        } else {
+            _warehouseSelectedStockIds.add(stockId);
+        }
+        _renderWarehouseStock();
+    };
 
     window.siWarehouseStockSearch = function() { _renderWarehouseStock(); };
 
@@ -463,6 +489,7 @@
         const body = _el('si-w-stock-items');
         const stockSearch = _el('si-w-stock-search');
         _warehouseStock = [];
+        _warehouseSelectedStockIds = new Set();
         if (stockSearch) { stockSearch.value = ''; stockSearch.disabled = !warehouseId; }
         if (!clientId || !warehouseId) {
             body.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-slate-400">اختر العميل والمستودع أولاً</td></tr>';
@@ -502,7 +529,7 @@
         const clientId = _el('si-w-client')?.value;
         const warehouseId = _el('si-w-warehouse')?.value;
         const items = _warehouseStock
-            .filter(stock => parseFloat(stock.selectedQty || 0) > 0)
+            .filter(stock => _warehouseSelectedStockIds.has(stock.stock_id) && parseFloat(stock.selectedQty || 0) > 0)
             .map(stock => ({
                 stock_id: stock.stock_id,
                 variant_id: stock.variant_id,
