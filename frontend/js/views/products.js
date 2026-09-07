@@ -84,8 +84,24 @@
             }
         });
         if (_unitSelect) _unitSelect.clear();
+        _syncSearchableSelect('product-category');
 
         _clearFormError();
+    }
+
+    // ==========================================================================
+    // _syncSearchableSelect(selectId)
+    // makeSelectSearchable hides the <select> and shows a companion <input>.
+    // Its MutationObserver only watches option nodes — programmatic .value
+    // assignments do NOT update the visible text, leaving stale/empty labels.
+    // This helper syncs the companion input with the selected option's text.
+    // ==========================================================================
+    function _syncSearchableSelect(selectId) {
+        const sel   = document.getElementById(selectId);
+        const input = document.getElementById(selectId + '_search');
+        if (!sel || !input) return;
+        const opt = sel.options[sel.selectedIndex];
+        input.value = (opt && opt.value) ? opt.textContent : '';
     }
 
     // ==========================================================================
@@ -308,6 +324,7 @@
             document.getElementById('product-description').value = product.description || '';
             document.getElementById('product-status').value      = product.status      || 'active';
             document.getElementById('product-category').value    = product.category_id || '';
+            _syncSearchableSelect('product-category');
         } else {
             if (title)     title.textContent     = 'إضافة منتج جديد';
             if (submitBtn) submitBtn.textContent  = 'إضافة المنتج';
