@@ -176,6 +176,12 @@
                         <option value="">— الحساب الفرعي —</option>
                     </select>
                 </div>
+                <div id="je-line-party-wrap-${idx}" class="hidden mt-1">
+                    <select id="je-line-party-${idx}" onchange="window.jePartyChanged(${idx})"
+                            class="w-full px-2 py-2 border border-emerald-200 bg-emerald-50 rounded-lg text-xs focus:border-brand-500 outline-none">
+                        <option value="">— اختر العميل / المورد —</option>
+                    </select>
+                </div>
             </td>
             <td class="py-2 px-3 hidden sm:table-cell">
                 <input id="je-line-desc-${idx}" type="text" placeholder="بيان السطر..."
@@ -208,9 +214,13 @@
         if (!parentSel || !childWrap || !childSel) return;
 
         const parentId = parentSel.value;
+        const partyWrap = _el(`je-line-party-wrap-${idx}`);
+        const partySel = _el(`je-line-party-${idx}`);
         if (!parentId) {
             childWrap.classList.add('hidden');
+            partyWrap?.classList.add('hidden');
             childSel.innerHTML = '<option value="">— الحساب الفرعي —</option>';
+            if (partySel) partySel.innerHTML = '<option value="">— اختر العميل / المورد —</option>';
             delete childSel.dataset.accountId;
             delete childSel.dataset.subAccountType;
             delete childSel.dataset.subAccountId;
@@ -221,6 +231,7 @@
         const children = _childrenOf(parentId);
         if (children.length === 0) {
             childWrap.classList.add('hidden');
+            partyWrap?.classList.add('hidden');
             childSel.innerHTML = '<option value="">— الحساب الفرعي —</option>';
             delete childSel.dataset.accountId;
             delete childSel.dataset.subAccountType;
@@ -241,15 +252,46 @@
         const childSel = _el(`je-line-child-${idx}`);
         if (!childSel) return;
         const opt = childSel.options[childSel.selectedIndex];
+        const partyWrap = _el(`je-line-party-wrap-${idx}`);
         if (opt && opt.value) {
             childSel.dataset.accountId = opt.value;
             childSel.dataset.subAccountType = opt.dataset.subType || '';
             childSel.dataset.subAccountId = opt.dataset.subId || '';
+            if (opt.dataset.subId) partyWrap?.classList.add('hidden');
+            else _renderJournalPartySelector(idx, opt.value);
         } else {
+            partyWrap?.classList.add('hidden');
             delete childSel.dataset.accountId;
             delete childSel.dataset.subAccountType;
             delete childSel.dataset.subAccountId;
         }
+        window.jeRecalc();
+    };
+
+    function _renderJournalPartySelector(idx, accountId) {
+        const wrap = _el(`je-line-party-wrap-${idx}`);
+        const select = _el(`je-line-party-${idx}`);
+        const parties = _treeChildren.filter(c => c.parent_id === accountId && (c.sub_account_type === 'client' || c.sub_account_type === 'supplier'));
+        if (!wrap || !select || !parties.length) {
+            wrap?.classList.add('hidden');
+            return;
+        }
+        wrap.classList.remove('hidden');
+        select.innerHTML = '<option value="">— اختر العميل / المورد —</option>' + parties.map(p =>
+            `<option value="${p.sub_account_id}" data-type="${p.sub_account_type}">${p.sub_account_type === 'client' ? 'عميل' : 'مورد'}: ${esc(p.name)}</option>`
+        ).join('');
+        delete select.dataset.accountId;
+        delete select.dataset.subAccountType;
+        delete select.dataset.subAccountId;
+    }
+
+    window.jePartyChanged = function (idx) {
+        const party = _el(`je-line-party-${idx}`);
+        const child = _el(`je-line-child-${idx}`);
+        const opt = party?.options[party.selectedIndex];
+        if (!party || !child) return;
+        child.dataset.subAccountId = party.value || '';
+        child.dataset.subAccountType = opt?.dataset.type || '';
         window.jeRecalc();
     };
 
@@ -327,6 +369,11 @@
             let sub_account_id   = null;
 
             if (childSel && childWrap && !childWrap.classList.contains('hidden') && childSel.value) {
+                const partyWrap = _el(`je-line-party-wrap-${i}`);
+                if (partyWrap && !partyWrap.classList.contains('hidden') && !childSel.dataset.subAccountId) {
+                    window.showToast(`السطر ${i}: اختر العميل أو المورد`, 'error');
+                    return;
+                }
                 // Child selected — use child account as the line account
                 account_id       = childSel.value;
                 sub_account_type = childSel.dataset.subAccountType || null;

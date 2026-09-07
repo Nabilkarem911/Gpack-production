@@ -94,6 +94,11 @@
 
         // Amount preview update
         _el('rv-amount').addEventListener('input', _updatePreview);
+        _el('rv-party-select')?.addEventListener('change', (e) => {
+            const option = e.target.options[e.target.selectedIndex];
+            _el('rv-client-id').value = e.target.value || '';
+            _el('rv-client-type').value = option?.dataset.type || '';
+        });
 
         // Payment method change → filter accounts
         _el('rv-payment-method').addEventListener('change', (e) => {
@@ -308,7 +313,24 @@
 
         const children = _accountsTree.children.filter(c => c.parent_id === id);
         _renderChildList(children);
+        _renderPartySelector(children);
     };
+
+    function _renderPartySelector(children) {
+        const wrap = _el('rv-party-wrap');
+        const select = _el('rv-party-select');
+        if (!wrap || !select) return;
+        const parties = children.filter(c => c.sub_account_type === 'client' || c.sub_account_type === 'supplier');
+        if (!parties.length) {
+            wrap.classList.add('hidden');
+            select.innerHTML = '<option value="">— اختر العميل أو المورد —</option>';
+            return;
+        }
+        wrap.classList.remove('hidden');
+        select.innerHTML = '<option value="">— اختر العميل أو المورد —</option>' + parties.map(p =>
+            `<option value="${esc(p.sub_account_id)}" data-type="${esc(p.sub_account_type)}">${p.sub_account_type === 'client' ? 'عميل' : 'مورد'}: ${esc(p.name)}</option>`
+        ).join('');
+    }
 
     // ── Child Account Dropdown ─────────────────────────────────────────────────
     window.rvToggleChildDropdown = function() {
@@ -363,9 +385,17 @@
         _el('rv-child-label').classList.add('text-slate-700');
         _el('rv-child-dropdown').classList.add('hidden');
 
-        // Set hidden fields for submission
-        _el('rv-client-id').value = subAccountId || id;
-        _el('rv-client-type').value = subAccountType || 'account';
+        // Set hidden fields for submission. Control accounts require a third-level party.
+        const partyWrap = _el('rv-party-wrap');
+        if (subAccountId) {
+            partyWrap?.classList.add('hidden');
+            _el('rv-client-id').value = subAccountId;
+            _el('rv-client-type').value = subAccountType;
+        } else {
+            _el('rv-client-id').value = '';
+            _el('rv-client-type').value = '';
+            _renderPartySelector(_accountsTree.children.filter(c => c.parent_id === id));
+        }
     };
 
     // ── Preview Update ────────────────────────────────────────────────────────
@@ -435,6 +465,8 @@
         _el('rv-child-label').classList.add('text-slate-400');
         _el('rv-child-label').classList.remove('text-slate-700');
         _el('rv-child-dropdown').classList.add('hidden');
+        _el('rv-party-wrap')?.classList.add('hidden');
+        _el('rv-party-select').innerHTML = '<option value="">— اختر العميل أو المورد —</option>';
         _el('rv-client-id').value = '';
         _el('rv-client-type').value = '';
         _el('rv-amount').value      = '';

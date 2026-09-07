@@ -2,7 +2,15 @@
 // Tests: utils/validators.js  (D-001, AP-003)
 // =============================================================================
 
-const { clientCreate, orderCreate, invoiceCreate, validateBody } = require('../../utils/validators');
+const {
+    clientCreate,
+    orderCreate,
+    invoiceCreate,
+    receiptVoucherCreate,
+    paymentVoucherCreate,
+    journalEntryCreate,
+    validateBody,
+} = require('../../utils/validators');
 
 describe('validators', () => {
     describe('clientCreate schema', () => {
@@ -72,6 +80,46 @@ describe('validators', () => {
                 items: [{ variant_id: '550e8400-e29b-41d4-a716-446655440001', quantity: 1, unit_price: 1 }],
             });
             expect(result.success).toBe(false);
+        });
+    });
+
+    describe('accounting party linkage schemas', () => {
+        const uuid = '550e8400-e29b-41d4-a716-446655440000';
+
+        test('receipt accepts supplier as the selected third-level party', () => {
+            expect(receiptVoucherCreate.safeParse({
+                client_id: uuid,
+                client_type: 'supplier',
+                amount: 100,
+                voucher_date: '2026-09-07',
+                cash_account_id: uuid,
+            }).success).toBe(true);
+        });
+
+        test('payment accepts client and supplier payees', () => {
+            for (const payee_type of ['client', 'supplier']) {
+                expect(paymentVoucherCreate.safeParse({
+                    payee_type,
+                    payee_id: uuid,
+                    amount: 100,
+                    voucher_date: '2026-09-07',
+                    cash_account_id: uuid,
+                }).success).toBe(true);
+            }
+        });
+
+        test('journal keeps the client/supplier sub-ledger fields', () => {
+            const result = journalEntryCreate.safeParse({
+                voucher_date: '2026-09-07',
+                description: 'اختبار ربط حساب تفصيلي',
+                lines: [
+                    { account_id: uuid, debit: 100, sub_account_type: 'client', sub_account_id: uuid },
+                    { account_id: uuid, credit: 100 },
+                ],
+            });
+            expect(result.success).toBe(true);
+            expect(result.data.lines[0].sub_account_type).toBe('client');
+            expect(result.data.lines[0].sub_account_id).toBe(uuid);
         });
     });
 

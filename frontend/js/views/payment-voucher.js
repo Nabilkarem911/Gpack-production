@@ -87,6 +87,17 @@
         _el('pv-modal-cancel').addEventListener('click', _closeNewModal);
         _el('pv-modal-submit').addEventListener('click', _submitVoucher);
         _el('pv-amount').addEventListener('input', _updatePreview);
+        _el('pv-party-select')?.addEventListener('change', (e) => {
+            const option = e.target.options[e.target.selectedIndex];
+            _el('pv-supplier-id').value = e.target.value || '';
+            _el('pv-payee-type').value = option?.dataset.type || '';
+            if (e.target.value && option?.dataset.type === 'supplier') {
+                _loadSupplierInvoices(e.target.value);
+            } else {
+                _el('pv-invoices-section')?.classList.add('hidden');
+                _el('pv-purchase-invoice-id').value = '';
+            }
+        });
 
         // Payment method change → filter accounts
         _el('pv-payment-method').addEventListener('change', (e) => {
@@ -273,7 +284,24 @@
 
         const children = _accountsTree.children.filter(c => c.parent_id === id);
         _renderChildList(children);
+        _renderPartySelector(children);
     };
+
+    function _renderPartySelector(children) {
+        const wrap = _el('pv-party-wrap');
+        const select = _el('pv-party-select');
+        if (!wrap || !select) return;
+        const parties = children.filter(c => c.sub_account_type === 'client' || c.sub_account_type === 'supplier');
+        if (!parties.length) {
+            wrap.classList.add('hidden');
+            select.innerHTML = '<option value="">— اختر العميل أو المورد —</option>';
+            return;
+        }
+        wrap.classList.remove('hidden');
+        select.innerHTML = '<option value="">— اختر العميل أو المورد —</option>' + parties.map(p =>
+            `<option value="${esc(p.sub_account_id)}" data-type="${esc(p.sub_account_type)}">${p.sub_account_type === 'client' ? 'عميل' : 'مورد'}: ${esc(p.name)}</option>`
+        ).join('');
+    }
 
     // ── Child Account Dropdown ─────────────────────────────────────────────────
     window.pvToggleChildDropdown = function() {
@@ -328,9 +356,16 @@
         _el('pv-child-label').classList.add('text-slate-700');
         _el('pv-child-dropdown').classList.add('hidden');
 
-        // Set hidden fields for submission
-        _el('pv-supplier-id').value = subAccountId || id;
-        _el('pv-payee-type').value = subAccountType || 'account';
+        // Set hidden fields for submission. Control accounts require a third-level party.
+        if (subAccountId) {
+            _el('pv-party-wrap')?.classList.add('hidden');
+            _el('pv-supplier-id').value = subAccountId;
+            _el('pv-payee-type').value = subAccountType;
+        } else {
+            _el('pv-supplier-id').value = '';
+            _el('pv-payee-type').value = '';
+            _renderPartySelector(_accountsTree.children.filter(c => c.parent_id === id));
+        }
 
         // Update preview DR label based on payee type
         if (subAccountType === 'client') {
@@ -433,6 +468,8 @@
         _el('pv-child-label').classList.add('text-slate-400');
         _el('pv-child-label').classList.remove('text-slate-700');
         _el('pv-child-dropdown').classList.add('hidden');
+        _el('pv-party-wrap')?.classList.add('hidden');
+        _el('pv-party-select').innerHTML = '<option value="">— اختر العميل أو المورد —</option>';
         _el('pv-supplier-id').value = '';
         _el('pv-payee-type').value = '';
         _el('pv-invoices-section').classList.add('hidden');

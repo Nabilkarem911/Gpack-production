@@ -108,9 +108,9 @@ const salesReturnCreate = z.object({
 
 const receiptVoucherCreate = z.object({
     client_id: z.string().uuid('Valid client_id is required'),
-    client_type: z.enum(['client', 'franchise']).optional().default('client'),
+    client_type: z.enum(['client', 'franchise', 'supplier', 'account']).optional().default('client'),
     amount: z.coerce.number().positive('Amount must be positive'),
-    payment_method: z.enum(['cash', 'bank_transfer', 'check', 'credit_card']).optional().default('cash'),
+    payment_method: z.enum(['cash', 'bank_transfer', 'check', 'cheque', 'credit_card']).optional().default('cash'),
     voucher_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     description: z.string().max(500).optional().nullable(),
     reference_number: z.string().max(100).optional().nullable(),
@@ -329,7 +329,7 @@ const paymentVoucherCreate = z.object({
     supplier_id: z.string().uuid().optional().nullable(),
     client_id: z.string().uuid().optional().nullable(),
     amount: z.coerce.number().positive('Amount must be positive'),
-    payment_method: z.enum(['cash', 'bank_transfer', 'check', 'credit_card']).optional().default('cash'),
+    payment_method: z.enum(['cash', 'bank_transfer', 'check', 'cheque', 'credit_card']).optional().default('cash'),
     voucher_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     description: z.string().max(500).optional().nullable(),
     reference_number: z.string().max(100).optional().nullable(),
@@ -353,6 +353,8 @@ const journalEntryCreate = z.object({
         debit: z.coerce.number().min(0).optional().default(0),
         credit: z.coerce.number().min(0).optional().default(0),
         description: z.string().max(500).optional().nullable(),
+        sub_account_type: z.enum(['client', 'supplier']).optional().nullable(),
+        sub_account_id: z.string().uuid().optional().nullable(),
     })).min(2, 'At least two lines are required for double-entry'),
 });
 

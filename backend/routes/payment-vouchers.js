@@ -290,7 +290,7 @@ router.post('/', restrictWrite, validateBody(paymentVoucherCreate), async (req, 
             await txClient.query(`
                 INSERT INTO accounting_voucher_lines (voucher_id, account_id, debit, credit, sub_account_type, sub_account_id, description)
                 VALUES ($1, $2, 0, $3, $4, $5, $6)
-            `, [voucherId, cash_account_id, parsedAmount, payee_type, payee_id, `دفع لـ ${payeeName}`]);
+            `, [voucherId, cash_account_id, parsedAmount, null, null, `دفع لـ ${payeeName}`]);
 
             // ── Update purchase invoice paid_amount + status ─────────────────
             if (purchase_invoice_id) {

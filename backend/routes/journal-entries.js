@@ -169,8 +169,32 @@ router.post('/', restrictWrite, validateBody(journalEntryCreate), async (req, re
 
         const voucherId = vRes.rows[0].id;
 
-        // 2. Insert lines
+        // 2. Validate and insert lines. Client/supplier sub-ledgers must use
+        // their respective control accounts, never an unrelated account.
         for (const l of lines) {
+            if (l.sub_account_type && !l.sub_account_id) {
+                const err = new Error('الحساب التفصيلي يتطلب معرف العميل أو المورد.');
+                err.statusCode = 400;
+                throw err;
+            }
+            if (l.sub_account_id) {
+                const entityTable = l.sub_account_type === 'client' ? 'clients' : 'suppliers';
+                const entityRes = await client.query(`SELECT id FROM ${entityTable} WHERE id = $1`, [l.sub_account_id]);
+                if (!entityRes.rows.length) {
+                    const err = new Error('الحساب التفصيلي غير موجود.');
+                    err.statusCode = 400;
+                    throw err;
+                }
+                const expectedCode = l.sub_account_type === 'client' ? '1300' : '2100';
+                const accountRes = await client.query(`
+                    SELECT id FROM accounts WHERE id = $1 AND code = $2 AND is_active = true
+                `, [l.account_id, expectedCode]);
+                if (!accountRes.rows.length) {
+                    const err = new Error(`الحساب التفصيلي يجب أن يرتبط بحساب ${expectedCode}.`);
+                    err.statusCode = 400;
+                    throw err;
+                }
+            }
             await client.query(`
                 INSERT INTO accounting_voucher_lines
                     (voucher_id, account_id, debit, credit, description, sub_account_type, sub_account_id)
@@ -192,7 +216,7 @@ router.post('/', restrictWrite, validateBody(journalEntryCreate), async (req, re
     } catch (err) {
         await client.query('ROLLBACK');
         console.error('[JournalEntries] POST / error:', err.message);
-        return res.status(500).json({ error: 'Internal server error.' });
+        return res.status(err.statusCode || 500).json({ error: err.statusCode ? err.message : 'Internal server error.' });
     } finally {
         client.release();
     }

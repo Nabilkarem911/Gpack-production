@@ -37,6 +37,13 @@
         } catch (err) {
             console.error('Failed to load accounts tree:', err);
         }
+
+        _el('as-party-select')?.addEventListener('change', (e) => {
+            const option = e.target.options[e.target.selectedIndex];
+            if (!_selectedChild) return;
+            _selectedChild.subAccountId = e.target.value || null;
+            _selectedChild.subAccountType = option?.dataset.type || null;
+        });
     }
 
     // ── Parent Dropdown ────────────────────────────────────────────────────────
@@ -93,7 +100,24 @@
         // Filter children for this parent
         const children = _accountsTree.children.filter(c => c.parent_id === id);
         _renderChildList(children);
+        _renderPartySelector(children);
     };
+
+    function _renderPartySelector(children) {
+        const wrap = _el('as-party-wrap');
+        const select = _el('as-party-select');
+        if (!wrap || !select) return;
+        const parties = children.filter(c => c.sub_account_type === 'client' || c.sub_account_type === 'supplier');
+        if (!parties.length) {
+            wrap.classList.add('hidden');
+            select.innerHTML = '<option value="">— اختر العميل أو المورد —</option>';
+            return;
+        }
+        wrap.classList.remove('hidden');
+        select.innerHTML = '<option value="">— اختر العميل أو المورد —</option>' + parties.map(p =>
+            `<option value="${esc(p.sub_account_id)}" data-type="${esc(p.sub_account_type)}">${p.sub_account_type === 'client' ? 'عميل' : 'مورد'}: ${esc(p.name)}</option>`
+        ).join('');
+    }
 
     // ── Child Dropdown ─────────────────────────────────────────────────────────
     window.asToggleChildDropdown = function() {
@@ -156,9 +180,15 @@
         if (id === 'all') {
             _selectedChild = { id: _selectedParent.id, code: _selectedParent.code, name: _selectedParent.name, isParent: true, subAccountId: null, subAccountType: null };
             _el('as-child-label').textContent = 'كل الحسابات الفرعية';
+            _el('as-party-wrap')?.classList.add('hidden');
         } else {
             _selectedChild = { id, code, name, isParent: false, subAccountId: subAccountId || null, subAccountType: subAccountType || null };
             _el('as-child-label').textContent = `${code} — ${name}`;
+            if (subAccountId) {
+                _el('as-party-wrap')?.classList.add('hidden');
+            } else {
+                _renderPartySelector(_accountsTree.children.filter(c => c.parent_id === id));
+            }
         }
         _el('as-child-label').classList.remove('text-slate-400');
         _el('as-child-label').classList.add('text-slate-700');
@@ -169,6 +199,10 @@
     window.asLoadStatement = async function() {
         if (!_selectedChild) {
             alert('الرجاء اختيار الحساب الفرعي أولاً');
+            return;
+        }
+        if (!_el('as-party-wrap')?.classList.contains('hidden') && !_selectedChild.subAccountId) {
+            alert('الرجاء اختيار العميل أو المورد أولاً');
             return;
         }
 

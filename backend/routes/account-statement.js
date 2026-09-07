@@ -81,6 +81,7 @@ router.get('/client/:clientId', async (req, res) => {
                 JOIN accounting_voucher_lines avl ON avl.voucher_id = av.id
                 WHERE av.voucher_type = 'receipt' 
                     AND av.status = 'posted'
+                    AND avl.account_id = (SELECT id FROM accounts WHERE code = '1300' LIMIT 1)
                     AND avl.sub_account_type = 'client'
                     AND avl.sub_account_id = $1
                     AND avl.credit > 0
@@ -101,6 +102,28 @@ router.get('/client/:clientId', async (req, res) => {
                 FROM sales_returns sr
                 WHERE sr.client_id = $1 AND sr.status = 'completed'
                     ${dateFilter.replace(/date/g, 'sr.return_date')}
+
+                UNION ALL
+
+                -- Manual journal lines posted directly to this client's sub-ledger
+                SELECT
+                    av.id::text as transaction_id,
+                    av.voucher_date as trans_date,
+                    'قيد يومية' as document_type,
+                    av.voucher_number::text as document_number,
+                    avl.debit as debit,
+                    avl.credit as credit,
+                    av.status as status,
+                    COALESCE(avl.description, av.description, '') as notes,
+                    av.id as reference_id
+                FROM accounting_vouchers av
+                JOIN accounting_voucher_lines avl ON avl.voucher_id = av.id
+                WHERE av.voucher_type = 'journal'
+                    AND av.status = 'posted'
+                    AND avl.account_id = (SELECT id FROM accounts WHERE code = '1300' LIMIT 1)
+                    AND avl.sub_account_type = 'client'
+                    AND avl.sub_account_id = $1
+                    ${dateFilter.replace(/date/g, 'av.voucher_date')}
             ) transactions
             ORDER BY trans_date ASC, document_number ASC
             LIMIT $${params.length + 1} OFFSET $${params.length + 2}
@@ -133,6 +156,7 @@ router.get('/client/:clientId', async (req, res) => {
                 JOIN accounting_voucher_lines avl ON avl.voucher_id = av.id
                 WHERE av.voucher_type = 'receipt' 
                     AND av.status = 'posted'
+                    AND avl.account_id = (SELECT id FROM accounts WHERE code = '1300' LIMIT 1)
                     AND avl.sub_account_type = 'client'
                     AND avl.sub_account_id = $1
                     AND avl.credit > 0
@@ -142,6 +166,24 @@ router.get('/client/:clientId', async (req, res) => {
                 FROM sales_returns sr
                 WHERE sr.client_id = $1 AND sr.status = 'completed'
                     ${dateFilter.replace(/date/g, 'sr.return_date')}
+                UNION ALL
+                SELECT 'invoice' as doc_type, avl.debit as amount
+                FROM accounting_vouchers av
+                JOIN accounting_voucher_lines avl ON avl.voucher_id = av.id
+                WHERE av.voucher_type = 'journal' AND av.status = 'posted'
+                    AND avl.account_id = (SELECT id FROM accounts WHERE code = '1300' LIMIT 1)
+                    AND avl.sub_account_type = 'client' AND avl.sub_account_id = $1
+                    AND avl.debit > 0
+                    ${dateFilter.replace(/date/g, 'av.voucher_date')}
+                UNION ALL
+                SELECT 'payment' as doc_type, avl.credit as amount
+                FROM accounting_vouchers av
+                JOIN accounting_voucher_lines avl ON avl.voucher_id = av.id
+                WHERE av.voucher_type = 'journal' AND av.status = 'posted'
+                    AND avl.account_id = (SELECT id FROM accounts WHERE code = '1300' LIMIT 1)
+                    AND avl.sub_account_type = 'client' AND avl.sub_account_id = $1
+                    AND avl.credit > 0
+                    ${dateFilter.replace(/date/g, 'av.voucher_date')}
             ) totals
         `, params);
 
@@ -233,9 +275,32 @@ router.get('/supplier/:supplierId', async (req, res) => {
                 JOIN accounting_voucher_lines avl ON avl.voucher_id = av.id
                 WHERE av.voucher_type = 'payment' 
                     AND av.status = 'posted'
+                    AND avl.account_id = (SELECT id FROM accounts WHERE code = '2100' LIMIT 1)
                     AND avl.sub_account_type = 'supplier'
                     AND avl.sub_account_id = $1
                     AND avl.debit > 0
+                    ${dateFilter.replace(/date/g, 'av.voucher_date')}
+
+                UNION ALL
+
+                -- Manual journal lines posted directly to this supplier's sub-ledger
+                SELECT
+                    av.id::text as transaction_id,
+                    av.voucher_date as trans_date,
+                    'قيد يومية' as document_type,
+                    av.voucher_number::text as document_number,
+                    avl.debit as debit,
+                    avl.credit as credit,
+                    av.status as status,
+                    COALESCE(avl.description, av.description, '') as notes,
+                    av.id as reference_id
+                FROM accounting_vouchers av
+                JOIN accounting_voucher_lines avl ON avl.voucher_id = av.id
+                WHERE av.voucher_type = 'journal'
+                    AND av.status = 'posted'
+                    AND avl.account_id = (SELECT id FROM accounts WHERE code = '2100' LIMIT 1)
+                    AND avl.sub_account_type = 'supplier'
+                    AND avl.sub_account_id = $1
                     ${dateFilter.replace(/date/g, 'av.voucher_date')}
             ) transactions
             ORDER BY trans_date DESC, document_number DESC
@@ -267,8 +332,26 @@ router.get('/supplier/:supplierId', async (req, res) => {
                 JOIN accounting_voucher_lines avl ON avl.voucher_id = av.id
                 WHERE av.voucher_type = 'payment' 
                     AND av.status = 'posted'
+                    AND avl.account_id = (SELECT id FROM accounts WHERE code = '2100' LIMIT 1)
                     AND avl.sub_account_type = 'supplier'
                     AND avl.sub_account_id = $1
+                    AND avl.debit > 0
+                    ${dateFilter.replace(/date/g, 'av.voucher_date')}
+                UNION ALL
+                SELECT 'invoice' as doc_type, avl.credit as amount
+                FROM accounting_vouchers av
+                JOIN accounting_voucher_lines avl ON avl.voucher_id = av.id
+                WHERE av.voucher_type = 'journal' AND av.status = 'posted'
+                    AND avl.account_id = (SELECT id FROM accounts WHERE code = '2100' LIMIT 1)
+                    AND avl.sub_account_type = 'supplier' AND avl.sub_account_id = $1
+                    AND avl.credit > 0
+                UNION ALL
+                SELECT 'payment' as doc_type, avl.debit as amount
+                FROM accounting_vouchers av
+                JOIN accounting_voucher_lines avl ON avl.voucher_id = av.id
+                WHERE av.voucher_type = 'journal' AND av.status = 'posted'
+                    AND avl.account_id = (SELECT id FROM accounts WHERE code = '2100' LIMIT 1)
+                    AND avl.sub_account_type = 'supplier' AND avl.sub_account_id = $1
                     AND avl.debit > 0
                     ${dateFilter.replace(/date/g, 'av.voucher_date')}
             ) totals
@@ -351,9 +434,15 @@ router.get('/accounts-tree', async (req, res) => {
             ORDER BY code
         `);
 
-        // Find receivable account (code 1300) and payable account (code 2100)
-        const receivableAcc = parentsRes.rows.find(a => a.code === '1300');
-        const payableAcc = parentsRes.rows.find(a => a.code === '2100');
+        // Receivables/payables are usually second-level accounts under 1000/2000,
+        // so resolve them from the complete chart rather than only root accounts.
+        const controlAccountsRes = await db.query(`
+            SELECT id, code, name, account_type, parent_id
+            FROM accounts
+            WHERE code IN ('1300', '2100') AND is_active = true
+        `);
+        const receivableAcc = controlAccountsRes.rows.find(a => a.code === '1300');
+        const payableAcc = controlAccountsRes.rows.find(a => a.code === '2100');
 
         const virtualChildren = [];
 
@@ -435,7 +524,6 @@ router.get('/account/:accountId', async (req, res) => {
 
         // Build date filter
         let dateFilter = '';
-        let subFilter = '';
         const params = [accountId];
         if (from) {
             params.push(from);
@@ -445,18 +533,14 @@ router.get('/account/:accountId', async (req, res) => {
             params.push(to);
             dateFilter += ` AND av.voucher_date <= $${params.length}`;
         }
+        let accountCondition = 'avl.account_id = $1';
         if (subAccountId) {
             params.push(subAccountId);
-            subFilter += ` AND avl.sub_account_id = $${params.length}`;
-        }
-
-        // Get all voucher lines for this account
-        // When subAccountId is provided, match by sub_account_id (with or without account_id)
-        let accountCondition;
-        if (subAccountId) {
-            accountCondition = `(avl.account_id = $1 OR avl.sub_account_id = $${params.length})`;
-        } else {
-            accountCondition = `avl.account_id = $1`;
+            accountCondition += ` AND avl.sub_account_id = $${params.length}`;
+            if (subAccountType) {
+                params.push(subAccountType);
+                accountCondition += ` AND avl.sub_account_type = $${params.length}`;
+            }
         }
 
         const linesRes = await db.query(`

@@ -336,7 +336,7 @@ router.post('/', restrictWrite, validateBody(receiptVoucherCreate), async (req, 
             await txClient.query(`
                 INSERT INTO accounting_voucher_lines (voucher_id, account_id, debit, credit, sub_account_type, sub_account_id, description)
                 VALUES ($1, $2, $3, 0, $4, $5, $6)
-            `, [voucherId, cash_account_id, parsedAmount, subAccountType, subAccountId, `قبض من ${payeeName}`]);
+            `, [voucherId, cash_account_id, parsedAmount, null, null, `قبض من ${payeeName}`]);
 
             // Line 2: CR contra account (1300 for clients, 2100 for suppliers)
             await txClient.query(`
