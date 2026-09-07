@@ -177,13 +177,22 @@
                     </select>
                 </div>
                 <div id="je-line-party-wrap-${idx}" class="hidden mt-1">
-                    <input id="je-line-party-search-${idx}" type="search" oninput="window.jeFilterParty(${idx}, this.value)"
-                           placeholder="ابحث باسم العميل أو المورد..." autocomplete="off"
-                           class="w-full mb-1 px-2 py-2 border border-emerald-200 rounded-lg text-xs focus:border-brand-500 outline-none" />
-                    <select id="je-line-party-${idx}" onchange="window.jePartyChanged(${idx})"
-                            class="w-full px-2 py-2 border border-emerald-200 bg-emerald-50 rounded-lg text-xs focus:border-brand-500 outline-none">
-                        <option value="">— اختر العميل / المورد —</option>
-                    </select>
+                    <div class="relative">
+                        <button type="button" id="je-line-party-btn-${idx}" onclick="window.jeTogglePartyDropdown(${idx})"
+                                class="w-full flex items-center justify-between px-2 py-2 border border-emerald-200 bg-emerald-50 rounded-lg text-xs focus:border-brand-500 outline-none">
+                            <span id="je-line-party-label-${idx}" class="text-slate-400">اختر العميل أو المورد...</span>
+                            <i class="fa-solid fa-chevron-down text-slate-400 text-xs"></i>
+                        </button>
+                        <div id="je-line-party-dropdown-${idx}" class="hidden absolute top-full right-0 left-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-30 max-h-52 overflow-hidden flex flex-col">
+                            <div class="p-2 border-b border-slate-100">
+                                <input id="je-line-party-search-${idx}" type="search" oninput="window.jeFilterParty(${idx}, this.value)"
+                                       placeholder="بحث بالاسم أو الهاتف..." autocomplete="off"
+                                       class="w-full px-2 py-2 border border-slate-200 rounded-lg text-xs focus:border-brand-500 outline-none" />
+                            </div>
+                            <div id="je-line-party-list-${idx}" class="overflow-y-auto max-h-36"></div>
+                        </div>
+                    </div>
+                    <input type="hidden" id="je-line-party-${idx}" />
                 </div>
             </td>
             <td class="py-2 px-3 hidden sm:table-cell">
@@ -260,8 +269,15 @@
             childSel.dataset.accountId = opt.value;
             childSel.dataset.subAccountType = opt.dataset.subType || '';
             childSel.dataset.subAccountId = opt.dataset.subId || '';
-            if (opt.dataset.subId) partyWrap?.classList.add('hidden');
-            else _renderJournalPartySelector(idx, opt.value);
+            if (opt.dataset.subId) {
+                partyWrap?.classList.add('hidden');
+            } else {
+                _el(`je-line-party-${idx}`).value = '';
+                _el(`je-line-party-label-${idx}`).textContent = 'اختر العميل أو المورد...';
+                _el(`je-line-party-label-${idx}`).classList.add('text-slate-400');
+                _el(`je-line-party-label-${idx}`).classList.remove('text-slate-700');
+                _renderJournalPartySelector(idx, opt.value);
+            }
         } else {
             partyWrap?.classList.add('hidden');
             delete childSel.dataset.accountId;
@@ -273,39 +289,52 @@
 
     function _renderJournalPartySelector(idx, accountId) {
         const wrap = _el(`je-line-party-wrap-${idx}`);
-        const select = _el(`je-line-party-${idx}`);
+        const list = _el(`je-line-party-list-${idx}`);
         const query = (_el(`je-line-party-search-${idx}`)?.value || '').trim().toLowerCase();
         const parties = _treeChildren
             .filter(c => c.parent_id === accountId && (c.sub_account_type === 'client' || c.sub_account_type === 'supplier'))
             .filter(c => !query || `${c.name} ${c.phone || ''} ${c.city || ''}`.toLowerCase().includes(query));
-        if (!wrap || !select || !parties.length) {
-            wrap?.classList.add('hidden');
+        if (!wrap || !list || !parties.length) {
+            list && (list.innerHTML = '<div class="px-3 py-2 text-xs text-slate-400 text-center">لا توجد نتائج</div>');
             return;
         }
         wrap.classList.remove('hidden');
-        const selectedValue = select.value;
-        select.innerHTML = '<option value="">— اختر العميل / المورد —</option>' + parties.map(p =>
-            `<option value="${p.sub_account_id}" data-type="${p.sub_account_type}">${p.sub_account_type === 'client' ? 'عميل' : 'مورد'}: ${esc(p.name)}</option>`
-        ).join('');
-        if (selectedValue && select.querySelector(`option[value="${selectedValue}"]`)) select.value = selectedValue;
-        delete select.dataset.accountId;
-        delete select.dataset.subAccountType;
-        delete select.dataset.subAccountId;
+        list.innerHTML = parties.map(p => `
+            <div onclick="window.jeSelectParty(${idx}, '${p.sub_account_id}', '${p.sub_account_type}', '${esc(p.name)}')"
+                 class="px-3 py-2 hover:bg-brand-50 cursor-pointer border-b border-slate-50 last:border-0">
+                <span class="text-xs text-slate-700">${p.sub_account_type === 'client' ? 'عميل' : 'مورد'}: ${esc(p.name)}</span>
+                ${p.phone || p.city ? `<span class="text-[11px] text-slate-400 block mt-0.5">${esc(p.phone || '')} ${p.city ? '• ' + esc(p.city) : ''}</span>` : ''}
+            </div>`).join('');
     }
 
-    window.jeFilterParty = function (idx, query) {
-        const child = _el(`je-line-child-${idx}`);
-        if (!child?.value) return;
-        _renderJournalPartySelector(idx, child.value);
+    window.jeTogglePartyDropdown = function (idx) {
+        const dd = _el(`je-line-party-dropdown-${idx}`);
+        if (!dd) return;
+        dd.classList.toggle('hidden');
+        if (!dd.classList.contains('hidden')) {
+            _el(`je-line-party-search-${idx}`).value = '';
+            _renderJournalPartySelector(idx, _el(`je-line-child-${idx}`)?.value);
+            _el(`je-line-party-search-${idx}`).focus();
+        }
     };
 
-    window.jePartyChanged = function (idx) {
+    window.jeFilterParty = function (idx) {
+        const child = _el(`je-line-child-${idx}`);
+        if (child?.value) _renderJournalPartySelector(idx, child.value);
+    };
+
+    window.jeSelectParty = function (idx, id, type, name) {
         const party = _el(`je-line-party-${idx}`);
         const child = _el(`je-line-child-${idx}`);
-        const opt = party?.options[party.selectedIndex];
         if (!party || !child) return;
-        child.dataset.subAccountId = party.value || '';
-        child.dataset.subAccountType = opt?.dataset.type || '';
+        party.value = id;
+        child.dataset.subAccountId = id;
+        child.dataset.subAccountType = type;
+        const label = _el(`je-line-party-label-${idx}`);
+        label.textContent = `${type === 'client' ? 'عميل' : 'مورد'}: ${name}`;
+        label.classList.remove('text-slate-400');
+        label.classList.add('text-slate-700');
+        _el(`je-line-party-dropdown-${idx}`).classList.add('hidden');
         window.jeRecalc();
     };
 
@@ -507,6 +536,12 @@
     // ─────────────────────────────────────────────────────────────────────────
     (async function _init() {
         await _loadAccounts();
+        document.addEventListener('click', (e) => {
+            document.querySelectorAll('[id^="je-line-party-dropdown-"]').forEach(dd => {
+                const wrap = dd.closest('[id^="je-line-party-wrap-"]');
+                if (wrap && !wrap.contains(e.target)) dd.classList.add('hidden');
+            });
+        });
         await _load();
     })();
 

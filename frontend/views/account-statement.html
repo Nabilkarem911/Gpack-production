@@ -68,12 +68,22 @@
             </div>
             <div id="as-party-wrap" class="hidden mt-3">
                 <label class="block text-xs font-bold text-slate-500 mb-2">العميل / المورد</label>
-                <input id="as-party-search" type="search" oninput="window.asFilterParty(this.value)"
-                       placeholder="ابحث باسم العميل أو المورد..." autocomplete="off"
-                       class="border border-slate-200 rounded-xl px-3 py-2.5 text-sm w-full mb-2 focus:border-brand-400 outline-none">
-                <select id="as-party-select" class="border border-slate-200 rounded-xl px-3 py-2.5 text-sm w-full focus:border-brand-400 outline-none">
-                    <option value="">— اختر العميل أو المورد —</option>
-                </select>
+                <div class="relative">
+                    <button type="button" id="as-party-btn" onclick="window.asTogglePartyDropdown()"
+                            class="w-full flex items-center justify-between border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:border-brand-400 outline-none">
+                        <span id="as-party-label" class="text-slate-400">اختر العميل أو المورد...</span>
+                        <i class="fa-solid fa-chevron-down text-slate-400 text-xs"></i>
+                    </button>
+                    <div id="as-party-dropdown" class="hidden absolute top-full right-0 left-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-30 max-h-60 overflow-hidden flex flex-col">
+                        <div class="p-2 border-b border-slate-100">
+                            <input id="as-party-search" type="search" oninput="window.asFilterParty(this.value)"
+                                   placeholder="بحث بالاسم أو الهاتف..." autocomplete="off"
+                                   class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:border-brand-400 outline-none">
+                        </div>
+                        <div id="as-party-list" class="overflow-y-auto max-h-44"></div>
+                    </div>
+                </div>
+                <input type="hidden" id="as-party-select">
             </div>
         </div>
 

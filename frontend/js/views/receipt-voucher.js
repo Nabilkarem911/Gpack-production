@@ -64,6 +64,10 @@
             if (childWrap && !childWrap.contains(e.target)) {
                 _el('rv-child-dropdown').classList.add('hidden');
             }
+            const partyWrap = _el('rv-party-btn')?.closest('.relative');
+            if (partyWrap && !partyWrap.contains(e.target)) {
+                _el('rv-party-dropdown')?.classList.add('hidden');
+            }
         });
     }
 
@@ -94,12 +98,6 @@
 
         // Amount preview update
         _el('rv-amount').addEventListener('input', _updatePreview);
-        _el('rv-party-select')?.addEventListener('change', (e) => {
-            const option = e.target.options[e.target.selectedIndex];
-            _el('rv-client-id').value = e.target.value || '';
-            _el('rv-client-type').value = option?.dataset.type || '';
-        });
-
         // Payment method change → filter accounts
         _el('rv-payment-method').addEventListener('change', (e) => {
             _filterAccountsByMethod(e.target.value);
@@ -318,28 +316,49 @@
 
     function _renderPartySelector(children) {
         const wrap = _el('rv-party-wrap');
-        const select = _el('rv-party-select');
-        if (!wrap || !select) return;
+        const list = _el('rv-party-list');
+        if (!wrap || !list) return;
         const query = (_el('rv-party-search')?.value || '').trim().toLowerCase();
-        const selectedValue = select.value;
         const parties = children
             .filter(c => c.sub_account_type === 'client' || c.sub_account_type === 'supplier')
             .filter(c => !query || `${c.name} ${c.phone || ''} ${c.city || ''}`.toLowerCase().includes(query));
         if (!parties.length) {
-            wrap.classList.add('hidden');
-            select.innerHTML = '<option value="">— اختر العميل أو المورد —</option>';
+            list.innerHTML = '<div class="px-4 py-3 text-sm text-slate-400 text-center">لا توجد نتائج</div>';
             return;
         }
         wrap.classList.remove('hidden');
-        select.innerHTML = '<option value="">— اختر العميل أو المورد —</option>' + parties.map(p =>
-            `<option value="${esc(p.sub_account_id)}" data-type="${esc(p.sub_account_type)}">${p.sub_account_type === 'client' ? 'عميل' : 'مورد'}: ${esc(p.name)}</option>`
-        ).join('');
-        if (selectedValue && select.querySelector(`option[value="${selectedValue}"]`)) select.value = selectedValue;
+        list.innerHTML = parties.map(p => `
+            <div onclick="window.rvSelectParty('${esc(p.sub_account_id)}', '${esc(p.sub_account_type)}', '${esc(p.name)}')"
+                 class="px-4 py-2.5 hover:bg-brand-50 cursor-pointer border-b border-slate-50 last:border-0">
+                <span class="text-sm text-slate-700">${p.sub_account_type === 'client' ? 'عميل' : 'مورد'}: ${esc(p.name)}</span>
+                ${p.phone || p.city ? `<span class="text-xs text-slate-400 block mt-0.5">${esc(p.phone || '')} ${p.city ? '• ' + esc(p.city) : ''}</span>` : ''}
+            </div>`).join('');
     }
 
-    window.rvFilterParty = function(query) {
+    window.rvTogglePartyDropdown = function() {
+        const dd = _el('rv-party-dropdown');
+        if (!dd) return;
+        dd.classList.toggle('hidden');
+        if (!dd.classList.contains('hidden')) {
+            _el('rv-party-search').value = '';
+            _renderPartySelector(_accountsTree.children.filter(c => c.parent_id === _selectedChild?.id));
+            _el('rv-party-search').focus();
+        }
+    };
+
+    window.rvFilterParty = function() {
         if (!_selectedChild) return;
         _renderPartySelector(_accountsTree.children.filter(c => c.parent_id === _selectedChild.id));
+    };
+
+    window.rvSelectParty = function(id, type, name) {
+        _el('rv-client-id').value = id;
+        _el('rv-client-type').value = type;
+        _el('rv-party-select').value = id;
+        _el('rv-party-label').textContent = `${type === 'client' ? 'عميل' : 'مورد'}: ${name}`;
+        _el('rv-party-label').classList.remove('text-slate-400');
+        _el('rv-party-label').classList.add('text-slate-700');
+        _el('rv-party-dropdown').classList.add('hidden');
     };
 
     // ── Child Account Dropdown ─────────────────────────────────────────────────
@@ -399,11 +418,15 @@
         const partyWrap = _el('rv-party-wrap');
         if (subAccountId) {
             partyWrap?.classList.add('hidden');
+            _el('rv-party-dropdown')?.classList.add('hidden');
             _el('rv-client-id').value = subAccountId;
             _el('rv-client-type').value = subAccountType;
         } else {
             _el('rv-client-id').value = '';
             _el('rv-client-type').value = '';
+            _el('rv-party-label').textContent = 'اختر العميل أو المورد...';
+            _el('rv-party-label').classList.add('text-slate-400');
+            _el('rv-party-label').classList.remove('text-slate-700');
             _el('rv-party-search').value = '';
             _renderPartySelector(_accountsTree.children.filter(c => c.parent_id === id));
         }
@@ -477,8 +500,12 @@
         _el('rv-child-label').classList.remove('text-slate-700');
         _el('rv-child-dropdown').classList.add('hidden');
         _el('rv-party-wrap')?.classList.add('hidden');
+        _el('rv-party-dropdown')?.classList.add('hidden');
         _el('rv-party-search').value = '';
-        _el('rv-party-select').innerHTML = '<option value="">— اختر العميل أو المورد —</option>';
+        _el('rv-party-label').textContent = 'اختر العميل أو المورد...';
+        _el('rv-party-label').classList.add('text-slate-400');
+        _el('rv-party-label').classList.remove('text-slate-700');
+        _el('rv-party-select').value = '';
         _el('rv-client-id').value = '';
         _el('rv-client-type').value = '';
         _el('rv-amount').value      = '';

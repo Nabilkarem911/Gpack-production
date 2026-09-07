@@ -62,6 +62,10 @@
             if (childWrap && !childWrap.contains(e.target)) {
                 _el('pv-child-dropdown').classList.add('hidden');
             }
+            const partyWrap = _el('pv-party-btn')?.closest('.relative');
+            if (partyWrap && !partyWrap.contains(e.target)) {
+                _el('pv-party-dropdown')?.classList.add('hidden');
+            }
         });
     }
 
@@ -87,18 +91,6 @@
         _el('pv-modal-cancel').addEventListener('click', _closeNewModal);
         _el('pv-modal-submit').addEventListener('click', _submitVoucher);
         _el('pv-amount').addEventListener('input', _updatePreview);
-        _el('pv-party-select')?.addEventListener('change', (e) => {
-            const option = e.target.options[e.target.selectedIndex];
-            _el('pv-supplier-id').value = e.target.value || '';
-            _el('pv-payee-type').value = option?.dataset.type || '';
-            if (e.target.value && option?.dataset.type === 'supplier') {
-                _loadSupplierInvoices(e.target.value);
-            } else {
-                _el('pv-invoices-section')?.classList.add('hidden');
-                _el('pv-purchase-invoice-id').value = '';
-            }
-        });
-
         // Payment method change → filter accounts
         _el('pv-payment-method').addEventListener('change', (e) => {
             _filterAccountsByMethod(e.target.value);
@@ -289,28 +281,54 @@
 
     function _renderPartySelector(children) {
         const wrap = _el('pv-party-wrap');
-        const select = _el('pv-party-select');
-        if (!wrap || !select) return;
+        const list = _el('pv-party-list');
+        if (!wrap || !list) return;
         const query = (_el('pv-party-search')?.value || '').trim().toLowerCase();
-        const selectedValue = select.value;
         const parties = children
             .filter(c => c.sub_account_type === 'client' || c.sub_account_type === 'supplier')
             .filter(c => !query || `${c.name} ${c.phone || ''} ${c.city || ''}`.toLowerCase().includes(query));
         if (!parties.length) {
-            wrap.classList.add('hidden');
-            select.innerHTML = '<option value="">— اختر العميل أو المورد —</option>';
+            list.innerHTML = '<div class="px-4 py-3 text-sm text-slate-400 text-center">لا توجد نتائج</div>';
             return;
         }
         wrap.classList.remove('hidden');
-        select.innerHTML = '<option value="">— اختر العميل أو المورد —</option>' + parties.map(p =>
-            `<option value="${esc(p.sub_account_id)}" data-type="${esc(p.sub_account_type)}">${p.sub_account_type === 'client' ? 'عميل' : 'مورد'}: ${esc(p.name)}</option>`
-        ).join('');
-        if (selectedValue && select.querySelector(`option[value="${selectedValue}"]`)) select.value = selectedValue;
+        list.innerHTML = parties.map(p => `
+            <div onclick="window.pvSelectParty('${esc(p.sub_account_id)}', '${esc(p.sub_account_type)}', '${esc(p.name)}')"
+                 class="px-4 py-2.5 hover:bg-brand-50 cursor-pointer border-b border-slate-50 last:border-0">
+                <span class="text-sm text-slate-700">${p.sub_account_type === 'client' ? 'عميل' : 'مورد'}: ${esc(p.name)}</span>
+                ${p.phone || p.city ? `<span class="text-xs text-slate-400 block mt-0.5">${esc(p.phone || '')} ${p.city ? '• ' + esc(p.city) : ''}</span>` : ''}
+            </div>`).join('');
     }
 
-    window.pvFilterParty = function(query) {
+    window.pvTogglePartyDropdown = function() {
+        const dd = _el('pv-party-dropdown');
+        if (!dd) return;
+        dd.classList.toggle('hidden');
+        if (!dd.classList.contains('hidden')) {
+            _el('pv-party-search').value = '';
+            _renderPartySelector(_accountsTree.children.filter(c => c.parent_id === _selectedChild?.id));
+            _el('pv-party-search').focus();
+        }
+    };
+
+    window.pvFilterParty = function() {
         if (!_selectedChild) return;
         _renderPartySelector(_accountsTree.children.filter(c => c.parent_id === _selectedChild.id));
+    };
+
+    window.pvSelectParty = function(id, type, name) {
+        _el('pv-supplier-id').value = id;
+        _el('pv-payee-type').value = type;
+        _el('pv-party-select').value = id;
+        _el('pv-party-label').textContent = `${type === 'client' ? 'عميل' : 'مورد'}: ${name}`;
+        _el('pv-party-label').classList.remove('text-slate-400');
+        _el('pv-party-label').classList.add('text-slate-700');
+        _el('pv-party-dropdown').classList.add('hidden');
+        if (type === 'supplier') _loadSupplierInvoices(id);
+        else {
+            _el('pv-invoices-section')?.classList.add('hidden');
+            _el('pv-purchase-invoice-id').value = '';
+        }
     };
 
     // ── Child Account Dropdown ─────────────────────────────────────────────────
@@ -369,11 +387,15 @@
         // Set hidden fields for submission. Control accounts require a third-level party.
         if (subAccountId) {
             _el('pv-party-wrap')?.classList.add('hidden');
+            _el('pv-party-dropdown')?.classList.add('hidden');
             _el('pv-supplier-id').value = subAccountId;
             _el('pv-payee-type').value = subAccountType;
         } else {
             _el('pv-supplier-id').value = '';
             _el('pv-payee-type').value = '';
+            _el('pv-party-label').textContent = 'اختر العميل أو المورد...';
+            _el('pv-party-label').classList.add('text-slate-400');
+            _el('pv-party-label').classList.remove('text-slate-700');
             _el('pv-party-search').value = '';
             _renderPartySelector(_accountsTree.children.filter(c => c.parent_id === id));
         }
@@ -480,8 +502,12 @@
         _el('pv-child-label').classList.remove('text-slate-700');
         _el('pv-child-dropdown').classList.add('hidden');
         _el('pv-party-wrap')?.classList.add('hidden');
+        _el('pv-party-dropdown')?.classList.add('hidden');
         _el('pv-party-search').value = '';
-        _el('pv-party-select').innerHTML = '<option value="">— اختر العميل أو المورد —</option>';
+        _el('pv-party-label').textContent = 'اختر العميل أو المورد...';
+        _el('pv-party-label').classList.add('text-slate-400');
+        _el('pv-party-label').classList.remove('text-slate-700');
+        _el('pv-party-select').value = '';
         _el('pv-supplier-id').value = '';
         _el('pv-payee-type').value = '';
         _el('pv-invoices-section').classList.add('hidden');

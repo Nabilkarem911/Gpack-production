@@ -38,11 +38,9 @@
             console.error('Failed to load accounts tree:', err);
         }
 
-        _el('as-party-select')?.addEventListener('change', (e) => {
-            const option = e.target.options[e.target.selectedIndex];
-            if (!_selectedChild) return;
-            _selectedChild.subAccountId = e.target.value || null;
-            _selectedChild.subAccountType = option?.dataset.type || null;
+        document.addEventListener('click', (e) => {
+            const partyWrap = _el('as-party-btn')?.closest('.relative');
+            if (partyWrap && !partyWrap.contains(e.target)) _el('as-party-dropdown')?.classList.add('hidden');
         });
     }
 
@@ -105,28 +103,50 @@
 
     function _renderPartySelector(children) {
         const wrap = _el('as-party-wrap');
-        const select = _el('as-party-select');
-        if (!wrap || !select) return;
+        const list = _el('as-party-list');
+        if (!wrap || !list) return;
         const query = (_el('as-party-search')?.value || '').trim().toLowerCase();
-        const selectedValue = select.value;
         const parties = children
             .filter(c => c.sub_account_type === 'client' || c.sub_account_type === 'supplier')
             .filter(c => !query || `${c.name} ${c.phone || ''} ${c.city || ''}`.toLowerCase().includes(query));
         if (!parties.length) {
-            wrap.classList.add('hidden');
-            select.innerHTML = '<option value="">— اختر العميل أو المورد —</option>';
+            list.innerHTML = '<div class="px-4 py-3 text-sm text-slate-400 text-center">لا توجد نتائج</div>';
             return;
         }
         wrap.classList.remove('hidden');
-        select.innerHTML = '<option value="">— اختر العميل أو المورد —</option>' + parties.map(p =>
-            `<option value="${esc(p.sub_account_id)}" data-type="${esc(p.sub_account_type)}">${p.sub_account_type === 'client' ? 'عميل' : 'مورد'}: ${esc(p.name)}</option>`
-        ).join('');
-        if (selectedValue && select.querySelector(`option[value="${selectedValue}"]`)) select.value = selectedValue;
+        list.innerHTML = parties.map(p => `
+            <div onclick="window.asSelectParty('${esc(p.sub_account_id)}', '${esc(p.sub_account_type)}', '${esc(p.name)}')"
+                 class="px-4 py-2.5 hover:bg-brand-50 cursor-pointer border-b border-slate-50 last:border-0">
+                <span class="text-sm text-slate-700">${p.sub_account_type === 'client' ? 'عميل' : 'مورد'}: ${esc(p.name)}</span>
+                ${p.phone || p.city ? `<span class="text-xs text-slate-400 block mt-0.5">${esc(p.phone || '')} ${p.city ? '• ' + esc(p.city) : ''}</span>` : ''}
+            </div>`).join('');
     }
 
-    window.asFilterParty = function(query) {
+    window.asTogglePartyDropdown = function() {
+        const dd = _el('as-party-dropdown');
+        if (!dd) return;
+        dd.classList.toggle('hidden');
+        if (!dd.classList.contains('hidden')) {
+            _el('as-party-search').value = '';
+            _renderPartySelector(_accountsTree.children.filter(c => c.parent_id === _selectedChild?.id));
+            _el('as-party-search').focus();
+        }
+    };
+
+    window.asFilterParty = function() {
         if (!_selectedChild) return;
         _renderPartySelector(_accountsTree.children.filter(c => c.parent_id === _selectedChild.id));
+    };
+
+    window.asSelectParty = function(id, type, name) {
+        if (!_selectedChild) return;
+        _selectedChild.subAccountId = id;
+        _selectedChild.subAccountType = type;
+        _el('as-party-select').value = id;
+        _el('as-party-label').textContent = `${type === 'client' ? 'عميل' : 'مورد'}: ${name}`;
+        _el('as-party-label').classList.remove('text-slate-400');
+        _el('as-party-label').classList.add('text-slate-700');
+        _el('as-party-dropdown').classList.add('hidden');
     };
 
     // ── Child Dropdown ─────────────────────────────────────────────────────────
@@ -191,12 +211,17 @@
             _selectedChild = { id: _selectedParent.id, code: _selectedParent.code, name: _selectedParent.name, isParent: true, subAccountId: null, subAccountType: null };
             _el('as-child-label').textContent = 'كل الحسابات الفرعية';
             _el('as-party-wrap')?.classList.add('hidden');
+            _el('as-party-dropdown')?.classList.add('hidden');
             _el('as-party-search').value = '';
+            _el('as-party-label').textContent = 'اختر العميل أو المورد...';
+            _el('as-party-label').classList.add('text-slate-400');
+            _el('as-party-label').classList.remove('text-slate-700');
         } else {
             _selectedChild = { id, code, name, isParent: false, subAccountId: subAccountId || null, subAccountType: subAccountType || null };
             _el('as-child-label').textContent = `${code} — ${name}`;
             if (subAccountId) {
                 _el('as-party-wrap')?.classList.add('hidden');
+                _el('as-party-dropdown')?.classList.add('hidden');
             } else {
                 _el('as-party-search').value = '';
                 _renderPartySelector(_accountsTree.children.filter(c => c.parent_id === id));
