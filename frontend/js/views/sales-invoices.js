@@ -41,6 +41,26 @@
         return `<span class="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold ${s.class}">${s.label}</span>`;
     }
 
+    function _warehouseInvoiceActions(invoice) {
+        if (invoice.source !== 'warehouse') return '';
+        const release = invoice.delivery_note_id
+            ? '<span class="text-[10px] text-slate-400">أمر الفسح صادر</span>'
+            : `<button onclick="window.siReleaseInvoice('${esc(invoice.id)}')" class="px-2 py-1.5 rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 text-[11px] font-bold" title="إصدار أمر الفسح"><i class="fa-solid fa-truck"></i></button>`;
+        const payment = invoice.status !== 'paid'
+            ? `<button onclick="window.siRegisterPayment('${esc(invoice.id)}')" class="px-2 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-[11px] font-bold" title="تسجيل دفعة"><i class="fa-solid fa-money-bill-wave"></i></button>`
+            : '';
+        const edit = invoice.status !== 'paid' && !invoice.delivery_note_id
+            ? `<button onclick="window.siEditInvoice('${esc(invoice.id)}')" class="px-2 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 text-[11px] font-bold" title="تعديل"><i class="fa-solid fa-pen"></i></button>`
+            : '';
+        const remove = !invoice.delivery_note_id
+            ? `<button onclick="window.siDeleteInvoice('${esc(invoice.id)}')" class="px-2 py-1.5 rounded-lg bg-red-50 text-red-700 hover:bg-red-100 text-[11px] font-bold" title="حذف"><i class="fa-solid fa-trash"></i></button>`
+            : '';
+        return `<div class="flex flex-wrap justify-center gap-1.5">
+            ${payment}${edit}${remove}${release}
+            <button onclick="window.siViewInvoice('${esc(invoice.id)}')" class="px-2 py-1.5 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 text-[11px] font-bold" title="عرض"><i class="fa-solid fa-eye"></i></button>
+        </div>`;
+    }
+
     // ── Load clients for filter ────────────────────────────────────────────────
     async function _loadData() {
         try {
@@ -166,7 +186,9 @@
 
             const action = isArchive
                 ? `<button onclick="window.siViewInvoice('${esc(i.id)}')" class="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-600 text-white text-xs font-bold hover:bg-slate-700 transition-all"><i class="fa-solid fa-eye"></i> عرض</button>`
-                : `<button onclick="window.siViewInvoice('${esc(i.id)}')" class="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-brand-600 text-white text-xs font-bold hover:bg-brand-700 transition-all"><i class="fa-solid fa-eye"></i> عرض / اعتماد</button>`;
+                : (i.source === 'warehouse' && ['issued', 'paid'].includes(i.status)
+                    ? _warehouseInvoiceActions(i)
+                    : `<button onclick="window.siViewInvoice('${esc(i.id)}')" class="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-brand-600 text-white text-xs font-bold hover:bg-brand-700 transition-all"><i class="fa-solid fa-eye"></i> عرض / اعتماد</button>`);
 
             return `<tr class="border-b border-slate-100 hover:bg-blue-50/30 transition-colors">
                 <td class="py-3 px-4 font-bold font-mono text-slate-700">#${i.invoice_number}</td>
@@ -573,13 +595,96 @@
                 notes: _el('si-w-notes')?.value || '', items,
             }});
             const invoice = res.data || res;
-            alert(`✅ تم إصدار الفاتورة #${invoice.invoice_number} وإنشاء أمر الفسح`);
+            alert(`✅ تم إصدار الفاتورة #${invoice.invoice_number}. يمكنك إصدار أمر الفسح لاحقًا من إجراءات الفاتورة.`);
             window.siCloseWarehouseInvoice();
             window.navigateTo(`sales-invoice-detail?id=${invoice.id}`);
         } catch (err) {
             alert(`❌ خطأ: ${err.message}`);
         } finally {
-            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-file-invoice ml-1"></i> إصدار الفاتورة وإنشاء أمر الفسح'; }
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-file-invoice ml-1"></i> إصدار الفاتورة'; }
+        }
+    };
+
+    window.siRegisterPayment = async function(invoiceId) {
+        try {
+            const res = await window.apiFetch(`/api/invoices/${invoiceId}`);
+            const invoice = res?.data || res;
+            const amount = prompt(`قيمة الدفعة للفاتورة #${invoice.invoice_number}:`, invoice.grand_total || '');
+            if (amount === null) return;
+            const value = parseFloat(amount);
+            if (!value || value <= 0) return alert('أدخل قيمة دفعة صحيحة.');
+            const method = prompt('طريقة الدفع (cash / bank_transfer / check / credit_card):', 'cash');
+            if (!method) return;
+            await window.apiFetch(`/api/invoices/${invoiceId}/payment`, {
+                method: 'POST',
+                body: {
+                    client_id: invoice.client_id,
+                    amount: value,
+                    payment_method: method,
+                    description: `دفعة فاتورة رقم ${invoice.invoice_number}`,
+                },
+            });
+            alert('تم تسجيل الدفعة بنجاح.');
+            await _loadInvoices(_currentPage);
+        } catch (err) {
+            alert(`❌ تعذر تسجيل الدفعة: ${err.message}`);
+        }
+    };
+
+    window.siReleaseInvoice = async function(invoiceId) {
+        if (!confirm('هل تريد إصدار أمر الفسح لهذه الفاتورة وإرسالها إلى سندات التسليم؟')) return;
+        try {
+            await window.apiFetch(`/api/invoices/${invoiceId}/release`, { method: 'POST', body: {} });
+            alert('تم إصدار أمر الفسح بنجاح.');
+            await _loadInvoices(_currentPage);
+        } catch (err) {
+            alert(`❌ تعذر إصدار أمر الفسح: ${err.message}`);
+        }
+    };
+
+    window.siDeleteInvoice = async function(invoiceId) {
+        if (!confirm('هل أنت متأكد من حذف الفاتورة؟ سيتم إرجاع الكمية المحجوزة للمخزون.')) return;
+        try {
+            await window.apiFetch(`/api/invoices/${invoiceId}`, { method: 'DELETE' });
+            alert('تم حذف الفاتورة بنجاح.');
+            await _loadInvoices(_currentPage);
+        } catch (err) {
+            alert(`❌ تعذر حذف الفاتورة: ${err.message}`);
+        }
+    };
+
+    window.siEditInvoice = async function(invoiceId) {
+        try {
+            const res = await window.apiFetch(`/api/invoices/${invoiceId}`);
+            const invoice = res?.data || res;
+            const notes = prompt('ملاحظات الفاتورة:', invoice.notes || '');
+            if (notes === null) return;
+            const dueDate = prompt('تاريخ الاستحقاق (YYYY-MM-DD):', invoice.due_date || '');
+            if (dueDate === null) return;
+            const items = (invoice.items || []).map(item => ({
+                variant_id: item.variant_id,
+                order_item_id: item.order_item_id || null,
+                stock_id: item.source_stock_id || null,
+                quantity: parseFloat(item.quantity || 0),
+                unit_price: parseFloat(item.unit_price || 0),
+                discount_percent: parseFloat(item.discount_percent || 0),
+            }));
+            await window.apiFetch(`/api/invoices/${invoiceId}`, {
+                method: 'PUT',
+                body: {
+                    invoice_date: invoice.invoice_date,
+                    due_date: dueDate || null,
+                    tax_rate: parseFloat(invoice.tax_rate || 0),
+                    additional_expenses: parseFloat(invoice.additional_expenses || 0),
+                    discount_amount: parseFloat(invoice.discount_amount || 0),
+                    notes,
+                    items,
+                },
+            });
+            alert('تم تعديل الفاتورة بنجاح.');
+            await _loadInvoices(_currentPage);
+        } catch (err) {
+            alert(`❌ تعذر تعديل الفاتورة: ${err.message}`);
         }
     };
 

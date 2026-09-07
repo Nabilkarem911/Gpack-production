@@ -61,6 +61,6 @@ describe('invoice generated line_total handling', () => {
         const itemInsert = mockClientQuery.mock.calls.find(([sql]) => sql.includes('INSERT INTO invoice_items'));
         expect(itemInsert).toBeDefined();
         expect(itemInsert[0]).not.toContain('line_total');
-        expect(itemInsert[1]).toHaveLength(6);
+        expect(itemInsert[1]).toHaveLength(7);
     });
 });

@@ -90,6 +90,7 @@ const invoiceUpdate = z.object({
         unit_price: z.coerce.number().min(0),
         discount_percent: z.coerce.number().min(0).max(100).optional().default(0),
         order_item_id: z.string().uuid().optional().nullable(),
+        stock_id: z.string().uuid().optional().nullable(),
     }).passthrough()).min(1, 'At least one item is required'),
 }).passthrough();
 

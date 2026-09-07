@@ -16,7 +16,7 @@ const { authenticate } = require('../middleware/authMiddleware');
 const authorize = require('../middleware/authorize');
 const { getVatRate } = require('../utils/settings');
 const { hashToken, hasShareTokenSecret } = require('../utils/crypto');
-const { invoiceCreate, invoiceUpdate, invoiceShare, invoiceStatusUpdate, invoiceMarkIssued, validateBody } = require('../utils/validators');
+const { invoiceCreate, invoiceUpdate, invoiceShare, invoiceStatusUpdate, invoiceMarkIssued, receiptVoucherCreate, validateBody } = require('../utils/validators');
 
 // View permission: all authenticated users with 'sales' view can list/get
 router.use(authorize('sales', 'view'));
@@ -47,7 +47,7 @@ router.get('/', async (req, res) => {
             params.push(client_id);
         }
         if (status === 'active') {
-            where.push(`(i.status = 'draft' OR (i.source = 'warehouse' AND i.status = 'issued' AND COALESCE(i.delivery_status, 'pending') <> 'completed'))`);
+            where.push(`(i.status = 'draft' OR (i.source = 'warehouse' AND i.status IN ('issued', 'paid') AND COALESCE(i.delivery_status, 'pending') <> 'completed'))`);
         } else if (status === 'archive') {
             where.push(`((i.status = 'issued' AND i.source <> 'warehouse') OR (i.source = 'warehouse' AND i.status = 'archived' AND COALESCE(i.delivery_status, 'pending') = 'completed'))`);
         } else if (status) {
@@ -129,7 +129,7 @@ router.get('/:id', async (req, res) => {
         const invRes = await db.query(`
             SELECT
                 i.id, i.invoice_number, i.invoice_date, i.due_date,
-                i.subtotal, i.tax_rate, i.tax_amount, i.additional_expenses, i.grand_total,
+                i.subtotal, i.tax_rate, i.tax_amount, i.additional_expenses, i.discount_amount, i.grand_total,
                 i.status, i.payment_terms, i.notes, i.created_at,
                 i.source, i.external_invoice_number, i.external_issued_at,
                 i.warehouse_id, i.delivery_note_id, i.delivery_status,
@@ -242,6 +242,160 @@ router.post('/:id/share', authenticate, validateBody(invoiceShare), async (req, 
             ? 'تعذّر إنشاء رابط مشاركة الفاتورة. تأكد من إعداد SHARE_TOKEN_SECRET في ملف .env'
             : `تعذّر إنشاء رابط مشاركة الفاتورة: ${err.message}`;
         res.status(500).json({ error: message });
+    }
+});
+
+router.post('/:id/release', restrictEdit, async (req, res) => {
+    const client = await db.pool.connect();
+    try {
+        await client.query('BEGIN');
+        const invRes = await client.query(
+            `SELECT id, invoice_number, client_id, warehouse_id, source, status, delivery_note_id, notes
+             FROM invoices WHERE id = $1 FOR UPDATE`,
+            [req.params.id]
+        );
+        if (!invRes.rowCount) throw new Error('الفاتورة غير موجودة.');
+        const invoice = invRes.rows[0];
+        if (invoice.source !== 'warehouse') throw new Error('إصدار أمر الفسح متاح لفواتير المخزن فقط.');
+        if (invoice.delivery_note_id) throw new Error('تم إصدار أمر الفسح لهذه الفاتورة مسبقًا.');
+        if (!invoice.warehouse_id) throw new Error('لا يوجد مستودع مرتبط بالفاتورة.');
+
+        const itemsRes = await client.query(
+            `SELECT variant_id, quantity, source_stock_id
+             FROM invoice_items WHERE invoice_id = $1 ORDER BY id`,
+            [invoice.id]
+        );
+        if (!itemsRes.rowCount) throw new Error('الفاتورة لا تحتوي على أصناف.');
+
+        const noteRes = await client.query(
+            `INSERT INTO delivery_notes (client_id, warehouse_id, invoice_id, status, notes, created_by)
+             VALUES ($1, $2, $3, 'pending', $4, $5)
+             RETURNING id, note_number`,
+            [invoice.client_id, invoice.warehouse_id, invoice.id, invoice.notes || null, req.user?.id || null]
+        );
+        const deliveryNote = noteRes.rows[0];
+
+        for (const item of itemsRes.rows) {
+            await client.query(
+                `INSERT INTO delivery_note_items
+                    (delivery_note_id, variant_id, requested_qty, delivered_qty, source_stock_id, notes, created_at)
+                 VALUES ($1, $2, $3, 0, $4, NULL, NOW())`,
+                [deliveryNote.id, item.variant_id, item.quantity, item.source_stock_id || null]
+            );
+        }
+
+        await client.query(
+            `UPDATE invoices SET delivery_note_id = $1, delivery_status = 'pending' WHERE id = $2`,
+            [deliveryNote.id, invoice.id]
+        );
+        await client.query('COMMIT');
+        return res.status(201).json({
+            success: true,
+            data: { delivery_note_id: deliveryNote.id, note_number: deliveryNote.note_number },
+            message: 'تم إصدار أمر الفسح وإرساله إلى سندات التسليم.',
+        });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('[Invoices] POST /:id/release error:', err.message);
+        return res.status(400).json({ error: err.message });
+    } finally {
+        client.release();
+    }
+});
+
+router.post('/:id/payment', restrictEdit, validateBody(receiptVoucherCreate), async (req, res) => {
+    const client = await db.pool.connect();
+    try {
+        const { amount, payment_method = 'cash', description = null, reference_number = null, client_id } = req.validatedBody;
+        await client.query('BEGIN');
+        const invRes = await client.query(
+            `SELECT id, invoice_number, client_id, grand_total, status
+             FROM invoices WHERE id = $1 FOR UPDATE`,
+            [req.params.id]
+        );
+        if (!invRes.rowCount) throw new Error('الفاتورة غير موجودة.');
+        const invoice = invRes.rows[0];
+        if (client_id !== invoice.client_id) throw new Error('العميل لا يطابق الفاتورة.');
+        if (['cancelled', 'archived'].includes(invoice.status)) throw new Error('لا يمكن تسجيل دفعة على فاتورة ملغية أو مؤرشفة.');
+
+        const paidRes = await client.query(
+            `SELECT COALESCE(SUM(amount), 0) AS paid
+             FROM client_transactions WHERE invoice_id = $1 AND type IN ('payment', 'receipt')`,
+            [invoice.id]
+        );
+        const paid = parseFloat(paidRes.rows[0].paid || 0);
+        const remaining = Math.max(0, parseFloat(invoice.grand_total || 0) - paid);
+        if (parseFloat(amount) > remaining) throw new Error(`الدفعة تتجاوز المتبقي (${remaining.toFixed(2)}).`);
+
+        await client.query(
+            `INSERT INTO client_transactions
+                (client_id, invoice_id, type, amount, payment_method, document_number, description, created_at)
+             VALUES ($1, $2, 'receipt', $3, $4, $5, $6, NOW())`,
+            [invoice.client_id, invoice.id, amount, payment_method, reference_number || null, description || `دفعة فاتورة رقم ${invoice.invoice_number}`]
+        );
+        const newPaid = paid + parseFloat(amount);
+        if (newPaid >= parseFloat(invoice.grand_total || 0)) {
+            await client.query(`UPDATE invoices SET status = 'paid' WHERE id = $1`, [invoice.id]);
+        }
+        await client.query('COMMIT');
+        return res.status(201).json({
+            success: true,
+            data: { invoice_id: invoice.id, paid: newPaid, remaining: Math.max(0, parseFloat(invoice.grand_total || 0) - newPaid), status: newPaid >= parseFloat(invoice.grand_total || 0) ? 'paid' : invoice.status },
+            message: 'تم تسجيل الدفعة بنجاح.',
+        });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('[Invoices] POST /:id/payment error:', err.message);
+        return res.status(400).json({ error: err.message });
+    } finally {
+        client.release();
+    }
+});
+
+router.delete('/:id', restrictEdit, async (req, res) => {
+    const client = await db.pool.connect();
+    try {
+        await client.query('BEGIN');
+        const invRes = await client.query(
+            `SELECT id, source, status, delivery_note_id FROM invoices WHERE id = $1 FOR UPDATE`,
+            [req.params.id]
+        );
+        if (!invRes.rowCount) throw new Error('الفاتورة غير موجودة.');
+        const invoice = invRes.rows[0];
+        if (invoice.source !== 'warehouse') throw new Error('حذف هذه الفاتورة متاح من دورة فاتورة المخزن فقط.');
+        if (invoice.delivery_note_id) throw new Error('لا يمكن حذف فاتورة لها أمر فسح.');
+        if (invoice.status === 'paid') throw new Error('لا يمكن حذف فاتورة مدفوعة.');
+
+        const paymentRes = await client.query(
+            `SELECT 1 FROM client_transactions WHERE invoice_id = $1 AND type IN ('payment', 'receipt') LIMIT 1`,
+            [invoice.id]
+        );
+        if (paymentRes.rowCount) throw new Error('لا يمكن حذف فاتورة عليها دفعات.');
+
+        const itemsRes = await client.query(
+            `SELECT source_stock_id, quantity FROM invoice_items WHERE invoice_id = $1`,
+            [invoice.id]
+        );
+        for (const item of itemsRes.rows) {
+            if (item.source_stock_id) {
+                await client.query(
+                    `UPDATE warehouse_stock SET reserved_qty = GREATEST(0, reserved_qty - $1), last_updated = NOW() WHERE id = $2`,
+                    [item.quantity, item.source_stock_id]
+                );
+            }
+        }
+        await client.query(`DELETE FROM client_transactions WHERE invoice_id = $1`, [invoice.id]);
+        await client.query(`DELETE FROM invoice_expenses WHERE invoice_id = $1`, [invoice.id]);
+        await client.query(`DELETE FROM invoice_items WHERE invoice_id = $1`, [invoice.id]);
+        await client.query(`DELETE FROM invoices WHERE id = $1`, [invoice.id]);
+        await client.query('COMMIT');
+        return res.json({ success: true, message: 'تم حذف الفاتورة وإرجاع الحجز للمخزون.' });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('[Invoices] DELETE /:id error:', err.message);
+        return res.status(400).json({ error: err.message });
+    } finally {
+        client.release();
     }
 });
 
@@ -362,27 +516,7 @@ router.post('/', restrictWrite, validateBody(invoiceCreate), async (req, res) =>
             ]);
         }
 
-        let deliveryNoteId = null;
-        if (isWarehouseInvoice) {
-            const noteRes = await client.query(`
-                INSERT INTO delivery_notes (client_id, warehouse_id, invoice_id, status, notes, created_by)
-                VALUES ($1, $2, $3, 'pending', $4, $5)
-                RETURNING id, note_number
-            `, [client_id, warehouse_id, invoiceId, notes || null, userId]);
-            deliveryNoteId = noteRes.rows[0].id;
-
-            for (const item of items) {
-                await client.query(`
-                    INSERT INTO delivery_note_items
-                        (delivery_note_id, variant_id, requested_qty, delivered_qty, source_stock_id, notes, created_at)
-                    VALUES ($1, $2, $3, 0, $4, $5, NOW())
-                `, [deliveryNoteId, item.variant_id, item.quantity, item.stock_id, item.notes || null]);
-            }
-            await client.query(
-                `UPDATE invoices SET delivery_note_id = $1 WHERE id = $2`,
-                [deliveryNoteId, invoiceId]
-            );
-        }
+        const deliveryNoteId = null;
 
         if (additional_expenses > 0) {
             const label = (additional_expense_label || '').trim() || 'مصاريف إضافية';
@@ -482,7 +616,7 @@ router.put('/:id', restrictEdit, validateBody(invoiceUpdate), async (req, res) =
 
         // Check invoice exists and is editable
         const invRes = await client.query(`
-            SELECT id, invoice_number, status, client_id, order_id
+            SELECT id, invoice_number, status, client_id, order_id, source, warehouse_id, delivery_note_id
             FROM invoices WHERE id = $1
         `, [id]);
 
@@ -491,14 +625,47 @@ router.put('/:id', restrictEdit, validateBody(invoiceUpdate), async (req, res) =
         }
 
         const invoice = invRes.rows[0];
+        const isUnreleasedWarehouse = invoice.source === 'warehouse' && invoice.status === 'issued' && !invoice.delivery_note_id;
 
-        if (invoice.status === 'paid' || invoice.status === 'cancelled' || invoice.status === 'issued') {
-            return res.status(400).json({ error: 'لا يمكن تعديل فاتورة نهائية أو مدفوعة أو ملغية. فقط الفواتير الأولية قابلة للتعديل.' });
+        if (invoice.status === 'paid' || invoice.status === 'cancelled' || (invoice.status === 'issued' && !isUnreleasedWarehouse)) {
+            return res.status(400).json({ error: 'لا يمكن تعديل هذه الفاتورة بعد الدفع أو إصدار أمر الفسح.' });
         }
 
         const effectiveTaxRate = tax_rate ?? await getVatRate();
 
         await client.query('BEGIN');
+
+        if (isUnreleasedWarehouse) {
+            const oldItemsRes = await client.query(
+                `SELECT source_stock_id, quantity FROM invoice_items WHERE invoice_id = $1`,
+                [id]
+            );
+            for (const oldItem of oldItemsRes.rows) {
+                if (oldItem.source_stock_id) {
+                    await client.query(
+                        `UPDATE warehouse_stock SET reserved_qty = GREATEST(0, reserved_qty - $1), last_updated = NOW() WHERE id = $2`,
+                        [oldItem.quantity, oldItem.source_stock_id]
+                    );
+                }
+            }
+            for (const item of items) {
+                if (!item.stock_id) throw new Error('يجب تحديد سجل المخزون لكل صنف.');
+                const stockRes = await client.query(
+                    `SELECT id, quantity, reserved_qty FROM warehouse_stock
+                     WHERE id = $1 AND warehouse_id = $2 AND variant_id = $3
+                       AND (client_id = $4 OR client_id IS NULL OR client_id = (SELECT parent_id FROM clients WHERE id = $4) OR client_id IN (SELECT id FROM clients WHERE parent_id = $4))
+                     FOR UPDATE`,
+                    [item.stock_id, invoice.warehouse_id, item.variant_id, invoice.client_id]
+                );
+                if (!stockRes.rowCount) throw new Error('سجل المخزون غير موجود لهذا الصنف.');
+                const available = parseFloat(stockRes.rows[0].quantity || 0) - parseFloat(stockRes.rows[0].reserved_qty || 0);
+                if (parseFloat(item.quantity) > available) throw new Error(`الكمية المطلوبة تتجاوز المتاح (${available}).`);
+                await client.query(
+                    `UPDATE warehouse_stock SET reserved_qty = reserved_qty + $1, last_updated = NOW() WHERE id = $2`,
+                    [item.quantity, item.stock_id]
+                );
+            }
+        }
 
         // Calculate new totals
         let subtotal = 0;
@@ -532,9 +699,9 @@ router.put('/:id', restrictEdit, validateBody(invoiceUpdate), async (req, res) =
             const price = parseFloat(item.unit_price) || 0;
             const disc = parseFloat(item.discount_percent) || 0;
             await client.query(`
-                INSERT INTO invoice_items (invoice_id, variant_id, order_item_id, quantity, unit_price, discount_percent)
-                VALUES ($1, $2, $3, $4, $5, $6)
-            `, [id, item.variant_id, item.order_item_id || null, qty, price, disc]);
+                INSERT INTO invoice_items (invoice_id, variant_id, order_item_id, source_stock_id, quantity, unit_price, discount_percent)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+            `, [id, item.variant_id, item.order_item_id || null, isUnreleasedWarehouse ? item.stock_id : null, qty, price, disc]);
         }
 
         // Delete old expenses and insert new one
