@@ -15,6 +15,7 @@
     let _hubOrder     = null;
     let _hubItems     = [];
     let _hubMOs       = [];
+    let _hubInvoices  = [];
     let _activeHubTab = 'items';
     let _invoicePrevPaid = 0;
     let _bulkSelected = {}; // { [itemId]: { id, name, qty, assigned, designId, designName, designThumb, designStatus, variantId } }
@@ -803,6 +804,7 @@
             // Invoices
             if (invTbody) {
                 const invoices = fin.invoices || [];
+                _hubInvoices = invoices;
                 invTbody.innerHTML = invoices.length
                     ? invoices.map(inv =>
                         `<tr class="border-b border-slate-50 hover:bg-slate-50/50">
@@ -2819,10 +2821,17 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         }).catch(() => _toast('تعذّر نسخ الرابط', 'error'));
     }
 
+    function _getInvoiceShareMessage(invoice, link, clientName) {
+        const invoiceType = invoice?.status === 'issued' ? 'نهائية' : 'أولية';
+        const resolvedClientName = clientName || 'العميل';
+        return `فاتورة ${invoiceType} للعميل ${resolvedClientName}:\n${link}`;
+    }
+
     function _shareInvoiceWhatsApp() {
         const link = _currentInvoiceShareData?.url;
         if (!link) return;
-        const message = `رابط الفاتورة من G.PACK:\n${link}`;
+        const invoice = _hubInvoices.find(item => item.id === _currentInvoiceShareData.invoiceId);
+        const message = _getInvoiceShareMessage(invoice, link, invoice?.client_name || _hubOrder?.client_name);
         window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank', 'noopener');
     }
 
@@ -4013,6 +4022,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         shareInvoice:       _shareInvoice,
         copyInvoiceLink:    _copyInvoiceLink,
         shareInvoiceWhatsApp: _shareInvoiceWhatsApp,
+        getInvoiceShareMessage: _getInvoiceShareMessage,
         openInvoiceLink:    _openInvoiceLink,
         closeShareInvoice:  _closeShareInvoice,
         editInvoice:        _editInvoice,
