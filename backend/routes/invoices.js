@@ -47,7 +47,7 @@ router.get('/', async (req, res) => {
             params.push(client_id);
         }
         if (status === 'active') {
-            where.push(`(i.status = 'draft' OR (i.source = 'warehouse' AND i.status IN ('issued', 'paid', 'overdue') AND COALESCE(i.delivery_status, 'pending') <> 'completed'))`);
+            where.push(`(i.status = 'draft' OR (i.source = 'warehouse' AND i.status NOT IN ('archived', 'cancelled') AND COALESCE(i.delivery_status, 'pending') <> 'completed'))`);
         } else if (status === 'archive') {
             where.push(`(i.status = 'archived' OR (i.source <> 'warehouse' AND i.status IN ('issued', 'paid', 'overdue')))`);
         } else if (status) {
