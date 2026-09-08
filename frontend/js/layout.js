@@ -64,6 +64,7 @@ var NAV_ITEMS = [ // var allows re-declaration if script loads more than once in
     { view: 'receipt-voucher',     label: 'سندات القبض',        icon: 'fa-hand-holding-dollar',  permission: 'receipt_voucher' }, // ✅ Phase 4.2
     { view: 'payment-voucher',     label: 'سندات الصرف',        icon: 'fa-money-bill-transfer',   permission: 'payment_voucher' }, // ✅ Phase 4.3
     { view: 'journal-entry',       label: 'قيد اليومية',        icon: 'fa-book-journal-whills', permission: 'journal_entry' }, // ✅ Phase 4
+    { view: 'opening-balances',    label: 'الأرصدة الافتتاحية', icon: 'fa-scale-balanced',     permission: 'opening_balance' }, // ✅ Phase 5
     { view: 'chart-of-accounts',   label: 'الدليل المحاسبي',    icon: 'fa-sitemap',           permission: 'chart_of_accounts' }, // ✅ Phase 4
 
     // ─────────────────────────────────────────────────────────────────────────────

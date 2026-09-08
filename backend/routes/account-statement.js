@@ -105,11 +105,11 @@ router.get('/client/:clientId', async (req, res) => {
 
                 UNION ALL
 
-                -- Manual journal lines posted directly to this client's sub-ledger
+                -- Manual journal + opening-balance lines posted to this client's sub-ledger
                 SELECT
                     av.id::text as transaction_id,
                     av.voucher_date as trans_date,
-                    'قيد يومية' as document_type,
+                    CASE WHEN av.voucher_type = 'opening_balance' THEN 'رصيد افتتاحي' ELSE 'قيد يومية' END as document_type,
                     av.voucher_number::text as document_number,
                     avl.debit as debit,
                     avl.credit as credit,
@@ -118,7 +118,7 @@ router.get('/client/:clientId', async (req, res) => {
                     av.id as reference_id
                 FROM accounting_vouchers av
                 JOIN accounting_voucher_lines avl ON avl.voucher_id = av.id
-                WHERE av.voucher_type = 'journal'
+                WHERE av.voucher_type IN ('journal', 'opening_balance')
                     AND av.status = 'posted'
                     AND avl.account_id = (SELECT id FROM accounts WHERE code = '1300' LIMIT 1)
                     AND avl.sub_account_type = 'client'
@@ -170,7 +170,7 @@ router.get('/client/:clientId', async (req, res) => {
                 SELECT 'invoice' as doc_type, avl.debit as amount
                 FROM accounting_vouchers av
                 JOIN accounting_voucher_lines avl ON avl.voucher_id = av.id
-                WHERE av.voucher_type = 'journal' AND av.status = 'posted'
+                WHERE av.voucher_type IN ('journal', 'opening_balance') AND av.status = 'posted'
                     AND avl.account_id = (SELECT id FROM accounts WHERE code = '1300' LIMIT 1)
                     AND avl.sub_account_type = 'client' AND avl.sub_account_id = $1
                     AND avl.debit > 0
@@ -179,7 +179,7 @@ router.get('/client/:clientId', async (req, res) => {
                 SELECT 'payment' as doc_type, avl.credit as amount
                 FROM accounting_vouchers av
                 JOIN accounting_voucher_lines avl ON avl.voucher_id = av.id
-                WHERE av.voucher_type = 'journal' AND av.status = 'posted'
+                WHERE av.voucher_type IN ('journal', 'opening_balance') AND av.status = 'posted'
                     AND avl.account_id = (SELECT id FROM accounts WHERE code = '1300' LIMIT 1)
                     AND avl.sub_account_type = 'client' AND avl.sub_account_id = $1
                     AND avl.credit > 0
@@ -283,11 +283,11 @@ router.get('/supplier/:supplierId', async (req, res) => {
 
                 UNION ALL
 
-                -- Manual journal lines posted directly to this supplier's sub-ledger
+                -- Manual journal + opening-balance lines posted to this supplier's sub-ledger
                 SELECT
                     av.id::text as transaction_id,
                     av.voucher_date as trans_date,
-                    'قيد يومية' as document_type,
+                    CASE WHEN av.voucher_type = 'opening_balance' THEN 'رصيد افتتاحي' ELSE 'قيد يومية' END as document_type,
                     av.voucher_number::text as document_number,
                     avl.debit as debit,
                     avl.credit as credit,
@@ -296,7 +296,7 @@ router.get('/supplier/:supplierId', async (req, res) => {
                     av.id as reference_id
                 FROM accounting_vouchers av
                 JOIN accounting_voucher_lines avl ON avl.voucher_id = av.id
-                WHERE av.voucher_type = 'journal'
+                WHERE av.voucher_type IN ('journal', 'opening_balance')
                     AND av.status = 'posted'
                     AND avl.account_id = (SELECT id FROM accounts WHERE code = '2100' LIMIT 1)
                     AND avl.sub_account_type = 'supplier'
@@ -341,7 +341,7 @@ router.get('/supplier/:supplierId', async (req, res) => {
                 SELECT 'invoice' as doc_type, avl.credit as amount
                 FROM accounting_vouchers av
                 JOIN accounting_voucher_lines avl ON avl.voucher_id = av.id
-                WHERE av.voucher_type = 'journal' AND av.status = 'posted'
+                WHERE av.voucher_type IN ('journal', 'opening_balance') AND av.status = 'posted'
                     AND avl.account_id = (SELECT id FROM accounts WHERE code = '2100' LIMIT 1)
                     AND avl.sub_account_type = 'supplier' AND avl.sub_account_id = $1
                     AND avl.credit > 0
@@ -349,7 +349,7 @@ router.get('/supplier/:supplierId', async (req, res) => {
                 SELECT 'payment' as doc_type, avl.debit as amount
                 FROM accounting_vouchers av
                 JOIN accounting_voucher_lines avl ON avl.voucher_id = av.id
-                WHERE av.voucher_type = 'journal' AND av.status = 'posted'
+                WHERE av.voucher_type IN ('journal', 'opening_balance') AND av.status = 'posted'
                     AND avl.account_id = (SELECT id FROM accounts WHERE code = '2100' LIMIT 1)
                     AND avl.sub_account_type = 'supplier' AND avl.sub_account_id = $1
                     AND avl.debit > 0
@@ -585,7 +585,8 @@ router.get('/account/:accountId', async (req, res) => {
             'journal': 'قيد يومية',
             'sales_invoice': 'فاتورة مبيعات',
             'purchase_invoice': 'فاتورة مشتريات',
-            'production_order': 'أمر إنتاج'
+            'production_order': 'أمر إنتاج',
+            'opening_balance': 'رصيد افتتاحي'
         };
         transactions.forEach(t => {
             t.document_type = typeMap[t.document_type] || t.document_type;

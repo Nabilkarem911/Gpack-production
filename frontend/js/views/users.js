@@ -28,6 +28,7 @@ var usersView = (() => {
         { key: 'receipt_voucher',    label: 'سندات القبض' },
         { key: 'payment_voucher',    label: 'سندات الصرف' },
         { key: 'journal_entry',      label: 'قيد اليومية' },
+        { key: 'opening_balance',    label: 'الأرصدة الافتتاحية' },
         { key: 'chart_of_accounts',  label: 'الدليل المحاسبي' },
         // ── المستودعات ────────────────────────────────
         { key: 'warehouses',         label: 'المخازن' },

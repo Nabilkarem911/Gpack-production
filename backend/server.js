@@ -383,6 +383,7 @@ _mountRoute('/receipt-vouchers',    authenticate, require('./routes/receipt-vouc
 _mountRoute('/payment-vouchers',    authenticate, require('./routes/payment-vouchers'));
 _mountRoute('/accounts',            authenticate, require('./routes/accounts'));
 _mountRoute('/journal-entries',     authenticate, require('./routes/journal-entries'));
+_mountRoute('/opening-balances',    authenticate, require('./routes/opening-balances'));
 _mountRoute('/tasks',               authenticate, require('./routes/tasks'));
 _mountRoute('/forecast',            authenticate, require('./routes/forecast'));
 _mountRoute('/reports',             authenticate, require('./routes/reports'));

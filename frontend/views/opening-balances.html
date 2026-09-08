@@ -1,0 +1,207 @@
+<!-- =============================================================================
+     G.PACK 2.0 - Opening Balances View (الأرصدة الافتتاحية)
+     Logic: /js/views/opening-balances.js
+============================================================================= -->
+
+<!-- Page Header -->
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+    <div>
+        <h1 class="text-2xl font-extrabold text-slate-800">الأرصدة الافتتاحية</h1>
+        <p class="text-slate-400 text-sm mt-0.5">تسجيل الأرصدة الافتتاحية للعملاء والموردين والحسابات البنكية والصناديق وباقي حسابات الدليل</p>
+    </div>
+    <div class="flex items-center gap-2">
+        <button onclick="window.obRefresh()"
+                class="w-9 h-9 flex items-center justify-center rounded-xl bg-white border border-slate-200 text-slate-500 hover:text-brand-600 hover:border-brand-300 transition-colors shadow-sm">
+            <i class="fa-solid fa-rotate-right text-sm"></i>
+        </button>
+        <button id="ob-add-btn" onclick="window.obOpenNew()"
+                class="flex items-center gap-2 px-5 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold rounded-xl shadow-md transition-all active:scale-[0.98]">
+            <i class="fa-solid fa-plus"></i>
+            <span>رصيد افتتاحي جديد</span>
+        </button>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 mb-5">
+    <div class="flex flex-wrap items-center gap-3">
+        <div class="relative flex-1 min-w-[200px]">
+            <i class="fa-solid fa-magnifying-glass absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none"></i>
+            <input id="ob-search" type="text" placeholder="بحث باسم الحساب أو العميل أو المورد أو المرجع..."
+                   oninput="window.obSearch()"
+                   class="w-full pr-9 pl-4 py-2 border border-slate-200 rounded-xl text-sm text-slate-700 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition-all" />
+        </div>
+        <select id="ob-status-filter" onchange="window.obSearch()"
+                class="px-3 py-2 border border-slate-200 rounded-xl text-sm text-slate-700 focus:border-brand-500 outline-none bg-white">
+            <option value="">كل الحالات</option>
+            <option value="posted">مرحّل</option>
+            <option value="cancelled">ملغى</option>
+        </select>
+    </div>
+</div>
+
+<!-- List -->
+<div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden mb-6">
+    <div id="ob-loading" class="py-16 text-center">
+        <i class="fa-solid fa-circle-notch fa-spin text-2xl text-brand-400 mb-3"></i>
+        <p class="text-slate-400 text-sm">جاري تحميل الأرصدة الافتتاحية...</p>
+    </div>
+    <div id="ob-table-wrap" class="hidden overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="bg-slate-50 text-xs text-slate-500 border-b border-slate-100">
+                    <th class="py-3 px-4 text-right font-semibold">الحساب / الطرف</th>
+                    <th class="py-3 px-4 text-right font-semibold hidden sm:table-cell">النوع</th>
+                    <th class="py-3 px-4 text-right font-semibold">الطبيعة</th>
+                    <th class="py-3 px-4 text-right font-semibold">المبلغ</th>
+                    <th class="py-3 px-4 text-right font-semibold hidden md:table-cell">التاريخ</th>
+                    <th class="py-3 px-4 text-right font-semibold hidden lg:table-cell">المرجع</th>
+                    <th class="py-3 px-4 text-right font-semibold hidden md:table-cell">رقم القيد</th>
+                    <th class="py-3 px-4 text-right font-semibold">الحالة</th>
+                    <th class="py-3 px-4 text-center font-semibold">إجراءات</th>
+                </tr>
+            </thead>
+            <tbody id="ob-tbody"></tbody>
+        </table>
+    </div>
+    <div id="ob-empty" class="hidden py-16 text-center">
+        <i class="fa-solid fa-scale-balanced text-4xl text-slate-200 mb-3"></i>
+        <p class="text-slate-400 text-sm">لا توجد أرصدة افتتاحية مسجلة</p>
+        <button onclick="window.obOpenNew()"
+                class="mt-4 px-5 py-2 bg-brand-600 text-white text-sm font-bold rounded-xl hover:bg-brand-700 transition-colors">
+            إضافة أول رصيد
+        </button>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     New / Edit Opening Balance Modal
+══════════════════════════════════════════════════════════════════════════ -->
+<div id="ob-modal"
+     style="display:none"
+     class="fixed inset-0 z-50 flex items-start justify-center p-4 pt-8 bg-black/50 opacity-0 transition-opacity duration-200 overflow-y-auto">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-xl mb-8">
+        <!-- Header -->
+        <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+            <div>
+                <h3 id="ob-modal-title" class="text-base font-bold text-slate-800">رصيد افتتاحي جديد</h3>
+                <p id="ob-modal-sub" class="text-xs text-slate-400 mt-0.5">يُنشئ قيدًا متوازنًا تلقائيًا على حساب «الأرصدة الافتتاحية»</p>
+            </div>
+            <button onclick="window.obCloseModal()"
+                    class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <!-- Body -->
+        <div class="p-6 space-y-4">
+            <!-- Account kind -->
+            <div>
+                <label class="block text-xs font-bold text-slate-600 mb-1.5">نوع الحساب <span class="text-red-500">*</span></label>
+                <div class="grid grid-cols-3 gap-2" id="ob-kind-group">
+                    <button type="button" data-kind="client" onclick="window.obSetKind('client')"
+                            class="ob-kind-btn px-3 py-2.5 border border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:border-brand-400 transition-colors">
+                        <i class="fa-solid fa-user ml-1"></i> عميل
+                    </button>
+                    <button type="button" data-kind="supplier" onclick="window.obSetKind('supplier')"
+                            class="ob-kind-btn px-3 py-2.5 border border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:border-brand-400 transition-colors">
+                        <i class="fa-solid fa-truck ml-1"></i> مورد
+                    </button>
+                    <button type="button" data-kind="account" onclick="window.obSetKind('account')"
+                            class="ob-kind-btn px-3 py-2.5 border border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:border-brand-400 transition-colors">
+                        <i class="fa-solid fa-sitemap ml-1"></i> حساب من الدليل
+                    </button>
+                </div>
+            </div>
+
+            <!-- Client picker -->
+            <div id="ob-picker-client" class="hidden">
+                <label class="block text-xs font-bold text-slate-600 mb-1.5">العميل <span class="text-red-500">*</span></label>
+                <select id="ob-client" class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-brand-500 outline-none bg-white"></select>
+                <p class="text-[11px] text-slate-400 mt-1">يُسجَّل على حساب الذمم المدينة (1300)</p>
+            </div>
+
+            <!-- Supplier picker -->
+            <div id="ob-picker-supplier" class="hidden">
+                <label class="block text-xs font-bold text-slate-600 mb-1.5">المورد <span class="text-red-500">*</span></label>
+                <select id="ob-supplier" class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-brand-500 outline-none bg-white"></select>
+                <p class="text-[11px] text-slate-400 mt-1">يُسجَّل على حساب الذمم الدائنة (2100)</p>
+            </div>
+
+            <!-- GL account picker -->
+            <div id="ob-picker-account" class="hidden">
+                <label class="block text-xs font-bold text-slate-600 mb-1.5">الحساب <span class="text-red-500">*</span></label>
+                <select id="ob-account" class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-brand-500 outline-none bg-white"></select>
+                <p class="text-[11px] text-slate-400 mt-1">يشمل الحسابات البنكية والصناديق وكل حسابات الدليل النشطة</p>
+            </div>
+
+            <!-- Duplicate warning -->
+            <div id="ob-dup-warning" class="hidden flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700 font-semibold">
+                <i class="fa-solid fa-triangle-exclamation mt-0.5"></i>
+                <span>يوجد رصيد افتتاحي مرحّل لهذا الحساب بالفعل — استخدم «تعديل» على الرصيد الموجود بدلًا من إنشاء جديد.</span>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <!-- Side -->
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1.5">طبيعة الرصيد <span class="text-red-500">*</span></label>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button type="button" id="ob-side-debit" onclick="window.obSetSide('debit')"
+                                class="px-3 py-2.5 border rounded-xl text-sm font-bold transition-colors">
+                            <i class="fa-solid fa-arrow-down ml-1"></i> مدين (له)
+                        </button>
+                        <button type="button" id="ob-side-credit" onclick="window.obSetSide('credit')"
+                                class="px-3 py-2.5 border rounded-xl text-sm font-bold transition-colors">
+                            <i class="fa-solid fa-arrow-up ml-1"></i> دائن (عليه)
+                        </button>
+                    </div>
+                </div>
+                <!-- Amount -->
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1.5">المبلغ <span class="text-red-500">*</span></label>
+                    <input id="ob-amount" type="number" min="0.01" step="0.01" placeholder="0.00"
+                           class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm font-mono focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition-all" />
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <!-- Date -->
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1.5">تاريخ الرصيد <span class="text-red-500">*</span></label>
+                    <input id="ob-date" type="date"
+                           class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition-all" />
+                </div>
+                <!-- Reference -->
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1.5">المرجع</label>
+                    <input id="ob-reference" type="text" placeholder="رقم مرجعي (اختياري)"
+                           class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition-all" />
+                </div>
+            </div>
+
+            <!-- Description -->
+            <div>
+                <label class="block text-xs font-bold text-slate-600 mb-1.5">البيان</label>
+                <input id="ob-description" type="text" placeholder="وصف الرصيد الافتتاحي..."
+                       class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition-all" />
+            </div>
+
+            <!-- Error -->
+            <div id="ob-form-error" class="hidden p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-600 font-semibold"></div>
+        </div>
+
+        <!-- Footer -->
+        <div class="flex gap-3 px-6 pb-6">
+            <button id="ob-save-btn" onclick="window.obSave()"
+                    class="flex-1 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold rounded-xl transition-all active:scale-[0.98] disabled:opacity-50">
+                <i class="fa-solid fa-floppy-disk ml-1.5"></i> حفظ الرصيد
+            </button>
+            <button onclick="window.obCloseModal()"
+                    class="flex-1 py-2.5 border border-slate-200 text-slate-600 text-sm font-bold rounded-xl hover:bg-slate-50 transition-all">
+                إلغاء
+            </button>
+        </div>
+    </div>
+</div>
+
+<script src="/js/views/opening-balances.js?v=20260907a"></script>
