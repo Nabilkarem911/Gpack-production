@@ -1035,7 +1035,7 @@ router.post('/', restrictWrite, validateBody(orderCreate), async (req, res) => {
                      subtotal, tax_amount, grand_total, discount_type, discount_value, discount_amount,
                      client_notes, internal_notes, terms_conditions, custom_terms, down_payment_required, created_by)
                  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-                         $13, $14, $15::jsonb, $16::jsonb, $17, $18)
+                         $13, $14::jsonb, $15::jsonb, $16, $17)
                  RETURNING *`,
                 [
                     client_id,
