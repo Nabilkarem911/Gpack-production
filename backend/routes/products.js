@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 const express = require('express');
 const db = require('../db');
@@ -8,7 +8,7 @@ const { validateBody, productCreate, productUpdate, variantCreate, variantUpdate
 const router = express.Router();
 
 // All routes are protected by the authenticate middleware mounted in server.js.
-// SCHEMA RULE: products and product_variants are GENERAL â€” never tied to a client_id.
+// SCHEMA RULE: products and product_variants are GENERAL — never tied to a client_id.
 // Client-specific inventory lives exclusively in warehouse_stock.
 
 // View permission: 'products', 'inventory', or 'warehouses' view can access
@@ -30,10 +30,10 @@ const restrictWrite = authorize(['admin', 'manager', 'super_admin']);
 // GET /api/products
 // Returns all products. Optionally includes their variants.
 // Query params:
-//   ?include_variants=true  â€” join variants into a nested array
-//   ?category_id=<uuid>     â€” filter by category
-//   ?search=<string>        â€” filter by name or SKU
-//   ?status=active|inactive â€” filter by status (default: all)
+//   ?include_variants=true  — join variants into a nested array
+//   ?category_id=<uuid>     — filter by category
+//   ?search=<string>        — filter by name or SKU
+//   ?status=active|inactive — filter by status (default: all)
 // =============================================================================
 
 router.get('/', async (req, res) => {
@@ -139,14 +139,14 @@ router.get('/', async (req, res) => {
 // GET /api/products/movements
 // Returns inventory movements (receipts from suppliers + dispatches to clients).
 // Query params:
-//   ?search=<string>       â€” filter by product name or size_name
-//   ?category_id=<uuid>    â€” filter by product category
-//   ?variant_id=<uuid>     â€” filter by specific variant
-//   ?type=receipt|dispense â€” filter by movement type
-//   ?from=<date>           â€” from date (ISO)
-//   ?to=<date>             â€” to date (ISO)
-//   ?limit=<n>             â€” default 200
-//   ?offset=<n>            â€” default 0
+//   ?search=<string>       — filter by product name or size_name
+//   ?category_id=<uuid>    — filter by product category
+//   ?variant_id=<uuid>     — filter by specific variant
+//   ?type=receipt|dispense — filter by movement type
+//   ?from=<date>           — from date (ISO)
+//   ?to=<date>             — to date (ISO)
+//   ?limit=<n>             — default 200
+//   ?offset=<n>            — default 0
 // =============================================================================
 
 router.get('/movements', async (req, res) => {
@@ -334,7 +334,7 @@ router.get('/:id', async (req, res) => {
         );
 
         if (productResult.rowCount === 0) {
-            return res.status(404).json({ error: 'ط§ظ„ظ…ظ†طھط¬ ط؛ظٹط± ظ…ظˆط¬ظˆط¯.' });
+            return res.status(404).json({ error: 'المنتج غير موجود.' });
         }
 
         const product = productResult.rows[0];
@@ -376,20 +376,20 @@ router.get('/:id', async (req, res) => {
 
 // =============================================================================
 // GET /api/products/:id/lifecycle
-// Product Lifecycle Card â€” returns per-section data for the lifecycle modal.
+// Product Lifecycle Card — returns per-section data for the lifecycle modal.
 // Query params:
-//   ?section=overview   â€” product info + ALL variants (active & inactive). Default.
-//   ?section=stock      â€” warehouse_stock rows for this product's variants.
+//   ?section=overview   — product info + ALL variants (active & inactive). Default.
+//   ?section=stock      — warehouse_stock rows for this product's variants.
 //                         Requires inventory/warehouses/vmi_dispatch/receiving view.
 //                         Optional &client_id=<uuid> to scope rows.
-//   ?section=movements  â€” recent inventory_transactions for this product's variants.
+//   ?section=movements  — recent inventory_transactions for this product's variants.
 //                         Same permission as stock. Optional &variant_id=<uuid>, &limit=<n>.
-//   ?section=sales      â€” order_items aggregates: per-variant totals, monthly
+//   ?section=sales      — order_items aggregates: per-variant totals, monthly
 //                         breakdown (last 12 months), top clients, recent lines.
 //                         Requires sales/quotations/production_orders/reports view.
-//   ?section=purchases  â€” suppliers, ordered/received totals, last supply cost,
+//   ?section=purchases  — suppliers, ordered/received totals, last supply cost,
 //                         open manufacturer orders. Requires purchasing/receiving/suppliers view.
-//   ?section=prices     â€” per-variant current cost/sell prices + historical stats.
+//   ?section=prices     — per-variant current cost/sell prices + historical stats.
 // =============================================================================
 
 // Per-section view-permission gate (mirrors the style of inventory.js scoping).
@@ -416,13 +416,16 @@ router.get('/:id/lifecycle', async (req, res) => {
     try {
         const productId = req.params.id;
         const section   = req.query.section || 'overview';
+        // Optional variant scope — when provided, every section is filtered to
+        // this variant only (used by the variant-level lifecycle card).
+        const variantId = req.query.variant_id || null;
         const ALLOWED   = ['overview', 'stock', 'movements', 'sales', 'purchases', 'prices'];
         if (!ALLOWED.includes(section)) {
-            return res.status(400).json({ error: 'ظ‚ط³ظ… ط؛ظٹط± ظ…ط¹ط±ظˆظپ. ط§ظ„ط£ظ‚ط³ط§ظ… ط§ظ„ظ…طھط§ط­ط©: ' + ALLOWED.join(', ') });
+            return res.status(400).json({ error: 'قسم غير معروف. الأقسام المتاحة: ' + ALLOWED.join(', ') });
         }
 
         if (!_lifecycleSectionAllowed(req, section)) {
-            return res.status(403).json({ error: 'ط؛ظٹط± ظ…طµط±ط­ ط¨ط¹ط±ط¶ ظ‡ط°ط§ ط§ظ„ظ‚ط³ظ….' });
+            return res.status(403).json({ error: 'غير مصرح بعرض هذا القسم.' });
         }
 
         // Verify product exists (single cheap lookup for every section)
@@ -440,11 +443,17 @@ router.get('/:id/lifecycle', async (req, res) => {
             [productId]
         );
         if (productRes.rowCount === 0) {
-            return res.status(404).json({ error: 'ط§ظ„ظ…ظ†طھط¬ ط؛ظٹط± ظ…ظˆط¬ظˆط¯.' });
+            return res.status(404).json({ error: 'المنتج غير موجود.' });
         }
         const product = productRes.rows[0];
 
         if (section === 'overview') {
+            const params = [productId];
+            let whereExtra = '';
+            if (variantId) {
+                params.push(variantId);
+                whereExtra = ` AND pv.id = $${params.length}`;
+            }
             const variantsRes = await db.query(
                 `SELECT
                     pv.id, pv.product_id, pv.size_name, pv.sku, pv.barcode,
@@ -454,9 +463,9 @@ router.get('/:id/lifecycle', async (req, res) => {
                     pv.weight, pv.dimensions, pv.status, pv.created_at, pv.updated_at
                  FROM product_variants pv
                  LEFT JOIN units u ON u.id = pv.unit_id
-                 WHERE pv.product_id = $1
+                 WHERE pv.product_id = $1 ${whereExtra}
                  ORDER BY pv.created_at ASC`,
-                [productId]
+                params
             );
             return res.status(200).json({
                 data: { section, product, variants: variantsRes.rows },
@@ -469,7 +478,11 @@ router.get('/:id/lifecycle', async (req, res) => {
             let whereExtra = '';
             if (client_id) {
                 params.push(client_id);
-                whereExtra = ` AND ws.client_id = $${params.length}`;
+                whereExtra += ` AND ws.client_id = $${params.length}`;
+            }
+            if (variantId) {
+                params.push(variantId);
+                whereExtra += ` AND ws.variant_id = $${params.length}`;
             }
 
             const stockRes = await db.query(
@@ -578,6 +591,12 @@ router.get('/:id/lifecycle', async (req, res) => {
         }
 
         if (section === 'sales') {
+            const salesParams = [productId];
+            let vCond = '';
+            if (variantId) {
+                salesParams.push(variantId);
+                vCond = ` AND pv.id = $${salesParams.length}`;
+            }
             const [perVariantRes, monthlyRes, topClientsRes, recentRes] = await Promise.all([
                 // Per-variant sales totals + price stats (excludes quotes/drafts/VMI-null orders)
                 db.query(
@@ -595,12 +614,12 @@ router.get('/:id/lifecycle', async (req, res) => {
                      LEFT JOIN orders o ON o.id = oi.order_id
                         AND o.status NOT IN ('quote', 'draft', 'cancelled')
                         AND o.grand_total IS NOT NULL
-                     WHERE pv.product_id = $1
+                     WHERE pv.product_id = $1 ${vCond}
                      GROUP BY pv.id, pv.size_name
                      ORDER BY qty_sold DESC`,
-                    [productId]
+                    salesParams
                 ),
-                // Monthly breakdown â€” last 12 months
+                // Monthly breakdown — last 12 months
                 db.query(
                     `SELECT
                         TO_CHAR(o.order_date, 'YYYY-MM') AS month,
@@ -613,9 +632,10 @@ router.get('/:id/lifecycle', async (req, res) => {
                        AND o.status NOT IN ('quote', 'draft', 'cancelled')
                        AND o.grand_total IS NOT NULL
                        AND o.order_date >= NOW() - INTERVAL '12 months'
+                       ${vCond}
                      GROUP BY TO_CHAR(o.order_date, 'YYYY-MM')
                      ORDER BY month ASC`,
-                    [productId]
+                    salesParams
                 ),
                 // Top clients by revenue
                 db.query(
@@ -630,10 +650,11 @@ router.get('/:id/lifecycle', async (req, res) => {
                      WHERE pv.product_id = $1
                        AND o.status NOT IN ('quote', 'draft', 'cancelled')
                        AND o.grand_total IS NOT NULL
+                       ${vCond}
                      GROUP BY c.id, c.name
                      ORDER BY revenue DESC
                      LIMIT 5`,
-                    [productId]
+                    salesParams
                 ),
                 // Recent order lines for this product
                 db.query(
@@ -654,9 +675,10 @@ router.get('/:id/lifecycle', async (req, res) => {
                      WHERE pv.product_id = $1
                        AND o.status NOT IN ('quote', 'draft', 'cancelled')
                        AND o.grand_total IS NOT NULL
+                       ${vCond}
                      ORDER BY o.order_date DESC, o.id DESC
                      LIMIT 20`,
-                    [productId]
+                    salesParams
                 ),
             ]);
 
@@ -673,9 +695,15 @@ router.get('/:id/lifecycle', async (req, res) => {
         }
 
         if (section === 'purchases') {
+            const pParams = [productId];
+            let pCond = '';
+            if (variantId) {
+                pParams.push(variantId);
+                pCond = ` AND pv.id = $${pParams.length}`;
+            }
             const [suppliersRes, lastCostRes, openMoRes] = await Promise.all([
                 // Suppliers aggregated via manufacturer orders.
-                // NOTE: manufacturer_order_items has NO variant_id â€” link through order_items.
+                // NOTE: manufacturer_order_items has NO variant_id — link through order_items.
                 db.query(
                     `SELECT
                         s.id, s.company_name,
@@ -689,9 +717,10 @@ router.get('/:id/lifecycle', async (req, res) => {
                      JOIN product_variants pv    ON pv.id = oi.variant_id
                      WHERE pv.product_id = $1
                        AND mo.status <> 'cancelled'
+                       ${pCond}
                      GROUP BY s.id, s.company_name
                      ORDER BY total_ordered DESC`,
-                    [productId]
+                    pParams
                 ),
                 // Last supply cost across MO items, purchase invoices, receiving vouchers
                 db.query(
@@ -701,23 +730,23 @@ router.get('/:id/lifecycle', async (req, res) => {
                         JOIN manufacturer_orders mo ON mo.id = moi.manufacturer_order_id
                         JOIN order_items oi        ON oi.id = moi.order_item_id
                         JOIN product_variants pv   ON pv.id = oi.variant_id
-                        WHERE pv.product_id = $1 AND mo.status <> 'cancelled' AND moi.unit_cost > 0
+                        WHERE pv.product_id = $1 AND mo.status <> 'cancelled' AND moi.unit_cost > 0 ${pCond}
                         UNION ALL
                         SELECT pii.unit_cost, pi.created_at, 'purchase_invoice' AS src
                         FROM purchase_invoice_items pii
                         JOIN purchase_invoices pi ON pi.id = pii.purchase_invoice_id
                         JOIN product_variants pv ON pv.id = pii.variant_id
-                        WHERE pv.product_id = $1 AND pii.unit_cost > 0
+                        WHERE pv.product_id = $1 AND pii.unit_cost > 0 ${pCond}
                         UNION ALL
                         SELECT rvi.unit_cost, rv.created_at, 'receiving_voucher' AS src
                         FROM receiving_voucher_items rvi
                         JOIN receiving_vouchers rv ON rv.id = rvi.receiving_voucher_id
                         JOIN product_variants pv ON pv.id = rvi.variant_id
-                        WHERE pv.product_id = $1 AND rvi.unit_cost > 0
+                        WHERE pv.product_id = $1 AND rvi.unit_cost > 0 ${pCond}
                      ) t
                      ORDER BY created_at DESC
                      LIMIT 1`,
-                    [productId]
+                    pParams
                 ),
                 // Open manufacturer orders (not fully received / cancelled / completed)
                 db.query(
@@ -733,10 +762,11 @@ router.get('/:id/lifecycle', async (req, res) => {
                      JOIN product_variants pv    ON pv.id = oi.variant_id
                      WHERE pv.product_id = $1
                        AND mo.status NOT IN ('cancelled', 'completed', 'received')
+                       ${pCond}
                      GROUP BY mo.id, mo.mo_number, mo.status, mo.expected_delivery_date, s.company_name, mo.created_at
                      ORDER BY mo.created_at DESC
                      LIMIT 20`,
-                    [productId]
+                    pParams
                 ),
             ]);
 
@@ -752,6 +782,12 @@ router.get('/:id/lifecycle', async (req, res) => {
         }
 
         // section === 'prices'
+        const pricesParams = [productId];
+        let prCond = '';
+        if (variantId) {
+            pricesParams.push(variantId);
+            prCond = ` AND pv.id = $${pricesParams.length}`;
+        }
         const pricesRes = await db.query(
             `SELECT
                 pv.id, pv.size_name, pv.sku, pv.barcode,
@@ -803,9 +839,9 @@ router.get('/:id/lifecycle', async (req, res) => {
                     WHERE rvi.variant_id = pv.id AND rvi.unit_cost > 0
                 ) t
              ) pcost ON true
-             WHERE pv.product_id = $1
+             WHERE pv.product_id = $1 ${prCond}
              ORDER BY pv.created_at ASC`,
-            [productId]
+            pricesParams
         );
 
         return res.status(200).json({
@@ -836,7 +872,7 @@ router.post('/', restrictWrite, validateBody(productCreate), async (req, res) =>
     const { name, description, category_id, sku, barcode, status, variants } = req.validatedBody;
 
     if (!name || !name.trim()) {
-        return res.status(400).json({ error: 'ط§ط³ظ… ط§ظ„ظ…ظ†طھط¬ ظ…ط·ظ„ظˆط¨.' });
+        return res.status(400).json({ error: 'اسم المنتج مطلوب.' });
     }
 
     try {
@@ -873,7 +909,7 @@ router.post('/', restrictWrite, validateBody(productCreate), async (req, res) =>
             if (Array.isArray(variants) && variants.length > 0) {
                 for (const v of variants) {
                     if (!v.size_name || !v.size_name.trim()) {
-                        throw new Error('ظƒظ„ ظ…طھط؛ظٹط± ظٹط¬ط¨ ط£ظ† ظٹط­طھظˆظٹ ط¹ظ„ظ‰ ط§ط³ظ… ظ…ظ‚ط§ط³.');
+                        throw new Error('كل متغير يجب أن يحتوي على اسم مقاس.');
                     }
 
                     const variantInsert = await client.query(
@@ -910,7 +946,7 @@ router.post('/', restrictWrite, validateBody(productCreate), async (req, res) =>
     } catch (err) {
         console.error('[Products] POST / error:', err.message);
         if (err.code === '23505') {
-            return res.status(409).json({ error: 'ط±ظ…ط² SKU ظ…ط³طھط®ط¯ظ… ظ…ط³ط¨ظ‚ط§ظ‹. ظٹط±ط¬ظ‰ ط§ط®طھظٹط§ط± ط±ظ…ط² ظپط±ظٹط¯.' });
+            return res.status(409).json({ error: 'رمز SKU مستخدم مسبقاً. يرجى اختيار رمز فريد.' });
         }
         return res.status(500).json({ error: err.message || 'Internal server error.' });
     }
@@ -918,7 +954,7 @@ router.post('/', restrictWrite, validateBody(productCreate), async (req, res) =>
 
 // =============================================================================
 // PUT /api/products/:id
-// Updates a product's core fields (not variants â€” managed separately).
+// Updates a product's core fields (not variants — managed separately).
 // =============================================================================
 
 router.put('/:id', restrictWrite, validateBody(productUpdate), async (req, res) => {
@@ -926,7 +962,7 @@ router.put('/:id', restrictWrite, validateBody(productUpdate), async (req, res) 
     const { name, description, category_id, sku, barcode, status } = req.validatedBody;
 
     if (!name || !name.trim()) {
-        return res.status(400).json({ error: 'ط§ط³ظ… ط§ظ„ظ…ظ†طھط¬ ظ…ط·ظ„ظˆط¨.' });
+        return res.status(400).json({ error: 'اسم المنتج مطلوب.' });
     }
 
     try {
@@ -953,14 +989,14 @@ router.put('/:id', restrictWrite, validateBody(productUpdate), async (req, res) 
         );
 
         if (result.rowCount === 0) {
-            return res.status(404).json({ error: 'ط§ظ„ظ…ظ†طھط¬ ط؛ظٹط± ظ…ظˆط¬ظˆط¯.' });
+            return res.status(404).json({ error: 'المنتج غير موجود.' });
         }
 
         return res.status(200).json({ data: result.rows[0] });
     } catch (err) {
         console.error('[Products] PUT /:id error:', err.message);
         if (err.code === '23505') {
-            return res.status(409).json({ error: 'ط±ظ…ط² SKU ظ…ط³طھط®ط¯ظ… ظ…ط³ط¨ظ‚ط§ظ‹.' });
+            return res.status(409).json({ error: 'رمز SKU مستخدم مسبقاً.' });
         }
         return res.status(500).json({ error: 'Internal server error.' });
     }
@@ -969,7 +1005,7 @@ router.put('/:id', restrictWrite, validateBody(productUpdate), async (req, res) 
 // =============================================================================
 // POST /api/products/:id/variants
 // Adds a new variant to an existing product.
-// SCHEMA RULE: No client_id â€” variants are general.
+// SCHEMA RULE: No client_id — variants are general.
 // =============================================================================
 
 router.post('/:id/variants', restrictWrite, validateBody(variantCreate), async (req, res) => {
@@ -978,14 +1014,14 @@ router.post('/:id/variants', restrictWrite, validateBody(variantCreate), async (
             min_stock_level, max_stock_level, weight, dimensions, status } = req.validatedBody;
 
     if (!size_name || !size_name.trim()) {
-        return res.status(400).json({ error: 'ط§ط³ظ… ط§ظ„ظ…ظ‚ط§ط³ ظ…ط·ظ„ظˆط¨.' });
+        return res.status(400).json({ error: 'اسم المقاس مطلوب.' });
     }
 
     try {
         // Verify the parent product exists
         const productCheck = await db.query('SELECT id FROM products WHERE id = $1 LIMIT 1', [id]);
         if (productCheck.rowCount === 0) {
-            return res.status(404).json({ error: 'ط§ظ„ظ…ظ†طھط¬ ط؛ظٹط± ظ…ظˆط¬ظˆط¯.' });
+            return res.status(404).json({ error: 'المنتج غير موجود.' });
         }
 
         const result = await db.query(
@@ -1015,7 +1051,7 @@ router.post('/:id/variants', restrictWrite, validateBody(variantCreate), async (
     } catch (err) {
         console.error('[Products] POST /:id/variants error:', err.message);
         if (err.code === '23505') {
-            return res.status(409).json({ error: 'ط±ظ…ط² SKU ظ„ظ„ظ…طھط؛ظٹط± ظ…ط³طھط®ط¯ظ… ظ…ط³ط¨ظ‚ط§ظ‹.' });
+            return res.status(409).json({ error: 'رمز SKU للمتغير مستخدم مسبقاً.' });
         }
         return res.status(500).json({ error: 'Internal server error.' });
     }
@@ -1032,7 +1068,7 @@ router.put('/:id/variants/:variantId', restrictWrite, validateBody(variantUpdate
             min_stock_level, max_stock_level, weight, dimensions, status } = req.validatedBody;
 
     if (!size_name || !size_name.trim()) {
-        return res.status(400).json({ error: 'ط§ط³ظ… ط§ظ„ظ…ظ‚ط§ط³ ظ…ط·ظ„ظˆط¨.' });
+        return res.status(400).json({ error: 'اسم المقاس مطلوب.' });
     }
 
     try {
@@ -1069,14 +1105,14 @@ router.put('/:id/variants/:variantId', restrictWrite, validateBody(variantUpdate
         );
 
         if (result.rowCount === 0) {
-            return res.status(404).json({ error: 'ط§ظ„ظ…طھط؛ظٹط± ط؛ظٹط± ظ…ظˆط¬ظˆط¯.' });
+            return res.status(404).json({ error: 'المتغير غير موجود.' });
         }
 
         return res.status(200).json({ data: result.rows[0] });
     } catch (err) {
         console.error('[Products] PUT /:id/variants/:variantId error:', err.message);
         if (err.code === '23505') {
-            return res.status(409).json({ error: 'ط±ظ…ط² SKU ظ„ظ„ظ…طھط؛ظٹط± ظ…ط³طھط®ط¯ظ… ظ…ط³ط¨ظ‚ط§ظ‹.' });
+            return res.status(409).json({ error: 'رمز SKU للمتغير مستخدم مسبقاً.' });
         }
         return res.status(500).json({ error: 'Internal server error.' });
     }
@@ -1104,14 +1140,14 @@ router.delete('/:id/variants/:variantId', restrictWrite, async (req, res) => {
         );
 
         if (result.rowCount === 0) {
-            return res.status(404).json({ error: 'ط§ظ„ظ…طھط؛ظٹط± ط؛ظٹط± ظ…ظˆط¬ظˆط¯.' });
+            return res.status(404).json({ error: 'المتغير غير موجود.' });
         }
 
-        return res.status(200).json({ message: 'طھظ… طھط¹ط·ظٹظ„ ط§ظ„ظ…طھط؛ظٹط± ط¨ظ†ط¬ط§ط­.' });
+        return res.status(200).json({ message: 'تم تعطيل المتغير بنجاح.' });
     } catch (err) {
         console.error('[Products] DELETE /:id/variants/:variantId error:', err.message);
         if (err.code === '23503') {
-            return res.status(400).json({ error: 'ظ„ط§ ظٹظ…ظƒظ† ط­ط°ظپ ظ‡ط°ط§ ط§ظ„طµظ†ظپ ظ„ط§ط±طھط¨ط§ط·ظ‡ ط¨ط­ط±ظƒط§طھ ظ…ط®ط²ظ†ظٹط© ط£ظˆ ظپظˆط§طھظٹط±.' });
+            return res.status(400).json({ error: 'لا يمكن حذف هذا الصنف لارتباطه بحركات مخزنية أو فواتير.' });
         }
         return res.status(500).json({ error: 'Internal server error.' });
     }

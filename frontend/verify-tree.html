@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={theme:{extend:{colors:{brand:{50:'#eef2ff',100:'#e0e7ff',200:'#c7d2fe',600:'#4f46e5',700:'#4338ca'}}}}}</script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"/>
+</head>
+<body class="bg-slate-100 p-6">
+<div id="toast-container"></div>
+<div id="main-content"></div>
+<script>
+window.GpackPerms = { all_access: true };
+window.GpackUser = { role: 'admin' };
+window.showToast = (m,t)=>console.log('toast:',t,m);
+window.getCurrentNavToken = () => 1;
+window.isViewActive = () => true;
+window.SearchableSelect = function(){ this.setData=()=>{}; this.select=()=>{}; this.clear=()=>{}; this.value=''; };
+window.makeSelectSearchable = ()=>{};
+window.navigateTo = ()=>{};
+window.apiFetch = async (url) => {
+  console.log('apiFetch:', url);
+  if (url.includes('/api/categories')) return {data:[]};
+  if (url.includes('/api/units')) return {data:[]};
+  if (url.includes('/api/products?')) return {data:[
+    {id:'p1',name:'أكواب ورقية',sku:'PRD-00026',status:'active',category_name:'أكواب ورقية',variants:[
+      {id:'v1',size_name:'8 أونز دبل',sku:'V-1',unit_name:'كرتون',selling_price:145,status:'active'},
+      {id:'v2',size_name:'12 أونز دبل',sku:'V-2',unit_name:'كرتون',selling_price:165,status:'active'},
+      {id:'v3',size_name:'7 أونز سنجل',sku:'V-3',unit_name:'كرتون',selling_price:195,status:'active'}]},
+    {id:'p2',name:'صنف بدون مقاسات',sku:'PRD-00099',status:'active',category_name:'متفرقات',variants:[]},
+    {id:'p3',name:'علب بلاستيك',sku:'PRD-00030',status:'inactive',category_name:'علب',variants:[{id:'v4',size_name:'500 مل',selling_price:80,status:'active'}]}
+  ]};
+  if (url.includes('section=')) {
+    const scoped = url.includes('variant_id=');
+    const vname = scoped ? '8 أونز دبل' : null;
+    return {data:{section:'overview',
+      product:{id:'p1',name:'أكواب ورقية',sku:'PRD-00026',status:'active',category_name:'أكواب ورقية',created_at:'2026-01-01',updated_at:'2026-03-01'},
+      variants:[{id:'v1',size_name:vname||'8 أونز دبل',sku:'V-1',unit_name:'كرتون',selling_price:145,cost_price:0,min_stock_level:5,status:'active'}]}};
+  }
+  return {data:[]};
+};
+fetch('views/products.html').then(r=>r.text()).then(html=>{
+  document.getElementById('main-content').innerHTML = html;
+  const s = document.createElement('script'); s.src = 'js/views/products.js?v=x'; document.body.appendChild(s);
+});
+</script>
+</body>
+</html>

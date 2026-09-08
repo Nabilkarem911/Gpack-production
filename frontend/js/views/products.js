@@ -119,8 +119,11 @@
 
     // ==========================================================================
     // _renderTable(products)
-    // Renders the products list into #products-tbody.
+    // Renders the products list into #products-tbody as a parent/child tree:
+    // product rows expand (chart-of-accounts pattern) to reveal variant rows.
     // ==========================================================================
+    let _currentFiltered = null; // last filtered list (used by expand toggles)
+
     function _renderTable(products) {
         const tbody = document.getElementById('products-tbody');
         const empty = document.getElementById('products-empty');
@@ -134,50 +137,87 @@
 
         if (empty) empty.classList.add('hidden');
 
-        tbody.innerHTML = products.map(p => {
-            const variantCount = Array.isArray(p.variants) ? p.variants.length : 0;
-            const skuText      = p.sku ? `<span class="text-xs text-slate-400 font-mono">${p.sku}</span>` : '—';
-            const catText      = p.category_name || '<span class="text-slate-300">—</span>';
-            const perms        = window.GpackPerms || {};
-            const canEdit      = perms.all_access || perms.products?.edit;
+        const perms   = window.GpackPerms || {};
+        const canEdit = perms.all_access || perms.products?.edit;
+        const rows    = [];
 
-            return `
+        products.forEach(p => {
+            const variants     = Array.isArray(p.variants) ? p.variants : [];
+            const variantCount = variants.length;
+            const hasChildren  = variantCount > 0;
+            const expanded     = hasChildren && _expandedProductIds.has(p.id);
+            const skuText      = p.sku ? `<span class="text-xs text-slate-400 font-mono">${_plcEsc(p.sku)}</span>` : '—';
+            const catText      = p.category_name ? _plcEsc(p.category_name) : '<span class="text-slate-300">—</span>';
+            const pid          = _plcEsc(p.id);
+            const pname        = _plcEsc(p.name);
+
+            // ── Parent row (product) — same expand pattern as chart-of-accounts ──
+            const chevron = hasChildren
+                ? `<button type="button" onclick="event.stopPropagation(); window.toggleProductExpand('${pid}')"
+                           title="${expanded ? 'طي المقاسات' : 'عرض المقاسات'}"
+                           class="prod-tree-toggle w-6 h-6 flex items-center justify-center rounded-md
+                                  hover:bg-slate-100 text-slate-500 text-xs transition-transform">
+                       <i class="fa-solid ${expanded ? 'fa-chevron-down' : 'fa-chevron-left'}"></i>
+                   </button>`
+                : `<span class="w-6 h-6 flex items-center justify-center text-transparent text-xs">
+                       <i class="fa-solid fa-chevron-down"></i>
+                   </span>`;
+
+            rows.push(`
             <tr class="border-b border-slate-100 hover:bg-slate-50/60 transition-colors">
                 <td class="py-3.5 px-4">
-                    <button type="button"
-                            onclick="window.openProductLifecycle('${p.id}')"
-                            title="فتح بطاقة الصنف (دورة الحياة)"
-                            class="font-semibold text-slate-800 text-sm hover:text-brand-600
-                                   hover:underline decoration-dotted underline-offset-4 transition-colors text-right">
-                        ${p.name}
-                    </button>
+                    <div class="flex items-center gap-2">
+                        ${chevron}
+                        <button type="button"
+                                onclick="window.toggleProductExpandOrOpen('${pid}')"
+                                title="${hasChildren ? 'اضغط لعرض المقاسات' : 'فتح بطاقة الصنف'}"
+                                class="font-semibold text-slate-800 text-sm hover:text-brand-600
+                                       hover:underline decoration-dotted underline-offset-4 transition-colors text-right">
+                            ${pname}
+                        </button>
+                    </div>
                 </td>
                 <td class="py-3.5 px-4 hidden sm:table-cell text-sm text-slate-600">${catText}</td>
                 <td class="py-3.5 px-4 hidden md:table-cell">${skuText}</td>
                 <td class="py-3.5 px-4 hidden md:table-cell">
-                    <span class="inline-flex items-center gap-1 text-xs font-semibold text-slate-600
-                                 bg-slate-100 px-2.5 py-1 rounded-full">
-                        <i class="fa-solid fa-cubes text-slate-400"></i>
+                    ${hasChildren ? `
+                    <button type="button" onclick="window.toggleProductExpand('${pid}')"
+                            title="اضغط لعرض/طي المقاسات"
+                            class="inline-flex items-center gap-1 text-xs font-semibold
+                                   ${expanded ? 'text-brand-700 bg-brand-50 border border-brand-200' : 'text-slate-600 bg-slate-100'}
+                                   px-2.5 py-1 rounded-full hover:bg-brand-100 transition-colors">
+                        <i class="fa-solid fa-cubes ${expanded ? 'text-brand-500' : 'text-slate-400'}"></i>
                         ${variantCount} مقاس
-                    </span>
+                    </button>` : `
+                    <span class="inline-flex items-center gap-1 text-xs font-semibold text-slate-400
+                                 bg-slate-50 px-2.5 py-1 rounded-full">
+                        <i class="fa-solid fa-cubes text-slate-300"></i>
+                        بدون مقاسات
+                    </span>`}
                 </td>
                 <td class="py-3.5 px-4">${_statusBadge(p.status)}</td>
                 <td class="py-3.5 px-4">
                     <div class="flex items-center justify-end gap-2">
+                        <button onclick="window.openProductLifecycle('${pid}')"
+                                title="بطاقة الصنف الكاملة"
+                                class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400
+                                       hover:text-brand-600 hover:bg-brand-50 transition-colors">
+                            <i class="fa-solid fa-id-card text-sm"></i>
+                        </button>
                         ${canEdit ? `
-                        <button onclick="window.openProductModal('${p.id}')"
+                        <button onclick="window.openProductModal('${pid}')"
                                 title="تعديل"
                                 class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400
                                        hover:text-brand-600 hover:bg-brand-50 transition-colors">
                             <i class="fa-solid fa-pen-to-square text-sm"></i>
                         </button>` : ''}
-                        <button onclick="window.viewProductVariants('${p.id}')"
-                                title="عرض المقاسات"
+                        <button onclick="window.viewProductVariants('${pid}')"
+                                title="إدارة المقاسات"
                                 class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400
                                        hover:text-emerald-600 hover:bg-emerald-50 transition-colors">
                             <i class="fa-solid fa-list-ul text-sm"></i>
                         </button>
-                        <button onclick="window.openProductMovements('${p.id}', '${p.name}')"
+                        <button onclick="window.openProductMovements('${pid}', ${JSON.stringify(String(p.name || '')).replace(/"/g, '&quot;')})"
                                 title="حركات الصنف"
                                 class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400
                                        hover:text-purple-600 hover:bg-purple-50 transition-colors">
@@ -185,8 +225,82 @@
                         </button>
                     </div>
                 </td>
-            </tr>`;
-        }).join('');
+            </tr>`);
+
+            // ── Child rows (variants) — rendered only when parent is expanded ──
+            if (expanded) {
+                variants.forEach(v => {
+                    const vid   = _plcEsc(v.id);
+                    const vName = _plcEsc(v.size_name);
+                    const vSku  = v.sku ? `<span class="text-xs text-slate-400 font-mono">${_plcEsc(v.sku)}</span>` : '—';
+                    const vUnit = v.unit_abbreviation || v.unit_name || '';
+                    const price = v.selling_price != null
+                        ? `<span class="font-mono text-xs font-semibold text-emerald-600">${_plcFmt(v.selling_price)}</span>`
+                        : '—';
+                    rows.push(`
+            <tr class="border-b border-slate-50 bg-slate-50/40 hover:bg-brand-50/30 transition-colors">
+                <td class="py-2.5 px-4">
+                    <div class="flex items-center gap-2" style="padding-inline-start:34px">
+                        <i class="fa-solid fa-turn-up fa-rotate-90 text-[10px] text-slate-300"></i>
+                        <button type="button"
+                                onclick="window.openProductLifecycle('${pid}', '${vid}')"
+                                title="بطاقة المقاس: ${vName}"
+                                class="text-sm font-semibold text-slate-600 hover:text-brand-600
+                                       hover:underline decoration-dotted underline-offset-4 transition-colors text-right">
+                            ${vName}
+                        </button>
+                        ${vUnit ? `<span class="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">${_plcEsc(vUnit)}</span>` : ''}
+                    </div>
+                </td>
+                <td class="py-2.5 px-4 hidden sm:table-cell text-xs text-slate-400">مقاس فرعي</td>
+                <td class="py-2.5 px-4 hidden md:table-cell">${vSku}</td>
+                <td class="py-2.5 px-4 hidden md:table-cell text-xs">${price}</td>
+                <td class="py-2.5 px-4">${_statusBadge(v.status || p.status)}</td>
+                <td class="py-2.5 px-4">
+                    <div class="flex items-center justify-end gap-2">
+                        <button onclick="window.openProductLifecycle('${pid}', '${vid}')"
+                                title="بطاقة المقاس"
+                                class="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400
+                                       hover:text-brand-600 hover:bg-brand-50 transition-colors">
+                            <i class="fa-solid fa-id-card text-xs"></i>
+                        </button>
+                        <button onclick="window.viewProductVariants('${pid}')"
+                                title="إدارة المقاسات"
+                                class="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400
+                                       hover:text-emerald-600 hover:bg-emerald-50 transition-colors">
+                            <i class="fa-solid fa-pen-to-square text-xs"></i>
+                        </button>
+                    </div>
+                </td>
+            </tr>`);
+                });
+            }
+        });
+
+        tbody.innerHTML = rows.join('');
+    }
+
+    // ── Expand/collapse state (chart-of-accounts pattern) ─────────────────────
+    const _expandedProductIds = new Set();
+
+    window.toggleProductExpand = function (productId) {
+        if (_expandedProductIds.has(productId)) _expandedProductIds.delete(productId);
+        else _expandedProductIds.add(productId);
+        _renderTable(_visibleProducts());
+    };
+
+    // Product name click: expand if it has variants, otherwise open the card.
+    window.toggleProductExpandOrOpen = function (productId) {
+        const p = _allProducts.find(x => x.id === productId);
+        if (p && Array.isArray(p.variants) && p.variants.length) {
+            window.toggleProductExpand(productId);
+        } else {
+            window.openProductLifecycle(productId);
+        }
+    };
+
+    function _visibleProducts() {
+        return _currentFiltered || _allProducts;
     }
 
     // ==========================================================================
@@ -202,13 +316,21 @@
             const status = (statusFilter ? statusFilter.value                : '');
 
             const filtered = _allProducts.filter(p => {
-                const matchQ = !q ||
-                    p.name.toLowerCase().includes(q) ||
-                    (p.sku && p.sku.toLowerCase().includes(q));
                 const matchS = !status || p.status === status;
-                return matchQ && matchS;
+                if (!matchS) return false;
+                if (!q) return true;
+                const prodHit = p.name.toLowerCase().includes(q) ||
+                    (p.sku && p.sku.toLowerCase().includes(q));
+                const variantHit = (p.variants || []).some(v =>
+                    (v.size_name && v.size_name.toLowerCase().includes(q)) ||
+                    (v.sku && v.sku.toLowerCase().includes(q)) ||
+                    (v.barcode && v.barcode.toLowerCase().includes(q)));
+                // Searching a variant name auto-expands its parent row
+                if (!prodHit && variantHit) _expandedProductIds.add(p.id);
+                return prodHit || variantHit;
             });
 
+            _currentFiltered = filtered;
             _renderTable(filtered);
         }
 
@@ -282,6 +404,7 @@
         try {
             const res = await window.apiFetch('/api/products?include_variants=true');
             _allProducts = (res && res.data) ? res.data : [];
+            _currentFiltered = null;
             _renderTable(_allProducts);
         } catch (err) {
             if (tbody) {
@@ -1522,6 +1645,7 @@
     // Sections are lazy-loaded per tab via GET /api/products/:id/lifecycle?section=
     // ==========================================================================
     let _plcProductId      = null;
+    let _plcVariantId      = null;   // when set → modal is scoped to one variant
     let _plcProduct        = null;
     let _plcVariants       = [];
     let _plcActiveTab      = 'overview';
@@ -1581,9 +1705,17 @@
         }
     }
 
+    // Builds the lifecycle endpoint URL for a section, honouring variant scope.
+    function _plcUrl(section) {
+        let url = `/api/products/${_plcProductId}/lifecycle?section=${section}`;
+        if (_plcVariantId) url += `&variant_id=${encodeURIComponent(_plcVariantId)}`;
+        return url;
+    }
+
     // ── Open / Close ──────────────────────────────────────────────────────────
-    window.openProductLifecycle = async function (productId) {
+    window.openProductLifecycle = async function (productId, variantId = null) {
         _plcProductId      = productId;
+        _plcVariantId      = variantId || null;
         _plcProduct        = null;
         _plcVariants       = [];
         _plcLoadedSections = {};
@@ -1601,6 +1733,8 @@
         _plcEl('plc-product-sku').textContent      = '';
         _plcEl('plc-product-category').textContent = '';
         _plcEl('plc-status-badge').innerHTML       = '';
+        const vBadge = _plcEl('plc-variant-badge');
+        if (vBadge) { vBadge.classList.add('hidden'); vBadge.innerHTML = ''; }
 
         const perms   = window.GpackPerms || {};
         const canEdit = perms.all_access || perms.products?.edit;
@@ -1614,7 +1748,7 @@
         _plcLoading('overview');
 
         try {
-            const res = await window.apiFetch(`/api/products/${productId}/lifecycle?section=overview`);
+            const res = await window.apiFetch(_plcUrl('overview'));
             _plcProduct  = res.data.product;
             _plcVariants = res.data.variants || [];
             _plcLoadedSections.overview = true;
@@ -1633,6 +1767,7 @@
         setTimeout(() => {
             modal.style.display = 'none';
             _plcProductId = null;
+            _plcVariantId = null;
         }, 200);
     };
 
@@ -1642,6 +1777,24 @@
         _plcEl('plc-product-sku').textContent      = _plcProduct.sku ? `SKU: ${_plcProduct.sku}` : '';
         _plcEl('plc-product-category').textContent = _plcProduct.category_name ? `الفئة: ${_plcProduct.category_name}` : '';
         _plcEl('plc-status-badge').innerHTML       = _plcStatusBadge(_plcProduct.status);
+
+        // Variant scope badge — shows which variant this card is filtered to
+        const badge = _plcEl('plc-variant-badge');
+        if (badge) {
+            if (_plcVariantId) {
+                const v = _plcVariants.find(x => x.id === _plcVariantId)
+                    || (_allProducts.find(x => x.id === _plcProductId)?.variants || [])
+                        .find(x => x.id === _plcVariantId);
+                const vName = v ? v.size_name : 'مقاس محدد';
+                badge.classList.remove('hidden');
+                badge.innerHTML = `<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full
+                    text-xs font-bold bg-brand-50 text-brand-700 border border-brand-200">
+                    <i class="fa-solid fa-ruler-combined"></i> المقاس: ${_plcEsc(vName)}</span>`;
+            } else {
+                badge.classList.add('hidden');
+                badge.innerHTML = '';
+            }
+        }
     }
 
     // ── Tab switching ─────────────────────────────────────────────────────────
@@ -1672,7 +1825,7 @@
 
         _plcLoading(section);
         try {
-            const res = await window.apiFetch(`/api/products/${_plcProductId}/lifecycle?section=${section}`);
+            const res = await window.apiFetch(_plcUrl(section));
             _plcLoadedSections[section] = true;
             const d = res.data;
             if      (section === 'stock')     _plcRenderStock(d);
@@ -2126,7 +2279,11 @@
     // ── Movements tab → jump to the full product-movements page ───────────────
     window.plcGoToMovements = function () {
         if (!_plcProductId) return;
-        const name = _plcProduct ? _plcProduct.name : '';
+        let name = _plcProduct ? _plcProduct.name : '';
+        if (_plcVariantId) {
+            const v = _plcVariants.find(x => x.id === _plcVariantId);
+            if (v && v.size_name) name += ' ' + v.size_name;
+        }
         window.closeProductLifecycle();
         window.openProductMovements(_plcProductId, name);
     };
