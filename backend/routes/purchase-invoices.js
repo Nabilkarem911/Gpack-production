@@ -184,10 +184,15 @@ router.get('/:id([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})',
         // Invoice items
         const itemsRes = await db.query(`
             SELECT pii.id, pii.variant_id, pii.quantity, pii.unit_cost AS unit_price, pii.total_cost AS line_total,
-                   p.name AS product_name, pv.size_name
+                   p.name AS product_name, pv.size_name,
+                   item_client.name AS client_name
             FROM purchase_invoice_items pii
             JOIN product_variants pv ON pv.id = pii.variant_id
             JOIN products p ON p.id = pv.product_id
+            LEFT JOIN manufacturer_order_items moi ON moi.id = pii.manufacturer_order_item_id
+            LEFT JOIN order_items oi ON oi.id = moi.order_item_id
+            LEFT JOIN orders item_order ON item_order.id = oi.order_id
+            LEFT JOIN clients item_client ON item_client.id = item_order.client_id
             WHERE pii.purchase_invoice_id = $1
             ORDER BY pii.created_at
         `, [id]);

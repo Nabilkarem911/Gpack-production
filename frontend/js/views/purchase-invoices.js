@@ -311,6 +311,7 @@
                 id:           i.id,
                 product_name: i.product_name,
                 size_name:    i.size_name || '',
+                client_name:  i.client_name || '',
                 quantity:     parseFloat(i.quantity || 0),
                 unit_cost:    parseFloat(i.unit_cost || i.unit_price || 0),
                 line_total:   0,
@@ -349,8 +350,11 @@
         if (!tbody) return;
         tbody.innerHTML = _aprItems.map((item, i) => {
             const label = `${esc(item.product_name)} — ${esc(item.size_name || 'بدون مقاس')}`;
+            const clientLabel = item.client_name
+                ? `<div class="text-xs font-medium text-purple-600 mt-1"><i class="fa-solid fa-user ml-1"></i>العميل: ${esc(item.client_name)}</div>`
+                : '';
             return `<tr class="border-b border-slate-100">
-                <td class="py-3 px-3"><div class="text-sm font-semibold text-slate-800">${label}</div></td>
+                <td class="py-3 px-3"><div class="text-sm font-semibold text-slate-800">${label}</div>${clientLabel}</td>
                 <td class="py-3 px-3 text-center"><span class="text-sm font-bold text-slate-700">${item.quantity}</span></td>
                 <td class="py-3 px-3 text-center">
                     <input type="number" min="0" step="0.01" value="${item.unit_cost > 0 ? item.unit_cost.toFixed(2) : ''}"
@@ -485,6 +489,7 @@
                 id:           i.id,
                 product_name: i.product_name,
                 size_name:    i.size_name || '',
+                client_name:  i.client_name || '',
                 quantity:     parseFloat(i.quantity || 0),
                 unit_cost:    parseFloat(i.unit_cost || i.unit_price || 0),
                 line_total:   parseFloat(i.quantity || 0) * parseFloat(i.unit_cost || i.unit_price || 0),
@@ -524,8 +529,11 @@
         if (!tbody) return;
         tbody.innerHTML = _edtItems.map((item, i) => {
             const label = `${esc(item.product_name)} — ${esc(item.size_name || 'بدون مقاس')}`;
+            const clientLabel = item.client_name
+                ? `<div class="text-xs font-medium text-purple-600 mt-1"><i class="fa-solid fa-user ml-1"></i>العميل: ${esc(item.client_name)}</div>`
+                : '';
             return `<tr class="border-b border-slate-100">
-                <td class="py-3 px-3"><div class="text-sm font-semibold text-slate-800">${label}</div></td>
+                <td class="py-3 px-3"><div class="text-sm font-semibold text-slate-800">${label}</div>${clientLabel}</td>
                 <td class="py-3 px-3 text-center"><span class="text-sm font-bold text-slate-700">${item.quantity}</span></td>
                 <td class="py-3 px-3 text-center">
                     <input type="number" min="0" step="0.01" value="${item.unit_cost.toFixed(2)}"
@@ -651,7 +659,10 @@
             const itemsRows = items.map((item, idx) => `
                 <tr>
                     <td style="padding:8px 10px;border:1px solid #e2e8f0;text-align:center;color:#94a3b8">${idx + 1}</td>
-                    <td style="padding:8px 10px;border:1px solid #e2e8f0;font-weight:600">${esc(item.product_name)}</td>
+                    <td style="padding:8px 10px;border:1px solid #e2e8f0;font-weight:600">
+                        ${esc(item.product_name)}
+                        ${item.client_name ? `<div style="font-size:11px;font-weight:600;color:#7c3aed;margin-top:3px">العميل: ${esc(item.client_name)}</div>` : ''}
+                    </td>
                     <td style="padding:8px 10px;border:1px solid #e2e8f0;color:#64748b">${esc(item.size_name || '-')}</td>
                     <td style="padding:8px 10px;border:1px solid #e2e8f0;text-align:center;font-family:monospace">${item.quantity}</td>
                     <td style="padding:8px 10px;border:1px solid #e2e8f0;text-align:left;font-family:monospace">${fmt(item.unit_cost || item.unit_price)}</td>
