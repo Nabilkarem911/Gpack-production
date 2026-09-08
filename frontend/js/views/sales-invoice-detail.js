@@ -112,8 +112,12 @@
         };
         const st = statusColors[inv.status] || statusColors.draft;
 
+        const releaseAction = inv.source === 'warehouse' && ['issued', 'paid'].includes(inv.status) && !inv.delivery_note_id
+            ? `<button onclick="window.sidReleaseInvoice()" class="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-600 text-white text-xs font-bold hover:bg-amber-700 transition-all"><i class="fa-solid fa-truck"></i> إصدار أمر الفسح</button>`
+            : '';
         actionsEl.innerHTML = `
             <span class="px-3 py-1.5 rounded-lg text-xs font-bold ${st.bg} ${st.text}">${st.label}</span>
+            ${releaseAction}
             <button onclick="window.sidPrint()" class="w-9 h-9 rounded-lg bg-slate-100 text-slate-600 hover:bg-brand-100 hover:text-brand-600 transition-all" title="طباعة">
                 <i class="fa-solid fa-print"></i>
             </button>
@@ -228,6 +232,17 @@
             if (numInput) numInput.value = inv.external_invoice_number || '';
         }
     }
+
+    window.sidReleaseInvoice = async function() {
+        if (!confirm('هل تريد إصدار أمر الفسح لهذه الفاتورة وإرسالها إلى سندات التسليم؟')) return;
+        try {
+            await window.apiFetch(`/api/invoices/${_invoiceId}/release`, { method: 'POST', body: {} });
+            alert('تم إصدار أمر الفسح بنجاح.');
+            await _loadInvoice();
+        } catch (err) {
+            alert(`تعذر إصدار أمر الفسح: ${err.message}`);
+        }
+    };
 
     // ── View Order ──────────────────────────────────────────────────────────────
     window.sidViewOrder = function() {
