@@ -463,6 +463,72 @@
         }
     }
 
+    function _isCostCalculatorAdmin() {
+        return ['admin', 'super_admin'].includes(window.GpackUser?.role);
+    }
+
+    function _money(value) {
+        return value === null || value === undefined ? '—' : `${_fmt(value)} ر.س`;
+    }
+
+    function _renderCostCalculator(data) {
+        const summary = data.summary || {};
+        const items = Array.isArray(data.items) ? data.items : [];
+        _setText('po-cost-sales-total', _money(summary.sales_total));
+        _setText('po-cost-cost-total', _money(summary.cost_total));
+        _setText('po-cost-profit', _money(summary.profit));
+        _setText('po-cost-margin', summary.margin_percent === null || summary.margin_percent === undefined ? '—' : `${summary.margin_percent}%`);
+
+        const missingEl = _el('po-cost-missing');
+        if (missingEl) {
+            missingEl.textContent = summary.missing_cost_items > 0
+                ? `يوجد ${summary.missing_cost_items} صنف بدون تكلفة شراء مسجلة في فواتير الشراء؛ تم ترك الربح والهامش الإجمالي فارغين.`
+                : '';
+            missingEl.classList.toggle('hidden', !(summary.missing_cost_items > 0));
+        }
+
+        const tbody = _el('po-cost-items');
+        if (!tbody) return;
+        tbody.innerHTML = items.length ? items.map(item => {
+            const name = `${item.product_name || '—'}${item.size_name ? ` / ${item.size_name}` : ''}`;
+            return `<tr class="border-b border-slate-100">
+                <td class="py-3 px-3 font-semibold text-slate-700">${_escapeHtml(name)}</td>
+                <td class="py-3 px-3 text-center">${_fmt(item.quantity)}</td>
+                <td class="py-3 px-3 text-center">${_money(item.sale_unit_price)}</td>
+                <td class="py-3 px-3 text-center ${item.cost_known ? 'text-orange-700 font-bold' : 'text-slate-400'}">${_money(item.unit_cost)}</td>
+                <td class="py-3 px-3 text-center ${item.cost_known ? 'text-orange-700 font-bold' : 'text-slate-400'}">${_money(item.cost_total)}</td>
+                <td class="py-3 px-3 text-center ${item.profit === null ? 'text-slate-400' : item.profit >= 0 ? 'text-emerald-700 font-bold' : 'text-red-600 font-bold'}">${_money(item.profit)}</td>
+                <td class="py-3 px-3 text-center ${item.margin_percent === null ? 'text-slate-400' : 'text-blue-700 font-bold'}">${item.margin_percent === null || item.margin_percent === undefined ? '—' : `${item.margin_percent}%`}</td>
+            </tr>`;
+        }).join('') : '<tr><td colspan="7" class="py-10 text-center text-slate-400">لا توجد أصناف في أمر التشغيل</td></tr>';
+    }
+
+    async function _openCostCalculator() {
+        if (!_isCostCalculatorAdmin() || !_hubOrderId) return;
+        _showModal('po-cost-modal');
+        _el('po-cost-loading')?.classList.remove('hidden');
+        _el('po-cost-body')?.classList.add('hidden');
+        _el('po-cost-error')?.classList.add('hidden');
+        _setText('po-cost-subtitle', `أمر التشغيل #${_hubOrder?.order_number || ''}`);
+        try {
+            const response = await window.apiFetch(`/api/orders/${_hubOrderId}/cost-calculator`);
+            _renderCostCalculator(response?.data || {});
+            _el('po-cost-body')?.classList.remove('hidden');
+        } catch (err) {
+            const errorEl = _el('po-cost-error');
+            if (errorEl) {
+                errorEl.textContent = err.message || 'فشل تحميل حاسبة التكاليف.';
+                errorEl.classList.remove('hidden');
+            }
+        } finally {
+            _el('po-cost-loading')?.classList.add('hidden');
+        }
+    }
+
+    function _closeCostCalculator() {
+        _hideModal('po-cost-modal');
+    }
+
     // ── Hub Header ─────────────────────────────────────────────────────────────
     function _renderHubHeader() {
         const o   = _hubOrder;
@@ -495,11 +561,26 @@
             sourceEl.innerHTML = sourceParts.join(' <span class="mx-1">•</span> ');
             sourceEl.classList.toggle('hidden', sourceParts.length === 0);
         }
-        _setText('hub-grand-total',       sar(gt));
+        _setText('hub-grand-total', sar(gt));
+        const canOpenCost = _isCostCalculatorAdmin();
+        ['hub-grand-total', 'hub-grand-total-mobile'].forEach(id => {
+            const grandTotalEl = _el(id);
+            if (!grandTotalEl) return;
+            grandTotalEl.classList.toggle('cursor-pointer', canOpenCost);
+            grandTotalEl.classList.toggle('hover:text-amber-700', canOpenCost);
+            grandTotalEl.title = canOpenCost ? 'اضغط لفتح حاسبة التكاليف' : '';
+            grandTotalEl.onclick = canOpenCost ? _openCostCalculator : null;
+            grandTotalEl.onkeydown = canOpenCost ? event => {
+                if (event.key === 'Enter' || event.key === ' ') _openCostCalculator();
+            } : null;
+            grandTotalEl.tabIndex = canOpenCost ? 0 : -1;
+        });
         _setText('hub-paid',              sar(pd));
         _setText('hub-remaining',         sar(rem));
         _setText('hub-grand-total-mobile',sar(gt));
         _setText('hub-paid-mobile',       sar(pd));
+        const purchaseCostHeader = _el('hub-purchase-cost-header');
+        if (purchaseCostHeader) purchaseCostHeader.style.display = _isCostCalculatorAdmin() ? '' : 'none';
         _setText('hub-remaining-mobile',  sar(rem));
 
         if (_el('hub-notes-input')) _el('hub-notes-input').value = o.internal_notes || '';
@@ -614,7 +695,7 @@
                             <span class="text-emerald-600 font-bold">${_fmt(item.unit_price)}</span>
                             <span class="text-xs text-slate-400"> ر.س</span>
                         </td>
-                        <td class="py-2.5 px-4 text-center text-sm hidden lg:table-cell">
+                        <td class="cost-sensitive-column py-2.5 px-4 text-center text-sm hidden lg:table-cell" style="display:${_isCostCalculatorAdmin() ? '' : 'none'}">
                             ${item.last_purchase_price
                                 ? `<span class="text-orange-600 font-bold">${_fmt(item.last_purchase_price)}</span><span class="text-xs text-slate-400"> ر.س</span>`
                                 : '<span class="text-slate-300 text-xs">—</span>'}
@@ -3988,6 +4069,8 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         applySearch:        _renderTable,
         openHub:            _openHub,
         closeHub:           () => _hideModal('po-hub-modal'),
+        openCostCalculator: _openCostCalculator,
+        closeCostCalculator: _closeCostCalculator,
         switchHubTab:       _switchHubTab,
         updateStatus:       _updateStatus,
         closeOrder:         _closeOrder,

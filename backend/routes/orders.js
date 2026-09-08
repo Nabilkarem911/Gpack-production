@@ -46,6 +46,12 @@ const restrictDelete = authorize('quotations', 'delete');
 // Admin-only operations (status change, convert to production, invoicing)
 const restrictAdmin  = authorize(['admin', 'manager', 'super_admin']);
 
+// Cost data contains confidential purchase prices and margins. It is intentionally
+// restricted to administrator roles, regardless of module permissions.
+const restrictCostCalculator = (req, res, next) => {
+    if (req.user && ['admin', 'super_admin'].includes(req.user.role)) return next();
+    return res.status(403).json({ error: 'هذه البيانات متاحة للادمن فقط.' });
+};
 
 // =============================================================================
 // GET /api/orders
@@ -654,6 +660,102 @@ router.get('/client-history/:clientId', async (req, res) => {
 });
 
 // =============================================================================
+// GET /api/orders/:id/cost-calculator
+// Confidential purchase-cost and margin data — administrators only.
+// Purchase cost is a weighted average of non-draft/non-cancelled purchase invoices.
+// =============================================================================
+router.get('/:id/cost-calculator', restrictCostCalculator, async (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = await db.query(
+            `SELECT
+                oi.id AS order_item_id,
+                oi.variant_id,
+                p.name AS product_name,
+                pv.size_name,
+                pv.sku,
+                oi.quantity,
+                oi.unit_price AS sale_unit_price,
+                oi.line_total AS sale_total,
+                purchase_cost.unit_cost,
+                purchase_cost.invoice_count,
+                purchase_cost.latest_invoice_date
+             FROM order_items oi
+             JOIN orders o ON o.id = oi.order_id
+             LEFT JOIN product_variants pv ON pv.id = oi.variant_id
+             LEFT JOIN products p ON p.id = pv.product_id
+             LEFT JOIN LATERAL (
+                SELECT
+                    SUM(pii.quantity * pii.unit_cost) / NULLIF(SUM(pii.quantity), 0) AS unit_cost,
+                    COUNT(DISTINCT pi.id)::int AS invoice_count,
+                    MAX(pi.invoice_date) AS latest_invoice_date
+                FROM purchase_invoice_items pii
+                JOIN purchase_invoices pi ON pi.id = pii.purchase_invoice_id
+                WHERE pii.variant_id = oi.variant_id
+                  AND pi.status NOT IN ('draft', 'cancelled')
+                  AND pii.quantity > 0
+                  AND pii.unit_cost > 0
+             ) purchase_cost ON true
+             WHERE oi.order_id = $1
+             ORDER BY oi.created_at ASC, oi.id ASC`,
+            [id]
+        );
+
+        if (!result.rows.length) {
+            const orderCheck = await db.query('SELECT id FROM orders WHERE id = $1', [id]);
+            if (!orderCheck.rowCount) return res.status(404).json({ error: 'أمر التشغيل غير موجود.' });
+        }
+
+        const items = result.rows.map(row => {
+            const quantity = Number(row.quantity || 0);
+            const saleTotal = Number(row.sale_total ?? (quantity * Number(row.sale_unit_price || 0)));
+            const unitCost = row.unit_cost === null ? null : Number(row.unit_cost);
+            const costTotal = unitCost === null ? null : Math.round(quantity * unitCost * 100) / 100;
+            const profit = costTotal === null ? null : Math.round((saleTotal - costTotal) * 100) / 100;
+            const margin = profit === null || Math.abs(saleTotal) < 0.000001
+                ? null
+                : Math.round((profit / saleTotal) * 10000) / 100;
+            return {
+                ...row,
+                quantity,
+                sale_unit_price: Number(row.sale_unit_price || 0),
+                sale_total: Math.round(saleTotal * 100) / 100,
+                unit_cost: unitCost,
+                cost_total: costTotal,
+                profit,
+                margin_percent: margin,
+                cost_known: unitCost !== null,
+            };
+        });
+
+        const summary = items.reduce((acc, item) => {
+            acc.sales_total += item.sale_total;
+            if (item.cost_total !== null) {
+                acc.cost_total += item.cost_total;
+                acc.known_cost_total += item.cost_total;
+            } else {
+                acc.missing_cost_items += 1;
+            }
+            return acc;
+        }, { sales_total: 0, cost_total: 0, known_cost_total: 0, missing_cost_items: 0 });
+        summary.sales_total = Math.round(summary.sales_total * 100) / 100;
+        summary.known_cost_total = Math.round(summary.known_cost_total * 100) / 100;
+        summary.cost_total = summary.missing_cost_items > 0 ? null : summary.known_cost_total;
+        summary.profit = summary.missing_cost_items > 0
+            ? null
+            : Math.round((summary.sales_total - summary.cost_total) * 100) / 100;
+        summary.margin_percent = summary.profit === null || Math.abs(summary.sales_total) < 0.000001
+            ? null
+            : Math.round((summary.profit / summary.sales_total) * 10000) / 100;
+
+        return res.status(200).json({ data: { order_id: id, items, summary } });
+    } catch (err) {
+        console.error('[Orders] GET /:id/cost-calculator error:', err.message);
+        return res.status(500).json({ error: 'فشل تحميل حاسبة التكاليف.' });
+    }
+});
+
+// =============================================================================
 // GET /api/orders/:id
 // Returns a single order with all its items, product names, and variant details.
 // DATA SCOPING: sales_rep can only view their own orders.
@@ -663,6 +765,7 @@ router.get('/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const isSalesRep = req.user.role === 'sales_rep';
+        const canViewCost = ['admin', 'super_admin'].includes(req.user.role);
 
         const orderResult = await db.query(
             `SELECT
@@ -755,7 +858,7 @@ router.get('/:id', async (req, res) => {
                 oi.quantity,
                 oi.unit_price,
                 pv.selling_price,
-                COALESCE(
+                ${canViewCost ? `COALESCE(
                     (SELECT mi.unit_cost FROM manufacturer_order_items mi
                      JOIN order_items oi2 ON oi2.id = mi.order_item_id
                      WHERE oi2.variant_id = oi.variant_id
@@ -763,7 +866,7 @@ router.get('/:id', async (req, res) => {
                     (SELECT pii.unit_cost FROM purchase_invoice_items pii
                      WHERE pii.variant_id = oi.variant_id
                      ORDER BY pii.created_at DESC LIMIT 1)
-                ) AS last_purchase_price,
+                )` : 'NULL::numeric'} AS last_purchase_price,
                 oi.line_total,
                 oi.manufacturer_po_qty,
                 oi.wh_received_qty,
