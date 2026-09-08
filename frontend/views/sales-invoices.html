@@ -32,9 +32,13 @@
 
 <!-- ── Tabs ─────────────────────────────────────────────────────────────────── -->
 <div id="si-tabs" class="flex items-center gap-2 mb-5 border-b border-slate-200 pb-1">
-    <button id="si-tab-invoices" onclick="window.siSwitchTab('invoices')"
+    <button id="si-tab-warehouse" onclick="window.siSwitchTab('warehouse')"
             class="px-4 py-2 text-sm font-bold rounded-t-xl border-b-2 border-brand-600 text-brand-700 bg-white transition-all">
-        الفواتير
+        فواتير المخزون
+    </button>
+    <button id="si-tab-invoices" onclick="window.siSwitchTab('invoices')"
+            class="px-4 py-2 text-sm font-bold rounded-t-xl border-b-2 border-transparent text-slate-500 hover:text-brand-600 transition-all">
+        الفواتير الأخرى
     </button>
     <button id="si-tab-archive" onclick="window.siSwitchTab('archive')"
             class="px-4 py-2 text-sm font-bold rounded-t-xl border-b-2 border-transparent text-slate-500 hover:text-brand-600 transition-all">

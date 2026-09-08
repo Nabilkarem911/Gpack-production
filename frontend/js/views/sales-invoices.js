@@ -10,7 +10,7 @@
     const PAGE_SIZE = 20;
     let _currentPage = 0;
     let _totalRows = 0;
-    let _currentTab = 'invoices'; // invoices | archive
+    let _currentTab = 'warehouse'; // warehouse | invoices | archive
     let _invoices = [];
     let _clients = [];
     let _readyOrders = [];
@@ -43,6 +43,9 @@
 
     function _warehouseInvoiceActions(invoice) {
         if (invoice.source !== 'warehouse') return '';
+        if (['archived', 'cancelled'].includes(invoice.status)) {
+            return `<button onclick="window.siViewInvoice('${esc(invoice.id)}')" class="px-2 py-1.5 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 text-[11px] font-bold" title="عرض"><i class="fa-solid fa-eye"></i></button>`;
+        }
         const release = invoice.delivery_note_id
             ? '<span class="text-[10px] text-slate-400">أمر الفسح صادر</span>'
             : `<button onclick="window.siReleaseInvoice('${esc(invoice.id)}')" class="px-2 py-1.5 rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 text-[11px] font-bold" title="إصدار أمر الفسح"><i class="fa-solid fa-truck"></i></button>`;
@@ -91,7 +94,7 @@
     };
 
     function _setActiveTab(tab) {
-        const tabs = ['invoices','archive'];
+        const tabs = ['warehouse', 'invoices', 'archive'];
         tabs.forEach(t => {
             const btn = _el('si-tab-' + t);
             if (btn) {
@@ -109,7 +112,7 @@
     // ── Fetch invoices for active tab ───────────────────────────────────────────
     async function _loadInvoices(page = 0) {
         _currentPage = page;
-        const status = _currentTab === 'archive' ? 'archive' : 'active';
+        const status = _currentTab === 'warehouse' ? 'warehouse' : (_currentTab === 'archive' ? 'archive' : 'active');
         const tbody = _el('si-tbody');
         const empty = _el('si-empty');
 
@@ -117,11 +120,12 @@
         if (empty) empty.classList.add('hidden');
 
         const params = new URLSearchParams({
-            source: 'sales_invoices',
             status: status,
             limit: PAGE_SIZE,
             offset: page * PAGE_SIZE,
         });
+        if (_currentTab === 'warehouse') params.set('source', 'warehouse');
+        if (_currentTab === 'invoices') params.set('source', 'sales_invoices');
 
         const search = _el('si-search')?.value?.trim();
         const client = _el('si-client')?.value;
@@ -169,8 +173,12 @@
                 empty.classList.remove('hidden');
                 const t = _el('si-empty-title');
                 const s = _el('si-empty-sub');
-                const label = _currentTab === 'archive' ? 'لا توجد فواتير معتمدة في الأرشيف' : 'لا توجد فواتير غير معتمدة';
-                const sub = _currentTab === 'archive' ? 'ستظهر هنا الفواتير التي تم اعتمادها' : 'اضغط (إنشاء فاتورة جديدة) لإضافة فاتورة';
+                const label = _currentTab === 'warehouse'
+                    ? 'لا توجد فواتير مخزون'
+                    : _currentTab === 'archive' ? 'لا توجد فواتير في الأرشيف' : 'لا توجد فواتير غير معتمدة';
+                const sub = _currentTab === 'warehouse'
+                    ? 'ستظهر هنا فواتير المخزون التي تم إصدارها'
+                    : _currentTab === 'archive' ? 'ستظهر هنا الفواتير المؤرشفة' : 'اضغط (إنشاء فاتورة جديدة) لإضافة فاتورة';
                 if (t) t.textContent = label;
                 if (s) s.textContent = sub;
             }
@@ -183,12 +191,15 @@
             const clientName = esc(i.client_name || '—');
             const invoiceDate = _date(i.invoice_date);
             const isArchive = _currentTab === 'archive';
+            const isWarehouseTab = _currentTab === 'warehouse';
 
             const action = isArchive
                 ? `<button onclick="window.siViewInvoice('${esc(i.id)}')" class="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-600 text-white text-xs font-bold hover:bg-slate-700 transition-all"><i class="fa-solid fa-eye"></i> عرض</button>`
-                : (i.source === 'warehouse' && ['issued', 'paid'].includes(i.status)
+                : (isWarehouseTab && i.source === 'warehouse'
                     ? _warehouseInvoiceActions(i)
-                    : `<button onclick="window.siViewInvoice('${esc(i.id)}')" class="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-brand-600 text-white text-xs font-bold hover:bg-brand-700 transition-all"><i class="fa-solid fa-eye"></i> عرض / اعتماد</button>`);
+                    : (i.source === 'warehouse' && ['issued', 'paid'].includes(i.status)
+                        ? _warehouseInvoiceActions(i)
+                    : `<button onclick="window.siViewInvoice('${esc(i.id)}')" class="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-brand-600 text-white text-xs font-bold hover:bg-brand-700 transition-all"><i class="fa-solid fa-eye"></i> عرض / اعتماد</button>`));
 
             return `<tr class="border-b border-slate-100 hover:bg-blue-50/30 transition-colors">
                 <td class="py-3 px-4 font-bold font-mono text-slate-700">#${i.invoice_number}</td>
