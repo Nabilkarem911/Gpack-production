@@ -1,8 +1,8 @@
-﻿'use strict';
+'use strict';
 
 // =============================================================================
-// G.PACK 2.0 - Client Accounts View Controller (حسابات العملاء)
-// Tabs: مدين (owe us) / دائن (we owe) / الكل (split view + totals)
+// G.PACK 2.0 - Supplier Accounts View Controller (حسابات الموردين)
+// Tabs: مدين (لنا عند المورد) / دائن (مستحق للمورد) / الكل (split + totals)
 // =============================================================================
 
 (function () {
@@ -18,34 +18,34 @@
     let _tab    = 'all'; // 'debit' | 'credit' | 'all'
 
     const _can = (action) => {
-        if (window.hasPermission) return !!window.hasPermission('client_accounts', action);
+        if (window.hasPermission) return !!window.hasPermission('supplier_accounts', action);
         const perms = window.GpackPerms || {};
-        return perms.all_access === true || !!perms.client_accounts?.[action];
+        return perms.all_access === true || !!perms.supplier_accounts?.[action];
     };
 
     // ── Load ──────────────────────────────────────────────────────────────────
-    window.caLoad = async function () {
-        _el('ca-loading')?.classList.remove('hidden');
-        _el('ca-single')?.classList.add('hidden');
-        _el('ca-split')?.classList.add('hidden');
+    window.saLoad = async function () {
+        _el('sa-loading')?.classList.remove('hidden');
+        _el('sa-single')?.classList.add('hidden');
+        _el('sa-split')?.classList.add('hidden');
         try {
-            const incZero = _el('ca-include-zero')?.checked ? '?include_zero=1' : '';
-            const res = await window.apiFetch('/api/client-accounts' + incZero);
+            const incZero = _el('sa-include-zero')?.checked ? '?include_zero=1' : '';
+            const res = await window.apiFetch('/api/supplier-accounts' + incZero);
             _rows   = res.data || [];
             _totals = res.totals || { debit: 0, credit: 0, net: 0 };
-            window.caRender();
+            window.saRender();
         } catch (err) {
-            window.showToast('خطأ في تحميل الأرصدة: ' + err.message, 'error');
+            window.showToast('خطأ في تحميل أرصدة الموردين: ' + err.message, 'error');
         } finally {
-            _el('ca-loading')?.classList.add('hidden');
+            _el('sa-loading')?.classList.add('hidden');
         }
     };
 
     // ── Tabs ──────────────────────────────────────────────────────────────────
-    window.caSetTab = function (tab) { _tab = tab; window.caRender(); };
+    window.saSetTab = function (tab) { _tab = tab; window.saRender(); };
 
     function _syncTabButtons() {
-        document.querySelectorAll('.ca-tab').forEach(b => {
+        document.querySelectorAll('.sa-tab').forEach(b => {
             const active = b.dataset.tab === _tab;
             b.classList.toggle('bg-white',        active);
             b.classList.toggle('shadow-sm',       active);
@@ -55,20 +55,20 @@
     }
 
     function _filtered() {
-        const q = (_el('ca-search')?.value || '').toLowerCase().trim();
+        const q = (_el('sa-search')?.value || '').toLowerCase().trim();
         return _rows.filter(r => !q
-            || (r.name  && r.name.toLowerCase().includes(q))
-            || (r.phone && r.phone.toLowerCase().includes(q)));
+            || (r.name           && r.name.toLowerCase().includes(q))
+            || (r.phone          && r.phone.toLowerCase().includes(q))
+            || (r.contact_person && r.contact_person.toLowerCase().includes(q)));
     }
 
     // ── Render ────────────────────────────────────────────────────────────────
-    window.caRender = function () {
+    window.saRender = function () {
         _syncTabButtons();
 
-        // Totals (computed on the unfiltered set so the strip stays truthful)
-        _el('ca-total-debit').textContent  = _fmt(_totals.debit);
-        _el('ca-total-credit').textContent = _fmt(_totals.credit);
-        const net = _el('ca-total-net');
+        _el('sa-total-debit').textContent  = _fmt(_totals.debit);
+        _el('sa-total-credit').textContent = _fmt(_totals.credit);
+        const net = _el('sa-total-net');
         net.textContent = _fmt(Math.abs(_totals.net));
         net.className = 'text-xl font-black font-mono ' + (_totals.net >= 0 ? 'text-brand-700' : 'text-orange-600');
 
@@ -76,8 +76,8 @@
         const debit  = rows.filter(r => r.balance > 0);
         const credit = rows.filter(r => r.balance < 0);
 
-        const single = _el('ca-single');
-        const split  = _el('ca-split');
+        const single = _el('sa-single');
+        const split  = _el('sa-split');
 
         if (_tab === 'all') {
             single.classList.add('hidden');
@@ -86,30 +86,29 @@
         } else {
             split.classList.add('hidden');
             single.classList.remove('hidden');
-            const list = _tab === 'debit' ? debit : credit;
-            _renderSingle(list, _tab);
+            _renderSingle(_tab === 'debit' ? debit : credit, _tab);
         }
     };
 
-    function _clientCell(r) {
-        const parent = r.parent_name
-            ? ` <span class="text-[10px] text-slate-400">(${_esc(r.parent_name)})</span>` : '';
-        return `<span class="font-bold text-slate-800 text-base">${_esc(r.name)}</span>${parent}`;
+    function _supplierCell(r) {
+        const contact = r.contact_person
+            ? ` <span class="text-xs text-slate-400">(${_esc(r.contact_person)})</span>` : '';
+        return `<span class="font-bold text-slate-800 text-base">${_esc(r.name)}</span>${contact}`;
     }
 
     function _stmtBtn(r) {
-        return `<button onclick="window.caOpenProfile('${r.id}')" title="فتح ملف العميل / كشف الحساب"
+        return `<button onclick="window.saOpenProfile('${r.id}')" title="فتح ملف المورد / كشف الحساب"
                         class="w-9 h-9 inline-flex items-center justify-center rounded-lg text-slate-400 hover:text-brand-600 hover:bg-brand-50 transition-colors">
                     <i class="fa-solid fa-file-invoice-dollar"></i>
                 </button>`;
     }
 
     function _renderSingle(list, tab) {
-        const tbody = _el('ca-tbody');
-        const empty = _el('ca-single-empty');
-        _el('ca-single-empty-text').textContent =
-            tab === 'debit' ? 'لا يوجد عملاء مدينون (لنا عندهم أرصدة)'
-                            : 'لا يوجد عملاء دائنون (لهم عندنا أرصدة)';
+        const tbody = _el('sa-tbody');
+        const empty = _el('sa-single-empty');
+        _el('sa-single-empty-text').textContent =
+            tab === 'debit' ? 'لا يوجد موردون مدينون (لنا عندهم أرصدة)'
+                            : 'لا يوجد موردون دائنون (مستحقات لهم)';
         empty.classList.toggle('hidden', list.length > 0);
 
         const journal = (r) => {
@@ -119,12 +118,11 @@
         };
 
         tbody.innerHTML = list.map(r => `<tr class="border-b border-slate-100 hover:bg-slate-50/60 transition-colors">
-            <td class="py-3.5 px-4">${_clientCell(r)}</td>
+            <td class="py-3.5 px-4">${_supplierCell(r)}</td>
             <td class="py-3.5 px-4 hidden sm:table-cell text-sm text-slate-500 font-mono">${_esc(r.phone) || '—'}</td>
             <td class="py-3.5 px-4 hidden md:table-cell font-mono text-sm text-slate-600">${_fmt(r.invoiced)}</td>
-            <td class="py-3.5 px-4 hidden md:table-cell font-mono text-sm text-slate-600">${_fmt(r.received)}</td>
-            <td class="py-3.5 px-4 hidden md:table-cell font-mono text-sm text-slate-600">${_fmt(r.returned)}</td>
-            <td class="py-3.5 px-4 hidden md:table-cell text-xs text-slate-500">${journal(r)}</td>
+            <td class="py-3.5 px-4 hidden md:table-cell font-mono text-sm text-slate-600">${_fmt(r.paid)}</td>
+            <td class="py-3.5 px-4 hidden md:table-cell text-sm text-slate-500">${journal(r)}</td>
             <td class="py-3.5 px-4 font-mono font-black text-lg ${tab === 'debit' ? 'text-red-600' : 'text-emerald-700'}">${_fmt(Math.abs(r.balance))}</td>
             <td class="py-3.5 px-4 text-center">${_stmtBtn(r)}</td>
         </tr>`).join('');
@@ -132,32 +130,32 @@
 
     function _renderSplit(debit, credit) {
         // DOM order: credit column first → renders RIGHT in RTL; debit → LEFT
-        _el('ca-split-credit-count').textContent = credit.length;
-        _el('ca-split-debit-count').textContent  = debit.length;
+        _el('sa-split-credit-count').textContent = credit.length;
+        _el('sa-split-debit-count').textContent  = debit.length;
 
-        _el('ca-debit-empty').classList.toggle('hidden',  debit.length  > 0);
-        _el('ca-credit-empty').classList.toggle('hidden', credit.length > 0);
+        _el('sa-debit-empty').classList.toggle('hidden',  debit.length  > 0);
+        _el('sa-credit-empty').classList.toggle('hidden', credit.length > 0);
 
         const mini = (r, cls) => `<tr class="border-b border-slate-100 hover:bg-slate-50/60 transition-colors">
-            <td class="py-3 px-4 text-sm">${_clientCell(r)}</td>
+            <td class="py-3 px-4 text-sm">${_supplierCell(r)}</td>
             <td class="py-3 px-4 font-mono font-black text-base ${cls}">${_fmt(Math.abs(r.balance))}</td>
-            <td class="py-2.5 px-4 text-center">${_stmtBtn(r)}</td>
+            <td class="py-3 px-4 text-center">${_stmtBtn(r)}</td>
         </tr>`;
 
-        _el('ca-debit-tbody').innerHTML  = debit.map(r  => mini(r, 'text-red-600')).join('');
-        _el('ca-credit-tbody').innerHTML = credit.map(r => mini(r, 'text-emerald-700')).join('');
+        _el('sa-debit-tbody').innerHTML  = debit.map(r  => mini(r, 'text-red-600')).join('');
+        _el('sa-credit-tbody').innerHTML = credit.map(r => mini(r, 'text-emerald-700')).join('');
     }
 
-    // ── Row action: open the client profile (which hosts the account statement) ──
-    window.caOpenProfile = function (id) {
-        window._cpClientId = id;
-        if (window.navigateTo) window.navigateTo('client-profile');
+    // ── Row action: open the supplier profile (which hosts the account statement) ──
+    window.saOpenProfile = function (id) {
+        window._spSupplierId = id;
+        if (window.navigateTo) window.navigateTo('supplier-profile');
     };
 
     // ── Init ──────────────────────────────────────────────────────────────────
     if (_can('view')) {
-        window.caSetTab('all');
-        window.caLoad();
+        window.saSetTab('all');
+        window.saLoad();
     }
 
 })();

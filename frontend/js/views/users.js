@@ -30,6 +30,7 @@ var usersView = (() => {
         { key: 'journal_entry',      label: 'قيد اليومية' },
         { key: 'opening_balance',    label: 'الأرصدة الافتتاحية' },
         { key: 'client_accounts',    label: 'حسابات العملاء' },
+        { key: 'supplier_accounts',  label: 'حسابات الموردين' },
         { key: 'chart_of_accounts',  label: 'الدليل المحاسبي' },
         // ── المستودعات ────────────────────────────────
         { key: 'warehouses',         label: 'المخازن' },

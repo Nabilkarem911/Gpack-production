@@ -385,6 +385,7 @@ _mountRoute('/accounts',            authenticate, require('./routes/accounts'));
 _mountRoute('/journal-entries',     authenticate, require('./routes/journal-entries'));
 _mountRoute('/opening-balances',    authenticate, require('./routes/opening-balances'));
 _mountRoute('/client-accounts',     authenticate, require('./routes/client-accounts'));
+_mountRoute('/supplier-accounts',   authenticate, require('./routes/supplier-accounts'));
 _mountRoute('/tasks',               authenticate, require('./routes/tasks'));
 _mountRoute('/forecast',            authenticate, require('./routes/forecast'));
 _mountRoute('/reports',             authenticate, require('./routes/reports'));

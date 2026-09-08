@@ -1,21 +1,21 @@
-﻿<!-- =============================================================================
-     G.PACK 2.0 - Client Accounts View (حسابات العملاء)
-     Logic: /js/views/client-accounts.js
+<!-- =============================================================================
+     G.PACK 2.0 - Supplier Accounts View (حسابات الموردين)
+     Logic: /js/views/supplier-accounts.js
 ============================================================================= -->
 
 <!-- Page Header -->
 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
     <div>
-        <h1 class="text-2xl font-extrabold text-slate-800">حسابات العملاء</h1>
-        <p class="text-slate-400 text-base mt-0.5">أرصدة العملاء — مدين (لنا عندهم) ودائن (لهم عندنا)</p>
+        <h1 class="text-2xl font-extrabold text-slate-800">حسابات الموردين</h1>
+        <p class="text-slate-400 text-base mt-0.5">أرصدة الموردين — مدين (لنا عندهم) ودائن (مستحق لهم عندنا)</p>
     </div>
     <div class="flex items-center gap-2">
         <label class="flex items-center gap-2 text-sm text-slate-500 font-semibold cursor-pointer">
-            <input id="ca-include-zero" type="checkbox" onchange="window.caLoad()"
+            <input id="sa-include-zero" type="checkbox" onchange="window.saLoad()"
                    class="rounded border-slate-300 text-brand-600 focus:ring-brand-500" />
             عرض الأرصدة الصفرية
         </label>
-        <button onclick="window.caLoad()"
+        <button onclick="window.saLoad()"
                 class="w-9 h-9 flex items-center justify-center rounded-xl bg-white border border-slate-200 text-slate-500 hover:text-brand-600 hover:border-brand-300 transition-colors shadow-sm">
             <i class="fa-solid fa-rotate-right text-sm"></i>
         </button>
@@ -30,8 +30,8 @@
                 <i class="fa-solid fa-arrow-down text-red-500"></i>
             </div>
             <div>
-                <p class="text-xs text-slate-400 font-semibold">إجمالي المدين (لنا)</p>
-                <p id="ca-total-debit" class="text-xl font-black text-red-600 font-mono">0.00</p>
+                <p class="text-sm text-slate-400 font-semibold">إجمالي المدين (لنا)</p>
+                <p id="sa-total-debit" class="text-xl font-black text-red-600 font-mono">0.00</p>
             </div>
         </div>
     </div>
@@ -41,8 +41,8 @@
                 <i class="fa-solid fa-arrow-up text-emerald-600"></i>
             </div>
             <div>
-                <p class="text-xs text-slate-400 font-semibold">إجمالي الدائن (لهم)</p>
-                <p id="ca-total-credit" class="text-xl font-black text-emerald-700 font-mono">0.00</p>
+                <p class="text-sm text-slate-400 font-semibold">إجمالي الدائن (لهم)</p>
+                <p id="sa-total-credit" class="text-xl font-black text-emerald-700 font-mono">0.00</p>
             </div>
         </div>
     </div>
@@ -52,8 +52,8 @@
                 <i class="fa-solid fa-scale-balanced text-brand-600"></i>
             </div>
             <div>
-                <p class="text-xs text-slate-400 font-semibold">صافي الرصيد</p>
-                <p id="ca-total-net" class="text-xl font-black text-brand-700 font-mono">0.00</p>
+                <p class="text-sm text-slate-400 font-semibold">صافي الرصيد</p>
+                <p id="sa-total-net" class="text-xl font-black text-brand-700 font-mono">0.00</p>
             </div>
         </div>
     </div>
@@ -64,94 +64,93 @@
     <div class="flex flex-wrap items-center gap-3">
         <div class="relative flex-1 min-w-[200px]">
             <i class="fa-solid fa-magnifying-glass absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none"></i>
-            <input id="ca-search" type="text" placeholder="بحث باسم العميل أو الهاتف..."
-                   oninput="window.caRender()"
-                   class="w-full pr-9 pl-4 py-2 border border-slate-200 rounded-xl text-base text-slate-700 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition-all" />
+            <input id="sa-search" type="text" placeholder="بحث باسم المورد أو الهاتف أو جهة الاتصال..."
+                   oninput="window.saRender()"
+                   class="w-full pr-9 pl-4 py-2.5 border border-slate-200 rounded-xl text-base text-slate-700 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition-all" />
         </div>
         <div class="flex bg-slate-100 rounded-xl p-1 gap-1">
-            <button data-tab="debit" onclick="window.caSetTab('debit')"
-                    class="ca-tab px-6 py-2 rounded-lg text-base font-bold transition-colors">مدين</button>
-            <button data-tab="credit" onclick="window.caSetTab('credit')"
-                    class="ca-tab px-6 py-2 rounded-lg text-base font-bold transition-colors">دائن</button>
-            <button data-tab="all" onclick="window.caSetTab('all')"
-                    class="ca-tab px-6 py-2 rounded-lg text-base font-bold transition-colors">الكل</button>
+            <button data-tab="debit" onclick="window.saSetTab('debit')"
+                    class="sa-tab px-6 py-2 rounded-lg text-base font-bold transition-colors">مدين</button>
+            <button data-tab="credit" onclick="window.saSetTab('credit')"
+                    class="sa-tab px-6 py-2 rounded-lg text-base font-bold transition-colors">دائن</button>
+            <button data-tab="all" onclick="window.saSetTab('all')"
+                    class="sa-tab px-6 py-2 rounded-lg text-base font-bold transition-colors">الكل</button>
         </div>
     </div>
 </div>
 
 <!-- Loading -->
-<div id="ca-loading" class="bg-white rounded-2xl shadow-sm border border-slate-100 py-16 text-center">
+<div id="sa-loading" class="bg-white rounded-2xl shadow-sm border border-slate-100 py-16 text-center">
     <i class="fa-solid fa-circle-notch fa-spin text-2xl text-brand-400 mb-3"></i>
-    <p class="text-slate-400 text-base">جاري تحميل أرصدة العملاء...</p>
+    <p class="text-slate-400 text-base">جاري تحميل أرصدة الموردين...</p>
 </div>
 
 <!-- Single-column tab body (مدين / دائن) -->
-<div id="ca-single" class="hidden bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden mb-6">
+<div id="sa-single" class="hidden bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden mb-6">
     <div class="overflow-x-auto">
         <table class="w-full text-base">
             <thead>
                 <tr class="bg-slate-50 text-sm text-slate-500 border-b border-slate-100">
-                    <th class="py-3.5 px-4 text-right font-bold">العميل</th>
+                    <th class="py-3.5 px-4 text-right font-bold">المورد</th>
                     <th class="py-3.5 px-4 text-right font-bold hidden sm:table-cell">الهاتف</th>
-                    <th class="py-3.5 px-4 text-right font-bold hidden md:table-cell">الفواتير</th>
-                    <th class="py-3.5 px-4 text-right font-bold hidden md:table-cell">المقبوضات</th>
-                    <th class="py-3.5 px-4 text-right font-bold hidden md:table-cell">المرتجعات</th>
+                    <th class="py-3.5 px-4 text-right font-bold hidden md:table-cell">فواتير المشتريات</th>
+                    <th class="py-3.5 px-4 text-right font-bold hidden md:table-cell">المدفوعات</th>
                     <th class="py-3.5 px-4 text-right font-bold hidden md:table-cell">قيود/افتتاحي</th>
                     <th class="py-3.5 px-4 text-right font-bold">الرصيد</th>
                     <th class="py-3.5 px-4 text-center font-bold">كشف</th>
                 </tr>
             </thead>
-            <tbody id="ca-tbody"></tbody>
+            <tbody id="sa-tbody"></tbody>
         </table>
     </div>
-    <div id="ca-single-empty" class="hidden py-16 text-center">
-        <i class="fa-solid fa-users-viewfinder text-4xl text-slate-200 mb-3"></i>
-        <p id="ca-single-empty-text" class="text-slate-400 text-base">لا توجد أرصدة</p>
+    <div id="sa-single-empty" class="hidden py-16 text-center">
+        <i class="fa-solid fa-truck-field text-4xl text-slate-200 mb-3"></i>
+        <p id="sa-single-empty-text" class="text-slate-400 text-base">لا توجد أرصدة</p>
     </div>
 </div>
 
 <!-- Split view (الكل): مدين يسارًا / دائن يمينًا -->
-<div id="ca-split" class="hidden grid grid-cols-1 lg:grid-cols-2 gap-5 mb-6">
+<div id="sa-split" class="hidden grid grid-cols-1 lg:grid-cols-2 gap-5 mb-6">
     <!-- Credit column (right side in RTL = first in DOM) -->
     <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
         <div class="px-4 py-3 bg-emerald-50 border-b border-emerald-100 flex items-center justify-between">
-            <h3 class="text-sm font-bold text-emerald-700 text-base"><i class="fa-solid fa-arrow-up ml-1.5"></i> دائن — لهم عندنا</h3>
-            <span id="ca-split-credit-count" class="text-xs font-bold text-emerald-600 bg-white px-2 py-0.5 rounded-full"></span>
+            <h3 class="text-base font-bold text-emerald-700"><i class="fa-solid fa-arrow-up ml-1.5"></i> دائن — مستحق للمورد</h3>
+            <span id="sa-split-credit-count" class="text-xs font-bold text-emerald-600 bg-white px-2 py-0.5 rounded-full"></span>
         </div>
         <div class="overflow-x-auto">
             <table class="w-full text-base">
                 <thead>
                     <tr class="bg-slate-50 text-sm text-slate-500 border-b border-slate-100">
-                        <th class="py-3 px-4 text-right font-bold">العميل</th>
+                        <th class="py-3 px-4 text-right font-bold">المورد</th>
                         <th class="py-3 px-4 text-right font-bold">الرصيد</th>
                         <th class="py-3 px-4 text-center font-bold w-10">كشف</th>
                     </tr>
                 </thead>
-                <tbody id="ca-credit-tbody"></tbody>
+                <tbody id="sa-credit-tbody"></tbody>
             </table>
         </div>
-        <div id="ca-credit-empty" class="hidden py-10 text-center text-slate-400 text-sm">لا يوجد عملاء دائنون</div>
+        <div id="sa-credit-empty" class="hidden py-10 text-center text-slate-400 text-sm">لا يوجد موردون دائنون</div>
     </div>
     <!-- Debit column (left side in RTL = second in DOM) -->
     <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
         <div class="px-4 py-3 bg-red-50 border-b border-red-100 flex items-center justify-between">
-            <h3 class="text-sm font-bold text-red-600 text-base"><i class="fa-solid fa-arrow-down ml-1.5"></i> مدين — لنا عندهم</h3>
-            <span id="ca-split-debit-count" class="text-xs font-bold text-red-500 bg-white px-2 py-0.5 rounded-full"></span>
+            <h3 class="text-base font-bold text-red-600"><i class="fa-solid fa-arrow-down ml-1.5"></i> مدين — لنا عند المورد</h3>
+            <span id="sa-split-debit-count" class="text-xs font-bold text-red-500 bg-white px-2 py-0.5 rounded-full"></span>
         </div>
         <div class="overflow-x-auto">
             <table class="w-full text-base">
                 <thead>
                     <tr class="bg-slate-50 text-sm text-slate-500 border-b border-slate-100">
-                        <th class="py-3 px-4 text-right font-bold">العميل</th>
+                        <th class="py-3 px-4 text-right font-bold">المورد</th>
                         <th class="py-3 px-4 text-right font-bold">الرصيد</th>
                         <th class="py-3 px-4 text-center font-bold w-10">كشف</th>
                     </tr>
                 </thead>
-                <tbody id="ca-debit-tbody"></tbody>
+                <tbody id="sa-debit-tbody"></tbody>
             </table>
         </div>
-        <div id="ca-debit-empty" class="hidden py-10 text-center text-slate-400 text-sm">لا يوجد عملاء مدينون</div>
+        <div id="sa-debit-empty" class="hidden py-10 text-center text-slate-400 text-sm">لا يوجد موردون مدينون</div>
     </div>
 </div>
 
-<script src="/js/views/client-accounts.js?v=20260907b"></script>
+<script src="/js/views/supplier-accounts.js?v=20260907a"></script>
