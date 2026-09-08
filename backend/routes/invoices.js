@@ -726,7 +726,7 @@ router.put('/:id', restrictEdit, validateBody(invoiceUpdate), async (req, res) =
         await client.query('COMMIT');
 
         res.json({
-            data: { id: parseInt(id), invoice_number: invoice.invoice_number, grand_total: grandTotal },
+            data: { id, invoice_number: invoice.invoice_number, grand_total: grandTotal },
             message: 'تم تعديل الفاتورة بنجاح',
         });
 

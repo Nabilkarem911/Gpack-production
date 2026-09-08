@@ -19,6 +19,8 @@
     let _warehouseSelectedStockIds = new Set();
     let _warehouseClientSearchable = null;
     let _warehouseSearchable = null;
+    let _warehouseEditingInvoiceId = null;
+    let _warehouseEditingSourceStockIds = new Set();
 
     const fmt  = (v) => parseFloat(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const qty  = (v) => parseFloat(v || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 3 });
@@ -420,6 +422,8 @@
         if (!modal) return;
         _warehouseStock = [];
         _warehouseSelectedStockIds = new Set();
+        _warehouseEditingInvoiceId = null;
+        _warehouseEditingSourceStockIds = new Set();
         modal.classList.remove('hidden');
         const stockSearch = _el('si-w-stock-search');
         if (stockSearch) { stockSearch.value = ''; stockSearch.disabled = true; }
@@ -438,6 +442,8 @@
         _el('si-warehouse-modal')?.classList.add('hidden');
         _warehouseStock = [];
         _warehouseSelectedStockIds = new Set();
+        _warehouseEditingInvoiceId = null;
+        _warehouseEditingSourceStockIds = new Set();
     };
 
     window.siWarehouseClientChanged = async function() {
@@ -554,7 +560,9 @@
         body.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-slate-400"><i class="fa-solid fa-circle-notch fa-spin"></i> جاري تحميل المخزون...</td></tr>';
         try {
             const res = await window.apiFetch(`/api/inventory/stock?client_id=${encodeURIComponent(clientId)}&warehouse_id=${encodeURIComponent(warehouseId)}&limit=1000`);
-            _warehouseStock = (res.data || []).filter(s => parseFloat(s.available_qty || 0) > 0);
+            _warehouseStock = (res.data || []).filter(s =>
+                parseFloat(s.available_qty || 0) > 0 || _warehouseEditingSourceStockIds.has(s.stock_id)
+            );
             _el('si-w-stock-count').textContent = `${_warehouseStock.length} صنف متاح`;
             _renderWarehouseSearchResults();
             _renderWarehouseSelectedItems();
@@ -597,22 +605,33 @@
         if (!clientId || !warehouseId) return alert('اختر العميل والمستودع أولاً');
         if (!items.length) return alert('أدخل كمية لصنف واحد على الأقل');
         const btn = _el('si-w-save');
-        if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> جاري الإصدار...'; }
+        if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> جاري الحفظ...'; }
         try {
-            const res = await window.apiFetch('/api/invoices', { method: 'POST', body: {
-                client_id: clientId, warehouse_id: warehouseId, source: 'warehouse',
+            const body = {
+                client_id: clientId, warehouse_id: warehouseId,
                 invoice_date: _el('si-w-date')?.value, due_date: _el('si-w-due')?.value || null,
                 tax_rate: parseFloat(_el('si-w-tax')?.value || 15) / 100,
                 notes: _el('si-w-notes')?.value || '', items,
-            }});
-            const invoice = res.data || res;
-            alert(`✅ تم إصدار الفاتورة #${invoice.invoice_number}. يمكنك إصدار أمر الفسح لاحقًا من إجراءات الفاتورة.`);
-            window.siCloseWarehouseInvoice();
-            window.navigateTo(`sales-invoice-detail?id=${invoice.id}`);
+            };
+            if (_warehouseEditingInvoiceId) {
+                const res = await window.apiFetch(`/api/invoices/${_warehouseEditingInvoiceId}`, { method: 'PUT', body });
+                const invoice = res.data || res;
+                alert(`✅ تم تحديث الفاتورة #${invoice.invoice_number || ''} بنجاح.`);
+                window.siCloseWarehouseInvoice();
+                await _loadInvoices(_currentPage);
+            } else {
+                const res = await window.apiFetch('/api/invoices', { method: 'POST', body: { ...body, source: 'warehouse' } });
+                const invoice = res.data || res;
+                alert(`✅ تم إصدار الفاتورة #${invoice.invoice_number}. يمكنك إصدار أمر الفسح لاحقًا من إجراءات الفاتورة.`);
+                window.siCloseWarehouseInvoice();
+                window.navigateTo(`sales-invoice-detail?id=${invoice.id}`);
+            }
         } catch (err) {
             alert(`❌ خطأ: ${err.message}`);
         } finally {
-            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-file-invoice ml-1"></i> إصدار الفاتورة'; }
+            if (btn) { btn.disabled = false; btn.innerHTML = _warehouseEditingInvoiceId
+                ? '<i class="fa-solid fa-check ml-1"></i> حفظ تعديل الفاتورة'
+                : '<i class="fa-solid fa-file-invoice ml-1"></i> إصدار الفاتورة'; }
         }
     };
 
@@ -668,34 +687,46 @@
         try {
             const res = await window.apiFetch(`/api/invoices/${invoiceId}`);
             const invoice = res?.data || res;
-            const notes = prompt('ملاحظات الفاتورة:', invoice.notes || '');
-            if (notes === null) return;
-            const dueDate = prompt('تاريخ الاستحقاق (YYYY-MM-DD):', invoice.due_date || '');
-            if (dueDate === null) return;
-            const items = (invoice.items || []).map(item => ({
-                variant_id: item.variant_id,
-                order_item_id: item.order_item_id || null,
-                stock_id: item.source_stock_id || null,
-                quantity: parseFloat(item.quantity || 0),
-                unit_price: parseFloat(item.unit_price || 0),
-                discount_percent: parseFloat(item.discount_percent || 0),
-            }));
-            await window.apiFetch(`/api/invoices/${invoiceId}`, {
-                method: 'PUT',
-                body: {
-                    invoice_date: invoice.invoice_date,
-                    due_date: dueDate || null,
-                    tax_rate: parseFloat(invoice.tax_rate || 0),
-                    additional_expenses: parseFloat(invoice.additional_expenses || 0),
-                    discount_amount: parseFloat(invoice.discount_amount || 0),
-                    notes,
-                    items,
-                },
+            if (!invoice || invoice.source !== 'warehouse' || invoice.delivery_note_id) {
+                alert('لا يمكن تعديل الفاتورة بعد إصدار أمر الفسح.');
+                return;
+            }
+
+            await window.siCreateWarehouseInvoice();
+            _warehouseEditingInvoiceId = invoiceId;
+            _warehouseEditingSourceStockIds = new Set((invoice.items || []).map(item => item.source_stock_id).filter(Boolean));
+
+            const clientSel = _el('si-w-client');
+            if (clientSel) {
+                clientSel.value = invoice.client_id || '';
+                if (_warehouseClientSearchable) _warehouseClientSearchable.refresh();
+                await window.siWarehouseClientChanged();
+            }
+            const warehouseSel = _el('si-w-warehouse');
+            if (warehouseSel && invoice.warehouse_id) {
+                warehouseSel.value = invoice.warehouse_id;
+                if (_warehouseSearchable) _warehouseSearchable.refresh();
+                await window.siWarehouseChanged();
+            }
+
+            _el('si-w-date').value = invoice.invoice_date || '';
+            _el('si-w-due').value = invoice.due_date || '';
+            _el('si-w-tax').value = String((parseFloat(invoice.tax_rate || 0) * 100).toFixed(2));
+            _el('si-w-notes').value = invoice.notes || '';
+            _warehouseSelectedStockIds = new Set();
+            (invoice.items || []).forEach(item => {
+                const stock = _warehouseStock.find(s => s.stock_id === item.source_stock_id);
+                if (!stock) return;
+                _warehouseSelectedStockIds.add(stock.stock_id);
+                stock.selectedQty = parseFloat(item.quantity || 0);
+                stock.selectedPrice = parseFloat(item.unit_price || 0);
             });
-            alert('تم تعديل الفاتورة بنجاح.');
-            await _loadInvoices(_currentPage);
+            _renderWarehouseSearchResults();
+            _renderWarehouseSelectedItems();
+            const saveBtn = _el('si-w-save');
+            if (saveBtn) saveBtn.innerHTML = '<i class="fa-solid fa-check ml-1"></i> حفظ تعديل الفاتورة';
         } catch (err) {
-            alert(`❌ تعذر تعديل الفاتورة: ${err.message}`);
+            alert(`❌ تعذر تحميل الفاتورة للتعديل: ${err.message}`);
         }
     };
 
