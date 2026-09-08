@@ -1,4 +1,4 @@
-<!-- =============================================================================
+﻿<!-- =============================================================================
      G.PACK 2.0 - Supplier Accounts View (حسابات الموردين)
      Logic: /js/views/supplier-accounts.js
 ============================================================================= -->
@@ -26,34 +26,34 @@
 <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
     <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
         <div class="flex items-center gap-3">
-            <div class="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center">
+            <div class="w-12 h-12 rounded-xl bg-red-50 flex items-center justify-center">
                 <i class="fa-solid fa-arrow-down text-red-500"></i>
             </div>
             <div>
                 <p class="text-sm text-slate-400 font-semibold">إجمالي المدين (لنا)</p>
-                <p id="sa-total-debit" class="text-xl font-black text-red-600 font-mono">0.00</p>
+                <p id="sa-total-debit" class="text-2xl font-black text-red-600 font-mono">0.00</p>
             </div>
         </div>
     </div>
     <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
         <div class="flex items-center gap-3">
-            <div class="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center">
+            <div class="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center">
                 <i class="fa-solid fa-arrow-up text-emerald-600"></i>
             </div>
             <div>
                 <p class="text-sm text-slate-400 font-semibold">إجمالي الدائن (لهم)</p>
-                <p id="sa-total-credit" class="text-xl font-black text-emerald-700 font-mono">0.00</p>
+                <p id="sa-total-credit" class="text-2xl font-black text-emerald-700 font-mono">0.00</p>
             </div>
         </div>
     </div>
     <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
         <div class="flex items-center gap-3">
-            <div class="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center">
+            <div class="w-12 h-12 rounded-xl bg-brand-50 flex items-center justify-center">
                 <i class="fa-solid fa-scale-balanced text-brand-600"></i>
             </div>
             <div>
                 <p class="text-sm text-slate-400 font-semibold">صافي الرصيد</p>
-                <p id="sa-total-net" class="text-xl font-black text-brand-700 font-mono">0.00</p>
+                <p id="sa-total-net" class="text-2xl font-black text-brand-700 font-mono">0.00</p>
             </div>
         </div>
     </div>
@@ -90,7 +90,7 @@
     <div class="overflow-x-auto">
         <table class="w-full text-base">
             <thead>
-                <tr class="bg-slate-50 text-sm text-slate-500 border-b border-slate-100">
+                <tr class="bg-slate-50 text-sm font-bold text-slate-600 border-b border-slate-100">
                     <th class="py-3.5 px-4 text-right font-bold">المورد</th>
                     <th class="py-3.5 px-4 text-right font-bold hidden sm:table-cell">الهاتف</th>
                     <th class="py-3.5 px-4 text-right font-bold hidden md:table-cell">فواتير المشتريات</th>
@@ -115,12 +115,12 @@
     <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
         <div class="px-4 py-3 bg-emerald-50 border-b border-emerald-100 flex items-center justify-between">
             <h3 class="text-base font-bold text-emerald-700"><i class="fa-solid fa-arrow-up ml-1.5"></i> دائن — مستحق للمورد</h3>
-            <span id="sa-split-credit-count" class="text-xs font-bold text-emerald-600 bg-white px-2 py-0.5 rounded-full"></span>
+            <span id="sa-split-credit-count" class="text-sm font-bold text-emerald-600 bg-white px-2 py-0.5 rounded-full"></span>
         </div>
         <div class="overflow-x-auto">
             <table class="w-full text-base">
                 <thead>
-                    <tr class="bg-slate-50 text-sm text-slate-500 border-b border-slate-100">
+                    <tr class="bg-slate-50 text-sm font-bold text-slate-600 border-b border-slate-100">
                         <th class="py-3 px-4 text-right font-bold">المورد</th>
                         <th class="py-3 px-4 text-right font-bold">الرصيد</th>
                         <th class="py-3 px-4 text-center font-bold w-10">كشف</th>
@@ -135,12 +135,12 @@
     <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
         <div class="px-4 py-3 bg-red-50 border-b border-red-100 flex items-center justify-between">
             <h3 class="text-base font-bold text-red-600"><i class="fa-solid fa-arrow-down ml-1.5"></i> مدين — لنا عند المورد</h3>
-            <span id="sa-split-debit-count" class="text-xs font-bold text-red-500 bg-white px-2 py-0.5 rounded-full"></span>
+            <span id="sa-split-debit-count" class="text-sm font-bold text-red-500 bg-white px-2 py-0.5 rounded-full"></span>
         </div>
         <div class="overflow-x-auto">
             <table class="w-full text-base">
                 <thead>
-                    <tr class="bg-slate-50 text-sm text-slate-500 border-b border-slate-100">
+                    <tr class="bg-slate-50 text-sm font-bold text-slate-600 border-b border-slate-100">
                         <th class="py-3 px-4 text-right font-bold">المورد</th>
                         <th class="py-3 px-4 text-right font-bold">الرصيد</th>
                         <th class="py-3 px-4 text-center font-bold w-10">كشف</th>
@@ -153,4 +153,4 @@
     </div>
 </div>
 
-<script src="/js/views/supplier-accounts.js?v=20260907a"></script>
+<script src="/js/views/supplier-accounts.js?v=20260907c"></script>
