@@ -3,6 +3,7 @@
 (function () {
     let _invoices = [];
     let _currentInvoice = null;
+    let _searchTimer = null;
     const el = id => document.getElementById(id);
     const esc = value => String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     const money = value => parseFloat(value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -27,12 +28,20 @@
 
     async function srSearchInvoices() {
         const query = el('sr-invoice-search')?.value || '';
-        try {
-            const res = await window.apiFetch(`/api/sales-returns/eligible-invoices?search=${encodeURIComponent(query)}`);
-            _invoices = res.data || [];
-            const select = el('sr-invoice');
-            select.innerHTML = '<option value="">— اختر فاتورة —</option>' + _invoices.map(i => `<option value="${esc(i.id)}">#${esc(i.invoice_number)} — ${esc(i.client_name)} — ${money(i.grand_total)}</option>`).join('');
-        } catch (err) { window.showToast?.(err.message || 'فشل البحث', 'error'); }
+        clearTimeout(_searchTimer);
+        _searchTimer = setTimeout(async () => {
+            try {
+                const res = await window.apiFetch(`/api/sales-returns/eligible-invoices?search=${encodeURIComponent(query)}`);
+                _invoices = res.data || [];
+                const select = el('sr-invoice');
+                select.innerHTML = '<option value="">— اختر فاتورة —</option>' + _invoices.map(i => `<option value="${esc(i.id)}">#${esc(i.invoice_number)} — ${esc(i.client_name)} — ${money(i.grand_total)}</option>`).join('');
+                // Keep the current selection if it still exists in the new result set
+                if (_currentInvoice && select.value !== _currentInvoice.invoice.id) {
+                    const stillThere = _invoices.some(i => i.id === _currentInvoice.invoice.id);
+                    if (stillThere) select.value = _currentInvoice.invoice.id;
+                }
+            } catch (err) { window.showToast?.(err.message || 'فشل البحث', 'error'); }
+        }, 250);
     }
 
     async function srOpenForm() {
