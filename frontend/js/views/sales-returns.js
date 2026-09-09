@@ -41,7 +41,7 @@
                         hint.textContent = `${_invoices.length} فاتورة متاحة — اختر من القائمة`;
                         hint.className = 'text-xs text-emerald-600 mt-1.5 min-h-[18px]';
                     } else {
-                        hint.textContent = query ? 'لا توجد فواتير مطابقة — تأكد من رقم الفاتورة أو الاسم أو حالة التسليم' : 'لا توجد فواتير مُسلّمة متاحة للمرتجع';
+                        hint.textContent = query ? 'لا توجد فواتير مطابقة — تأكد من رقم الفاتورة أو الاسم أو وجود سند تسليم' : 'لا توجد فواتير مُسلّمة متاحة للمرتجع (يجب وجود سند تسليم)';
                         hint.className = 'text-xs text-amber-600 mt-1.5 min-h-[18px]';
                     }
                 }
