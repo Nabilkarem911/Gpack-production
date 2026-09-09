@@ -28,6 +28,7 @@
 
     async function srSearchInvoices() {
         const query = el('sr-invoice-search')?.value || '';
+        const hint = el('sr-search-hint');
         clearTimeout(_searchTimer);
         _searchTimer = setTimeout(async () => {
             try {
@@ -35,12 +36,27 @@
                 _invoices = res.data || [];
                 const select = el('sr-invoice');
                 select.innerHTML = '<option value="">— اختر فاتورة —</option>' + _invoices.map(i => `<option value="${esc(i.id)}">#${esc(i.invoice_number)} — ${esc(i.client_name)} — ${money(i.grand_total)}</option>`).join('');
-                // Keep the current selection if it still exists in the new result set
-                if (_currentInvoice && select.value !== _currentInvoice.invoice.id) {
-                    const stillThere = _invoices.some(i => i.id === _currentInvoice.invoice.id);
-                    if (stillThere) select.value = _currentInvoice.invoice.id;
+                if (hint) {
+                    if (_invoices.length) {
+                        hint.textContent = `${_invoices.length} فاتورة متاحة — اختر من القائمة`;
+                        hint.className = 'text-xs text-emerald-600 mt-1.5 min-h-[18px]';
+                    } else {
+                        hint.textContent = query ? 'لا توجد فواتير مطابقة — تأكد من رقم الفاتورة أو الاسم أو حالة التسليم' : 'لا توجد فواتير مُسلّمة متاحة للمرتجع';
+                        hint.className = 'text-xs text-amber-600 mt-1.5 min-h-[18px]';
+                    }
                 }
-            } catch (err) { window.showToast?.(err.message || 'فشل البحث', 'error'); }
+                // Auto-open the select to make results visible when there are matches
+                if (_invoices.length) {
+                    const sel = el('sr-invoice');
+                    sel.size = Math.min(6, _invoices.length + 1);
+                } else {
+                    const sel = el('sr-invoice');
+                    sel.size = 1;
+                }
+            } catch (err) { 
+                window.showToast?.(err.message || 'فشل البحث', 'error');
+                if (hint) { hint.textContent = 'خطأ في البحث'; hint.className = 'text-xs text-red-500 mt-1.5'; }
+            }
         }, 250);
     }
 
@@ -62,6 +78,7 @@
 
     async function srInvoiceChanged(invoiceId) {
         if (!invoiceId) return;
+        el('sr-invoice').size = 1;
         try {
             const res = await window.apiFetch(`/api/sales-returns/by-invoice/${invoiceId}`);
             _currentInvoice = res.data;

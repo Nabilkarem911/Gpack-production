@@ -13,10 +13,11 @@ router.get('/eligible-invoices', async (req, res) => {
     try {
         const search = String(req.query.search || '').trim();
         const params = [];
+        // Eligible for return: any delivered (fully or partially) invoice from any source
+        // as long as a delivery note exists and it is not cancelled.
         let where = [
-            "i.source = 'warehouse'",
             "i.delivery_note_id IS NOT NULL",
-            "i.delivery_status = 'completed'",
+            "i.delivery_status IN ('completed', 'partial')",
             "i.status <> 'cancelled'",
         ];
         if (search) {
@@ -115,9 +116,8 @@ router.get('/by-invoice/:invoiceId', async (req, res) => {
                    c.name AS client_name
             FROM invoices i
             JOIN clients c ON c.id = i.client_id
-            WHERE i.id = $1 AND i.source = 'warehouse'
-              AND i.delivery_note_id IS NOT NULL
-              AND i.delivery_status = 'completed'
+            WHERE i.id = $1 AND i.delivery_note_id IS NOT NULL
+              AND i.delivery_status IN ('completed', 'partial')
               AND i.status <> 'cancelled'
         `, [req.params.invoiceId]);
         if (!invoiceRes.rowCount) return res.status(404).json({ error: 'الفاتورة غير مؤهلة للمرتجع؛ يجب أن يكون التسليم مكتملًا.' });
@@ -125,11 +125,20 @@ router.get('/by-invoice/:invoiceId', async (req, res) => {
         const itemsRes = await db.query(`
             SELECT ii.id AS invoice_item_id, ii.variant_id, ii.quantity,
                    ii.unit_price, p.name AS product_name, pv.size_name,
-                   ii.quantity - COALESCE((
-                       SELECT SUM(sri.quantity) FROM sales_return_items sri
-                       JOIN sales_returns sr ON sr.id = sri.sales_return_id
-                       WHERE sri.invoice_item_id = ii.id AND sr.status = 'completed'
-                   ), 0) AS remaining_qty
+                   (
+                       LEAST(
+                           ii.quantity,
+                           COALESCE((
+                               SELECT SUM(dni.delivered_qty)
+                               FROM delivery_note_items dni
+                               WHERE dni.order_item_id = ii.order_item_id
+                           ), ii.quantity)
+                       ) - COALESCE((
+                           SELECT SUM(sri.quantity) FROM sales_return_items sri
+                           JOIN sales_returns sr ON sr.id = sri.sales_return_id
+                           WHERE sri.invoice_item_id = ii.id AND sr.status = 'completed'
+                       ), 0)
+                   ) AS remaining_qty
             FROM invoice_items ii
             JOIN product_variants pv ON pv.id = ii.variant_id
             JOIN products p ON p.id = pv.product_id
@@ -154,8 +163,8 @@ router.post('/', restrictWrite, validateBody(salesReturnCreate), async (req, res
         `, [invoice_id]);
         if (!invoiceRes.rowCount) throw new Error('الفاتورة غير موجودة.');
         const invoice = invoiceRes.rows[0];
-        if (invoice.source !== 'warehouse' || !invoice.delivery_note_id || invoice.delivery_status !== 'completed') {
-            throw new Error('لا يمكن إنشاء مرتجع إلا بعد اكتمال تسليم الفاتورة.');
+        if (!invoice.delivery_note_id || !['completed', 'partial'].includes(invoice.delivery_status)) {
+            throw new Error('لا يمكن إنشاء مرتجع إلا بعد تسليم الفاتورة (كليًا أو جزئيًا).');
         }
 
         const warehouseRes = await client.query(
@@ -169,11 +178,20 @@ router.post('/', restrictWrite, validateBody(salesReturnCreate), async (req, res
         for (const item of items) {
             const itemRes = await client.query(`
                 SELECT ii.id, ii.variant_id, ii.quantity, ii.unit_price,
-                       ii.quantity - COALESCE((
-                           SELECT SUM(sri.quantity) FROM sales_return_items sri
-                           JOIN sales_returns sr ON sr.id = sri.sales_return_id
-                           WHERE sri.invoice_item_id = ii.id AND sr.status = 'completed'
-                       ), 0) AS remaining_qty
+                       (
+                           LEAST(
+                               ii.quantity,
+                               COALESCE((
+                                   SELECT SUM(dni.delivered_qty)
+                                   FROM delivery_note_items dni
+                                   WHERE dni.order_item_id = ii.order_item_id
+                               ), ii.quantity)
+                           ) - COALESCE((
+                               SELECT SUM(sri.quantity) FROM sales_return_items sri
+                               JOIN sales_returns sr ON sr.id = sri.sales_return_id
+                               WHERE sri.invoice_item_id = ii.id AND sr.status = 'completed'
+                           ), 0)
+                       ) AS remaining_qty
                 FROM invoice_items ii
                 WHERE ii.id = $1 AND ii.invoice_id = $2
                 FOR UPDATE
