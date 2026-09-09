@@ -609,7 +609,7 @@
         try {
             const body = {
                 client_id: clientId, warehouse_id: warehouseId,
-                invoice_date: _el('si-w-date')?.value, due_date: _el('si-w-due')?.value || null,
+                invoice_date: _el('si-w-date')?.value || null, due_date: _el('si-w-due')?.value || null,
                 tax_rate: parseFloat(_el('si-w-tax')?.value || 15) / 100,
                 notes: _el('si-w-notes')?.value || '', items,
             };
@@ -709,8 +709,8 @@
                 await window.siWarehouseChanged();
             }
 
-            _el('si-w-date').value = invoice.invoice_date || '';
-            _el('si-w-due').value = invoice.due_date || '';
+            _el('si-w-date').value = invoice.invoice_date ? new Date(invoice.invoice_date).toISOString().slice(0,10) : '';
+            _el('si-w-due').value = invoice.due_date ? new Date(invoice.due_date).toISOString().slice(0,10) : '';
             _el('si-w-tax').value = String((parseFloat(invoice.tax_rate || 0) * 100).toFixed(2));
             _el('si-w-notes').value = invoice.notes || '';
             _warehouseSelectedStockIds = new Set();
@@ -755,7 +755,7 @@
             const payload = {
                 client_id: clientId,
                 order_id: orderId,
-                invoice_date: _el('si-m-date')?.value,
+                invoice_date: _el('si-m-date')?.value || null,
                 due_date: _el('si-m-due')?.value || null,
                 tax_rate: parseFloat(_el('si-m-tax')?.value || 15) / 100,
                 discount_amount: parseFloat(_el('si-m-discount')?.value || 0),

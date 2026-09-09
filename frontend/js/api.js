@@ -143,7 +143,9 @@ window.apiFetch = async function (endpoint, options = {}) {
 
     // Non-2xx responses
     if (!response.ok) {
-        const message = (data && data.error) ? data.error : `خطأ في الخادم (${response.status})`;
+        let message = (data && data.error) ? data.error : `خطأ في الخادم (${response.status})`;
+        if (data && data.message) message += `: ${data.message}`;
+        if (data && data.field) message += ` (${data.field})`;
         throw new Error(message);
     }
 

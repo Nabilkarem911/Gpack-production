@@ -56,13 +56,18 @@ const orderCreate = z.object({
     }).passthrough()).min(1, 'At least one item is required'),
 }).passthrough();
 
+const dateString = (label) => z.preprocess(
+    (val) => (val === '' || val === undefined ? null : val),
+    z.string().regex(/^\d{4}-\d{2}-\d{2}$/, `${label} must be YYYY-MM-DD`).optional().nullable()
+);
+
 const invoiceCreate = z.object({
     client_id: z.string().uuid(),
     order_id: z.string().uuid().optional().nullable(),
     warehouse_id: z.string().uuid().optional().nullable(),
     source: z.enum(['sales_invoices', 'warehouse']).optional(),
-    invoice_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-    due_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+    invoice_date: dateString('invoice_date'),
+    due_date: dateString('due_date'),
     tax_rate: z.coerce.number().min(0).max(1).optional().nullable(),
     additional_expenses: z.coerce.number().min(0).optional().default(0),
     additional_expense_label: z.string().max(120).optional().nullable(),
@@ -79,8 +84,8 @@ const invoiceCreate = z.object({
 }).passthrough();
 
 const invoiceUpdate = z.object({
-    invoice_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-    due_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+    invoice_date: dateString('invoice_date'),
+    due_date: dateString('due_date'),
     tax_rate: z.coerce.number().min(0).max(1).optional().nullable(),
     additional_expenses: z.coerce.number().min(0).optional().default(0),
     additional_expense_label: z.string().max(120).optional().nullable(),
