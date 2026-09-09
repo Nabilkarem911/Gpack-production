@@ -39,7 +39,7 @@ describe('sales returns', () => {
         mockClientQuery.mockImplementation(async (sql) => {
             if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') return {};
             if (sql.includes('SELECT id, client_id, delivery_status')) {
-                return { rowCount: 1, rows: [{ id: invoiceId, client_id: clientId, delivery_status: 'completed', delivery_note_id: 'delivery-note-id', source: 'warehouse', status: 'paid', tax_rate: 0.15 }] };
+                return { rowCount: 1, rows: [{ id: invoiceId, client_id: clientId, delivery_status: 'completed', delivery_note_id: 'delivery-note-id', source: 'warehouse', status: 'issued', tax_rate: 0.15 }] };
             }
             if (sql.includes('SELECT id FROM warehouses')) return { rowCount: 1, rows: [{ id: warehouseId }] };
             if (sql.includes('SELECT ii.id, ii.variant_id')) return { rowCount: 1, rows: [{ id: itemId, variant_id: variantId, quantity: 5, unit_price: 10, remaining_qty: 5 }] };

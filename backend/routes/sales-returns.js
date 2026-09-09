@@ -13,16 +13,18 @@ router.get('/eligible-invoices', async (req, res) => {
     try {
         const search = String(req.query.search || '').trim();
         const params = [];
-        // Eligible for return: an invoice whose items have actually been delivered.
-        // This can happen via the invoice's own warehouse release (invoices.delivery_note_id)
-        // OR via the order's delivery notes (invoices.order_id).
+        // Eligible for return: must match the "real" issued sales invoices visible in the client profile / sales-invoices list:
+        // source IN ('orders','warehouse') and status = 'issued'.
+        // Also, at least one invoice item must have been physically delivered.
         let where = [
-            "i.status <> 'cancelled'",
-            "(i.delivery_note_id IS NOT NULL OR i.order_id IS NOT NULL)",
+            "i.status = 'issued'",
+            "i.source IN ('orders','warehouse')",
             "EXISTS (\n" +
-            "    SELECT 1 FROM delivery_note_items dni\n" +
+            "    SELECT 1 FROM invoice_items ii\n" +
+            "    JOIN delivery_note_items dni ON dni.variant_id = ii.variant_id\n" +
             "    JOIN delivery_notes dn ON dn.id = dni.delivery_note_id\n" +
-            "    WHERE dni.delivered_qty > 0\n" +
+            "    WHERE ii.invoice_id = i.id\n" +
+            "      AND dni.delivered_qty > 0\n" +
             "      AND dn.status <> 'cancelled'\n" +
             "      AND (dn.invoice_id = i.id OR dn.order_id = i.order_id)\n" +
             ")",
@@ -34,10 +36,12 @@ router.get('/eligible-invoices', async (req, res) => {
         const result = await db.query(`
             SELECT DISTINCT
                    i.id, i.invoice_number, i.invoice_date, i.grand_total, i.status,
+                   i.source, i.order_id,
                    c.id AS client_id, c.name AS client_name,
-                   i.delivery_note_id, i.order_id
+                   o.order_number
             FROM invoices i
             JOIN clients c ON c.id = i.client_id
+            LEFT JOIN orders o ON o.id = i.order_id
             WHERE ${where.join(' AND ')}
             ORDER BY i.invoice_date DESC, i.invoice_number DESC
             LIMIT 50
@@ -121,15 +125,19 @@ router.get('/by-invoice/:invoiceId', async (req, res) => {
         const invoiceRes = await db.query(`
             SELECT i.id, i.invoice_number, i.invoice_date, i.client_id,
                    i.grand_total, i.tax_rate, i.delivery_status, i.delivery_note_id, i.order_id,
+                   i.source,
                    c.name AS client_name
             FROM invoices i
             JOIN clients c ON c.id = i.client_id
             WHERE i.id = $1
-              AND i.status <> 'cancelled'
+              AND i.status = 'issued'
+              AND i.source IN ('orders','warehouse')
               AND EXISTS (
-                  SELECT 1 FROM delivery_note_items dni
+                  SELECT 1 FROM invoice_items ii
+                  JOIN delivery_note_items dni ON dni.variant_id = ii.variant_id
                   JOIN delivery_notes dn ON dn.id = dni.delivery_note_id
-                  WHERE dni.delivered_qty > 0
+                  WHERE ii.invoice_id = i.id
+                    AND dni.delivered_qty > 0
                     AND dn.status <> 'cancelled'
                     AND (dn.invoice_id = i.id OR dn.order_id = i.order_id)
               )
@@ -146,16 +154,11 @@ router.get('/by-invoice/:invoiceId', async (req, res) => {
                                SELECT SUM(dni.delivered_qty)
                                FROM delivery_note_items dni
                                JOIN delivery_notes dn ON dn.id = dni.delivery_note_id
-                               WHERE dn.id = i.delivery_note_id
+                               WHERE ii.invoice_id = i.id
                                  AND dni.variant_id = ii.variant_id
-                           ), 0)
-                           +
-                           COALESCE((
-                               SELECT SUM(dni.delivered_qty)
-                               FROM delivery_note_items dni
-                               JOIN delivery_notes dn ON dn.id = dni.delivery_note_id
-                               WHERE dn.order_id = i.order_id
-                                 AND dni.order_item_id = ii.order_item_id
+                                 AND dni.delivered_qty > 0
+                                 AND dn.status <> 'cancelled'
+                                 AND (dn.invoice_id = i.id OR dn.order_id = i.order_id)
                            ), 0)
                        ) - COALESCE((
                            SELECT SUM(sri.quantity) FROM sales_return_items sri
@@ -188,15 +191,21 @@ router.post('/', restrictWrite, validateBody(salesReturnCreate), async (req, res
         `, [invoice_id]);
         if (!invoiceRes.rowCount) throw new Error('الفاتورة غير موجودة.');
         const invoice = invoiceRes.rows[0];
+        if (invoice.status !== 'issued' || !['orders','warehouse'].includes(invoice.source)) {
+            throw new Error('لا يمكن إنشاء مرتجع إلا على فاتورة معتمدة من المبيعات.');
+        }
         const hasDelivered = await client.query(`
             SELECT 1
-            FROM delivery_note_items dni
+            FROM invoice_items ii
+            JOIN invoices i2 ON i2.id = ii.invoice_id
+            JOIN delivery_note_items dni ON dni.variant_id = ii.variant_id
             JOIN delivery_notes dn ON dn.id = dni.delivery_note_id
-            WHERE dni.delivered_qty > 0
+            WHERE ii.invoice_id = $1
+              AND dni.delivered_qty > 0
               AND dn.status <> 'cancelled'
-              AND (dn.invoice_id = $1 OR dn.order_id = $2)
+              AND (dn.invoice_id = i2.id OR dn.order_id = i2.order_id)
             LIMIT 1
-        `, [invoice_id, invoice.order_id]);
+        `, [invoice_id]);
         if (!hasDelivered.rowCount) {
             throw new Error('لا يمكن إنشاء مرتجع لهذه الفاتورة؛ لا توجد كميات مُسلّمة لها.');
         }
@@ -219,16 +228,10 @@ router.post('/', restrictWrite, validateBody(salesReturnCreate), async (req, res
                                    SELECT SUM(dni.delivered_qty)
                                    FROM delivery_note_items dni
                                    JOIN delivery_notes dn ON dn.id = dni.delivery_note_id
-                                   WHERE dn.id = i.delivery_note_id
-                                     AND dni.variant_id = ii.variant_id
-                               ), 0)
-                               +
-                               COALESCE((
-                                   SELECT SUM(dni.delivered_qty)
-                                   FROM delivery_note_items dni
-                                   JOIN delivery_notes dn ON dn.id = dni.delivery_note_id
-                                   WHERE dn.order_id = i.order_id
-                                     AND dni.order_item_id = ii.order_item_id
+                                   WHERE dni.variant_id = ii.variant_id
+                                     AND dni.delivered_qty > 0
+                                     AND dn.status <> 'cancelled'
+                                     AND (dn.invoice_id = i.id OR dn.order_id = i.order_id)
                                ), 0)
                            ) - COALESCE((
                                SELECT SUM(sri.quantity) FROM sales_return_items sri

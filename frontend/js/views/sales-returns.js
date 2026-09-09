@@ -28,8 +28,9 @@
 
     function _formatInvoiceLabel(i) {
         const date = i.invoice_date ? new Date(i.invoice_date).toLocaleDateString('ar-SA') : '';
+        const sourceLabel = i.source === 'warehouse' ? 'مخزن' : (i.order_number ? `أمر ${i.order_number}` : 'أمر');
         return `<div class="flex flex-col gap-0.5 py-1">
-            <div class="font-bold text-slate-800">#${esc(i.invoice_number)} — ${esc(i.client_name)}</div>
+            <div class="font-bold text-slate-800">#${esc(i.invoice_number)} — ${esc(i.client_name)} — <span class="text-brand-600 text-xs">${esc(sourceLabel)}</span></div>
             <div class="text-xs text-slate-500 flex items-center gap-2">
                 <span><i class="fa-regular fa-calendar ml-1"></i>${esc(date)}</span>
                 <span class="font-mono">${money(i.grand_total)} ر.س</span>
@@ -110,6 +111,7 @@
             _currentInvoice = res.data;
             const meta = el('sr-invoice-meta');
             meta.classList.remove('hidden');
+            const sourceLabel = _currentInvoice.invoice.source === 'warehouse' ? 'فاتورة مخزن' : `أمر #${esc(_currentInvoice.invoice.order_number || '—')}`;
             meta.innerHTML = `
                 <div class="bg-white rounded-lg p-3 border border-slate-100">
                     <span class="text-slate-400 block text-xs mb-1">العميل</span>
@@ -118,6 +120,7 @@
                 <div class="bg-white rounded-lg p-3 border border-slate-100">
                     <span class="text-slate-400 block text-xs mb-1">الفاتورة</span>
                     <b class="text-slate-800 font-mono">#${esc(_currentInvoice.invoice.invoice_number)}</b>
+                    <div class="text-[10px] text-brand-600 mt-0.5">${esc(sourceLabel)}</div>
                 </div>
                 <div class="bg-white rounded-lg p-3 border border-slate-100">
                     <span class="text-slate-400 block text-xs mb-1">إجمالي الفاتورة</span>
