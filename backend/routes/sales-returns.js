@@ -32,7 +32,8 @@ router.get('/eligible-invoices', async (req, res) => {
             where.push(`(i.invoice_number::text ILIKE $1 OR c.name ILIKE $1)`);
         }
         const result = await db.query(`
-            SELECT i.id, i.invoice_number, i.invoice_date, i.grand_total, i.status,
+            SELECT DISTINCT
+                   i.id, i.invoice_number, i.invoice_date, i.grand_total, i.status,
                    c.id AS client_id, c.name AS client_name,
                    i.delivery_note_id, i.order_id
             FROM invoices i

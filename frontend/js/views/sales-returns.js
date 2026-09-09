@@ -26,38 +26,63 @@
         }
     }
 
+    function _formatInvoiceLabel(i) {
+        const date = i.invoice_date ? new Date(i.invoice_date).toLocaleDateString('ar-SA') : '';
+        return `<div class="flex flex-col gap-0.5 py-1">
+            <div class="font-bold text-slate-800">#${esc(i.invoice_number)} — ${esc(i.client_name)}</div>
+            <div class="text-xs text-slate-500 flex items-center gap-2">
+                <span><i class="fa-regular fa-calendar ml-1"></i>${esc(date)}</span>
+                <span class="font-mono">${money(i.grand_total)} ر.س</span>
+            </div>
+        </div>`;
+    }
+
     async function srSearchInvoices() {
         const query = el('sr-invoice-search')?.value || '';
         const hint = el('sr-search-hint');
+        const results = el('sr-invoice-results');
         clearTimeout(_searchTimer);
         _searchTimer = setTimeout(async () => {
             try {
                 const res = await window.apiFetch(`/api/sales-returns/eligible-invoices?search=${encodeURIComponent(query)}`);
                 _invoices = res.data || [];
-                const select = el('sr-invoice');
-                select.innerHTML = '<option value="">— اختر فاتورة —</option>' + _invoices.map(i => `<option value="${esc(i.id)}">#${esc(i.invoice_number)} — ${esc(i.client_name)} — ${money(i.grand_total)}</option>`).join('');
                 if (hint) {
                     if (_invoices.length) {
                         hint.textContent = `${_invoices.length} فاتورة متاحة — اختر من القائمة`;
-                        hint.className = 'text-xs text-emerald-600 mt-1.5 min-h-[18px]';
+                        hint.className = 'text-xs text-emerald-600 min-h-[18px]';
                     } else {
                         hint.textContent = query ? 'لا توجد فواتير مطابقة — تأكد من رقم الفاتورة أو الاسم أو وجود سند تسليم' : 'لا توجد فواتير مُسلّمة متاحة للمرتجع (يجب وجود سند تسليم)';
-                        hint.className = 'text-xs text-amber-600 mt-1.5 min-h-[18px]';
+                        hint.className = 'text-xs text-amber-600 min-h-[18px]';
                     }
                 }
-                // Auto-open the select to make results visible when there are matches
-                if (_invoices.length) {
-                    const sel = el('sr-invoice');
-                    sel.size = Math.min(6, _invoices.length + 1);
-                } else {
-                    const sel = el('sr-invoice');
-                    sel.size = 1;
+                if (!_invoices.length) {
+                    results.classList.add('hidden');
+                    return;
                 }
+                results.innerHTML = _invoices.map(i =>
+                    `<button type="button" data-id="${esc(i.id)}" class="sr-invoice-option w-full text-right px-4 py-3 border-b border-slate-100 last:border-0 hover:bg-brand-50 transition-colors">
+                        ${_formatInvoiceLabel(i)}
+                    </button>`
+                ).join('');
+                results.classList.remove('hidden');
+                results.querySelectorAll('.sr-invoice-option').forEach(btn => {
+                    btn.addEventListener('click', () => srSelectInvoice(btn.dataset.id));
+                });
             } catch (err) { 
                 window.showToast?.(err.message || 'فشل البحث', 'error');
-                if (hint) { hint.textContent = 'خطأ في البحث'; hint.className = 'text-xs text-red-500 mt-1.5'; }
+                if (hint) { hint.textContent = 'خطأ في البحث'; hint.className = 'text-xs text-red-500'; }
             }
         }, 250);
+    }
+
+    function srSelectInvoice(invoiceId) {
+        const inv = _invoices.find(i => i.id === invoiceId);
+        if (inv) {
+            el('sr-invoice-search').value = `#${inv.invoice_number} — ${inv.client_name}`;
+            el('sr-selected-invoice-label').textContent = `الفاتورة المختارة: #${inv.invoice_number} — ${inv.client_name}`;
+        }
+        el('sr-invoice-results').classList.add('hidden');
+        srInvoiceChanged(invoiceId);
     }
 
     async function srOpenForm() {
@@ -65,7 +90,9 @@
         el('sr-modal').classList.remove('hidden');
         el('sr-modal').classList.add('flex');
         el('sr-invoice-search').value = '';
-        el('sr-items').innerHTML = '<tr><td colspan="5" class="p-7 text-center text-slate-400">اختر الفاتورة أولاً</td></tr>';
+        el('sr-invoice-results').classList.add('hidden');
+        el('sr-selected-invoice-label').textContent = '';
+        el('sr-items').innerHTML = '<tr><td colspan="5" class="p-7 text-center text-slate-400">اختر الفاتورة أولاّ</td></tr>';
         el('sr-invoice-meta').classList.add('hidden');
         el('sr-total').textContent = '0.00';
         await srSearchInvoices();
@@ -78,20 +105,37 @@
 
     async function srInvoiceChanged(invoiceId) {
         if (!invoiceId) return;
-        el('sr-invoice').size = 1;
         try {
             const res = await window.apiFetch(`/api/sales-returns/by-invoice/${invoiceId}`);
             _currentInvoice = res.data;
             const meta = el('sr-invoice-meta');
             meta.classList.remove('hidden');
-            meta.innerHTML = `<div class="bg-slate-50 rounded-lg p-2"><span class="text-slate-400 block text-xs">العميل</span><b>${esc(_currentInvoice.invoice.client_name)}</b></div><div class="bg-slate-50 rounded-lg p-2"><span class="text-slate-400 block text-xs">الفاتورة</span><b>#${esc(_currentInvoice.invoice.invoice_number)}</b></div><div class="bg-slate-50 rounded-lg p-2"><span class="text-slate-400 block text-xs">الإجمالي</span><b>${money(_currentInvoice.invoice.grand_total)}</b></div>`;
+            meta.innerHTML = `
+                <div class="bg-white rounded-lg p-3 border border-slate-100">
+                    <span class="text-slate-400 block text-xs mb-1">العميل</span>
+                    <b class="text-slate-800">${esc(_currentInvoice.invoice.client_name)}</b>
+                </div>
+                <div class="bg-white rounded-lg p-3 border border-slate-100">
+                    <span class="text-slate-400 block text-xs mb-1">الفاتورة</span>
+                    <b class="text-slate-800 font-mono">#${esc(_currentInvoice.invoice.invoice_number)}</b>
+                </div>
+                <div class="bg-white rounded-lg p-3 border border-slate-100">
+                    <span class="text-slate-400 block text-xs mb-1">إجمالي الفاتورة</span>
+                    <b class="text-slate-800 font-mono">${money(_currentInvoice.invoice.grand_total)}</b>
+                </div>
+            `;
             const warehouses = await window.apiFetch(`/api/sales-returns/warehouses?client_id=${encodeURIComponent(_currentInvoice.invoice.client_id)}`);
             el('sr-warehouse').innerHTML = '<option value="">— اختر المستودع —</option>' + (warehouses.data || []).map(w => `<option value="${esc(w.id)}">${esc(w.name)}</option>`).join('');
             el('sr-items').innerHTML = _currentInvoice.items.map((item, index) => `<tr class="border-b border-slate-100" data-index="${index}">
-                <td class="p-3 font-semibold">${esc(item.product_name)}</td><td class="p-3 text-slate-500">${esc(item.size_name || '—')}</td>
-                <td class="p-3 text-center text-emerald-700 font-bold">${money(item.remaining_qty)}</td>
-                <td class="p-3 text-center"><input type="number" min="0" max="${item.remaining_qty}" step="0.001" value="0" data-return-qty class="w-24 border border-slate-200 rounded-lg p-2 text-center" oninput="window.srCalc()"></td>
-                <td class="p-3 text-center font-mono" data-return-total>0.00</td>
+                <td class="p-3 align-middle">
+                    <div class="font-semibold text-slate-800 text-sm leading-snug">${esc(item.product_name)}</div>
+                </td>
+                <td class="p-3 align-middle text-slate-500 text-sm">${esc(item.size_name || '—')}</td>
+                <td class="p-3 align-middle text-center text-emerald-700 font-black font-mono text-sm">${money(item.remaining_qty)}</td>
+                <td class="p-3 align-middle text-center">
+                    <input type="number" min="0" max="${item.remaining_qty}" step="0.001" value="0" data-return-qty class="w-20 border border-slate-200 rounded-lg p-2 text-center text-sm" oninput="window.srCalc()" ${item.remaining_qty <= 0 ? 'disabled' : ''}>
+                </td>
+                <td class="p-3 align-middle text-center font-mono font-bold text-emerald-700 text-sm" data-return-total>0.00</td>
             </tr>`).join('') || '<tr><td colspan="5" class="p-7 text-center text-slate-400">لا توجد كميات متاحة للمرتجع</td></tr>';
             srCalc();
         } catch (err) { window.showToast?.(err.message || 'فشل تحميل الفاتورة', 'error'); }
@@ -103,7 +147,9 @@
         document.querySelectorAll('#sr-items tr[data-index]').forEach(row => {
             const index = Number(row.dataset.index);
             const item = _currentInvoice.items[index];
-            const quantity = parseFloat(row.querySelector('[data-return-qty]')?.value || 0);
+            if (!item || item.remaining_qty <= 0) return;
+            const input = row.querySelector('[data-return-qty]');
+            const quantity = parseFloat(input?.value || 0);
             const line = quantity * parseFloat(item.unit_price || 0);
             total += line;
             row.querySelector('[data-return-total]').textContent = money(line);
@@ -112,14 +158,19 @@
     }
 
     async function srSave() {
-        if (!_currentInvoice) return window.showToast?.('اختر الفاتورة أولاً', 'error');
+        if (!_currentInvoice) return window.showToast?.('اختر الفاتورة أولاّ', 'error');
         const warehouseId = el('sr-warehouse').value;
         if (!warehouseId) return window.showToast?.('اختر مستودع الإرجاع', 'error');
         const items = [...document.querySelectorAll('#sr-items tr[data-index]')].map(row => {
             const item = _currentInvoice.items[Number(row.dataset.index)];
-            return { invoice_item_id: item.invoice_item_id, quantity: parseFloat(row.querySelector('[data-return-qty]')?.value || 0) };
-        }).filter(item => item.quantity > 0);
-        if (!items.length) return window.showToast?.('أدخل كمية مرتجعة واحدة على الأقل', 'error');
+            if (!item || item.remaining_qty <= 0) return null;
+            const qty = parseFloat(row.querySelector('[data-return-qty]')?.value || 0);
+            if (qty > item.remaining_qty) return 'over';
+            return { invoice_item_id: item.invoice_item_id, quantity: qty };
+        });
+        if (items.includes('over')) return window.showToast?.('الكمية المرتجعة تتجاوز المتاح', 'error');
+        const validItems = items.filter(Boolean).filter(i => i.quantity > 0);
+        if (!validItems.length) return window.showToast?.('أدخل كمية مرتجعة واحدة على الأقل', 'error');
         const button = el('sr-save');
         button.disabled = true;
         try {
@@ -129,7 +180,7 @@
                 return_action: el('sr-action').value,
                 return_date: new Date().toISOString().slice(0, 10),
                 notes: el('sr-notes').value || null,
-                items,
+                items: validItems,
             }});
             window.showToast?.('تم اعتماد المرتجع وإضافة البضاعة للمخزون', 'success');
             srCloseForm();
@@ -143,6 +194,7 @@
     window.srCloseForm = srCloseForm;
     window.srSearchInvoices = srSearchInvoices;
     window.srInvoiceChanged = srInvoiceChanged;
+    window.srSelectInvoice = srSelectInvoice;
     window.srCalc = srCalc;
     window.srSave = srSave;
     srLoadReturns();

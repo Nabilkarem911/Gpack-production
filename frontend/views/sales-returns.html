@@ -26,35 +26,84 @@
     </div>
 </div>
 
-<div id="sr-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-black/50">
-    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] overflow-hidden flex flex-col" dir="rtl">
+<div id="sr-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-black/50" dir="rtl">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[92vh] overflow-hidden flex flex-col" dir="rtl">
         <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-            <div><h2 class="font-black text-slate-800">إنشاء مرتجع مبيعات</h2><p class="text-xs text-slate-400 mt-1">يجب أن يكون للفاتورة سند تسليم مسجل</p></div>
-            <button onclick="window.srCloseForm()" class="text-slate-400 hover:text-red-500 text-xl"><i class="fa-solid fa-xmark"></i></button>
-        </div>
-        <div class="p-6 overflow-y-auto space-y-4">
             <div>
-                <label class="block text-sm font-bold text-slate-700 mb-2">اختر فاتورة مُسلّمة</label>
-                <input id="sr-invoice-search" oninput="window.srSearchInvoices()" placeholder="ابدأ بكتابة رقم الفاتورة أو اسم العميل..." class="w-full border border-slate-200 rounded-xl px-4 py-3 text-base outline-none focus:border-brand-500">
-                <p id="sr-search-hint" class="text-xs text-slate-400 mt-1.5 min-h-[18px]">اكتب للبحث بين الفواتير المُسلّمة</p>
-                <div class="mt-3">
-                    <select id="sr-invoice" onchange="window.srInvoiceChanged(this.value)" class="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-brand-500"><option value="">— اختر فاتورة —</option></select>
-                </div>
+                <h2 class="font-black text-slate-800 text-lg">إنشاء مرتجع مبيعات</h2>
+                <p class="text-xs text-slate-400 mt-1">اختر فاتورة مُسلّمة وحدد الكميات المرتجعة</p>
             </div>
-            <div id="sr-invoice-meta" class="hidden grid grid-cols-2 md:grid-cols-4 gap-2 text-sm"></div>
-            <div><label class="block text-xs font-bold text-slate-500 mb-1">مستودع الإرجاع</label><select id="sr-warehouse" class="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm"><option value="">— اختر المستودع —</option></select></div>
+            <button onclick="window.srCloseForm()" class="w-9 h-9 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-red-500 text-xl flex items-center justify-center transition-colors"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <div class="p-6 overflow-y-auto space-y-5">
+
+            <!-- Invoice search -->
+            <div class="space-y-2">
+                <label class="block text-sm font-bold text-slate-700">ابحث عن فاتورة مُسلّمة</label>
+                <div class="relative">
+                    <i class="fa-solid fa-magnifying-glass absolute right-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                    <input id="sr-invoice-search" oninput="window.srSearchInvoices()" placeholder="رقم الفاتورة أو اسم العميل..." class="w-full border border-slate-200 rounded-xl pr-10 pl-4 py-3 text-base outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all" autocomplete="off">
+                </div>
+                <p id="sr-search-hint" class="text-xs text-slate-400 min-h-[18px]">اكتب للبحث بين الفواتير المُسلّمة</p>
+                <input type="hidden" id="sr-selected-invoice">
+                <div id="sr-invoice-results" class="hidden bg-white border border-slate-200 rounded-xl mt-2 max-h-56 overflow-y-auto shadow-sm"></div>
+            </div>
+
+            <!-- Invoice meta -->
+            <div id="sr-invoice-meta" class="hidden bg-slate-50 rounded-xl p-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm border border-slate-100"></div>
+
+            <!-- Warehouse -->
+            <div>
+                <label class="block text-xs font-bold text-slate-500 mb-1.5">مستودع الإرجاع</label>
+                <select id="sr-warehouse" class="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"><option value="">— اختر المستودع —</option></select>
+            </div>
+
+            <!-- Return items -->
             <div>
                 <label class="block text-xs font-bold text-slate-500 mb-2">أصناف المرتجع</label>
-                <div class="border border-slate-200 rounded-xl overflow-x-auto"><table class="w-full text-sm"><thead class="bg-slate-50 text-xs text-slate-500"><tr><th class="p-3 text-right">الصنف</th><th class="p-3 text-right">المقاس</th><th class="p-3 text-center">المتاح للمرتجع</th><th class="p-3 text-center">الكمية المرتجعة</th><th class="p-3 text-center">القيمة</th></tr></thead><tbody id="sr-items"><tr><td colspan="5" class="p-7 text-center text-slate-400">اختر الفاتورة أولاً</td></tr></tbody></table></div>
+                <div class="border border-slate-200 rounded-xl overflow-hidden">
+                    <table class="w-full text-sm table-fixed" id="sr-items-table">
+                        <thead class="bg-slate-50 text-xs text-slate-500">
+                            <tr>
+                                <th class="p-3 text-right w-[42%]">الصنف</th>
+                                <th class="p-3 text-right w-[12%]">المقاس</th>
+                                <th class="p-3 text-center w-[15%]">المتاح</th>
+                                <th class="p-3 text-center w-[15%]">المرتجع</th>
+                                <th class="p-3 text-center w-[16%]">القيمة</th>
+                            </tr>
+                        </thead>
+                        <tbody id="sr-items"><tr><td colspan="5" class="p-7 text-center text-slate-400">اختر الفاتورة أولاّ</td></tr></tbody>
+                    </table>
+                </div>
             </div>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div><label class="block text-xs font-bold text-slate-500 mb-1">طريقة الأثر المالي</label><select id="sr-action" class="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm"><option value="credit_note">إشعار دائن للعميل</option><option value="cash_refund">رد نقدي للعميل</option></select></div>
-                <div><label class="block text-xs font-bold text-slate-500 mb-1">ملاحظات</label><input id="sr-notes" class="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm" placeholder="سبب المرتجع أو أي ملاحظات"></div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 mb-1.5">طريقة الأثر المالي</label>
+                    <select id="sr-action" class="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-brand-500">
+                        <option value="credit_note">إشعار دائن للعميل</option>
+                        <option value="cash_refund">رد نقدي للعميل</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 mb-1.5">ملاحظات</label>
+                    <input id="sr-notes" class="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-brand-500" placeholder="سبب المرتجع أو أي ملاحظات">
+                </div>
             </div>
-            <div class="flex justify-end"><div class="bg-slate-50 rounded-xl px-5 py-3 text-sm"><span class="text-slate-500">إجمالي المرتجع: </span><strong id="sr-total" class="text-emerald-700">0.00</strong></div></div>
+
+            <div class="flex justify-between items-center gap-3 flex-wrap">
+                <div id="sr-selected-invoice-label" class="text-sm text-slate-500"></div>
+                <div class="bg-slate-50 rounded-xl px-6 py-3 text-base border border-slate-100">
+                    <span class="text-slate-500">إجمالي المرتجع: </span>
+                    <strong id="sr-total" class="text-emerald-700 font-black text-lg">0.00</strong>
+                </div>
+            </div>
         </div>
-        <div class="px-6 py-4 border-t border-slate-100 flex justify-end gap-2"><button onclick="window.srCloseForm()" class="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100">إلغاء</button><button id="sr-save" onclick="window.srSave()" class="px-5 py-2.5 rounded-xl bg-brand-600 text-white text-sm font-bold hover:bg-brand-700">اعتماد المرتجع</button></div>
+        <div class="px-6 py-4 border-t border-slate-100 flex justify-end gap-2">
+            <button onclick="window.srCloseForm()" class="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100 transition-colors">إلغاء</button>
+            <button id="sr-save" onclick="window.srSave()" class="px-5 py-2.5 rounded-xl bg-brand-600 text-white text-sm font-bold hover:bg-brand-700 transition-colors">اعتماد المرتجع</button>
+        </div>
     </div>
 </div>
 
-<script src="/js/views/sales-returns.js?v=20260909a"></script>
+<script src="/js/views/sales-returns.js?v=20260910a"></script>
