@@ -259,14 +259,16 @@ router.get('/:id/profile', async (req, res) => {
         });
 
         // 7. Financial stats
+        // Only confirmed/committed orders should affect financial totals.
+        const confirmedStatuses = "('confirmed','production','processing','completed','delivered')";
         const statsRes = await db.query(
             `SELECT
-                COUNT(DISTINCT o.id)::int                                       AS total_orders,
-                COUNT(DISTINCT CASE WHEN o.status = 'quote' THEN o.id END)::int AS quote_count,
-                COUNT(DISTINCT CASE WHEN o.status IN ('production','processing','completed','delivered') THEN o.id END)::int AS active_count,
-                COALESCE(SUM(o.grand_total), 0)::numeric                        AS total_value,
-                COALESCE(SUM(o.paid_amount), 0)::numeric                        AS total_paid,
-                COALESCE(SUM(o.grand_total) - SUM(o.paid_amount), 0)::numeric  AS total_remaining
+                COUNT(DISTINCT CASE WHEN o.status IN ${confirmedStatuses} THEN o.id END)::int                  AS total_orders,
+                COUNT(DISTINCT CASE WHEN o.status = 'quote' AND o.status <> 'draft' THEN o.id END)::int         AS quote_count,
+                COUNT(DISTINCT CASE WHEN o.status IN ${confirmedStatuses} THEN o.id END)::int                  AS active_count,
+                COALESCE(SUM(CASE WHEN o.status IN ${confirmedStatuses} THEN o.grand_total END), 0)::numeric  AS total_value,
+                COALESCE(SUM(CASE WHEN o.status IN ${confirmedStatuses} THEN o.paid_amount END), 0)::numeric  AS total_paid,
+                COALESCE(SUM(CASE WHEN o.status IN ${confirmedStatuses} THEN o.grand_total - o.paid_amount END), 0)::numeric AS total_remaining
              FROM orders o
              WHERE o.client_id = $1 AND o.status NOT IN ('archived','cancelled')`,
             [id]
