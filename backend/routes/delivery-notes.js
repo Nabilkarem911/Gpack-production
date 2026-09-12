@@ -102,6 +102,7 @@ router.get('/', async (req, res) => {
                                dni2.variant_id,
                                p2.name AS product_name,
                                pv2.size_name AS variant_name,
+                               oi2.unit_price AS sale_unit_price,
                                dni2.requested_qty,
                                dni2.requested_qty AS quantity,
                                dni2.delivered_qty,
@@ -389,6 +390,7 @@ router.get('/:id', async (req, res) => {
                 dni.variant_id,
                 p.name AS product_name,
                 pv.size_name AS variant_name,
+                oi.unit_price AS sale_unit_price,
                 dni.requested_qty,
                 dni.requested_qty AS quantity,
                 dni.delivered_qty,
@@ -666,10 +668,12 @@ router.get('/:id/dispatches/:dispatchId', async (req, res) => {
         const itemsRes = await db.query(
             `SELECT ddi.id, ddi.quantity,
                     dni.id AS dn_item_id, dni.requested_qty,
+                    oi.unit_price AS sale_unit_price,
                     p.name AS product_name, pv.size_name AS variant_name
              FROM delivery_dispatch_items ddi
              JOIN delivery_note_items dni ON dni.id = ddi.dn_item_id
-             LEFT JOIN product_variants pv ON pv.id = COALESCE(dni.variant_id, (SELECT oi.variant_id FROM order_items oi WHERE oi.id = dni.order_item_id))
+             LEFT JOIN order_items oi ON oi.id = dni.order_item_id
+             LEFT JOIN product_variants pv ON pv.id = COALESCE(dni.variant_id, oi.variant_id)
              LEFT JOIN products p ON p.id = pv.product_id
              WHERE ddi.dispatch_id = $1
              ORDER BY ddi.id`,

@@ -19,6 +19,9 @@
     // ── Helpers ───────────────────────────────────────────────────────────────
     const esc  = (s) => String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     const fmtD = (d) => d ? new Date(d).toLocaleDateString('ar-SA-u-nu-latn') : '—';
+    const fmtMoney = (v) => v === null || v === undefined || v === ''
+        ? '—'
+        : Number(v).toLocaleString('ar-SA-u-nu-latn', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const _el  = (id) => document.getElementById(id);
     const _norm = (v) => String(v ?? '').toLowerCase();
     const _clientDisplay = (dn) => dn.parent_client_name ? `${dn.parent_client_name} — ${dn.client_name}` : (dn.client_name || '—');
@@ -203,6 +206,7 @@
                             <div>
                                 <p class="text-sm font-bold text-slate-800">${esc(item.product_name || '—')}</p>
                                 ${item.variant_name ? `<p class="text-xs text-slate-500">${esc(item.variant_name)}</p>` : ''}
+                                <p class="text-xs text-purple-600 font-bold mt-1">سعر البيع: ${fmtMoney(item.sale_unit_price)} ريال</p>
                             </div>
                             <span class="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">متبقي: ${remaining}</span>
                         </div>
@@ -949,6 +953,7 @@
                 `<tr>
                 <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:right;color:#64748b;font-size:13px">${i + 1}</td>
                 <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600;color:#1e293b;font-size:13px">${esc(item.product_name || '—')}${item.variant_name ? ' — ' + esc(item.variant_name) : ''}</td>
+                <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:center;font-weight:700;color:#7c3aed;font-size:13px">${fmtMoney(item.sale_unit_price)} ريال</td>
                 <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:center;font-weight:800;color:#4b0082;font-size:15px">${parseFloat(item.quantity)}</td>
                 </tr>`).join('');
 
@@ -1014,8 +1019,8 @@ table.items tbody tr:hover{background:#f3e8ff}
     ${d.vehicle_number ? `<div class="info-item"><label>رقم السيارة</label><span>${esc(d.vehicle_number)}</span></div>` : ''}
     ${d.created_by_name ? `<div class="info-item"><label>أمين المستودع</label><span>${esc(d.created_by_name)}</span></div>` : ''}
 </div>
-<table class="items"><thead><tr><th style="width:40px">#</th><th>الصنف / المقاس</th><th style="width:120px;text-align:center">الكمية المُسلَّمة</th></tr></thead>
-<tbody>${itemsHTML || '<tr><td colspan="3" style="text-align:center;padding:24px;color:#94a3b8">لا توجد أصناف</td></tr>'}</tbody></table>
+<table class="items"><thead><tr><th style="width:40px">#</th><th>الصنف / المقاس</th><th style="width:130px;text-align:center">سعر البيع</th><th style="width:120px;text-align:center">الكمية المُسلَّمة</th></tr></thead>
+<tbody>${itemsHTML || '<tr><td colspan="4" style="text-align:center;padding:24px;color:#94a3b8">لا توجد أصناف</td></tr>'}</tbody></table>
 <div class="totals"><div>إجمالي الكمية المُسلَّمة: <strong>${totalQty}</strong></div></div>
 ${d.notes ? `<div class="notes-box"><b>ملاحظات:</b> ${esc(d.notes)}</div>` : ''}
 <div class="footer"><div class="sig-box"><div class="sig-line">توقيع أمين المستودع</div></div><div class="sig-box"><div class="sig-line">توقيع المستلم</div></div><div class="sig-box"><div class="sig-line">الختم</div></div></div>
@@ -1058,6 +1063,7 @@ ${d.notes ? `<div class="notes-box"><b>ملاحظات:</b> ${esc(d.notes)}</div>
                 `<tr>
                 <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:right;color:#64748b;font-size:13px">${i + 1}</td>
                 <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600;color:#1e293b;font-size:13px">${esc(item.product_name || '—')}${item.variant_name ? ' — ' + esc(item.variant_name) : ''}</td>
+                <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:center;font-weight:700;color:#7c3aed;font-size:13px">${fmtMoney(item.sale_unit_price)} ريال</td>
                 <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:center;font-weight:600;color:#334155;font-size:13px">${item.requested_qty || item.quantity || 0}</td>
                 <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:center;font-weight:800;color:#4b0082;font-size:14px">${item.delivered_qty || 0}</td>
                 <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-size:12px;color:#64748b">${esc(item.notes || '')}</td>
@@ -1126,8 +1132,8 @@ table.items tbody tr:hover{background:#f3e8ff}
     ${dn.driver_name ? `<div class="info-item"><label>السائق</label><span>${esc(dn.driver_name)}</span></div>` : ''}
     ${dn.vehicle_number ? `<div class="info-item"><label>رقم السيارة</label><span>${esc(dn.vehicle_number)}</span></div>` : ''}
 </div>
-<table class="items"><thead><tr><th style="width:40px">#</th><th>الصنف / المقاس</th><th style="width:80px;text-align:center">المطلوب</th><th style="width:80px;text-align:center">المُسلَّم</th><th>ملاحظات</th></tr></thead>
-<tbody>${itemsHTML || '<tr><td colspan="5" style="text-align:center;padding:24px;color:#94a3b8">لا توجد أصناف</td></tr>'}</tbody></table>
+<table class="items"><thead><tr><th style="width:40px">#</th><th>الصنف / المقاس</th><th style="width:110px;text-align:center">سعر البيع</th><th style="width:80px;text-align:center">المطلوب</th><th style="width:80px;text-align:center">المُسلَّم</th><th>ملاحظات</th></tr></thead>
+<tbody>${itemsHTML || '<tr><td colspan="6" style="text-align:center;padding:24px;color:#94a3b8">لا توجد أصناف</td></tr>'}</tbody></table>
 <div class="totals">
     <div>إجمالي المطلوب: <strong>${totalRequested}</strong></div>
     <div>إجمالي المُسلَّم: <strong>${totalDelivered}</strong></div>
