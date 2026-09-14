@@ -256,9 +256,17 @@
         const inv = _invoiceData;
         if (!inv) return;
 
-        const statusLabels = { draft: 'مسودة', proforma: 'صورية', final: 'نهائية', issued: 'نهائية', cancelled: 'ملغية' };
-        const statusColors = { draft: '#64748b', proforma: '#d97706', final: '#15803d', issued: '#15803d', cancelled: '#dc2626' };
-        const statusBgs    = { draft: '#f1f5f9', proforma: '#fef3c7', final: '#dcfce7', issued: '#dcfce7', cancelled: '#fee2e2' };
+        const w = window.open('', '_blank', 'width=900,height=700');
+        if (!w) {
+            alert('تعذر فتح نافذة الطباعة. تأكد من السماح بالنوافذ المنبثقة لهذا الموقع.');
+            return;
+        }
+
+        const logoBase64 = await _loadLogoBase64();
+
+        const statusLabels = { draft: 'مسودة', proforma: 'صورية', final: 'نهائية', issued: 'نهائية', cancelled: 'ملغية', archived: 'مؤرشفة' };
+        const statusColors = { draft: '#64748b', proforma: '#d97706', final: '#15803d', issued: '#15803d', cancelled: '#dc2626', archived: '#64748b' };
+        const statusBgs    = { draft: '#f1f5f9', proforma: '#fef3c7', final: '#dcfce7', issued: '#dcfce7', cancelled: '#fee2e2', archived: '#f1f5f9' };
         const statusText  = statusLabels[inv.status] || inv.status;
         const statusColor = statusColors[inv.status] || '#64748b';
         const statusBg    = statusBgs[inv.status] || '#f1f5f9';
@@ -402,7 +410,6 @@
 <script>window.onload=function(){window.print();window.onafterprint=function(){window.close();};};<\/script>
 </body></html>`;
 
-        const w = window.open('', '_blank', 'width=900,height=700');
         w.document.write(html);
         w.document.close();
     };
