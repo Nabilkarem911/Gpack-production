@@ -945,6 +945,102 @@ router.put('/:id', restrictEdit, validateBody(manufacturerOrderCreate), async (r
 });
 
 // =============================================================================
+// GET /api/manufacturer-orders/receipts/archive?mo_ids=<uuid,...>
+// Returns receipt sessions for multiple manufacturer orders in one request.
+// This avoids an N+1 request pattern in the receiving archive view.
+// =============================================================================
+router.get('/receipts/archive', async (req, res) => {
+    const rawMoIds = String(req.query.mo_ids || '').trim();
+    const requestedMoIds = rawMoIds ? rawMoIds.split(',').map(id => id.trim()).filter(Boolean) : [];
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const invalidMoIds = requestedMoIds.filter(id => !uuidPattern.test(id));
+    const moIds = requestedMoIds;
+
+    if (invalidMoIds.length) return res.status(400).json({ error: 'معرّف أمر التشغيل غير صالح.' });
+    if (moIds.length > 500) return res.status(400).json({ error: 'عدد أوامر التشغيل يتجاوز الحد المسموح.' });
+
+    try {
+        const sessionFilter = moIds.length ? 'WHERE s.manufacturer_order_id = ANY($1::uuid[])' : '';
+        const sessionsRes = await db.query(
+            `SELECT
+                s.id, s.manufacturer_order_id, s.session_number, s.received_date, s.subtotal,
+                s.tax_rate, s.tax_amount, s.grand_total,
+                s.has_supplier_invoice, s.supplier_invoice_ref, s.notes,
+                s.status, s.created_at, s.reversed_at,
+                mo.mo_number, mo.status AS mo_status,
+                o.order_number, c.name AS client_name,
+                w.name AS warehouse_name,
+                u.name AS created_by_name,
+                ur.name AS reversed_by_name
+             FROM mo_receipt_sessions s
+             JOIN manufacturer_orders mo ON mo.id = s.manufacturer_order_id
+             JOIN orders o ON o.id = mo.order_id
+             LEFT JOIN clients c ON c.id = o.client_id
+             LEFT JOIN warehouses w ON w.id = s.warehouse_id
+             LEFT JOIN users u ON u.id = s.created_by
+             LEFT JOIN users ur ON ur.id = s.reversed_by
+             ${sessionFilter}
+             ORDER BY s.manufacturer_order_id, s.session_number DESC`,
+            moIds.length ? [moIds] : []
+        );
+
+        const sessionIds = sessionsRes.rows.map(row => row.id);
+        const itemsBySession = {};
+        const imagesByItem = {};
+        if (sessionIds.length) {
+            const itemsRes = await db.query(
+                `SELECT
+                    si.session_id, si.id, si.manufacturer_order_item_id,
+                    si.quantity, si.unit_cost, si.line_total, si.is_final,
+                    moi.mo_quantity,
+                    p.name AS product_name, pv.size_name
+                 FROM mo_receipt_session_items si
+                 JOIN manufacturer_order_items moi ON moi.id = si.manufacturer_order_item_id
+                 JOIN product_variants pv ON pv.id = si.variant_id
+                 JOIN products p ON p.id = pv.product_id
+                 WHERE si.session_id = ANY($1::uuid[])
+                 ORDER BY si.created_at`,
+                [sessionIds]
+            );
+            for (const row of itemsRes.rows) {
+                (itemsBySession[row.session_id] ||= []).push(row);
+            }
+
+            const itemIds = itemsRes.rows.map(row => row.id);
+            if (itemIds.length) {
+                const imagesRes = await db.query(
+                    `SELECT session_item_id, id, image_path, file_name
+                     FROM mo_receipt_session_item_images
+                     WHERE session_item_id = ANY($1::uuid[])
+                     ORDER BY created_at`,
+                    [itemIds]
+                );
+                for (const image of imagesRes.rows) {
+                    (imagesByItem[image.session_item_id] ||= []).push(image);
+                }
+            }
+        }
+
+        const data = sessionsRes.rows.map(session => ({
+            ...session,
+            receipt_completion_status: session.status === 'reversed'
+                ? 'reversed'
+                : session.mo_status === 'received' ? 'full' : 'partial',
+            items: (itemsBySession[session.id] || []).map(item => ({
+                ...item,
+                item_completion_status: item.is_final || parseFloat(item.quantity) >= parseFloat(item.mo_quantity)
+                    ? 'full' : 'partial',
+                images: imagesByItem[item.id] || [],
+            })),
+        }));
+        return res.json({ data });
+    } catch (err) {
+        console.error('[ManufacturerOrders] GET /receipts/archive error:', err.message);
+        return res.status(500).json({ error: 'Internal server error.' });
+    }
+});
+
+// =============================================================================
 // GET /api/manufacturer-orders/:id/receipts
 // Returns all receipt sessions for a manufacturer order (active + reversed).
 // =============================================================================

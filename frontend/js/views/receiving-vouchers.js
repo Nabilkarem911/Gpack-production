@@ -580,24 +580,26 @@
             }
 
             const targetMOs = filterMO ? allMOs.filter(m => m.id === filterMO) : allMOs;
+            const moById = new Map(targetMOs.map(mo => [mo.id, mo]));
+            const archiveEndpoint = filterMO
+                ? '/api/manufacturer-orders/receipts/archive?mo_ids=' + encodeURIComponent(filterMO)
+                : '/api/manufacturer-orders/receipts/archive';
+            const archiveRes = await window.apiFetch(archiveEndpoint);
 
-            const allSessions = [];
-            for (const mo of targetMOs) {
-                const res = await window.apiFetch('/api/manufacturer-orders/' + mo.id + '/receipts');
-                (res.data || []).forEach(s => {
-                    const lockedStatuses = ['completed', 'archived', 'cancelled'];
-                    allSessions.push({
-                        ...s,
-                        mo_number:     mo.po_number || mo.mo_number || mo.id.slice(0,8),
-                        order_number:  mo.order_number || '—',
-                        client_name:   mo.client_name || '—',
-                        mo_status:     mo.status,
-                        order_status:  mo.order_status || '',
-                        order_locked:  lockedStatuses.includes(mo.order_status),
-                        _moId:         mo.id
-                    });
-                });
-            }
+            const lockedStatuses = ['completed', 'archived', 'cancelled'];
+            const allSessions = (archiveRes.data || []).map(session => {
+                const mo = moById.get(session.manufacturer_order_id) || {};
+                return {
+                    ...session,
+                    mo_number:     mo.po_number || mo.mo_number || session.mo_number || session.manufacturer_order_id?.slice(0, 8),
+                    order_number:  mo.order_number || session.order_number || '—',
+                    client_name:   mo.client_name || session.client_name || '—',
+                    mo_status:     mo.status || session.mo_status,
+                    order_status:  mo.order_status || '',
+                    order_locked:  lockedStatuses.includes(mo.order_status),
+                    _moId:         session.manufacturer_order_id
+                };
+            });
 
             hideEl('rv-archive-loading');
             _archiveSessionsCache = allSessions;

@@ -9,7 +9,7 @@ const cookieParser = require('cookie-parser');
 const path = require('path');
 const fs = require('fs');
 const rateLimit = require('express-rate-limit');
-const jwt = require('jsonwebtoken');
+const { rateLimitKey } = require('./utils/rate-limit-key');
 const db = require('./db');
 const { authenticate } = require('./middleware/authMiddleware');
 const authorize = require('./middleware/authorize');
@@ -200,12 +200,6 @@ app.set('trust proxy', 1);
 // =============================================================================
 // Security: Rate Limiting
 // =============================================================================
-
-const rateLimitKey = (req) => {
-  const token = req.cookies?.token || req.headers.authorization?.replace(/^Bearer\s+/i, '');
-  const payload = token ? jwt.decode(token) : null;
-  return payload?.sub ? `user:${payload.sub}` : `ip:${req.ip}`;
-};
 
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,

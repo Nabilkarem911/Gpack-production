@@ -90,7 +90,7 @@
         _saveReadState();
     }
 
-    async function loadAlerts() {
+    async function _loadAlerts() {
         try {
             // Fetch dashboard alerts (legacy)
             const res = await window.apiFetch('/api/dashboard/alerts');
@@ -113,6 +113,14 @@
             _alerts = [];
             _render();
         }
+    }
+
+    let _alertsRequest = null;
+
+    function loadAlerts() {
+        if (_alertsRequest) return _alertsRequest;
+        _alertsRequest = _loadAlerts().finally(() => { _alertsRequest = null; });
+        return _alertsRequest;
     }
 
     function _render() {
