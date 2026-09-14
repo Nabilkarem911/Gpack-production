@@ -269,7 +269,7 @@ router.get('/supplier-portal/:token/account-statement', async (req, res) => {
                     COALESCE(pi.notes, '') AS notes
                 FROM purchase_invoices pi
                 WHERE pi.supplier_id = $1
-                  AND pi.status != 'cancelled'
+                  AND pi.status NOT IN ('draft', 'merged', 'cancelled')
                   ${invoiceDateFilter}
 
                 UNION ALL
@@ -320,7 +320,7 @@ router.get('/supplier-portal/:token/account-statement', async (req, res) => {
             FROM (
                 SELECT 'invoice' AS source, pi.grand_total AS amount
                 FROM purchase_invoices pi
-                WHERE pi.supplier_id = $1 AND pi.status != 'cancelled' ${invoiceDateFilter}
+                WHERE pi.supplier_id = $1 AND pi.status NOT IN ('draft', 'merged', 'cancelled') ${invoiceDateFilter}
                 UNION ALL
                 SELECT 'return' AS source, pr.total_amount AS amount
                 FROM purchase_returns pr
@@ -384,7 +384,7 @@ router.get('/supplier-portal/:token/invoices/:invoiceId', async (req, res) => {
             SELECT id, invoice_number, invoice_date, due_date, supplier_invoice_ref,
                    subtotal, tax_rate, tax_amount, grand_total, paid_amount, status, notes
             FROM purchase_invoices
-            WHERE id = $1 AND supplier_id = $2 AND status != 'cancelled'
+            WHERE id = $1 AND supplier_id = $2 AND status NOT IN ('draft', 'merged', 'cancelled')
         `, [invoiceId, supplier.id]);
         if (!invoiceRes.rows.length) return res.status(404).json({ error: 'الفاتورة غير موجودة.' });
 

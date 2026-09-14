@@ -692,7 +692,7 @@ router.get('/:id/cost-calculator', restrictCostCalculator, async (req, res) => {
                 FROM purchase_invoice_items pii
                 JOIN purchase_invoices pi ON pi.id = pii.purchase_invoice_id
                 WHERE pii.variant_id = oi.variant_id
-                  AND pi.status NOT IN ('draft', 'cancelled')
+                  AND pi.status NOT IN ('draft', 'merged', 'cancelled')
                   AND pii.quantity > 0
                   AND pii.unit_cost > 0
              ) purchase_cost ON true

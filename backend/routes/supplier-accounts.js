@@ -49,7 +49,7 @@ router.get('/', async (req, res) => {
              LEFT JOIN (
                 SELECT supplier_id, SUM(grand_total) AS total
                 FROM purchase_invoices
-                WHERE status != 'cancelled'
+                WHERE status NOT IN ('draft', 'merged', 'cancelled')
                 GROUP BY supplier_id
              ) inv ON inv.supplier_id = s.id
              -- Payment vouchers (debit side)

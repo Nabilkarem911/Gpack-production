@@ -255,7 +255,7 @@ router.get('/supplier/:supplierId', async (req, res) => {
                     COALESCE(pi.notes, '') as notes,
                     NULL as reference_id
                 FROM purchase_invoices pi
-                WHERE pi.supplier_id = $1 AND pi.status != 'cancelled'
+                WHERE pi.supplier_id = $1 AND pi.status NOT IN ('draft', 'merged', 'cancelled')
                     ${dateFilter.replace(/date/g, 'pi.invoice_date')}
                 
                 UNION ALL
@@ -325,7 +325,7 @@ router.get('/supplier/:supplierId', async (req, res) => {
             FROM (
                 SELECT 'invoice' as doc_type, grand_total as amount 
                 FROM purchase_invoices 
-                WHERE supplier_id = $1 AND status != 'cancelled' ${dateFilter.replace(/date/g, 'invoice_date')}
+                WHERE supplier_id = $1 AND status NOT IN ('draft', 'merged', 'cancelled') ${dateFilter.replace(/date/g, 'invoice_date')}
                 UNION ALL
                 SELECT 'payment' as doc_type, avl.debit as amount
                 FROM accounting_vouchers av

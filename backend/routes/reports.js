@@ -243,7 +243,8 @@ router.get('/profit-loss', async (req, res) => {
         const vatPaidRes = await db.query(`
             SELECT COALESCE(SUM(tax_amount), 0) AS vat_paid
             FROM purchase_invoices
-            WHERE tax_amount IS NOT NULL
+            WHERE status NOT IN ('draft', 'merged', 'cancelled')
+              AND tax_amount IS NOT NULL
               AND invoice_date BETWEEN $1 AND $2
         `, [from, to]);
 
@@ -534,7 +535,8 @@ router.get('/vat', async (req, res) => {
                 pi.grand_total
             FROM purchase_invoices pi
             JOIN suppliers s ON s.id = pi.supplier_id
-            WHERE pi.tax_amount IS NOT NULL
+            WHERE pi.status NOT IN ('draft', 'merged', 'cancelled')
+              AND pi.tax_amount IS NOT NULL
               AND pi.invoice_date BETWEEN $1 AND $2
             ORDER BY pi.invoice_date
         `, [from, to]);

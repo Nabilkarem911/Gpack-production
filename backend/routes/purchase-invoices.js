@@ -464,6 +464,21 @@ router.post('/merge', restrictEdit, async (req, res) => {
                 );
             }
 
+            const expensesRes = await client.query(
+                `SELECT label, amount, account_id
+                 FROM purchase_invoice_expenses
+                 WHERE purchase_invoice_id = $1`,
+                [inv.id]
+            );
+            for (const expense of expensesRes.rows) {
+                await client.query(
+                    `INSERT INTO purchase_invoice_expenses
+                       (purchase_invoice_id, label, amount, account_id)
+                     VALUES ($1, $2, $3, $4)`,
+                    [consolidatedId, expense.label, expense.amount, expense.account_id]
+                );
+            }
+
             // Track MO for junction table
             if (inv.manufacturer_order_id) {
                 moIds.add(inv.manufacturer_order_id);
@@ -679,6 +694,12 @@ router.post('/:id/approve', restrictEdit, async (req, res) => {
             await client.query('ROLLBACK');
             return res.status(500).json({ error: 'حساب مصاريف الشحن واللوجستيات غير موجود (6100)' });
         }
+        // Re-approval may follow a reopen operation. Replace the draft expense
+        // snapshot atomically so the same expense is never posted twice.
+        await client.query(
+            `DELETE FROM purchase_invoice_expenses WHERE purchase_invoice_id = $1`,
+            [id]
+        );
         const expensesTotal = normalizedExpenses.reduce((sum, expense) => sum + expense.amount, 0);
         for (const expense of normalizedExpenses) {
             await client.query(
@@ -801,6 +822,235 @@ router.post('/:id/approve', restrictEdit, async (req, res) => {
         return res.status(400).json({ error: err.message || 'Internal server error.' });
     } finally {
         client.release();
+    }
+});
+
+// =============================================================================
+// POST /api/purchase-invoices/:id/reopen
+// Reopen an approved purchase invoice as a draft for correction or consolidation.
+// Accounting vouchers are reversed and retained; stock and receipt quantities are untouched.
+// =============================================================================
+router.post('/:id/reopen', restrictEdit, async (req, res) => {
+    const { id } = req.params;
+    const reason = String(req.body?.reason || '').trim();
+
+    if (!reason) {
+        return res.status(400).json({ error: 'سبب إرجاع الفاتورة للمراجعة مطلوب.' });
+    }
+    if (reason.length > 500) {
+        return res.status(400).json({ error: 'سبب التراجع يجب ألا يتجاوز 500 حرف.' });
+    }
+
+    try {
+        const result = await db.withTransaction(async (client) => {
+            const invRes = await client.query(
+                `SELECT pi.id, pi.invoice_number, pi.supplier_id, pi.status,
+                        pi.subtotal, pi.tax_amount, pi.grand_total, pi.paid_amount,
+                        pi.merged_into_invoice_id
+                 FROM purchase_invoices pi
+                 WHERE pi.id = $1
+                 FOR UPDATE`,
+                [id]
+            );
+
+            if (!invRes.rows.length) {
+                const err = new Error('الفاتورة غير موجودة.');
+                err.statusCode = 404;
+                throw err;
+            }
+
+            const invoice = invRes.rows[0];
+            const paidAmount = parseFloat(invoice.paid_amount || 0);
+            if (!['posted', 'unpaid'].includes(invoice.status) || paidAmount > 0.01) {
+                const err = new Error(
+                    invoice.status === 'draft'
+                        ? 'الفاتورة مسودة بالفعل.'
+                        : 'لا يمكن إرجاع الفاتورة للمراجعة إلا إذا كانت معتمدة وغير مدفوعة.'
+                );
+                err.statusCode = 409;
+                throw err;
+            }
+
+            if (invoice.merged_into_invoice_id) {
+                const err = new Error('لا يمكن إرجاع فاتورة تم دمجها في فاتورة أخرى.');
+                err.statusCode = 409;
+                throw err;
+            }
+
+            const mergedLinkRes = await client.query(
+                `SELECT 1
+                 FROM purchase_invoice_mo_links
+                 WHERE purchase_invoice_id = $1
+                 LIMIT 1`,
+                [id]
+            );
+            if (mergedLinkRes.rows.length) {
+                const err = new Error('لا يمكن إرجاع فاتورة مجمعة للمراجعة.');
+                err.statusCode = 409;
+                throw err;
+            }
+
+            const paymentRes = await client.query(
+                `SELECT av.id, av.voucher_number, av.total_amount
+                 FROM accounting_vouchers av
+                 WHERE av.reference_type = 'purchase_invoice'
+                   AND av.reference_id = $1
+                   AND av.voucher_type = 'payment'
+                   AND av.status = 'posted'
+                 FOR UPDATE`,
+                [id]
+            );
+            if (paymentRes.rows.length) {
+                const err = new Error('لا يمكن التراجع عن فاتورة لها دفعات مسجلة. ألغِ سندات الدفع أولاً.');
+                err.statusCode = 409;
+                throw err;
+            }
+
+            const returnRes = await client.query(
+                `SELECT pr.id, pr.return_number
+                 FROM purchase_returns pr
+                 WHERE pr.purchase_invoice_id = $1
+                   AND pr.status <> 'voided'
+                 FOR UPDATE`,
+                [id]
+            );
+            if (returnRes.rows.length) {
+                const err = new Error('لا يمكن التراجع عن فاتورة مرتبطة بمرتجع مشتريات. عالج المرتجع أولاً.');
+                err.statusCode = 409;
+                throw err;
+            }
+
+            const voucherRes = await client.query(
+                `SELECT av.*
+                 FROM accounting_vouchers av
+                 WHERE av.reference_type = 'purchase_invoice'
+                   AND av.reference_id = $1
+                   AND av.voucher_type = 'purchase'
+                   AND av.status = 'posted'
+                 FOR UPDATE`,
+                [id]
+            );
+            if (!voucherRes.rows.length) {
+                const err = new Error('لا يمكن التراجع: لا يوجد قيد شراء مرحّل مرتبط بالفاتورة.');
+                err.statusCode = 409;
+                throw err;
+            }
+
+            const reversalIds = [];
+            for (const voucher of voucherRes.rows) {
+                const linesRes = await client.query(
+                    `SELECT account_id, debit, credit, sub_account_type, sub_account_id, description
+                     FROM accounting_voucher_lines
+                     WHERE voucher_id = $1
+                     ORDER BY id`,
+                    [voucher.id]
+                );
+                if (!linesRes.rows.length) {
+                    const err = new Error(`القيد #${voucher.voucher_number} لا يحتوي على بنود محاسبية.`);
+                    err.statusCode = 409;
+                    throw err;
+                }
+
+                await client.query(
+                    `UPDATE accounting_vouchers SET status = 'reversed' WHERE id = $1`,
+                    [voucher.id]
+                );
+
+                const reversalRes = await client.query(
+                    `INSERT INTO accounting_vouchers
+                        (voucher_type, voucher_date, description, total_amount, status,
+                         reference_type, reference_id, created_by)
+                     VALUES ('purchase', CURRENT_DATE, $1, $2, 'posted',
+                             'purchase_invoice', $3, $4)
+                     RETURNING id, voucher_number`,
+                    [
+                        `عكس قيد فاتورة مشتريات #${invoice.invoice_number} — ${reason}`,
+                        voucher.total_amount,
+                        id,
+                        req.user?.id || null,
+                    ]
+                );
+                const reversal = reversalRes.rows[0];
+                reversalIds.push(reversal.id);
+
+                for (const line of linesRes.rows) {
+                    await client.query(
+                        `INSERT INTO accounting_voucher_lines
+                            (voucher_id, account_id, debit, credit, sub_account_type,
+                             sub_account_id, description)
+                         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+                        [
+                            reversal.id,
+                            line.account_id,
+                            line.credit,
+                            line.debit,
+                            line.sub_account_type,
+                            line.sub_account_id,
+                            `عكس: ${line.description || ''}`,
+                        ]
+                    );
+                }
+            }
+
+            // Only detach the accounting reference. Receiving sessions and stock quantities remain unchanged.
+            await client.query(
+                `UPDATE mo_receipt_sessions
+                 SET accounting_voucher_id = NULL
+                 WHERE purchase_invoice_id = $1
+                   AND accounting_voucher_id IS NOT NULL`,
+                [id]
+            );
+
+            await client.query(
+                `UPDATE purchase_invoices
+                 SET status = 'draft', paid_amount = 0, updated_at = NOW()
+                 WHERE id = $1`,
+                [id]
+            );
+
+            await client.query(
+                `INSERT INTO audit_logs
+                    (table_name, record_id, action, old_data, new_data,
+                     user_id, user_name, ip_address, user_agent)
+                 VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7, $8, $9)`,
+                [
+                    'purchase_invoices',
+                    id,
+                    'REOPEN',
+                    JSON.stringify({
+                        invoice_number: invoice.invoice_number,
+                        status: invoice.status,
+                        paid_amount: invoice.paid_amount,
+                        voucher_ids: voucherRes.rows.map(v => v.id),
+                    }),
+                    JSON.stringify({
+                        status: 'draft',
+                        reason,
+                        reversal_voucher_ids: reversalIds,
+                        stock_unchanged: true,
+                        receipt_session_unchanged: true,
+                    }),
+                    req.user?.id || null,
+                    req.user?.name || req.user?.username || null,
+                    req.ip || req.connection?.remoteAddress || null,
+                    req.headers?.['user-agent'] || null,
+                ]
+            );
+
+            return {
+                invoice_id: id,
+                invoice_number: invoice.invoice_number,
+                reversal_voucher_ids: reversalIds,
+            };
+        });
+
+        return res.json({
+            message: 'تم إرجاع الفاتورة للمراجعة وإنشاء قيد عكسي موثق دون تعديل المخزون.',
+            data: result,
+        });
+    } catch (err) {
+        console.error('[PurchaseInvoices] POST /:id/reopen error:', err.message);
+        return res.status(err.statusCode || 500).json({ error: err.message || 'Internal server error.' });
     }
 });
 

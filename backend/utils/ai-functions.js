@@ -179,7 +179,7 @@ const AI_FUNCTIONS = [
                         COALESCE(SUM(pi.grand_total - pi.paid_amount), 0)::numeric as balance_due,
                         COUNT(DISTINCT pi.id) as invoice_count
                  FROM suppliers s
-                 LEFT JOIN purchase_invoices pi ON pi.supplier_id = s.id AND pi.status != 'cancelled'
+                 LEFT JOIN purchase_invoices pi ON pi.supplier_id = s.id AND pi.status NOT IN ('draft', 'merged', 'cancelled')
                  WHERE s.company_name ILIKE $1
                  GROUP BY s.id, s.company_name
                  LIMIT 5`,
@@ -272,7 +272,7 @@ const AI_FUNCTIONS = [
                          JOIN suppliers s ON s.id = pi.supplier_id
                          JOIN product_variants pv ON pv.id = pii.variant_id
                          JOIN products p ON p.id = pv.product_id
-                         WHERE p.name ILIKE $1 AND s.company_name ILIKE $2 AND pi.status != 'cancelled'
+                         WHERE p.name ILIKE $1 AND s.company_name ILIKE $2 AND pi.status NOT IN ('draft', 'merged', 'cancelled')
                          ORDER BY pii.unit_cost ASC LIMIT 20`;
                 params = [`%${product_name}%`, `%${supplier_name}%`];
             } else {
@@ -283,7 +283,7 @@ const AI_FUNCTIONS = [
                          LEFT JOIN suppliers s ON s.id = pi.supplier_id
                          JOIN product_variants pv ON pv.id = pii.variant_id
                          JOIN products p ON p.id = pv.product_id
-                         WHERE p.name ILIKE $1 AND pi.status != 'cancelled'
+                         WHERE p.name ILIKE $1 AND pi.status NOT IN ('draft', 'merged', 'cancelled')
                          ORDER BY pii.unit_cost ASC LIMIT 20`;
                 params = [`%${product_name}%`];
             }
@@ -316,7 +316,7 @@ const AI_FUNCTIONS = [
                  JOIN suppliers s ON s.id = pi.supplier_id
                  JOIN product_variants pv ON pv.id = pii.variant_id
                  JOIN products p ON p.id = pv.product_id
-                 WHERE p.name ILIKE $1 AND pi.status != 'cancelled'
+                 WHERE p.name ILIKE $1 AND pi.status NOT IN ('draft', 'merged', 'cancelled')
                  ORDER BY pii.unit_cost ASC`,
                 [`%${product_name}%`]
             );
@@ -347,7 +347,7 @@ const AI_FUNCTIONS = [
                  FROM purchase_invoice_items pii
                  JOIN purchase_invoices pi ON pi.id = pii.purchase_invoice_id
                  LEFT JOIN suppliers s ON s.id = pi.supplier_id
-                 WHERE pii.product_name ILIKE $1 AND pi.status != 'cancelled'
+                 WHERE pii.product_name ILIKE $1 AND pi.status NOT IN ('draft', 'merged', 'cancelled')
                  ORDER BY pi.invoice_date DESC
                  LIMIT $2`,
                 [`%${product_name}%`, parseInt(limit) || 10]
@@ -831,7 +831,7 @@ const AI_FUNCTIONS = [
                         COALESCE(SUM(pi.paid_amount), 0)::numeric as total_paid,
                         COALESCE(SUM(pi.grand_total - pi.paid_amount), 0)::numeric as total_outstanding
                  FROM purchase_invoices pi
-                 WHERE pi.status != 'cancelled' AND ${dateFilter}`
+                 WHERE pi.status NOT IN ('draft', 'merged', 'cancelled') AND ${dateFilter}`
             );
             return _sanitize(result.rows);
         }
@@ -909,7 +909,7 @@ const AI_FUNCTIONS = [
                 `SELECT COALESCE(SUM(tax_amount), 0)::numeric as input_vat,
                         COALESCE(SUM(grand_total), 0)::numeric as total_purchases
                  FROM purchase_invoices
-                 WHERE status != 'cancelled' AND invoice_date >= ${dateFilter}`
+                 WHERE status NOT IN ('draft', 'merged', 'cancelled') AND invoice_date >= ${dateFilter}`
             );
             const outputVat = parseFloat(salesVat.rows[0].output_vat || 0);
             const inputVat = parseFloat(purchaseVat.rows[0].input_vat || 0);
@@ -1299,11 +1299,11 @@ const AI_FUNCTIONS = [
                         (SELECT s.company_name FROM suppliers s
                          JOIN purchase_invoices pi ON pi.supplier_id = s.id
                          JOIN purchase_invoice_items pii ON pii.purchase_invoice_id = pi.id
-                         WHERE pii.variant_id = pv.id AND pi.status != 'cancelled'
+                         WHERE pii.variant_id = pv.id AND pi.status NOT IN ('draft', 'merged', 'cancelled')
                          ORDER BY pii.unit_cost ASC LIMIT 1) as cheapest_supplier,
                         (SELECT pii.unit_cost FROM purchase_invoice_items pii
                          JOIN purchase_invoices pi ON pi.id = pii.purchase_invoice_id
-                         WHERE pii.variant_id = pv.id AND pi.status != 'cancelled'
+                         WHERE pii.variant_id = pv.id AND pi.status NOT IN ('draft', 'merged', 'cancelled')
                          ORDER BY pii.unit_cost ASC LIMIT 1) as cheapest_supplier_price
                  FROM product_variants pv
                  JOIN products p ON p.id = pv.product_id
@@ -1643,17 +1643,17 @@ const AI_FUNCTIONS = [
             const purchaseRes = await db.query(
                 `SELECT COALESCE(SUM(grand_total), 0)::numeric as total_purchases,
                         COUNT(*) as invoice_count
-                 FROM purchase_invoices WHERE status != 'cancelled' AND invoice_date >= ${dateFilter}`
+                 FROM purchase_invoices WHERE status NOT IN ('draft', 'merged', 'cancelled') AND invoice_date >= ${dateFilter}`
             );
             const vatRes = await db.query(
                 `SELECT
                     (SELECT COALESCE(SUM(tax_amount), 0)::numeric FROM invoices WHERE status != 'cancelled' AND invoice_date >= ${dateFilter}) as output_vat,
-                    (SELECT COALESCE(SUM(tax_amount), 0)::numeric FROM purchase_invoices WHERE status != 'cancelled' AND invoice_date >= ${dateFilter}) as input_vat`
+                    (SELECT COALESCE(SUM(tax_amount), 0)::numeric FROM purchase_invoices WHERE status NOT IN ('draft', 'merged', 'cancelled') AND invoice_date >= ${dateFilter}) as input_vat`
             );
             const outstandingRes = await db.query(
                 `SELECT
                     (SELECT COALESCE(SUM(i.grand_total - COALESCE((SELECT SUM(ct.amount) FROM client_transactions ct WHERE ct.invoice_id = i.id AND ct.type = 'payment'), 0)), 0)::numeric FROM invoices i WHERE i.status != 'cancelled') as receivable,
-                    (SELECT COALESCE(SUM(grand_total - paid_amount), 0)::numeric FROM purchase_invoices WHERE status != 'cancelled') as payable`
+                    (SELECT COALESCE(SUM(grand_total - paid_amount), 0)::numeric FROM purchase_invoices WHERE status NOT IN ('draft', 'merged', 'cancelled')) as payable`
             );
 
             return _sanitize([{
@@ -3244,7 +3244,9 @@ const AI_FUNCTIONS = [
                     JOIN suppliers s ON s.id = pi.supplier_id
                     JOIN product_variants pv ON pv.id = pii.variant_id
                     JOIN products p ON p.id = pv.product_id
-                    WHERE p.name ILIKE $1 AND s.status = 'active'
+                    WHERE p.name ILIKE $1
+                      AND s.status = 'active'
+                      AND pi.status NOT IN ('draft', 'merged', 'cancelled')
                     ORDER BY p.name, pv.size_name, pii.unit_cost
                 `;
                 pricingParams = [`%${product_name}%`];
@@ -3259,6 +3261,7 @@ const AI_FUNCTIONS = [
                     JOIN product_variants pv ON pv.id = pii.variant_id
                     JOIN products p ON p.id = pv.product_id
                     WHERE s.status = 'active'
+                      AND pi.status NOT IN ('draft', 'merged', 'cancelled')
                     ORDER BY p.name, pv.size_name, pii.unit_cost
                     LIMIT 50
                 `;

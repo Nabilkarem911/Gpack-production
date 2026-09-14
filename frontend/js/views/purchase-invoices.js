@@ -231,6 +231,7 @@
                 : '<span class="px-2 py-1 rounded-lg text-xs font-bold bg-amber-100 text-amber-700"><i class="fa-solid fa-triangle-exclamation ml-1"></i>بدون فاتورة</span>';
             const isDraft = inv.status === 'draft';
             const isPosted = !isDraft && inv.status !== 'cancelled';
+            const canAttemptReopen = ['posted', 'unpaid', 'partially_paid', 'paid'].includes(inv.status);
             const actions = isDraft
                 ? `<button onclick="window.piOpenApproveModal('${esc(inv.id)}')"
                         class="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 transition-all">
@@ -240,6 +241,10 @@
                     ${isPosted ? `<button onclick="window.piOpenEditModal('${esc(inv.id)}')"
                         class="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 hover:bg-amber-100 transition-all" title="تعديل">
                         <i class="fa-solid fa-pen-to-square text-xs"></i>
+                    </button>` : ''}
+                    ${canAttemptReopen ? `<button onclick="window.piReopenInvoice('${esc(inv.id)}')"
+                        class="w-8 h-8 rounded-lg bg-orange-50 text-orange-600 hover:bg-orange-100 transition-all" title="إرجاع للمراجعة">
+                        <i class="fa-solid fa-rotate-left text-xs"></i>
                     </button>` : ''}
                     <button onclick="window.piViewInvoice('${esc(inv.id)}')"
                         class="w-8 h-8 rounded-lg bg-purple-50 text-purple-600 hover:bg-purple-100 transition-all" title="طباعة">
@@ -522,6 +527,36 @@
         _el('pi-edit-modal')?.classList.add('hidden');
         _edtItems = [];
         _edtExpenses = [];
+    };
+
+    window.piReopenInvoice = async function(invId) {
+        const confirmed = confirm(
+            'سيتم إنشاء قيد عكسي موثق وإرجاع الفاتورة إلى المسودات. لن تتغير كميات المخزون أو بيانات الاستلام. هل تريد المتابعة؟'
+        );
+        if (!confirmed) return;
+
+        const reason = prompt('اذكر سبب إرجاع الفاتورة للمراجعة:', 'تم إنشاء فاتورة منفردة بدل فاتورة مجمعة');
+        if (reason === null) return;
+        if (!reason.trim()) {
+            alert('سبب إرجاع الفاتورة للمراجعة مطلوب.');
+            return;
+        }
+
+        try {
+            const res = await window.apiFetch(`/api/purchase-invoices/${invId}/reopen`, {
+                method: 'POST',
+                body: { reason: reason.trim() },
+            });
+            const message = res.message || 'تم إرجاع الفاتورة للمراجعة بنجاح.';
+            if (window.showToast) window.showToast(message, 'success');
+            else alert(message);
+            await _loadInvoices(0);
+            if (_activeTab === 'archive') await _loadArchive(0);
+        } catch (err) {
+            const message = err.message || 'تعذر إرجاع الفاتورة للمراجعة. قد تكون مدفوعة أو مرتبطة بمرتجع/دمج.';
+            if (window.showToast) window.showToast(message, 'error');
+            else alert(`❌ ${message}`);
+        }
     };
 
     function _renderEdtItems() {
