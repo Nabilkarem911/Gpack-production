@@ -6,9 +6,8 @@
 //
 // Per-supplier payable balance, computed from the SAME sources as the supplier
 // statement (account-statement.js):
-//   debit  = payment vouchers + journal & opening-balance debit lines on 2100
-//   credit = purchase invoices (non-cancelled) + journal & opening-balance
-//            credit lines on 2100
+//   debit  = payment vouchers + purchase returns + journal debit lines
+//   credit = purchase invoices + receipt vouchers + journal credit lines
 //   balance = debit - credit  →  >0 مدين (لنا عند المورد) / <0 دائن (للمورد عندنا)
 // =============================================================================
 
@@ -42,6 +41,8 @@ router.get('/', async (req, res) => {
                 s.supplier_type,
                 COALESCE(inv.total,  0) AS invoiced,
                 COALESCE(pay.total,  0) AS paid,
+                COALESCE(recv.total, 0) AS received,
+                COALESCE(ret.total,  0) AS returned,
                 COALESCE(jl.debit,   0) AS journal_debit,
                 COALESCE(jl.credit,  0) AS journal_credit
              FROM suppliers s
@@ -63,6 +64,25 @@ router.get('/', async (req, res) => {
                   AND avl.sub_account_type = 'supplier'
                 GROUP BY avl.sub_account_id
              ) pay ON pay.sub_account_id = s.id
+             -- Receipt vouchers from a supplier (credit side)
+             LEFT JOIN (
+                SELECT avl.sub_account_id, SUM(avl.credit) AS total
+                FROM accounting_voucher_lines avl
+                JOIN accounting_vouchers av ON av.id = avl.voucher_id
+                WHERE av.voucher_type = 'receipt'
+                  AND av.status = 'posted'
+                  AND avl.account_id = (SELECT id FROM accounts WHERE code = '2100' LIMIT 1)
+                  AND avl.sub_account_type = 'supplier'
+                  AND avl.credit > 0
+                GROUP BY avl.sub_account_id
+             ) recv ON recv.sub_account_id = s.id
+             -- Purchase returns (debit side)
+             LEFT JOIN (
+                SELECT supplier_id, SUM(total_amount) AS total
+                FROM purchase_returns
+                WHERE status = 'completed'
+                GROUP BY supplier_id
+             ) ret ON ret.supplier_id = s.id
              -- Manual journal + opening-balance lines on 2100 (both sides)
              LEFT JOIN (
                 SELECT avl.sub_account_id,
@@ -82,12 +102,13 @@ router.get('/', async (req, res) => {
         );
 
         const data = rows.rows.map(r => {
-            const balance = parseFloat(r.paid) + parseFloat(r.journal_debit)
-                          - parseFloat(r.invoiced) - parseFloat(r.journal_credit);
+            const balance = parseFloat(r.paid) + parseFloat(r.returned) + parseFloat(r.journal_debit)
+                          - parseFloat(r.invoiced) - parseFloat(r.received) - parseFloat(r.journal_credit);
             return {
                 id: r.id, name: r.name, phone: r.phone,
                 contact_person: r.contact_person, supplier_type: r.supplier_type,
                 invoiced: parseFloat(r.invoiced), paid: parseFloat(r.paid),
+                received: parseFloat(r.received), returned: parseFloat(r.returned),
                 journal_debit: parseFloat(r.journal_debit),
                 journal_credit: parseFloat(r.journal_credit),
                 balance,

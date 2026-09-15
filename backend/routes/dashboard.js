@@ -126,11 +126,54 @@ router.get('/stats', authenticate, async (req, res) => {
             isSalesRep ? [userId] : []
         );
 
-        // 8. Outstanding Receivables (financial — hide from non-admin)
-        let receivablesQuery = `SELECT COALESCE(SUM(grand_total), 0) as outstanding FROM invoices WHERE status IN ('sent', 'overdue')`;
-        if (isSalesRep || isWarehouse) {
-            receivablesQuery = `SELECT 0 as outstanding`;
-        }
+        // 8. Outstanding Receivables (same sources/signs as client-accounts)
+        let receivablesQuery = `
+            SELECT COALESCE(SUM(
+                COALESCE(inv.total, 0) + COALESCE(pay.total, 0) + COALESCE(jl.debit, 0)
+                - COALESCE(recv.total, 0) - COALESCE(ret.total, 0) - COALESCE(jl.credit, 0)
+            ), 0) AS outstanding
+            FROM clients c
+            LEFT JOIN (
+                SELECT client_id, SUM(grand_total) AS total
+                FROM invoices
+                WHERE source IN ('orders', 'warehouse')
+                  AND status IN ('issued', 'paid', 'overdue', 'archived')
+                GROUP BY client_id
+            ) inv ON inv.client_id = c.id
+            LEFT JOIN (
+                SELECT avl.sub_account_id, SUM(avl.credit) AS total
+                FROM accounting_voucher_lines avl
+                JOIN accounting_vouchers av ON av.id = avl.voucher_id
+                WHERE av.voucher_type = 'receipt' AND av.status = 'posted'
+                  AND avl.account_id = (SELECT id FROM accounts WHERE code = '1300' LIMIT 1)
+                  AND avl.sub_account_type = 'client' AND avl.credit > 0
+                GROUP BY avl.sub_account_id
+            ) recv ON recv.sub_account_id = c.id
+            LEFT JOIN (
+                SELECT avl.sub_account_id, SUM(avl.debit) AS total
+                FROM accounting_voucher_lines avl
+                JOIN accounting_vouchers av ON av.id = avl.voucher_id
+                WHERE av.voucher_type = 'payment' AND av.status = 'posted'
+                  AND avl.account_id = (SELECT id FROM accounts WHERE code = '1300' LIMIT 1)
+                  AND avl.sub_account_type = 'client' AND avl.debit > 0
+                GROUP BY avl.sub_account_id
+            ) pay ON pay.sub_account_id = c.id
+            LEFT JOIN (
+                SELECT client_id, SUM(total_amount) AS total
+                FROM sales_returns
+                WHERE status = 'completed'
+                GROUP BY client_id
+            ) ret ON ret.client_id = c.id
+            LEFT JOIN (
+                SELECT avl.sub_account_id, SUM(avl.debit) AS debit, SUM(avl.credit) AS credit
+                FROM accounting_voucher_lines avl
+                JOIN accounting_vouchers av ON av.id = avl.voucher_id
+                WHERE av.voucher_type IN ('journal', 'opening_balance') AND av.status = 'posted'
+                  AND avl.account_id = (SELECT id FROM accounts WHERE code = '1300' LIMIT 1)
+                  AND avl.sub_account_type = 'client'
+                GROUP BY avl.sub_account_id
+            ) jl ON jl.sub_account_id = c.id`;
+        if (isSalesRep || isWarehouse) receivablesQuery = 'SELECT 0 AS outstanding';
         const receivablesResult = await db.query(receivablesQuery);
 
         const stats = {

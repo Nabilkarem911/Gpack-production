@@ -6,9 +6,8 @@
 //
 // Per-client receivable balance, computed from the SAME sources as the client
 // statement (account-statement.js):
-//   debit  = invoices (issued/paid/archived, orders+warehouse) + journal &
-//            opening-balance debit lines on control account 1300
-//   credit = receipt vouchers + sales returns + journal & opening-balance
+//   debit  = final sales invoices + payment vouchers + journal debit lines
+//   credit = receipt vouchers + sales returns + journal credit lines
 //            credit lines on 1300
 //   balance = debit - credit  →  >0 مدين (لنا عند العميل) / <0 دائن (للعميل عندنا)
 // =============================================================================
@@ -44,6 +43,7 @@ router.get('/', async (req, res) => {
                 cp.name AS parent_name,
                 COALESCE(inv.total,  0) AS invoiced,
                 COALESCE(recv.total, 0) AS received,
+                COALESCE(pay.total,  0) AS paid,
                 COALESCE(ret.total,  0) AS returned,
                 COALESCE(jl.debit,   0) AS journal_debit,
                 COALESCE(jl.credit,  0) AS journal_credit
@@ -54,7 +54,7 @@ router.get('/', async (req, res) => {
                 SELECT client_id, SUM(grand_total) AS total
                 FROM invoices
                 WHERE source IN ('orders', 'warehouse')
-                  AND status IN ('issued', 'paid', 'archived')
+                  AND status IN ('issued', 'paid', 'overdue', 'archived')
                 GROUP BY client_id
              ) inv ON inv.client_id = c.id
              -- Receipt vouchers (credit side)
@@ -68,6 +68,18 @@ router.get('/', async (req, res) => {
                   AND avl.sub_account_type = 'client'
                 GROUP BY avl.sub_account_id
              ) recv ON recv.sub_account_id = c.id
+             -- Payment vouchers to a client (debit side)
+             LEFT JOIN (
+                SELECT avl.sub_account_id, SUM(avl.debit) AS total
+                FROM accounting_voucher_lines avl
+                JOIN accounting_vouchers av ON av.id = avl.voucher_id
+                WHERE av.voucher_type = 'payment'
+                  AND av.status = 'posted'
+                  AND avl.account_id = (SELECT id FROM accounts WHERE code = '1300' LIMIT 1)
+                  AND avl.sub_account_type = 'client'
+                  AND avl.debit > 0
+                GROUP BY avl.sub_account_id
+             ) pay ON pay.sub_account_id = c.id
              -- Sales returns (credit side)
              LEFT JOIN (
                 SELECT client_id, SUM(total_amount) AS total
@@ -94,12 +106,13 @@ router.get('/', async (req, res) => {
         );
 
         const data = rows.rows.map(r => {
-            const balance = parseFloat(r.invoiced) + parseFloat(r.journal_debit)
+            const balance = parseFloat(r.invoiced) + parseFloat(r.paid) + parseFloat(r.journal_debit)
                           - parseFloat(r.received) - parseFloat(r.returned) - parseFloat(r.journal_credit);
             return {
                 id: r.id, name: r.name, phone: r.phone,
                 parent_id: r.parent_id, parent_name: r.parent_name,
                 invoiced: parseFloat(r.invoiced), received: parseFloat(r.received),
+                paid: parseFloat(r.paid),
                 returned: parseFloat(r.returned),
                 journal_debit: parseFloat(r.journal_debit),
                 journal_credit: parseFloat(r.journal_credit),

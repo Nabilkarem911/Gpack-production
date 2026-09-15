@@ -19,13 +19,13 @@ function buildApp(user = { id: 'u1', role: 'admin' }) {
 
 const ROWS = [
     { id: 's1', name: 'مورد الورق',   phone: '020', contact_person: 'أحمد',
-      invoiced: '5000', paid: '2000', journal_debit: '0',  journal_credit: '0' },  // -3000 دائن (مستحق)
+      invoiced: '5000', paid: '2000', received: '0', returned: '0', journal_debit: '0',  journal_credit: '0' },  // -3000 دائن (مستحق)
     { id: 's2', name: 'مورد الكرتون', phone: '021', contact_person: null,
-      invoiced: '1000', paid: '4000', journal_debit: '0',  journal_credit: '0' },  // +3000 مدين (لنا عنده)
+      invoiced: '1000', paid: '4000', received: '0', returned: '0', journal_debit: '0',  journal_credit: '0' },  // +3000 مدين (لنا عنده)
     { id: 's3', name: 'مورد افتتاحي', phone: '022', contact_person: null,
-      invoiced: '0',    paid: '0',    journal_debit: '100', journal_credit: '800' }, // -700 دائن
+      invoiced: '0',    paid: '0',    received: '0', returned: '0', journal_debit: '100', journal_credit: '800' }, // -700 دائن
     { id: 's4', name: 'مورد صفري',   phone: '023', contact_person: null,
-      invoiced: '500',  paid: '500',  journal_debit: '0',  journal_credit: '0' },  // 0
+      invoiced: '500',  paid: '500', received: '0', returned: '0', journal_debit: '0',  journal_credit: '0' },  // 0
 ];
 
 describe('Supplier Accounts', () => {
@@ -44,6 +44,19 @@ describe('Supplier Accounts', () => {
         expect(byId.s2).toBe(3000);                       // paid 4000 - invoiced 1000
         expect(byId.s3).toBe(-700);                       // jl debit 100 - jl credit 800
         expect(res.body.totals).toEqual({ debit: 3000, credit: 3700, net: -700 });
+        const [sql] = mockPoolQuery.mock.calls[0];
+        expect(sql).toContain("av.voucher_type = 'receipt'");
+        expect(sql).toContain('purchase_returns');
+    });
+
+    test('GET / includes supplier receipt and purchase return movements', async () => {
+        mockPoolQuery.mockResolvedValueOnce({ rows: [{
+            id: 's5', name: 'مورد استرداد', phone: '024', contact_person: null,
+            invoiced: '1000', paid: '100', received: '150', returned: '250', journal_debit: '0', journal_credit: '0',
+        }] });
+
+        const res = await request(buildApp()).get('/api/supplier-accounts');
+        expect(res.body.data[0]).toMatchObject({ id: 's5', received: 150, returned: 250, balance: -800 });
     });
 
     test('GET / include_zero=1 keeps zero-balance suppliers', async () => {

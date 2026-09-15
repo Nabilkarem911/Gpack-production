@@ -19,13 +19,13 @@ function buildApp(user = { id: 'u1', role: 'admin' }) {
 
 const ROWS = [
     { id: 'c1', name: 'عميل مدين',   phone: '010', parent_id: null, parent_name: null,
-      invoiced: '1000', received: '200', returned: '0',   journal_debit: '0', journal_credit: '0' },   // +800
+      invoiced: '1000', received: '200', paid: '0', returned: '0',   journal_debit: '0', journal_credit: '0' },   // +800
     { id: 'c2', name: 'عميل دائن',   phone: '011', parent_id: null, parent_name: null,
-      invoiced: '0',    received: '500', returned: '100', journal_debit: '0', journal_credit: '0' },   // -600
+      invoiced: '0',    received: '500', paid: '0', returned: '100', journal_debit: '0', journal_credit: '0' },   // -600
     { id: 'c3', name: 'عميل افتتاحي', phone: '012', parent_id: 'c1', parent_name: 'عميل مدين',
-      invoiced: '0',    received: '0',   returned: '0',   journal_debit: '300', journal_credit: '50' }, // +250
+      invoiced: '0',    received: '0',   paid: '0', returned: '0',   journal_debit: '300', journal_credit: '50' }, // +250
     { id: 'c4', name: 'عميل صفري',   phone: '013', parent_id: null, parent_name: null,
-      invoiced: '100',  received: '100', returned: '0',   journal_debit: '0', journal_credit: '0' },   // 0
+      invoiced: '100',  received: '100', paid: '0', returned: '0',   journal_debit: '0', journal_credit: '0' },   // 0
 ];
 
 describe('Client Accounts', () => {
@@ -44,6 +44,19 @@ describe('Client Accounts', () => {
         expect(byId.c2).toBe(-600);                       // 0 - 500 - 100
         expect(byId.c3).toBe(250);                        // journal 300 - 50
         expect(res.body.totals).toEqual({ debit: 1050, credit: 600, net: 450 });
+        const [sql] = mockPoolQuery.mock.calls[0];
+        expect(sql).toContain("av.voucher_type = 'payment'");
+        expect(sql).toContain('sales_returns');
+    });
+
+    test('GET / includes a client payment voucher as a debit movement', async () => {
+        mockPoolQuery.mockResolvedValueOnce({ rows: [{
+            id: 'c5', name: 'عميل دفع لنا', phone: '014', parent_id: null, parent_name: null,
+            invoiced: '100', received: '0', paid: '200', returned: '0', journal_debit: '0', journal_credit: '0',
+        }] });
+
+        const res = await request(buildApp()).get('/api/client-accounts');
+        expect(res.body.data[0]).toMatchObject({ id: 'c5', paid: 200, balance: 300 });
     });
 
     test('GET / include_zero=1 keeps zero-balance clients', async () => {

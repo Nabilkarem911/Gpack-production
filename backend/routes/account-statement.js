@@ -17,7 +17,8 @@ router.use(authorize('account_statement', 'view'));
 
 // =============================================================================
 // GET /api/account-statement/client/:clientId
-// Client account statement: invoices (debit) + payments (credit)
+// Client account statement: final sales invoices/payment vouchers (debit)
+// plus receipts/sales returns (credit) and posted journal lines.
 // =============================================================================
 router.get('/client/:clientId', async (req, res) => {
     try {
@@ -61,7 +62,7 @@ router.get('/client/:clientId', async (req, res) => {
                     COALESCE(i.notes, '') as notes,
                     NULL as reference_id
                 FROM invoices i
-                WHERE i.client_id = $1 AND i.source IN ('orders', 'warehouse') AND i.status IN ('issued', 'archived')
+                WHERE i.client_id = $1 AND i.source IN ('orders', 'warehouse') AND i.status IN ('issued', 'paid', 'overdue', 'archived')
                     ${dateFilter.replace(/date/g, 'i.invoice_date')}
                 
                 UNION ALL
@@ -85,6 +86,29 @@ router.get('/client/:clientId', async (req, res) => {
                     AND avl.sub_account_type = 'client'
                     AND avl.sub_account_id = $1
                     AND avl.credit > 0
+                    ${dateFilter.replace(/date/g, 'av.voucher_date')}
+
+                UNION ALL
+
+                -- Payment vouchers to a client (Debit - عليه)
+                SELECT
+                    av.id::text as transaction_id,
+                    av.voucher_date as trans_date,
+                    'سند صرف' as document_type,
+                    av.voucher_number::text as document_number,
+                    avl.debit as debit,
+                    0 as credit,
+                    av.status as status,
+                    COALESCE(av.description, '') as notes,
+                    av.id as reference_id
+                FROM accounting_vouchers av
+                JOIN accounting_voucher_lines avl ON avl.voucher_id = av.id
+                WHERE av.voucher_type = 'payment'
+                    AND av.status = 'posted'
+                    AND avl.account_id = (SELECT id FROM accounts WHERE code = '1300' LIMIT 1)
+                    AND avl.sub_account_type = 'client'
+                    AND avl.sub_account_id = $1
+                    AND avl.debit > 0
                     ${dateFilter.replace(/date/g, 'av.voucher_date')}
 
                 UNION ALL
@@ -149,7 +173,7 @@ router.get('/client/:clientId', async (req, res) => {
             FROM (
                 SELECT 'invoice' as doc_type, grand_total as amount 
                 FROM invoices 
-                WHERE client_id = $1 AND source IN ('orders', 'warehouse') AND status IN ('issued', 'paid', 'archived') ${dateFilter.replace(/date/g, 'invoice_date')}
+                WHERE client_id = $1 AND source IN ('orders', 'warehouse') AND status IN ('issued', 'paid', 'overdue', 'archived') ${dateFilter.replace(/date/g, 'invoice_date')}
                 UNION ALL
                 SELECT 'payment' as doc_type, avl.credit as amount
                 FROM accounting_vouchers av
@@ -160,6 +184,17 @@ router.get('/client/:clientId', async (req, res) => {
                     AND avl.sub_account_type = 'client'
                     AND avl.sub_account_id = $1
                     AND avl.credit > 0
+                    ${dateFilter.replace(/date/g, 'av.voucher_date')}
+                UNION ALL
+                SELECT 'invoice' as doc_type, avl.debit as amount
+                FROM accounting_vouchers av
+                JOIN accounting_voucher_lines avl ON avl.voucher_id = av.id
+                WHERE av.voucher_type = 'payment'
+                    AND av.status = 'posted'
+                    AND avl.account_id = (SELECT id FROM accounts WHERE code = '1300' LIMIT 1)
+                    AND avl.sub_account_type = 'client'
+                    AND avl.sub_account_id = $1
+                    AND avl.debit > 0
                     ${dateFilter.replace(/date/g, 'av.voucher_date')}
                 UNION ALL
                 SELECT 'payment' as doc_type, sr.total_amount as amount
@@ -196,6 +231,8 @@ router.get('/client/:clientId', async (req, res) => {
             summary: {
                 total_invoices: totalInvoices,
                 total_payments: totalPayments,
+                total_debit: totalInvoices,
+                total_credit: totalPayments,
                 balance: totalInvoices - totalPayments
             },
             limit: parseInt(limit),
@@ -211,7 +248,8 @@ router.get('/client/:clientId', async (req, res) => {
 
 // =============================================================================
 // GET /api/account-statement/supplier/:supplierId
-// Supplier account statement: purchase invoices (credit) + payments (debit)
+// Supplier account statement: purchase invoices/receipt vouchers (credit)
+// plus payments/purchase returns (debit) and posted journal lines.
 // =============================================================================
 router.get('/supplier/:supplierId', async (req, res) => {
     try {
@@ -283,6 +321,46 @@ router.get('/supplier/:supplierId', async (req, res) => {
 
                 UNION ALL
 
+                -- Receipt vouchers from a supplier (Credit - له)
+                SELECT
+                    av.id::text as transaction_id,
+                    av.voucher_date as trans_date,
+                    'سند قبض' as document_type,
+                    av.voucher_number::text as document_number,
+                    0 as debit,
+                    avl.credit as credit,
+                    av.status as status,
+                    COALESCE(av.description, '') as notes,
+                    av.id as reference_id
+                FROM accounting_vouchers av
+                JOIN accounting_voucher_lines avl ON avl.voucher_id = av.id
+                WHERE av.voucher_type = 'receipt'
+                    AND av.status = 'posted'
+                    AND avl.account_id = (SELECT id FROM accounts WHERE code = '2100' LIMIT 1)
+                    AND avl.sub_account_type = 'supplier'
+                    AND avl.sub_account_id = $1
+                    AND avl.credit > 0
+                    ${dateFilter.replace(/date/g, 'av.voucher_date')}
+
+                UNION ALL
+
+                -- Purchase returns (Debit - عليه)
+                SELECT
+                    pr.id::text as transaction_id,
+                    pr.return_date as trans_date,
+                    'مرتجع مشتريات' as document_type,
+                    pr.return_number::text as document_number,
+                    pr.total_amount as debit,
+                    0 as credit,
+                    pr.status as status,
+                    COALESCE(pr.notes, '') as notes,
+                    pr.id as reference_id
+                FROM purchase_returns pr
+                WHERE pr.supplier_id = $1 AND pr.status = 'completed'
+                    ${dateFilter.replace(/date/g, 'pr.return_date')}
+
+                UNION ALL
+
                 -- Manual journal + opening-balance lines posted to this supplier's sub-ledger
                 SELECT
                     av.id::text as transaction_id,
@@ -303,19 +381,17 @@ router.get('/supplier/:supplierId', async (req, res) => {
                     AND avl.sub_account_id = $1
                     ${dateFilter.replace(/date/g, 'av.voucher_date')}
             ) transactions
-            ORDER BY trans_date DESC, document_number DESC
+            ORDER BY trans_date ASC, document_number ASC
             LIMIT $${params.length + 1} OFFSET $${params.length + 2}
         `, [...params, parseInt(limit), parseInt(offset)]);
 
-        // Calculate running balance
+        // Calculate running balance oldest-first, then reverse for display.
         let balance = 0;
-        const transactions = transactionsRes.rows.map(t => {
+        const withBalance = transactionsRes.rows.map(t => {
             balance += parseFloat(t.debit || 0) - parseFloat(t.credit || 0);
-            return {
-                ...t,
-                balance: balance
-            };
+            return { ...t, balance };
         });
+        const transactions = withBalance.reverse();
 
         // Get summary
         const summaryRes = await db.query(`
@@ -337,6 +413,22 @@ router.get('/supplier/:supplierId', async (req, res) => {
                     AND avl.sub_account_id = $1
                     AND avl.debit > 0
                     ${dateFilter.replace(/date/g, 'av.voucher_date')}
+                UNION ALL
+                SELECT 'payment' as doc_type, avl.credit as amount
+                FROM accounting_vouchers av
+                JOIN accounting_voucher_lines avl ON avl.voucher_id = av.id
+                WHERE av.voucher_type = 'receipt'
+                    AND av.status = 'posted'
+                    AND avl.account_id = (SELECT id FROM accounts WHERE code = '2100' LIMIT 1)
+                    AND avl.sub_account_type = 'supplier'
+                    AND avl.sub_account_id = $1
+                    AND avl.credit > 0
+                    ${dateFilter.replace(/date/g, 'av.voucher_date')}
+                UNION ALL
+                SELECT 'payment' as doc_type, pr.total_amount as amount
+                FROM purchase_returns pr
+                WHERE pr.supplier_id = $1 AND pr.status = 'completed'
+                    ${dateFilter.replace(/date/g, 'pr.return_date')}
                 UNION ALL
                 SELECT 'invoice' as doc_type, avl.credit as amount
                 FROM accounting_vouchers av
@@ -366,6 +458,8 @@ router.get('/supplier/:supplierId', async (req, res) => {
             summary: {
                 total_invoices: totalInvoices,
                 total_payments: totalPayments,
+                total_debit: totalPayments,
+                total_credit: totalInvoices,
                 balance: totalPayments - totalInvoices
             },
             limit: parseInt(limit),

@@ -122,6 +122,8 @@
             <td class="py-3.5 px-4 hidden sm:table-cell text-base text-slate-500 font-mono">${_esc(r.phone) || '—'}</td>
             <td class="py-3.5 px-4 hidden md:table-cell font-mono text-base font-bold text-slate-700">${_fmt(r.invoiced)}</td>
             <td class="py-3.5 px-4 hidden md:table-cell font-mono text-base font-bold text-slate-700">${_fmt(r.paid)}</td>
+            <td class="py-3.5 px-4 hidden md:table-cell font-mono text-base font-bold text-slate-700">${_fmt(r.received)}</td>
+            <td class="py-3.5 px-4 hidden md:table-cell font-mono text-base font-bold text-slate-700">${_fmt(r.returned)}</td>
             <td class="py-3.5 px-4 hidden md:table-cell text-sm text-slate-500">${journal(r)}</td>
             <td class="py-3.5 px-4 font-mono font-black text-xl ${tab === 'debit' ? 'text-red-600' : 'text-emerald-700'}">${_fmt(Math.abs(r.balance))}</td>
             <td class="py-3.5 px-4 text-center">${_stmtBtn(r)}</td>
