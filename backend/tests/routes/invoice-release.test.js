@@ -20,7 +20,11 @@ jest.mock('../../db', () => ({
     pool: { connect: jest.fn(() => Promise.resolve(mockClient)) },
 }));
 jest.mock('../../middleware/authorize', () => () => (_req, _res, next) => next());
+jest.mock('../../services/notification-service', () => ({
+    notifyReleaseOrderCreated: jest.fn().mockResolvedValue(null),
+}));
 
+const { notifyReleaseOrderCreated } = require('../../services/notification-service');
 const invoiceRoutes = require('../../routes/invoices');
 
 function buildApp() {
@@ -38,6 +42,7 @@ describe('warehouse sales invoice release workflow', () => {
     beforeEach(() => {
         mockClientQuery.mockReset();
         mockClient.release.mockReset();
+        notifyReleaseOrderCreated.mockClear();
     });
 
     test('issues a warehouse invoice without creating a delivery note automatically', async () => {
@@ -105,10 +110,17 @@ describe('warehouse sales invoice release workflow', () => {
     test('creates the delivery note only when release is issued manually', async () => {
         mockClientQuery.mockImplementation(async (sql) => {
             if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') return {};
-            if (sql.includes('SELECT id, invoice_number, client_id, warehouse_id, source, status, delivery_note_id')) {
-                return { rowCount: 1, rows: [{ id: invoiceId, invoice_number: 1001, client_id: clientId, warehouse_id: warehouseId, source: 'warehouse', status: 'issued', delivery_note_id: null, notes: null }] };
+            if (sql.includes('FROM invoices i') && sql.includes('delivery_note_id')) {
+                return { rowCount: 1, rows: [{
+                    id: invoiceId, invoice_number: 1001, client_id: clientId, warehouse_id: warehouseId,
+                    source: 'warehouse', status: 'issued', delivery_note_id: null, notes: null,
+                    client_name: 'عميل الاختبار', warehouse_name: 'مستودع الاختبار',
+                }] };
             }
-            if (sql.includes('SELECT variant_id, quantity, source_stock_id')) return { rowCount: 1, rows: [{ variant_id: variantId, quantity: 2, source_stock_id: stockId }] };
+            if (sql.includes('FROM invoice_items ii')) return { rowCount: 1, rows: [{
+                variant_id: variantId, quantity: 2, source_stock_id: stockId,
+                product_name: 'صنف الاختبار', size_name: 'L',
+            }] };
             if (sql.includes('INSERT INTO delivery_notes')) return { rowCount: 1, rows: [{ id: deliveryNoteId, note_number: 2001 }] };
             return { rowCount: 1, rows: [] };
         });
@@ -120,5 +132,13 @@ describe('warehouse sales invoice release workflow', () => {
         expect(response.status).toBe(201);
         expect(response.body.data).toEqual({ delivery_note_id: deliveryNoteId, note_number: 2001 });
         expect(mockClientQuery.mock.calls.some(([sql]) => sql.includes('INSERT INTO delivery_note_items'))).toBe(true);
+        expect(notifyReleaseOrderCreated).toHaveBeenCalledWith(expect.objectContaining({
+            order_number: 1001,
+            delivery_note_id: deliveryNoteId,
+            delivery_note_number: 2001,
+            client_name: 'عميل الاختبار',
+            warehouse_name: 'مستودع الاختبار',
+            items_summary: expect.stringContaining('صنف الاختبار'),
+        }));
     });
 });

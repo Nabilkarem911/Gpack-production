@@ -252,8 +252,13 @@ router.post('/:id/release', restrictEdit, async (req, res) => {
     try {
         await client.query('BEGIN');
         const invRes = await client.query(
-            `SELECT id, invoice_number, client_id, warehouse_id, source, status, delivery_note_id, notes
-             FROM invoices WHERE id = $1 FOR UPDATE`,
+            `SELECT i.id, i.invoice_number, i.client_id, i.warehouse_id, i.source, i.status,
+                    i.delivery_note_id, i.notes,
+                    c.name AS client_name, w.name AS warehouse_name
+             FROM invoices i
+             LEFT JOIN clients c ON c.id = i.client_id
+             LEFT JOIN warehouses w ON w.id = i.warehouse_id
+             WHERE i.id = $1 FOR UPDATE`,
             [req.params.id]
         );
         if (!invRes.rowCount) throw new Error('الفاتورة غير موجودة.');
@@ -263,8 +268,13 @@ router.post('/:id/release', restrictEdit, async (req, res) => {
         if (!invoice.warehouse_id) throw new Error('لا يوجد مستودع مرتبط بالفاتورة.');
 
         const itemsRes = await client.query(
-            `SELECT variant_id, quantity, source_stock_id
-             FROM invoice_items WHERE invoice_id = $1 ORDER BY id`,
+            `SELECT ii.variant_id, ii.quantity, ii.source_stock_id,
+                    p.name AS product_name, pv.size_name
+             FROM invoice_items ii
+             JOIN product_variants pv ON pv.id = ii.variant_id
+             JOIN products p ON p.id = pv.product_id
+             WHERE ii.invoice_id = $1
+             ORDER BY ii.id`,
             [invoice.id]
         );
         if (!itemsRes.rowCount) throw new Error('الفاتورة لا تحتوي على أصناف.');
@@ -291,6 +301,26 @@ router.post('/:id/release', restrictEdit, async (req, res) => {
             [deliveryNote.id, invoice.id]
         );
         await client.query('COMMIT');
+
+        // Keep WhatsApp notification outside the transaction: a provider failure
+        // must not roll back the delivery note or invoice linkage.
+        try {
+            const itemsSummary = itemsRes.rows
+                .map(item => `• ${item.product_name || 'صنف'}${item.size_name ? ` (${item.size_name})` : ''} — ${parseFloat(item.quantity)}`)
+                .join('\\n');
+            const NotificationService = require('../services/notification-service');
+            await NotificationService.notifyReleaseOrderCreated({
+                order_number: invoice.invoice_number,
+                delivery_note_id: deliveryNote.id,
+                delivery_note_number: deliveryNote.note_number,
+                client_name: invoice.client_name,
+                items_summary: itemsSummary,
+                warehouse_name: invoice.warehouse_name,
+            });
+        } catch (notifyErr) {
+            console.error('[Invoices] Release notification error:', notifyErr.message);
+        }
+
         return res.status(201).json({
             success: true,
             data: { delivery_note_id: deliveryNote.id, note_number: deliveryNote.note_number },
