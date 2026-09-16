@@ -92,12 +92,15 @@ describe('warehouse sales invoice release workflow', () => {
     test('deletes an unreleased invoice and returns its reserved stock', async () => {
         mockClientQuery.mockImplementation(async (sql) => {
             if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') return {};
-            if (sql.includes('SELECT id, source, status, delivery_note_id')) {
-                return { rowCount: 1, rows: [{ id: invoiceId, source: 'warehouse', status: 'issued', delivery_note_id: null }] };
+            if (sql.includes('FROM invoices WHERE id = $1 FOR UPDATE')) {
+                return { rowCount: 1, rows: [{
+                    id: invoiceId, invoice_number: 1001, client_id: clientId, source: 'warehouse',
+                    status: 'issued', grand_total: 100, delivery_note_id: null, delivery_status: 'pending',
+                }] };
             }
             if (sql.includes('SELECT 1 FROM client_transactions')) return { rowCount: 0, rows: [] };
             if (sql.includes('SELECT source_stock_id, quantity')) return { rowCount: 1, rows: [{ source_stock_id: stockId, quantity: 2 }] };
-            return { rowCount: 1, rows: [] };
+            return { rowCount: 0, rows: [] };
         });
 
         const response = await request(buildApp()).delete(`/api/invoices/${invoiceId}`);
@@ -105,6 +108,48 @@ describe('warehouse sales invoice release workflow', () => {
         expect(response.status).toBe(200);
         expect(mockClientQuery.mock.calls.some(([sql]) => sql.includes('UPDATE warehouse_stock') && sql.includes('reserved_qty'))).toBe(true);
         expect(mockClientQuery.mock.calls.some(([sql]) => sql.includes('DELETE FROM invoices'))).toBe(true);
+    });
+
+    test('cancels a final production invoice logically and records a reversal movement', async () => {
+        mockClientQuery.mockImplementation(async (sql) => {
+            if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') return {};
+            if (sql.includes('FROM invoices WHERE id = $1 FOR UPDATE')) {
+                return { rowCount: 1, rows: [{
+                    id: invoiceId, invoice_number: 1001, client_id: clientId, source: 'sales_invoices',
+                    status: 'issued', grand_total: 115, delivery_note_id: null, delivery_status: 'none',
+                }] };
+            }
+            if (sql.includes('SELECT 1 FROM client_transactions')) return { rowCount: 0, rows: [] };
+            if (sql.includes('SELECT 1 FROM sales_returns')) return { rowCount: 0, rows: [] };
+            if (sql.includes('FROM accounting_vouchers')) return { rowCount: 0, rows: [] };
+            return { rowCount: 1, rows: [] };
+        });
+
+        const response = await request(buildApp()).delete(`/api/invoices/${invoiceId}`);
+
+        expect(response.status).toBe(200);
+        expect(response.body.message).toContain('الأثر العكسي');
+        expect(mockClientQuery.mock.calls.some(([sql]) => sql.includes("SET status = 'cancelled'"))).toBe(true);
+        expect(mockClientQuery.mock.calls.some(([sql]) => sql.includes("'invoice_reversal'"))).toBe(true);
+        expect(mockClientQuery.mock.calls.some(([sql]) => sql.includes('DELETE FROM invoices'))).toBe(false);
+    });
+
+    test('blocks cancelling a delivered final warehouse invoice before delivery reversal', async () => {
+        mockClientQuery.mockImplementation(async (sql) => {
+            if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') return {};
+            if (sql.includes('FROM invoices WHERE id = $1 FOR UPDATE')) {
+                return { rowCount: 1, rows: [{
+                    id: invoiceId, invoice_number: 1001, client_id: clientId, source: 'warehouse',
+                    status: 'archived', grand_total: 115, delivery_note_id: deliveryNoteId, delivery_status: 'completed',
+                }] };
+            }
+            return { rowCount: 0, rows: [] };
+        });
+
+        const response = await request(buildApp()).delete(`/api/invoices/${invoiceId}`);
+
+        expect(response.status).toBe(400);
+        expect(response.body.error).toContain('عكس التسليم');
     });
 
     test('creates the delivery note only when release is issued manually', async () => {

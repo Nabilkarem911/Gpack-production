@@ -1,6 +1,6 @@
 <!-- =============================================================================
      G.PACK 2.0 — Sales Invoices View
-     فواتير المبيعات: الفواتير (مسودة) / الأرشيف (معتمدة)
+     فواتير المبيعات: فاتورة أولية / فواتير المبيعات النهائية
 ============================================================================= -->
 
 <!-- Header -->
@@ -17,32 +17,23 @@
         </div>
     </div>
     <div class="flex flex-wrap items-center gap-2">
-        <button onclick="window.siCreateInvoice()"
-                class="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold bg-emerald-600 text-white
-                       hover:bg-emerald-700 shadow-sm transition-all">
-            <i class="fa-solid fa-plus"></i> فاتورة من أمر تشغيل
-        </button>
         <button onclick="window.siCreateWarehouseInvoice()"
                 class="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold bg-brand-600 text-white
                        hover:bg-brand-700 shadow-sm transition-all">
-            <i class="fa-solid fa-warehouse"></i> فاتورة من المخزون
+            <i class="fa-solid fa-file-invoice"></i> إنشاء فاتورة مبيعات
         </button>
     </div>
 </div>
 
 <!-- ── Tabs ─────────────────────────────────────────────────────────────────── -->
 <div id="si-tabs" class="flex items-center gap-2 mb-5 border-b border-slate-200 pb-1">
-    <button id="si-tab-warehouse" onclick="window.siSwitchTab('warehouse')"
+    <button id="si-tab-proforma" onclick="window.siSwitchTab('proforma')"
             class="px-4 py-2 text-sm font-bold rounded-t-xl border-b-2 border-brand-600 text-brand-700 bg-white transition-all">
-        فواتير المخزون
+        فاتورة أولية
     </button>
-    <button id="si-tab-invoices" onclick="window.siSwitchTab('invoices')"
+    <button id="si-tab-sales" onclick="window.siSwitchTab('sales')"
             class="px-4 py-2 text-sm font-bold rounded-t-xl border-b-2 border-transparent text-slate-500 hover:text-brand-600 transition-all">
-        الفواتير الأخرى
-    </button>
-    <button id="si-tab-archive" onclick="window.siSwitchTab('archive')"
-            class="px-4 py-2 text-sm font-bold rounded-t-xl border-b-2 border-transparent text-slate-500 hover:text-brand-600 transition-all">
-        الأرشيف
+        فواتير المبيعات
     </button>
 </div>
 
@@ -269,7 +260,7 @@
     <div class="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[92vh] overflow-hidden flex flex-col" onclick="event.stopPropagation()">
         <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50">
             <div>
-                <h3 class="text-lg font-bold text-slate-800">إنشاء فاتورة من مخزون المستودع</h3>
+                <h3 class="text-lg font-bold text-slate-800">إنشاء فاتورة مبيعات</h3>
                 <p class="text-xs text-slate-400 mt-0.5">اختر العميل والمستودع ثم حدد الأصناف والكميات</p>
             </div>
             <button onclick="window.siCloseWarehouseInvoice()" class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500"><i class="fa-solid fa-xmark"></i></button>

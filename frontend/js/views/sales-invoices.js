@@ -2,7 +2,7 @@
 
 // =============================================================================
 // G.PACK 2.0 — Sales Invoices View Controller (2 tabs)
-// Tabs: الفواتير (draft) | الأرشيف (issued)
+// Tabs: فاتورة أولية (warehouse) | فواتير المبيعات (final)
 // =============================================================================
 
 (function () {
@@ -10,7 +10,8 @@
     const PAGE_SIZE = 20;
     let _currentPage = 0;
     let _totalRows = 0;
-    let _currentTab = 'warehouse'; // warehouse | invoices | archive
+    let _currentTab = 'proforma'; // proforma | sales
+    let _finalEditingInvoiceId = null;
     let _invoices = [];
     let _clients = [];
     let _readyOrders = [];
@@ -41,6 +42,22 @@
         };
         const s = map[status] || { label: status || '—', class: 'bg-slate-100 text-slate-600' };
         return `<span class="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold ${s.class}">${s.label}</span>`;
+    }
+
+    function _finalInvoiceActions(invoice) {
+        const canEdit = invoice.source === 'sales_invoices'
+            && ['issued', 'overdue'].includes(invoice.status)
+            && !invoice.delivery_note_id;
+        const edit = canEdit
+            ? `<button onclick="window.siEditFinalInvoice('${esc(invoice.id)}')" class="px-2 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 text-[11px] font-bold" title="تعديل الفاتورة"><i class="fa-solid fa-pen"></i></button>`
+            : '';
+        const cancel = !['cancelled', 'paid'].includes(invoice.status)
+            ? `<button onclick="window.siCancelFinalInvoice('${esc(invoice.id)}')" class="px-2 py-1.5 rounded-lg bg-red-50 text-red-700 hover:bg-red-100 text-[11px] font-bold" title="إلغاء الفاتورة"><i class="fa-solid fa-ban"></i></button>`
+            : '';
+        return `<div class="flex flex-wrap justify-center gap-1.5">
+            ${edit}${cancel}
+            <button onclick="window.siViewInvoice('${esc(invoice.id)}')" class="px-2 py-1.5 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 text-[11px] font-bold" title="عرض"><i class="fa-solid fa-eye"></i></button>
+        </div>`;
     }
 
     function _warehouseInvoiceActions(invoice) {
@@ -96,7 +113,7 @@
     };
 
     function _setActiveTab(tab) {
-        const tabs = ['warehouse', 'invoices', 'archive'];
+        const tabs = ['proforma', 'sales'];
         tabs.forEach(t => {
             const btn = _el('si-tab-' + t);
             if (btn) {
@@ -114,7 +131,7 @@
     // ── Fetch invoices for active tab ───────────────────────────────────────────
     async function _loadInvoices(page = 0) {
         _currentPage = page;
-        const status = _currentTab === 'warehouse' ? 'warehouse' : (_currentTab === 'archive' ? 'archive' : 'active');
+        const status = _currentTab === 'proforma' ? 'warehouse' : 'archive';
         const tbody = _el('si-tbody');
         const empty = _el('si-empty');
 
@@ -126,8 +143,7 @@
             limit: PAGE_SIZE,
             offset: page * PAGE_SIZE,
         });
-        if (_currentTab === 'warehouse') params.set('source', 'warehouse');
-        if (_currentTab === 'invoices') params.set('source', 'sales_invoices');
+        if (_currentTab === 'proforma') params.set('source', 'warehouse');
 
         const search = _el('si-search')?.value?.trim();
         const client = _el('si-client')?.value;
@@ -175,12 +191,12 @@
                 empty.classList.remove('hidden');
                 const t = _el('si-empty-title');
                 const s = _el('si-empty-sub');
-                const label = _currentTab === 'warehouse'
-                    ? 'لا توجد فواتير مخزون'
-                    : _currentTab === 'archive' ? 'لا توجد فواتير في الأرشيف' : 'لا توجد فواتير غير معتمدة';
-                const sub = _currentTab === 'warehouse'
-                    ? 'ستظهر هنا فواتير المخزون التي تم إصدارها'
-                    : _currentTab === 'archive' ? 'ستظهر هنا الفواتير المؤرشفة' : 'اضغط (إنشاء فاتورة جديدة) لإضافة فاتورة';
+                const label = _currentTab === 'proforma'
+                    ? 'لا توجد فواتير أولية'
+                    : 'لا توجد فواتير مبيعات نهائية';
+                const sub = _currentTab === 'proforma'
+                    ? 'ستظهر هنا الفواتير المنشأة من المخزون قبل اكتمال الفسح والتسليم'
+                    : 'ستظهر هنا الفواتير النهائية من المخزون وأوامر التشغيل';
                 if (t) t.textContent = label;
                 if (s) s.textContent = sub;
             }
@@ -192,16 +208,12 @@
         tbody.innerHTML = _invoices.map(i => {
             const clientName = esc(i.client_name || '—');
             const invoiceDate = _date(i.invoice_date);
-            const isArchive = _currentTab === 'archive';
-            const isWarehouseTab = _currentTab === 'warehouse';
+            const isFinalTab = _currentTab === 'sales';
+            const isProformaTab = _currentTab === 'proforma';
 
-            const action = isArchive
-                ? `<button onclick="window.siViewInvoice('${esc(i.id)}')" class="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-600 text-white text-xs font-bold hover:bg-slate-700 transition-all"><i class="fa-solid fa-eye"></i> عرض</button>`
-                : (isWarehouseTab && i.source === 'warehouse'
-                    ? _warehouseInvoiceActions(i)
-                    : (i.source === 'warehouse' && ['issued', 'paid'].includes(i.status)
-                        ? _warehouseInvoiceActions(i)
-                    : `<button onclick="window.siViewInvoice('${esc(i.id)}')" class="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-brand-600 text-white text-xs font-bold hover:bg-brand-700 transition-all"><i class="fa-solid fa-eye"></i> عرض / اعتماد</button>`));
+            const action = isProformaTab
+                ? _warehouseInvoiceActions(i)
+                : _finalInvoiceActions(i);
 
             return `<tr class="border-b border-slate-100 hover:bg-blue-50/30 transition-colors">
                 <td class="py-3 px-4 font-bold font-mono text-slate-700">#${i.invoice_number}</td>
@@ -324,10 +336,14 @@
     };
 
     function _resetModal() {
+        _finalEditingInvoiceId = null;
         _readyOrders = [];
         _orderItems = [];
         const sel = _el('si-m-order-select');
-        if (sel) sel.innerHTML = '<option value="">— اختر أمر التشغيل —</option>';
+        if (sel) {
+            sel.disabled = false;
+            sel.innerHTML = '<option value="">— اختر أمر التشغيل —</option>';
+        }
         _el('si-m-order-id').value = '';
         _el('si-m-client-id').value = '';
         _el('si-m-order-num').textContent = '';
@@ -418,6 +434,7 @@
     _el('si-m-tax')?.addEventListener('input', _calcModalTotals);
 
     window.siCreateWarehouseInvoice = async function() {
+        _finalEditingInvoiceId = null;
         const modal = _el('si-warehouse-modal');
         if (!modal) return;
         _warehouseStock = [];
@@ -624,7 +641,9 @@
                 const invoice = res.data || res;
                 alert(`✅ تم إصدار الفاتورة #${invoice.invoice_number}. يمكنك إصدار أمر الفسح لاحقًا من إجراءات الفاتورة.`);
                 window.siCloseWarehouseInvoice();
-                window.navigateTo(`sales-invoice-detail?id=${invoice.id}`);
+                _currentTab = 'proforma';
+                _setActiveTab(_currentTab);
+                await _loadInvoices(0);
             }
         } catch (err) {
             alert(`❌ خطأ: ${err.message}`);
@@ -730,8 +749,98 @@
         }
     };
 
+    window.siEditFinalInvoice = async function(invoiceId) {
+        try {
+            const res = await window.apiFetch(`/api/invoices/${invoiceId}`);
+            const invoice = res?.data || res;
+            if (!invoice || invoice.source !== 'sales_invoices' || !['issued', 'overdue'].includes(invoice.status) || invoice.delivery_note_id) {
+                alert('لا يمكن تعديل هذه الفاتورة بعد الفسح أو الدفع.');
+                return;
+            }
+
+            _resetModal();
+            _finalEditingInvoiceId = invoiceId;
+            _el('si-modal-overlay')?.classList.remove('hidden');
+            _el('si-modal')?.classList.remove('hidden');
+            const orderSelect = _el('si-m-order-select');
+            if (orderSelect) {
+                orderSelect.innerHTML = `<option value="">فاتورة نهائية #${esc(invoice.invoice_number)}</option>`;
+                orderSelect.disabled = true;
+            }
+            _el('si-m-order-id').value = invoice.order_id || '';
+            _el('si-m-client-id').value = invoice.client_id || '';
+            _el('si-m-order-num').textContent = `فاتورة #${invoice.invoice_number}`;
+            _el('si-m-client').value = invoice.client_name || '';
+            _el('si-m-date').value = invoice.invoice_date ? new Date(invoice.invoice_date).toISOString().slice(0, 10) : '';
+            _el('si-m-due').value = invoice.due_date ? new Date(invoice.due_date).toISOString().slice(0, 10) : '';
+            _el('si-m-tax').value = String((parseFloat(invoice.tax_rate || 0) * 100).toFixed(2));
+            _el('si-m-discount').value = String(invoice.discount_amount || 0);
+            _el('si-m-notes').value = invoice.notes || '';
+            _orderItems = (invoice.items || []).map(item => ({
+                variant_id: item.variant_id,
+                order_item_id: item.order_item_id || null,
+                product_name: item.product_name,
+                size_name: item.size_name || '',
+                quantity: parseFloat(item.quantity || 0),
+                unit_price: parseFloat(item.unit_price || 0),
+                line_total: parseFloat(item.line_total || 0),
+            }));
+            _renderModalItems();
+            _calcModalTotals();
+            const saveBtn = _el('si-m-save-btn');
+            if (saveBtn) saveBtn.innerHTML = '<i class="fa-solid fa-check ml-1"></i> حفظ تعديل الفاتورة';
+        } catch (err) {
+            alert(`❌ تعذر تحميل الفاتورة للتعديل: ${err.message}`);
+        }
+    };
+
+    window.siCancelFinalInvoice = async function(invoiceId) {
+        if (!confirm('سيتم إلغاء الفاتورة منطقيًا وإنشاء أثر عكسي. إذا كانت مسلّمة يجب عكس التسليم أولًا. هل تريد المتابعة؟')) return;
+        try {
+            const invoiceRes = await window.apiFetch(`/api/invoices/${invoiceId}`);
+            const invoice = invoiceRes?.data || invoiceRes;
+            if (invoice?.delivery_note_id && invoice.delivery_status !== 'pending') {
+                await window.apiFetch(`/api/delivery-notes/${invoice.delivery_note_id}/reverse`, { method: 'POST', body: {} });
+            }
+            await window.apiFetch(`/api/invoices/${invoiceId}`, { method: 'DELETE' });
+            alert('تم إلغاء الفاتورة وإنشاء الأثر العكسي بنجاح.');
+            await _loadInvoices(_currentPage);
+        } catch (err) {
+            alert(`❌ تعذر إلغاء الفاتورة: ${err.message}`);
+        }
+    };
+
     // ── Save Invoice ─────────────────────────────────────────────────────────
     window.siSaveInvoice = async function() {
+        if (_finalEditingInvoiceId) {
+            const btn = _el('si-m-save-btn');
+            if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin ml-1"></i> جاري الحفظ...'; }
+            try {
+                const body = {
+                    invoice_date: _el('si-m-date')?.value || null,
+                    due_date: _el('si-m-due')?.value || null,
+                    tax_rate: parseFloat(_el('si-m-tax')?.value || 0) / 100,
+                    discount_amount: parseFloat(_el('si-m-discount')?.value || 0),
+                    notes: _el('si-m-notes')?.value || '',
+                    items: _orderItems.map(item => ({
+                        variant_id: item.variant_id,
+                        order_item_id: item.order_item_id,
+                        quantity: item.quantity,
+                        unit_price: item.unit_price,
+                        discount_percent: 0,
+                    })),
+                };
+                const res = await window.apiFetch(`/api/invoices/${_finalEditingInvoiceId}`, { method: 'PUT', body });
+                alert(`✅ ${res.message || 'تم تعديل الفاتورة بنجاح'}`);
+                window.siCloseModal();
+                await _loadInvoices(_currentPage);
+            } catch (err) {
+                alert(`❌ تعذر تعديل الفاتورة: ${err.message}`);
+            } finally {
+                if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-check ml-1"></i> حفظ تعديل الفاتورة'; }
+            }
+            return;
+        }
         const orderId = _el('si-m-order-id')?.value;
         const clientId = _el('si-m-client-id')?.value;
 
@@ -795,10 +904,10 @@
     async function _init() {
         await _loadData();
 
-        // If redirected here after marking issued, open archive tab
+        // If redirected here after marking issued, open final sales tab.
         if (sessionStorage.getItem('si_after_issued') === '1') {
             sessionStorage.removeItem('si_after_issued');
-            _currentTab = 'archive';
+            _currentTab = 'sales';
         }
 
         _setActiveTab(_currentTab);

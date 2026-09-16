@@ -47,7 +47,7 @@ router.get('/', async (req, res) => {
             params.push(client_id);
         }
         if (status === 'warehouse') {
-            where.push(`i.source = 'warehouse' AND i.status <> 'cancelled'`);
+            where.push(`i.source = 'warehouse' AND i.status NOT IN ('archived', 'cancelled') AND COALESCE(i.delivery_status, 'pending') <> 'completed'`);
         } else if (status === 'active') {
             where.push(`(i.status = 'draft' OR (i.source = 'warehouse' AND i.status NOT IN ('archived', 'cancelled') AND COALESCE(i.delivery_status, 'pending') <> 'completed'))`);
         } else if (status === 'archive') {
@@ -389,39 +389,108 @@ router.delete('/:id', restrictEdit, async (req, res) => {
     try {
         await client.query('BEGIN');
         const invRes = await client.query(
-            `SELECT id, source, status, delivery_note_id FROM invoices WHERE id = $1 FOR UPDATE`,
+            `SELECT id, invoice_number, client_id, source, status, grand_total, delivery_note_id, delivery_status
+             FROM invoices WHERE id = $1 FOR UPDATE`,
             [req.params.id]
         );
         if (!invRes.rowCount) throw new Error('الفاتورة غير موجودة.');
         const invoice = invRes.rows[0];
-        if (invoice.source !== 'warehouse') throw new Error('حذف هذه الفاتورة متاح من دورة فاتورة المخزن فقط.');
-        if (invoice.delivery_note_id) throw new Error('لا يمكن حذف فاتورة لها أمر فسح.');
-        if (invoice.status === 'paid') throw new Error('لا يمكن حذف فاتورة مدفوعة.');
 
         const paymentRes = await client.query(
-            `SELECT 1 FROM client_transactions WHERE invoice_id = $1 AND type IN ('payment', 'receipt') LIMIT 1`,
+            `SELECT 1 FROM client_transactions
+             WHERE invoice_id = $1 AND type IN ('payment', 'receipt') LIMIT 1`,
             [invoice.id]
         );
-        if (paymentRes.rowCount) throw new Error('لا يمكن حذف فاتورة عليها دفعات.');
-
-        const itemsRes = await client.query(
-            `SELECT source_stock_id, quantity FROM invoice_items WHERE invoice_id = $1`,
-            [invoice.id]
-        );
-        for (const item of itemsRes.rows) {
-            if (item.source_stock_id) {
-                await client.query(
-                    `UPDATE warehouse_stock SET reserved_qty = GREATEST(0, reserved_qty - $1), last_updated = NOW() WHERE id = $2`,
-                    [item.quantity, item.source_stock_id]
-                );
-            }
+        if (paymentRes.rowCount || invoice.status === 'paid') {
+            throw new Error('لا يمكن إلغاء الفاتورة لوجود دفعات مرتبطة بها.');
         }
-        await client.query(`DELETE FROM client_transactions WHERE invoice_id = $1`, [invoice.id]);
-        await client.query(`DELETE FROM invoice_expenses WHERE invoice_id = $1`, [invoice.id]);
-        await client.query(`DELETE FROM invoice_items WHERE invoice_id = $1`, [invoice.id]);
-        await client.query(`DELETE FROM invoices WHERE id = $1`, [invoice.id]);
+
+        const returnRes = await client.query(
+            `SELECT 1 FROM sales_returns WHERE invoice_id = $1 AND status = 'completed' LIMIT 1`,
+            [invoice.id]
+        );
+        if (returnRes.rowCount) throw new Error('لا يمكن إلغاء الفاتورة لوجود مرتجع مبيعات مكتمل.');
+
+        const voucherRes = await client.query(
+            `SELECT 1 FROM accounting_vouchers
+             WHERE reference_type = 'invoice' AND reference_id = $1 AND status = 'posted'
+             LIMIT 1`,
+            [invoice.id]
+        );
+        if (voucherRes.rowCount) throw new Error('لا يمكن إلغاء الفاتورة لوجود قيد محاسبي مرحّل مرتبط بها.');
+
+        const isFinalProduction = invoice.source === 'sales_invoices'
+            && ['issued', 'overdue', 'archived'].includes(invoice.status);
+        const isFinalWarehouse = invoice.source === 'warehouse'
+            && ['archived', 'issued'].includes(invoice.status)
+            && Boolean(invoice.delivery_note_id);
+        const isProforma = invoice.source === 'warehouse'
+            && invoice.status === 'issued'
+            && !invoice.delivery_note_id;
+
+        if (!isFinalProduction && !isFinalWarehouse && !isProforma) {
+            throw new Error('لا يمكن إلغاء هذه الفاتورة في حالتها الحالية.');
+        }
+        if (isFinalWarehouse && invoice.delivery_status !== 'pending') {
+            throw new Error('يجب عكس التسليم وإرجاع المخزون أولًا قبل إلغاء الفاتورة.');
+        }
+
+        if (isProforma) {
+            const itemsRes = await client.query(
+                `SELECT source_stock_id, quantity FROM invoice_items WHERE invoice_id = $1`,
+                [invoice.id]
+            );
+            for (const item of itemsRes.rows) {
+                if (item.source_stock_id) {
+                    await client.query(
+                        `UPDATE warehouse_stock
+                         SET reserved_qty = GREATEST(0, reserved_qty - $1), last_updated = NOW()
+                         WHERE id = $2`,
+                        [item.quantity, item.source_stock_id]
+                    );
+                }
+            }
+            await client.query(`DELETE FROM client_transactions WHERE invoice_id = $1`, [invoice.id]);
+            await client.query(`DELETE FROM invoice_expenses WHERE invoice_id = $1`, [invoice.id]);
+            await client.query(`DELETE FROM invoice_items WHERE invoice_id = $1`, [invoice.id]);
+            await client.query(`DELETE FROM invoices WHERE id = $1`, [invoice.id]);
+            await client.query('COMMIT');
+            return res.json({ success: true, message: 'تم حذف الفاتورة الأولية وإرجاع الحجز للمخزون.' });
+        }
+
+        // Final invoices are cancelled logically and retain their full audit trail.
+        if (isFinalWarehouse) {
+            await client.query(
+                `UPDATE delivery_notes SET status = 'cancelled', updated_at = NOW() WHERE id = $1`,
+                [invoice.delivery_note_id]
+            );
+        }
+        await client.query(
+            `UPDATE invoices SET status = 'cancelled', delivery_status = 'cancelled', updated_at = NOW() WHERE id = $1`,
+            [invoice.id]
+        );
+        await client.query(
+            `INSERT INTO client_transactions
+                (client_id, invoice_id, type, amount, description, created_at)
+             VALUES ($1, $2, 'invoice_reversal', $3, $4, NOW())`,
+            [invoice.client_id, invoice.id, -Math.abs(parseFloat(invoice.grand_total || 0)), `عكس فاتورة مبيعات رقم ${invoice.invoice_number}`]
+        );
+        await client.query(
+            `INSERT INTO audit_logs
+                (table_name, record_id, action, old_data, new_data, user_id, user_name, ip_address, user_agent)
+             VALUES ($1, $2, 'CANCEL', $3::jsonb, $4::jsonb, $5, $6, $7, $8)`,
+            [
+                'invoices', invoice.id,
+                JSON.stringify({ status: invoice.status, delivery_status: invoice.delivery_status, grand_total: invoice.grand_total }),
+                JSON.stringify({ status: 'cancelled', reversal_amount: -Math.abs(parseFloat(invoice.grand_total || 0)), delivery_reversed: isFinalWarehouse }),
+                req.user?.id || null,
+                req.user?.name || req.user?.username || null,
+                req.ip || req.connection?.remoteAddress || null,
+                req.headers?.['user-agent'] || null,
+            ]
+        );
         await client.query('COMMIT');
-        return res.json({ success: true, message: 'تم حذف الفاتورة وإرجاع الحجز للمخزون.' });
+        return res.json({ success: true, message: 'تم إلغاء الفاتورة منطقيًا وإنشاء الأثر العكسي.' });
     } catch (err) {
         await client.query('ROLLBACK');
         console.error('[Invoices] DELETE /:id error:', err.message);
@@ -646,26 +715,51 @@ router.put('/:id', restrictEdit, validateBody(invoiceUpdate), async (req, res) =
             items = [],
         } = req.validatedBody;
 
+        await client.query('BEGIN');
+
         // Check invoice exists and is editable
         const invRes = await client.query(`
             SELECT id, invoice_number, status, client_id, order_id, source, warehouse_id, delivery_note_id
-            FROM invoices WHERE id = $1
+            FROM invoices WHERE id = $1 FOR UPDATE
         `, [id]);
 
         if (!invRes.rows.length) {
+            await client.query('ROLLBACK');
             return res.status(404).json({ error: 'Invoice not found' });
         }
 
         const invoice = invRes.rows[0];
         const isUnreleasedWarehouse = invoice.source === 'warehouse' && invoice.status === 'issued' && !invoice.delivery_note_id;
+        const isFinalProductionInvoice = invoice.source === 'sales_invoices'
+            && ['issued', 'overdue'].includes(invoice.status)
+            && !invoice.delivery_note_id;
+        const isDraftInvoice = invoice.status === 'draft';
 
-        if (invoice.status === 'paid' || invoice.status === 'cancelled' || (invoice.status === 'issued' && !isUnreleasedWarehouse)) {
+        if (invoice.status === 'paid' || invoice.status === 'cancelled' || (!isDraftInvoice && !isUnreleasedWarehouse && !isFinalProductionInvoice)) {
+            await client.query('ROLLBACK');
             return res.status(400).json({ error: 'لا يمكن تعديل هذه الفاتورة بعد الدفع أو إصدار أمر الفسح.' });
         }
 
-        const effectiveTaxRate = tax_rate ?? await getVatRate();
+        if (isFinalProductionInvoice) {
+            const paymentRes = await client.query(
+                `SELECT 1 FROM client_transactions WHERE invoice_id = $1 AND type IN ('payment', 'receipt') LIMIT 1`,
+                [id]
+            );
+            if (paymentRes.rowCount) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ error: 'لا يمكن تعديل فاتورة عليها دفعات.' });
+            }
+            const returnRes = await client.query(
+                `SELECT 1 FROM sales_returns WHERE invoice_id = $1 AND status = 'completed' LIMIT 1`,
+                [id]
+            );
+            if (returnRes.rowCount) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ error: 'لا يمكن تعديل فاتورة مرتبطة بمرتجع مكتمل.' });
+            }
+        }
 
-        await client.query('BEGIN');
+        const effectiveTaxRate = tax_rate ?? await getVatRate();
 
         if (isUnreleasedWarehouse) {
             const oldItemsRes = await client.query(

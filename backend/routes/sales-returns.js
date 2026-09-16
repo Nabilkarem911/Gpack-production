@@ -13,12 +13,12 @@ router.get('/eligible-invoices', async (req, res) => {
     try {
         const search = String(req.query.search || '').trim();
         const params = [];
-        // Eligible for return: must match the "real" issued sales invoices visible in the client profile / sales-invoices list:
-        // source IN ('orders','warehouse') and status = 'issued'.
+        // Eligible for return: final sales invoices visible in the sales-invoices final tab.
+        // They must have a final status and physically delivered quantities.
         // Also, at least one invoice item must have been physically delivered.
         let where = [
-            "i.status = 'issued'",
-            "i.source IN ('orders','warehouse')",
+            "i.status IN ('issued', 'paid', 'overdue', 'archived')",
+            "i.source IN ('orders', 'warehouse', 'sales_invoices')",
             "EXISTS (\n" +
             "    SELECT 1 FROM invoice_items ii\n" +
             "    JOIN delivery_note_items dni ON dni.variant_id = ii.variant_id\n" +
@@ -130,8 +130,8 @@ router.get('/by-invoice/:invoiceId', async (req, res) => {
             FROM invoices i
             JOIN clients c ON c.id = i.client_id
             WHERE i.id = $1
-              AND i.status = 'issued'
-              AND i.source IN ('orders','warehouse')
+              AND i.status IN ('issued', 'paid', 'overdue', 'archived')
+              AND i.source IN ('orders', 'warehouse', 'sales_invoices')
               AND EXISTS (
                   SELECT 1 FROM invoice_items ii
                   JOIN delivery_note_items dni ON dni.variant_id = ii.variant_id
@@ -191,8 +191,9 @@ router.post('/', restrictWrite, validateBody(salesReturnCreate), async (req, res
         `, [invoice_id]);
         if (!invoiceRes.rowCount) throw new Error('الفاتورة غير موجودة.');
         const invoice = invoiceRes.rows[0];
-        if (invoice.status !== 'issued' || !['orders','warehouse'].includes(invoice.source)) {
-            throw new Error('لا يمكن إنشاء مرتجع إلا على فاتورة معتمدة من المبيعات.');
+        if (!['issued', 'paid', 'overdue', 'archived'].includes(invoice.status)
+            || !['orders', 'warehouse', 'sales_invoices'].includes(invoice.source)) {
+            throw new Error('لا يمكن إنشاء مرتجع إلا على فاتورة نهائية من تبويب فواتير المبيعات.');
         }
         const hasDelivered = await client.query(`
             SELECT 1
