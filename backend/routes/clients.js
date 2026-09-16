@@ -202,6 +202,9 @@ router.get('/:id/profile', async (req, res) => {
             [id]
         );
 
+        const actualOrders = ordersRes.rows.filter(order => order.status !== 'quote');
+        const quoteOrders = ordersRes.rows.filter(order => order.status === 'quote');
+
         // 4. Invoices (only production-order invoices that affect the account statement)
         const invoicesRes = await db.query(
             `SELECT i.id, i.invoice_number, i.grand_total, i.status, i.created_at,
@@ -363,7 +366,8 @@ router.get('/:id/profile', async (req, res) => {
             data: {
                 client,
                 branches:  branchesRes.rows,
-                orders:    ordersRes.rows,
+                orders:    actualOrders,
+                quotes:    quoteOrders,
                 invoices:  invoicesRes.rows,
                 payments:  paymentsRes.rows,
                 designs:   designs,

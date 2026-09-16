@@ -138,6 +138,10 @@
                 <i class="fa-solid fa-cart-shopping ml-1.5"></i>الطلبات
                 <span id="tab-orders-badge"   class="cp-badge bg-brand-100 text-brand-700"></span>
             </button>
+            <button onclick="cpTab('quotes')" id="tab-quotes" class="cp-tab">
+                <i class="fa-solid fa-file-signature ml-1.5"></i>عروض الأسعار
+                <span id="tab-quotes-badge" class="cp-badge bg-amber-100 text-amber-700"></span>
+            </button>
             <button onclick="cpTab('invoices')" id="tab-invoices" class="cp-tab">
                 <i class="fa-solid fa-file-invoice ml-1.5"></i>الفواتير
                 <span id="tab-invoices-badge" class="cp-badge bg-purple-100 text-purple-700"></span>
@@ -177,6 +181,27 @@
                         </tr>
                     </thead>
                     <tbody id="cp-orders-tbody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Quotations Tab -->
+        <div id="panel-quotes" class="cp-panel hidden p-0">
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="bg-slate-50 text-xs text-slate-500 border-b border-slate-100">
+                            <th class="py-3 px-4 text-right font-semibold">رقم العرض</th>
+                            <th class="py-3 px-4 text-right font-semibold">الحالة</th>
+                            <th class="py-3 px-4 text-right font-semibold hidden sm:table-cell">التاريخ</th>
+                            <th class="py-3 px-4 text-right font-semibold hidden md:table-cell">الأصناف</th>
+                            <th class="py-3 px-4 text-right font-semibold">الإجمالي</th>
+                            <th class="py-3 px-4 text-right font-semibold hidden md:table-cell">المدفوع</th>
+                            <th class="py-3 px-4 text-right font-semibold hidden md:table-cell">المتبقي</th>
+                            <th class="py-3 px-4"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="cp-quotes-tbody"></tbody>
                 </table>
             </div>
         </div>

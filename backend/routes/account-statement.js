@@ -135,10 +135,10 @@ router.get('/client/:clientId', async (req, res) => {
                     av.voucher_date as trans_date,
                     CASE WHEN av.voucher_type = 'opening_balance' THEN 'رصيد افتتاحي' ELSE 'قيد يومية' END as document_type,
                     av.voucher_number::text as document_number,
-                    avl.debit as debit,
-                    avl.credit as credit,
+                    SUM(avl.debit) as debit,
+                    SUM(avl.credit) as credit,
                     av.status as status,
-                    COALESCE(avl.description, av.description, '') as notes,
+                    MAX(COALESCE(avl.description, av.description, '')) as notes,
                     av.id as reference_id
                 FROM accounting_vouchers av
                 JOIN accounting_voucher_lines avl ON avl.voucher_id = av.id
@@ -148,6 +148,7 @@ router.get('/client/:clientId', async (req, res) => {
                     AND avl.sub_account_type = 'client'
                     AND avl.sub_account_id = $1
                     ${dateFilter.replace(/date/g, 'av.voucher_date')}
+                GROUP BY av.id, av.voucher_date, av.voucher_type, av.voucher_number, av.status, av.description
             ) transactions
             ORDER BY trans_date ASC, document_number ASC
             LIMIT $${params.length + 1} OFFSET $${params.length + 2}
@@ -367,10 +368,10 @@ router.get('/supplier/:supplierId', async (req, res) => {
                     av.voucher_date as trans_date,
                     CASE WHEN av.voucher_type = 'opening_balance' THEN 'رصيد افتتاحي' ELSE 'قيد يومية' END as document_type,
                     av.voucher_number::text as document_number,
-                    avl.debit as debit,
-                    avl.credit as credit,
+                    SUM(avl.debit) as debit,
+                    SUM(avl.credit) as credit,
                     av.status as status,
-                    COALESCE(avl.description, av.description, '') as notes,
+                    MAX(COALESCE(avl.description, av.description, '')) as notes,
                     av.id as reference_id
                 FROM accounting_vouchers av
                 JOIN accounting_voucher_lines avl ON avl.voucher_id = av.id
@@ -380,6 +381,7 @@ router.get('/supplier/:supplierId', async (req, res) => {
                     AND avl.sub_account_type = 'supplier'
                     AND avl.sub_account_id = $1
                     ${dateFilter.replace(/date/g, 'av.voucher_date')}
+                GROUP BY av.id, av.voucher_date, av.voucher_type, av.voucher_number, av.status, av.description
             ) transactions
             ORDER BY trans_date ASC, document_number ASC
             LIMIT $${params.length + 1} OFFSET $${params.length + 2}
@@ -389,7 +391,7 @@ router.get('/supplier/:supplierId', async (req, res) => {
         let balance = 0;
         const withBalance = transactionsRes.rows.map(t => {
             balance += parseFloat(t.debit || 0) - parseFloat(t.credit || 0);
-            return { ...t, balance };
+            return { ...t, balance, running_balance: balance };
         });
         const transactions = withBalance.reverse();
 

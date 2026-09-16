@@ -111,6 +111,7 @@
 
     // ── Render Orders tab ─────────────────────────────────────────────────────
     function _renderOrders(orders) {
+        orders = (orders || []).filter(o => o.status !== 'quote');
         const el = document.getElementById('tab-orders-badge');
         if (el) el.textContent = orders.length;
 
@@ -144,6 +145,37 @@
                 </td>
             </tr>`;
         }).join('');
+    }
+
+    // ── Render Quotations tab ─────────────────────────────────────────────────
+    function _renderQuotations(orders) {
+        const quotes = (orders || []).filter(o => o.status === 'quote');
+        const badge = document.getElementById('tab-quotes-badge');
+        if (badge) badge.textContent = quotes.length;
+
+        const tbody = document.getElementById('cp-quotes-tbody');
+        if (!tbody) return;
+        if (!quotes.length) {
+            tbody.innerHTML = _emptyRow(8, 'لا توجد عروض أسعار لهذا العميل');
+            return;
+        }
+
+        tbody.innerHTML = quotes.map(o => `
+            <tr class="border-b border-slate-100 hover:bg-slate-50/60 transition-colors">
+                <td class="py-3 px-4 font-mono font-bold text-slate-700">#${o.order_number}</td>
+                <td class="py-3 px-4">${_badge(o.status)}</td>
+                <td class="py-3 px-4 text-slate-500 hidden sm:table-cell">${date(o.order_date)}</td>
+                <td class="py-3 px-4 text-slate-500 hidden md:table-cell">${o.item_count || 0} صنف</td>
+                <td class="py-3 px-4 font-bold text-slate-800 font-mono">${sar(o.grand_total)}</td>
+                <td class="py-3 px-4 font-semibold font-mono hidden md:table-cell">${sar(o.paid_amount)}</td>
+                <td class="py-3 px-4 font-semibold font-mono hidden md:table-cell">${sar(Math.max(0, parseFloat(o.grand_total || 0) - parseFloat(o.paid_amount || 0)))}</td>
+                <td class="py-3 px-4">
+                    <button onclick="window._cpOpenQuote('${o.id}')"
+                            class="inline-flex items-center gap-1 text-xs font-bold text-brand-600 hover:text-brand-800 bg-brand-50 hover:bg-brand-100 px-2.5 py-1.5 rounded-lg transition-colors">
+                        <i class="fa-solid fa-folder-open"></i>عرض العرض
+                    </button>
+                </td>
+            </tr>`).join('');
     }
 
     // ── Render Invoices tab ───────────────────────────────────────────────────
@@ -439,7 +471,7 @@
 
     // ── Tab switcher ──────────────────────────────────────────────────────────
     window.cpTab = function(name) {
-        ['orders','invoices','payments','designs','branches','items'].forEach(t => {
+        ['orders','quotes','invoices','payments','designs','branches','items'].forEach(t => {
             document.getElementById(`panel-${t}`)?.classList.toggle('hidden', t !== name);
             document.getElementById(`tab-${t}`)?.classList.toggle('active-tab', t === name);
         });
@@ -1327,6 +1359,7 @@
             _renderHeader(data.client);
             _renderStats(data.stats || {});
             _renderOrders(data.orders   || []);
+            _renderQuotations(data.quotes || []);
             _renderInvoices(data.invoices || []);
             _renderPayments(data.payments || []);
             _renderDesigns(data.designs   || []);
