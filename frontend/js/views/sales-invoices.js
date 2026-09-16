@@ -44,6 +44,19 @@
         return `<span class="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold ${s.class}">${s.label}</span>`;
     }
 
+    function _salesTypeBadge(invoice) {
+        const label = invoice.source === 'warehouse' ? 'مبيعات مخزون' : 'مبيعات تشغيل';
+        const cls = invoice.source === 'warehouse' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700';
+        return `<span class="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold ${cls}">${label}</span>`;
+    }
+
+    function _deliveryStatusBadge(invoice) {
+        const delivered = invoice.delivery_status === 'completed';
+        return delivered
+            ? '<span class="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold bg-emerald-100 text-emerald-700">تم التسليم</span>'
+            : '<span class="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold bg-amber-100 text-amber-700">لم يتم التسليم</span>';
+    }
+
     function _finalInvoiceActions(invoice) {
         const canEdit = invoice.source === 'sales_invoices'
             && ['issued', 'overdue'].includes(invoice.status)
@@ -219,7 +232,12 @@
                 <td class="py-3 px-4 font-bold font-mono text-slate-700">#${i.invoice_number}</td>
                 <td class="py-3 px-4 text-slate-600 text-xs">${invoiceDate}</td>
                 <td class="py-3 px-4 font-semibold text-slate-800">${clientName}</td>
-                <td class="py-3 px-4 text-center">${_statusBadge(i.status)}</td>
+                <td class="py-3 px-4 text-center">
+                    <div class="flex flex-col items-center gap-1">
+                        ${isFinalTab ? _salesTypeBadge(i) : _statusBadge(i.status)}
+                        ${isFinalTab ? _deliveryStatusBadge(i) : ''}
+                    </div>
+                </td>
                 <td class="py-3 px-4 font-bold font-mono text-emerald-600">${fmt(i.grand_total)}</td>
                 <td class="py-3 px-4 text-center">${action}</td>
             </tr>`;

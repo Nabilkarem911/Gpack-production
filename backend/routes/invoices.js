@@ -741,6 +741,26 @@ router.put('/:id', restrictEdit, validateBody(invoiceUpdate), async (req, res) =
         }
 
         if (isFinalProductionInvoice) {
+            const existingItemsRes = await client.query(
+                `SELECT variant_id, order_item_id, quantity
+                 FROM invoice_items
+                 WHERE invoice_id = $1
+                 ORDER BY id`,
+                [id]
+            );
+            const quantitiesChanged = existingItemsRes.rows.length !== items.length
+                || existingItemsRes.rows.some((oldItem, index) => {
+                    const newItem = items[index];
+                    return !newItem
+                        || String(oldItem.variant_id) !== String(newItem.variant_id)
+                        || String(oldItem.order_item_id || '') !== String(newItem.order_item_id || '')
+                        || Math.abs(parseFloat(oldItem.quantity) - parseFloat(newItem.quantity)) > 0.000001;
+                });
+            if (quantitiesChanged) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ error: 'يمكن تعديل سعر الفاتورة النهائية فقط، ولا يمكن تعديل الكميات.' });
+            }
+
             const paymentRes = await client.query(
                 `SELECT 1 FROM client_transactions WHERE invoice_id = $1 AND type IN ('payment', 'receipt') LIMIT 1`,
                 [id]
