@@ -213,14 +213,41 @@ router.get('/:id/profile', async (req, res) => {
             [id]
         );
 
-        // 5. Payments / transactions
+        // 5. Payments / transactions — every collection exactly once:
+        //    ledger payments/receipts (order payments, invoice receipts,
+        //    down-payments) + posted receipt vouchers on AR 1300 that have no
+        //    linked ledger row (standalone سندات قبض). Linked ledger rows are
+        //    shown with their voucher number; rows whose voucher was cancelled
+        //    are hidden, matching the total_paid aggregation below.
         const paymentsRes = await db.query(
-            `SELECT ct.id, ct.amount, ct.payment_method, ct.description,
-                    ct.document_number, ct.created_at, o.order_number
-             FROM client_transactions ct
-             JOIN orders o ON o.id = ct.order_id
-             WHERE ct.client_id = $1 AND ct.type = 'payment'
-             ORDER BY ct.created_at DESC`,
+            `SELECT * FROM (
+                SELECT ct.id, ct.amount, ct.payment_method, ct.description, ct.type,
+                       COALESCE(ct.document_number::text, av.voucher_number::text) AS document_number,
+                       ct.created_at, o.order_number, i.invoice_number
+                FROM client_transactions ct
+                LEFT JOIN orders o   ON o.id = ct.order_id
+                LEFT JOIN invoices i ON i.id = ct.invoice_id
+                LEFT JOIN accounting_vouchers av ON av.id = ct.linked_voucher_id
+                WHERE ct.client_id = $1 AND ct.type IN ('payment', 'receipt')
+                  AND (ct.linked_voucher_id IS NULL OR av.status = 'posted')
+                UNION ALL
+                SELECT avl.id, avl.credit AS amount, NULL AS payment_method,
+                       av.description, 'receipt' AS type,
+                       av.voucher_number::text AS document_number, av.voucher_date AS created_at,
+                       o2.order_number, NULL AS invoice_number
+                FROM accounting_vouchers av
+                JOIN accounting_voucher_lines avl ON avl.voucher_id = av.id
+                LEFT JOIN orders o2 ON av.reference_type = 'order' AND o2.id = av.reference_id
+                WHERE av.voucher_type = 'receipt' AND av.status = 'posted'
+                  AND avl.account_id = (SELECT id FROM accounts WHERE code = '1300' LIMIT 1)
+                  AND avl.sub_account_type = 'client' AND avl.sub_account_id = $1
+                  AND avl.credit > 0
+                  AND NOT EXISTS (
+                      SELECT 1 FROM client_transactions lct
+                      WHERE lct.linked_voucher_id = av.id
+                  )
+            ) payments
+            ORDER BY created_at DESC`,
             [id]
         );
 
@@ -259,18 +286,76 @@ router.get('/:id/profile', async (req, res) => {
         });
 
         // 7. Financial stats
-        // Only confirmed/committed orders should affect financial totals.
+        // - total_value: sum of FINAL sales invoices only (actual invoiced
+        //   amounts). Orders/quotes are preliminary estimates — a production
+        //   order may be invoiced for a different quantity/value than its
+        //   initial total, so it must not drive this figure.
+        // - total_paid: amounts actually collected from the client — posted
+        //   receipt vouchers on AR account 1300 + client-ledger payments and
+        //   invoice receipts not already backed by a voucher
+        //   (linked_voucher_id IS NULL avoids double counting down-payments
+        //   that created both a client_transaction and a voucher).
+        // - total_remaining: client AR balance = invoiced + payment vouchers +
+        //   journal debits - receipts - journal credits - sales returns
+        //   - unlinked ledger settlements (payments/receipts/discounts).
         const confirmedStatuses = "('confirmed','production','processing','completed','delivered')";
         const statsRes = await db.query(
-            `SELECT
-                COUNT(DISTINCT CASE WHEN o.status IN ${confirmedStatuses} THEN o.id END)::int                  AS total_orders,
-                COUNT(DISTINCT CASE WHEN o.status = 'quote' AND o.status <> 'draft' THEN o.id END)::int         AS quote_count,
-                COUNT(DISTINCT CASE WHEN o.status IN ${confirmedStatuses} THEN o.id END)::int                  AS active_count,
-                COALESCE(SUM(CASE WHEN o.status IN ${confirmedStatuses} THEN o.grand_total END), 0)::numeric  AS total_value,
-                COALESCE(SUM(CASE WHEN o.status IN ${confirmedStatuses} THEN o.paid_amount END), 0)::numeric  AS total_paid,
-                COALESCE(SUM(CASE WHEN o.status IN ${confirmedStatuses} THEN o.grand_total - o.paid_amount END), 0)::numeric AS total_remaining
-             FROM orders o
-             WHERE o.client_id = $1 AND o.status NOT IN ('archived','cancelled')`,
+            `WITH order_stats AS (
+                SELECT
+                    COUNT(*) FILTER (WHERE o.status IN ${confirmedStatuses})::int AS total_orders,
+                    COUNT(*) FILTER (WHERE o.status = 'quote')::int               AS quote_count
+                FROM orders o
+                WHERE o.client_id = $1 AND o.status NOT IN ('archived','cancelled')
+            ),
+            invoice_stats AS (
+                SELECT COALESCE(SUM(i.grand_total), 0)::numeric AS total_value
+                FROM invoices i
+                WHERE i.client_id = $1
+                  AND i.source IN ('orders', 'warehouse')
+                  AND i.status IN ('issued', 'paid', 'overdue', 'archived')
+            ),
+            voucher_stats AS (
+                SELECT
+                    COALESCE(SUM(avl.credit) FILTER (WHERE av.voucher_type = 'receipt'), 0) AS received,
+                    COALESCE(SUM(avl.debit)  FILTER (WHERE av.voucher_type = 'payment'), 0) AS paid_out,
+                    COALESCE(SUM(avl.debit)  FILTER (WHERE av.voucher_type IN ('journal','opening_balance')), 0) AS journal_debit,
+                    COALESCE(SUM(avl.credit) FILTER (WHERE av.voucher_type IN ('journal','opening_balance')), 0) AS journal_credit
+                FROM accounting_voucher_lines avl
+                JOIN accounting_vouchers av ON av.id = avl.voucher_id
+                WHERE av.status = 'posted'
+                  AND av.voucher_type IN ('receipt','payment','journal','opening_balance')
+                  AND avl.account_id = (SELECT id FROM accounts WHERE code = '1300' LIMIT 1)
+                  AND avl.sub_account_type = 'client'
+                  AND avl.sub_account_id = $1
+            ),
+            tx_stats AS (
+                SELECT
+                    COALESCE(SUM(ct.amount) FILTER (WHERE ct.type IN ('payment','receipt')), 0) AS collected,
+                    COALESCE(SUM(ct.amount) FILTER (WHERE ct.type = 'discount'), 0)             AS discounts
+                FROM client_transactions ct
+                WHERE ct.client_id = $1
+                  AND ct.type IN ('payment','receipt','discount')
+                  AND ct.linked_voucher_id IS NULL
+            ),
+            return_stats AS (
+                SELECT COALESCE(SUM(sr.total_amount), 0) AS returned
+                FROM sales_returns sr
+                WHERE sr.client_id = $1 AND sr.status = 'completed'
+            )
+            SELECT
+                os.total_orders,
+                os.quote_count,
+                os.total_orders AS active_count,
+                iv.total_value,
+                (vs.received + tx.collected)::numeric AS total_paid,
+                (iv.total_value + vs.paid_out + vs.journal_debit
+                 - vs.received - tx.collected - tx.discounts
+                 - rs.returned - vs.journal_credit)::numeric AS total_remaining
+            FROM order_stats os
+            CROSS JOIN invoice_stats iv
+            CROSS JOIN voucher_stats vs
+            CROSS JOIN tx_stats tx
+            CROSS JOIN return_stats rs`,
             [id]
         );
 

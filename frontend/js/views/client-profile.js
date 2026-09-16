@@ -24,8 +24,12 @@
         cancelled:   { label: 'ملغي',       cls: 'bg-red-100 text-red-700' },
         archived:    { label: 'مؤرشف',      cls: 'bg-slate-100 text-slate-500' },
         issued:      { label: 'مُصدَرة',    cls: 'bg-emerald-100 text-emerald-700' },
+        paid:        { label: 'مدفوعة',     cls: 'bg-emerald-100 text-emerald-700' },
+        overdue:     { label: 'متأخرة',     cls: 'bg-red-100 text-red-700' },
         draft:       { label: 'مسودة',      cls: 'bg-slate-100 text-slate-500' },
     };
+
+    const FINAL_INVOICE_STATUSES = ['issued', 'paid', 'overdue', 'archived'];
 
     let _logoBase64Cache;
 
@@ -144,7 +148,7 @@
 
     // ── Render Invoices tab ───────────────────────────────────────────────────
     function _renderInvoices(invoices) {
-        const issued = (invoices || []).filter(i => i.status === 'issued');
+        const issued = (invoices || []).filter(i => FINAL_INVOICE_STATUSES.includes(i.status));
 
         const el = document.getElementById('tab-invoices-badge');
         if (el) el.textContent = issued.length;
@@ -199,7 +203,7 @@
         tbody.innerHTML = payments.map(p => `
             <tr class="border-b border-slate-100 hover:bg-slate-50/60 transition-colors">
                 <td class="py-3 px-4 text-slate-500">${date(p.created_at)}</td>
-                <td class="py-3 px-4 text-slate-500 font-mono">#${p.order_number || '—'}</td>
+                <td class="py-3 px-4 text-slate-500 font-mono">${p.order_number ? `#${p.order_number}` : (p.invoice_number ? `فاتورة #${p.invoice_number}` : '—')}</td>
                 <td class="py-3 px-4 font-bold text-emerald-600 font-mono">${sar(p.amount)}</td>
                 <td class="py-3 px-4 text-slate-600 hidden sm:table-cell">${pmMap[p.payment_method] || p.payment_method || '—'}</td>
                 <td class="py-3 px-4 text-slate-500 hidden md:table-cell">${esc(p.document_number || '—')}</td>
@@ -283,7 +287,7 @@
       </div>
       <div class="meta-box">
         <div class="meta-label">بيانات السند</div>
-        <div class="meta-value">طلب #${esc(String(p.order_number || '—'))}</div>
+        <div class="meta-value">${p.order_number ? `طلب #${esc(String(p.order_number))}` : (p.invoice_number ? `فاتورة #${esc(String(p.invoice_number))}` : '—')}</div>
         <div class="meta-sub">تاريخ الدفع: ${payDate}</div>
         <div class="meta-sub">تاريخ الطباعة: ${printDate}</div>
       </div>
@@ -1366,7 +1370,12 @@
 
         const orders   = (data.orders   || []).filter(o => inRange(o.order_date || o.created_at));
         const payments = (data.payments || []).filter(p => inRange(p.created_at));
-        const invoices = (data.invoices || []).filter(i => inRange(i.created_at));
+        const invoices = (data.invoices || []).filter(i => inRange(i.created_at) && FINAL_INVOICE_STATUSES.includes(i.status));
+        const invoicedTotal = invoices.reduce((s, i) => s + parseFloat(i.grand_total || 0), 0);
+        const paidTotal     = payments.reduce((s, p) => s + parseFloat(p.amount || 0), 0);
+        const remainingDue  = (from || to)
+            ? Math.max(0, invoicedTotal - paidTotal)
+            : parseFloat(stats.total_remaining || 0);
         const periodLabel = (from || to)
             ? `من ${from ? from.toLocaleDateString('en-GB') : '—'} إلى ${to ? to.toLocaleDateString('en-GB') : '—'}`
             : 'كامل الفترة';
@@ -1389,7 +1398,7 @@
         const paymentsRows = payments.map((p, i) => `
             <tr style="border-bottom:1px solid #e2e8f0; ${i % 2 === 1 ? 'background:#f8fafc;' : ''}">
                 <td style="padding:8px 12px; color:#64748b;">${date(p.created_at)}</td>
-                <td style="padding:8px 12px; font-family:monospace; color:#334155;">#${p.order_number}</td>
+                <td style="padding:8px 12px; font-family:monospace; color:#334155;">${p.order_number ? `#${p.order_number}` : (p.invoice_number ? `فاتورة #${p.invoice_number}` : '—')}</td>
                 <td style="padding:8px 12px; font-weight:700; color:#059669; font-family:monospace;">${parseFloat(p.amount || 0).toFixed(2)}</td>
                 <td style="padding:8px 12px; color:#64748b;">${PAY_M[p.payment_method] || p.payment_method || '—'}</td>
                 <td style="padding:8px 12px; color:#94a3b8;">${p.document_number || '—'}</td>
@@ -1435,9 +1444,9 @@
 
 <div class="stats">
   <div class="stat-box"><div class="val" style="color:#4b0082;">${stats.total_orders || 0}</div><div class="lbl">إجمالي الطلبات</div></div>
-  <div class="stat-box"><div class="val" style="color:#059669;">${orders.reduce((s,o)=>s+parseFloat(o.grand_total||0),0).toFixed(2)}</div><div class="lbl">إجمالي القيمة</div></div>
-  <div class="stat-box"><div class="val" style="color:#2563eb;">${payments.reduce((s,p)=>s+parseFloat(p.amount||0),0).toFixed(2)}</div><div class="lbl">إجمالي المدفوع</div></div>
-  <div class="stat-box"><div class="val" style="color:#dc2626;">${Math.max(0,orders.reduce((s,o)=>s+parseFloat(o.grand_total||0),0)-payments.reduce((s,p)=>s+parseFloat(p.amount||0),0)).toFixed(2)}</div><div class="lbl">المتبقي المستحق</div></div>
+  <div class="stat-box"><div class="val" style="color:#059669;">${invoicedTotal.toFixed(2)}</div><div class="lbl">إجمالي قيمة الفواتير</div></div>
+  <div class="stat-box"><div class="val" style="color:#2563eb;">${paidTotal.toFixed(2)}</div><div class="lbl">إجمالي المدفوع</div></div>
+  <div class="stat-box"><div class="val" style="color:#dc2626;">${remainingDue.toFixed(2)}</div><div class="lbl">المتبقي المستحق</div></div>
 </div>
 
 <p class="section-title">سجل الطلبات</p>
