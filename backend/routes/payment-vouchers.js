@@ -216,7 +216,12 @@ router.post('/', restrictWrite, validateBody(paymentVoucherCreate), async (req, 
             // Use the account directly — skip the contra account lookup below
             const contraAccountId = r.rows[0].id;
 
-            const cashAccRes = await db.query('SELECT id, name FROM accounts WHERE id = $1 AND is_active = true', [cash_account_id]);
+            const cashAccRes = await db.query(`
+                SELECT id, name FROM accounts
+                WHERE id = $1 AND is_active = true
+                  AND (code IN ('1100', '1200')
+                       OR parent_id IN (SELECT id FROM accounts WHERE code IN ('1100', '1200')))
+            `, [cash_account_id]);
             if (!cashAccRes.rows.length) return res.status(404).json({ error: 'Cash/Bank account not found' });
 
             const result = await db.withTransaction(async (txClient) => {
@@ -255,7 +260,12 @@ router.post('/', restrictWrite, validateBody(paymentVoucherCreate), async (req, 
             return res.status(201).json({ message: 'Payment voucher created successfully', data: result });
         }
 
-        const cashAccRes = await db.query('SELECT id, name FROM accounts WHERE id = $1 AND is_active = true', [cash_account_id]);
+        const cashAccRes = await db.query(`
+            SELECT id, name FROM accounts
+            WHERE id = $1 AND is_active = true
+              AND (code IN ('1100', '1200')
+                   OR parent_id IN (SELECT id FROM accounts WHERE code IN ('1100', '1200')))
+        `, [cash_account_id]);
         if (!cashAccRes.rows.length) return res.status(404).json({ error: 'Cash/Bank account not found' });
 
         const contraAccRes = await db.query('SELECT id FROM accounts WHERE code = $1 LIMIT 1', [contraAccountCode]);

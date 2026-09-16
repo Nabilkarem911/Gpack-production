@@ -236,7 +236,12 @@ router.post('/', restrictWrite, validateBody(receiptVoucherCreate), async (req, 
             return res.status(400).json({ error: 'Amount must be a positive number' });
         }
 
-        const cashAccRes = await db.query('SELECT id, name FROM accounts WHERE id = $1 AND is_active = true', [cash_account_id]);
+        const cashAccRes = await db.query(`
+            SELECT id, name FROM accounts
+            WHERE id = $1 AND is_active = true
+              AND (code IN ('1100', '1200')
+                   OR parent_id IN (SELECT id FROM accounts WHERE code IN ('1100', '1200')))
+        `, [cash_account_id]);
         if (!cashAccRes.rows.length) return res.status(404).json({ error: 'Cash/Bank account not found' });
 
         // Resolve payee name, contra account, and sub-account info based on type
