@@ -29,6 +29,9 @@
     const _el  = (id) => document.getElementById(id);
 
     const _date = (d) => d ? new Date(d).toLocaleDateString('ar-SA-u-nu-latn') : '—';
+    const _clientDisplay = (invoice) => invoice.parent_client_name
+        ? `${invoice.parent_client_name} / ${invoice.client_name || '—'}`
+        : (invoice.client_name || '—');
 
     function _statusBadge(status) {
         const map = {
@@ -219,7 +222,7 @@
         if (empty) empty.classList.add('hidden');
 
         tbody.innerHTML = _invoices.map(i => {
-            const clientName = esc(i.client_name || '—');
+            const clientName = esc(_clientDisplay(i));
             const invoiceDate = _date(i.invoice_date);
             const isFinalTab = _currentTab === 'sales';
             const isProformaTab = _currentTab === 'proforma';

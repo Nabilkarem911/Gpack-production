@@ -9,6 +9,9 @@
     const _el = (id) => document.getElementById(id);
     const fmt = (n) => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const esc = (s) => { if (!s) return ''; return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); };
+    const _clientDisplay = (invoice) => invoice.parent_client_name
+        ? `${invoice.parent_client_name} / ${invoice.client_name || '---'}`
+        : (invoice.client_name || '---');
 
     let _invoiceId = null;
     let _invoiceData = null;
@@ -98,7 +101,7 @@
         const inv = _invoiceData;
 
         // Header info
-        _el('sid-header-info').textContent = `فاتورة #${inv.invoice_number} - ${inv.client_name}`;
+        _el('sid-header-info').textContent = `فاتورة #${inv.invoice_number} - ${_clientDisplay(inv)}`;
 
         // Actions based on status
         const actionsEl = _el('sid-actions');
@@ -135,7 +138,7 @@
             : 'غير محدد';
 
         // Client info
-        _el('sid-client-name').textContent = esc(inv.client_name || '---');
+        _el('sid-client-name').textContent = esc(_clientDisplay(inv));
         _el('sid-client-phone').textContent = esc(inv.client_phone || '---');
         _el('sid-client-city').textContent = esc(inv.client_city || '---');
 
@@ -336,7 +339,7 @@
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:20px">
     <div>
       <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">بيانات العميل</div>
-      <div style="font-weight:700;font-size:16px">${esc(inv.client_name || '---')}</div>
+      <div style="font-weight:700;font-size:16px">${esc(_clientDisplay(inv))}</div>
       ${inv.client_phone ? `<div style="color:#64748b;font-size:12px;margin-top:3px">${esc(inv.client_phone)}</div>` : ''}
       ${inv.client_city  ? `<div style="color:#94a3b8;font-size:11px;margin-top:2px">${esc(inv.client_city)}</div>` : ''}
     </div>

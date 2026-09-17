@@ -97,10 +97,12 @@ router.get('/', async (req, res) => {
                 i.status, i.notes, i.created_at,
                 i.source, i.warehouse_id, i.delivery_note_id, i.delivery_status,
                 c.id AS client_id, c.name AS client_name,
+                parent_c.name AS parent_client_name,
                 o.id AS order_id, o.order_number,
                 u.name AS created_by_name
             FROM invoices i
             LEFT JOIN clients c ON c.id = i.client_id
+            LEFT JOIN clients parent_c ON parent_c.id = c.parent_id
             LEFT JOIN orders o ON o.id = i.order_id
             LEFT JOIN users u ON u.id = i.created_by
             WHERE ${whereClause}
@@ -136,10 +138,12 @@ router.get('/:id', async (req, res) => {
                 i.source, i.external_invoice_number, i.external_issued_at,
                 i.warehouse_id, i.delivery_note_id, i.delivery_status,
                 c.id AS client_id, c.name AS client_name, c.phone AS client_phone,
+                parent_c.name AS parent_client_name,
                 o.id AS order_id, o.order_number,
                 u.name AS created_by_name
             FROM invoices i
             LEFT JOIN clients c ON c.id = i.client_id
+            LEFT JOIN clients parent_c ON parent_c.id = c.parent_id
             LEFT JOIN orders o ON o.id = i.order_id
             LEFT JOIN users u ON u.id = i.created_by
             WHERE i.id = $1

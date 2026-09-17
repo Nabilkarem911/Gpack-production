@@ -28,6 +28,10 @@ const invoiceRoutes = require('../../routes/invoices');
 function buildApp() {
     const app = express();
     app.use(express.json());
+    app.use((req, _res, next) => {
+        req.user = { id: '77777777-7777-4777-8777-777777777777', role: 'admin' };
+        next();
+    });
     app.use('/api/invoices', invoiceRoutes);
     return app;
 }
@@ -43,6 +47,24 @@ describe('invoice generated line_total handling', () => {
             }
             return { rowCount: 1, rows: [] };
         });
+    });
+
+    test('returns parent branch context for invoice list rows and preserves root clients', async () => {
+        mockQuery.mockImplementation(async (sql) => {
+            if (sql.includes('SELECT COUNT(*)')) return { rows: [{ total: 2 }] };
+            return { rows: [
+                { id: 'branch-invoice', client_name: 'فرع الابن', parent_client_name: 'الفرع الأب' },
+                { id: 'root-invoice', client_name: 'عميل رئيسي', parent_client_name: null },
+            ] };
+        });
+
+        const response = await request(buildApp()).get('/api/invoices?source=warehouse');
+
+        expect(response.status).toBe(200);
+        expect(response.body.data).toEqual(expect.arrayContaining([
+            expect.objectContaining({ client_name: 'فرع الابن', parent_client_name: 'الفرع الأب' }),
+            expect.objectContaining({ client_name: 'عميل رئيسي', parent_client_name: null }),
+        ]));
     });
 
     test('rejects quantity changes when editing a final production invoice', async () => {
