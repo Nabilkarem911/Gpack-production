@@ -21,6 +21,10 @@
     let _bulkSelected = {}; // { [itemId]: { id, name, qty, assigned, designId, designName, designThumb, designStatus, variantId } }
     let _bulkDesignTargetId = null;
     let _assignPantoneColors = [];
+    let _editMOState = null;          // { moId, clientId, items: { [moiId]: {...} } }
+    let _editMOPantoneColors = [];
+    let _editMODesignTargetId = null;
+    let _editMOItems = [];            // full item list of the MO being edited via assign modal
 
     const DESIGN_IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'svg', 'gif', 'webp', 'bmp', 'tif', 'tiff']);
     const DESIGN_PDF_EXTENSIONS   = new Set(['pdf']);
@@ -748,6 +752,7 @@
             const canReceive    = ['sent','partially_received'].includes(mo.status);
             const canMarkOrdered= mo.status === 'pending';
             const canEditMO     = mo.status === 'pending';
+            const canEditMOMeta = ['sent','partially_received'].includes(mo.status);
             const canRevertSend = mo.status === 'sent';
             const canCancelMO   = ['pending', 'sent'].includes(mo.status);
             
@@ -825,6 +830,12 @@
                             ? `<button onclick="window.poView.editMO('${mo.id}')"
                                        class="px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-700 text-xs font-bold rounded-lg transition-all flex items-center gap-1" title="تعديل الكمية والتصميم والمورد">
                                    <i class="fa-solid fa-edit"></i> تعديل
+                               </button>`
+                            : ''}
+                        ${canEditMOMeta
+                            ? `<button onclick="window.poView.editSentMO('${mo.id}')"
+                                       class="px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-700 text-xs font-bold rounded-lg transition-all flex items-center gap-1" title="تعديل التصميم والبانتون والملاحظات — يبقى رابط المشاركة نفسه">
+                                   <i class="fa-solid fa-pen-to-square"></i> تعديل البيانات
                                </button>`
                             : ''}
                         ${canMarkOrdered
@@ -1095,8 +1106,9 @@
             
             const moDetails = moRes?.data;
             const suppliers = supRes?.data || [];
-            
+
             if (!moDetails) { _toast('فشل تحميل بيانات أمر المورد', 'error'); return; }
+            _editMOItems = moDetails.items || [];
 
             // Load suppliers into dropdown
             const sel = _el('assign-supplier-select');
@@ -1171,6 +1183,310 @@
         } catch (err) {
             console.error('[editMO] Error:', err);
             _toast(err.message || 'فشل تحميل بيانات الأمر', 'error');
+        }
+    }
+
+    // ── Edit sent MO (design / pantone / notes — same share link) ────────────
+    async function _editSentMO(moId) {
+        const mo = _hubMOs.find(m => m.id === moId);
+        if (!mo) { _toast('أمر المورد غير موجود', 'error'); return; }
+        if (!['sent', 'partially_received'].includes(mo.status)) {
+            _toast('التعديل من هنا متاح للأوامر المرسلة أو قيد الاستلام', 'error');
+            return;
+        }
+
+        try {
+            const moRes = await window.apiFetch(`/api/manufacturer-orders/${moId}`);
+            const moDetails = moRes?.data;
+            if (!moDetails) { _toast('فشل تحميل بيانات أمر المورد', 'error'); return; }
+
+            _editMOState = {
+                moId,
+                clientId: moDetails.client_id || _hubOrder?.client_id || _hubOrder?.client?.id || null,
+                items: {}
+            };
+            for (const it of (moDetails.items || [])) {
+                _editMOState.items[it.id] = {
+                    id: it.id,
+                    order_item_id: it.order_item_id,
+                    variant_id: it.variant_id,
+                    name: `${it.product_name || '—'} ${it.size_name || ''}`.trim(),
+                    qty: parseFloat(it.mo_quantity || 0),
+                    design_id: it.design_id || null,
+                    design_name: it.design_name || '',
+                    design_thumb: it.design_thumbnail || '',
+                    design_status: it.design_status === 'redesign' ? 'reprint' : (it.design_status || 'new'),
+                    pantoneColors: Array.isArray(it.pantone_colors) && it.pantone_colors.length
+                        ? [...it.pantone_colors]
+                        : (it.pantone_color ? [it.pantone_color] : []),
+                };
+            }
+
+            _setText('edit-mo-supplier', mo.supplier_name || '—');
+            _setText('edit-mo-number', `#${mo.po_number || ''}`);
+            _setVal('edit-mo-expected-delivery', moDetails.expected_delivery || '');
+            _setVal('edit-mo-notes', moDetails.notes || '');
+
+            _renderEditMOItems();
+            _showModal('po-edit-mo-modal');
+
+            await _loadEditMOPantoneColors();
+        } catch (err) {
+            console.error('[editSentMO] Error:', err);
+            _toast(err.message || 'فشل تحميل بيانات الأمر', 'error');
+        }
+    }
+
+    function _closeEditMOModal() {
+        _editMOState = null;
+        _editMODesignTargetId = null;
+        _qpEditMOTargetId = null;
+        _hideModal('po-edit-mo-modal');
+    }
+
+    async function _loadEditMOPantoneColors() {
+        _editMOPantoneColors = [];
+        if (_editMOState?.clientId) {
+            try {
+                const res = await window.apiFetch(`/api/client-pantone-colors?client_id=${_editMOState.clientId}`);
+                _editMOPantoneColors = (res && res.data) ? res.data : [];
+            } catch (err) {
+                _editMOPantoneColors = [];
+            }
+        }
+        for (const itemId of Object.keys(_editMOState?.items || {})) {
+            _renderEditMOPantoneList(itemId);
+        }
+    }
+
+    function _renderEditMOItems() {
+        const container = _el('edit-mo-items');
+        if (!container || !_editMOState) return;
+        container.innerHTML = Object.values(_editMOState.items).map(i => {
+            const hasDesign = !!i.design_id;
+            const thumbUrl = i.design_thumb || '';
+            const isImage = thumbUrl && _isDesignImage(thumbUrl);
+            const statusVal = i.design_status || 'new';
+
+            const thumbMarkup = hasDesign && isImage
+                ? `<img src="${_escapeHtml(thumbUrl)}" alt="design" class="w-10 h-10 rounded-lg object-cover border border-slate-200">`
+                : hasDesign
+                    ? '<div class="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center border border-slate-200"><i class="fa-solid fa-file-image text-slate-400 text-sm"></i></div>'
+                    : '<div class="w-10 h-10 rounded-lg bg-slate-50 flex items-center justify-center border border-dashed border-slate-300"><i class="fa-solid fa-image text-slate-300 text-sm"></i></div>';
+
+            return `<div class="px-3 py-2.5">
+                <div class="flex items-center gap-3">
+                    ${thumbMarkup}
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2">
+                            <span class="font-semibold text-slate-800 text-sm truncate">${_escapeHtml(i.name)}</span>
+                            <span class="text-xs text-slate-500 font-bold bg-slate-100 px-2 py-0.5 rounded-full shrink-0">${i.qty} وحدة</span>
+                        </div>
+                        <div class="flex items-center gap-2 mt-1">
+                            <span class="text-xs text-slate-500 truncate" id="edit-mo-design-name-${i.id}">${hasDesign && i.design_name ? _escapeHtml(i.design_name) : 'بدون تصميم'}</span>
+                        </div>
+                    </div>
+                    <button onclick="window.poView.editMOSelectDesign('${i.id}')"
+                            class="shrink-0 px-2.5 py-1.5 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-lg text-xs font-bold text-purple-700 transition-all"
+                            title="اختيار تصميم من المكتبة">
+                        <i class="fa-solid fa-images"></i>
+                    </button>
+                    <button onclick="window.poView.editMOUploadDesign('${i.id}')"
+                            class="shrink-0 px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg text-xs font-bold text-emerald-700 transition-all"
+                            title="رفع تصميم جديد">
+                        <i class="fa-solid fa-upload"></i>
+                    </button>
+                </div>
+                <div class="flex gap-2 mt-2">
+                    <label class="flex-1 cursor-pointer">
+                        <input type="radio" name="edit-mo-design-status-${i.id}" value="new" class="peer hidden" ${statusVal === 'new' ? 'checked' : ''} onchange="window.poView._editMOSetDesignStatus('${i.id}', 'new')">
+                        <div class="px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-center peer-checked:border-emerald-500 peer-checked:bg-emerald-50 peer-checked:text-emerald-700 transition-all">
+                            <i class="fa-solid fa-pen-nib ml-1"></i> تصميم جديد
+                        </div>
+                    </label>
+                    <label class="flex-1 cursor-pointer">
+                        <input type="radio" name="edit-mo-design-status-${i.id}" value="reprint" class="peer hidden" ${statusVal === 'reprint' ? 'checked' : ''} onchange="window.poView._editMOSetDesignStatus('${i.id}', 'reprint')">
+                        <div class="px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-center peer-checked:border-amber-500 peer-checked:bg-amber-50 peer-checked:text-amber-700 transition-all">
+                            <i class="fa-solid fa-rotate ml-1"></i> إعادة طباعة
+                        </div>
+                    </label>
+                </div>
+                <div class="mt-2">
+                    <button onclick="window.poView._toggleEditMOPantone('${i.id}')" class="flex items-center gap-1.5 text-xs font-bold text-purple-600 hover:text-purple-700 transition-colors">
+                        <i class="fa-solid fa-palette"></i> ألوان البانتون
+                        <span class="text-slate-400 font-normal">(${(i.pantoneColors || []).length})</span>
+                        <i class="fa-solid fa-chevron-down text-[10px] transition-transform" id="edit-mo-pantone-chevron-${i.id}"></i>
+                    </button>
+                    <div id="edit-mo-pantone-section-${i.id}" class="hidden mt-2">
+                        <div class="flex items-center justify-between mb-1.5">
+                            <input type="text" placeholder="🔍 ابحث..." autocomplete="off"
+                                   oninput="window.poView._filterEditMOPantone('${i.id}', this.value)"
+                                   class="flex-1 px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:border-purple-500 transition-all">
+                            <button onclick="window.poView.editMOQuickPantone('${i.id}')" class="text-[11px] font-bold text-purple-600 hover:text-purple-700 transition-colors flex items-center gap-1 mr-1.5 whitespace-nowrap">
+                                <i class="fa-solid fa-plus-circle"></i> لون جديد
+                            </button>
+                        </div>
+                        <div id="edit-mo-pantone-list-${i.id}" class="max-h-28 overflow-y-auto border border-slate-200 rounded-lg p-1.5 bg-slate-50 space-y-1"></div>
+                    </div>
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    function _renderEditMOPantoneList(itemId, filter) {
+        const listEl = _el(`edit-mo-pantone-list-${itemId}`);
+        if (!listEl || !_editMOState) return;
+
+        if (!_editMOPantoneColors.length) {
+            listEl.innerHTML = '<p class="text-xs text-slate-400">لا توجد ألوان مسجلة</p>';
+            return;
+        }
+
+        const q = (filter || '').toLowerCase();
+        const selected = _editMOState.items[itemId]?.pantoneColors || [];
+        const selectedSet = new Set(selected);
+
+        const html = _editMOPantoneColors.map(c => {
+            const code = c.color_code || '';
+            const name = c.color_name || '';
+            const term = `${code} ${name}`.toLowerCase();
+            if (q && !term.includes(q)) return '';
+            const checked = selectedSet.has(code) ? 'checked' : '';
+            const hex = c.hex_value || '#cccccc';
+            return `<label class="flex items-center gap-1.5 p-1.5 bg-white border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors">
+                <input type="checkbox" value="${_escapeHtml(code)}" ${checked}
+                       onchange="window.poView._onEditMOPantoneChange('${itemId}', this)"
+                       class="w-3.5 h-3.5 rounded accent-purple-600 cursor-pointer">
+                <span class="w-3.5 h-3.5 rounded-full border border-slate-300 shrink-0" style="background:${_escapeHtml(hex)}"></span>
+                <span class="text-[11px] text-slate-700 select-none truncate">${_escapeHtml(code)}${name ? ' — ' + _escapeHtml(name) : ''}</span>
+            </label>`;
+        }).join('');
+
+        listEl.innerHTML = html || '<p class="text-xs text-slate-400">لا توجد نتائج</p>';
+    }
+
+    function _toggleEditMOPantone(itemId) {
+        const section = _el(`edit-mo-pantone-section-${itemId}`);
+        const chevron = _el(`edit-mo-pantone-chevron-${itemId}`);
+        if (section) section.classList.toggle('hidden');
+        if (chevron) chevron.style.transform = section?.classList.contains('hidden') ? '' : 'rotate(180deg)';
+    }
+
+    function _filterEditMOPantone(itemId, value) {
+        _renderEditMOPantoneList(itemId, value);
+    }
+
+    function _onEditMOPantoneChange(itemId, cb) {
+        const item = _editMOState?.items?.[itemId];
+        if (!item) return;
+        if (!item.pantoneColors) item.pantoneColors = [];
+        const code = cb.value;
+        if (cb.checked) {
+            if (!item.pantoneColors.includes(code)) item.pantoneColors.push(code);
+        } else {
+            item.pantoneColors = item.pantoneColors.filter(c => c !== code);
+        }
+    }
+
+    function _editMOSetDesignStatus(itemId, status) {
+        const item = _editMOState?.items?.[itemId];
+        if (item) item.design_status = status;
+    }
+
+    function _editMOSelectDesign(itemId) {
+        const item = _editMOState?.items?.[itemId];
+        if (!item) return;
+        const clientId = _editMOState.clientId;
+        if (!clientId) { _toast('لا يوجد عميل مرتبط', 'error'); return; }
+
+        _currentAssignItem = {
+            id: item.order_item_id,
+            variant_id: item.variant_id,
+            client_id: clientId,
+            product_name: item.name,
+            size_name: '',
+        };
+        _editMODesignTargetId = itemId;
+        _bulkDesignTargetId = null;
+        _openDesignSelector();
+    }
+
+    function _editMOUploadDesign(itemId) {
+        const item = _editMOState?.items?.[itemId];
+        if (!item) return;
+        const clientId = _editMOState.clientId;
+        if (!clientId) { _toast('لا يوجد عميل مرتبط', 'error'); return; }
+
+        _currentAssignItem = {
+            id: item.order_item_id,
+            variant_id: item.variant_id,
+            client_id: clientId,
+            product_name: item.name,
+            size_name: '',
+        };
+        _editMODesignTargetId = itemId;
+        _bulkDesignTargetId = null;
+        _openDesignUpload();
+    }
+
+    function _editMOOnDesignPicked(designId, designName, thumbnailUrl, status) {
+        const item = _editMOState?.items?.[_editMODesignTargetId];
+        _editMODesignTargetId = null;
+        if (!item) return;
+        item.design_id = designId || null;
+        item.design_name = designName || '';
+        item.design_thumb = thumbnailUrl || '';
+        item.design_status = status;
+        _renderEditMOItems();
+        for (const id of Object.keys(_editMOState.items)) {
+            _renderEditMOPantoneList(id);
+        }
+    }
+
+    function _editMOQuickPantone(itemId) {
+        _openQuickPantoneModal();
+        _qpEditMOTargetId = itemId;
+    }
+
+    async function _saveMOEdits() {
+        if (!_editMOState?.moId) return;
+        const moId = _editMOState.moId;
+        const btn = _el('edit-mo-save-btn');
+        if (btn) btn.disabled = true;
+
+        try {
+            await window.apiFetch(`/api/manufacturer-orders/${moId}`, {
+                method: 'PATCH',
+                body: {
+                    expected_delivery: _el('edit-mo-expected-delivery')?.value || null,
+                    notes: _el('edit-mo-notes')?.value || null,
+                    items: Object.values(_editMOState.items).map(i => ({
+                        id: i.id,
+                        design_status: i.design_status || 'new',
+                        design_id: i.design_id || null,
+                        pantone_colors: i.pantoneColors || [],
+                        pantone_color: (i.pantoneColors || [])[0] || null,
+                    })),
+                },
+            });
+
+            _toast('تم حفظ التعديلات — رابط المورد نفسه محدّث الآن');
+            _closeEditMOModal();
+
+            const [orderRes, moRes] = await Promise.all([
+                window.apiFetch(`/api/orders/${_hubOrderId}`),
+                window.apiFetch(`/api/manufacturer-orders/by-order/${_hubOrderId}`),
+            ]);
+            _hubOrder = orderRes?.data || _hubOrder;
+            _hubItems = _hubOrder?.items || [];
+            _hubMOs   = moRes?.data || [];
+            _renderHubItems();
+            await _loadOrders();
+        } catch (err) {
+            console.error('[saveMOEdits] Error:', err);
+            _toast(err.message || 'فشل حفظ التعديلات', 'error');
+        } finally {
+            if (btn) btn.disabled = false;
         }
     }
 
@@ -2017,6 +2333,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         const available = qty - assigned;
 
         _setVal('assign-mo-id',         '');
+        _editMOItems = [];
         _setVal('assign-order-item-id', orderItemId);
         _setVal('assign-order-id',      _hubOrderId);
         _setText('assign-item-name',      `${item.product_name || '—'} ${item.size_name || ''}`);
@@ -2197,26 +2514,45 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         const url = moId ? `/api/manufacturer-orders/${moId}` : '/api/manufacturer-orders';
         const msg = moId ? 'تم تعديل أمر التشغيل للمورد بنجاح' : 'تم إنشاء أمر التشغيل للمورد بنجاح';
 
+        // PUT replaces the whole item list — when editing a multi-item MO,
+        // re-send the untouched items so they are not silently dropped.
+        const editedItem = {
+            order_item_id: orderItemId,
+            quantity: qty,
+            design_status: selectedDesignStatus,
+            design_id: designId,
+            pantone_color: pantoneColors[0] || null,
+            pantone_colors: pantoneColors.length ? pantoneColors : null
+        };
+        const itemsPayload = (moId && _editMOItems.length > 1)
+            ? _editMOItems.map(it => it.order_item_id === orderItemId
+                ? editedItem
+                : {
+                    order_item_id: it.order_item_id,
+                    quantity: parseFloat(it.mo_quantity || it.po_quantity || 0),
+                    design_status: it.design_status || 'new',
+                    design_id: it.design_id || null,
+                    pantone_color: it.pantone_color || null,
+                    pantone_colors: Array.isArray(it.pantone_colors) && it.pantone_colors.length
+                        ? it.pantone_colors
+                        : (it.pantone_color ? [it.pantone_color] : null),
+                })
+            : [editedItem];
+
         try {
             await window.apiFetch(url, {
                 method: method,
                 body: {
                     order_id:          orderId,
                     supplier_id:       supplierId,
-                    items:             [{
-                        order_item_id: orderItemId,
-                        quantity: qty,
-                        design_status: selectedDesignStatus,
-                        design_id: designId,
-                        pantone_color: pantoneColors[0] || null,
-                        pantone_colors: pantoneColors.length ? pantoneColors : null
-                    }],
+                    items:             itemsPayload,
                     expected_delivery: expDelivery || null,
                     notes:             notes       || null,
                 },
             });
             _toast(msg);
             _hideModal('po-assign-modal');
+            _editMOItems = [];
             // Refresh
             const [orderRes, moRes] = await Promise.all([
                 window.apiFetch(`/api/orders/${_hubOrderId}`),
@@ -2299,6 +2635,13 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
     }
 
     function _selectDesign(designId, designName, thumbnail, extension) {
+        // If called from the sent-MO edit modal, route to its handler
+        if (_editMODesignTargetId) {
+            _closeDesignSelector();
+            _editMOOnDesignPicked(designId, designName, thumbnail, 'reprint');
+            _toast('تم اختيار التصميم');
+            return;
+        }
         // If called from bulk assign modal, route to bulk handler
         if (_bulkDesignTargetId) {
             _bulkOnDesignSelected(designId, designName, thumbnail);
@@ -2427,6 +2770,14 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
 
             // Log for debugging
             console.log('[Upload] Design response:', design);
+
+            // If called from the sent-MO edit modal, route to its handler
+            if (_editMODesignTargetId) {
+                _hideModal('po-design-upload-modal');
+                _editMOOnDesignPicked(design?.id || '', name, design?.thumbnail_url || '', 'new');
+                _toast('تم رفع التصميم بنجاح');
+                return;
+            }
 
             // If called from bulk assign modal, route to bulk handler
             if (_bulkDesignTargetId) {
@@ -3910,11 +4261,13 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
     let _qpType = 'C';
     let _qpSelected = null;
     let _qpBulkTargetId = null;
+    let _qpEditMOTargetId = null;
 
     function _openQuickPantoneModal(bulkItemId) {
         _qpSelected = null;
         _qpType = 'C';
         _qpBulkTargetId = bulkItemId || null;
+        _qpEditMOTargetId = null;
         _setVal('qp-search', '');
         _setVal('qp-code', '');
         _setVal('qp-name', '');
@@ -4055,6 +4408,20 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
                 }
                 _renderBulkPantoneList(_qpBulkTargetId);
             }
+
+            // Reload sent-MO edit modal pantone colors and auto-select for the target item
+            if (_editMOState) {
+                await _loadEditMOPantoneColors();
+                const target = _qpEditMOTargetId && _editMOState.items[_qpEditMOTargetId];
+                if (target) {
+                    if (!target.pantoneColors) target.pantoneColors = [];
+                    if (!target.pantoneColors.includes(code)) {
+                        target.pantoneColors.push(code);
+                    }
+                    _renderEditMOPantoneList(_qpEditMOTargetId);
+                }
+                _qpEditMOTargetId = null;
+            }
         } catch (err) {
             _toast(err.message || 'فشل إضافة اللون', 'error');
         } finally {
@@ -4077,6 +4444,16 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         updateMOStatus:     _updateMOStatus,
         revertSendToSupplier: _revertSendToSupplier,
         editMO:             _editMO,
+        editSentMO:           _editSentMO,
+        closeEditMOModal:     _closeEditMOModal,
+        saveMOEdits:          _saveMOEdits,
+        editMOSelectDesign:   _editMOSelectDesign,
+        editMOUploadDesign:   _editMOUploadDesign,
+        editMOQuickPantone:   _editMOQuickPantone,
+        _editMOSetDesignStatus: _editMOSetDesignStatus,
+        _toggleEditMOPantone:   _toggleEditMOPantone,
+        _filterEditMOPantone:   _filterEditMOPantone,
+        _onEditMOPantoneChange: _onEditMOPantoneChange,
         cancelMO:           _cancelMO,
         revertExecution:    _revertExecution,
         revertOrderToArchive: _revertOrderToArchive,

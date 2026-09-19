@@ -768,55 +768,122 @@ router.patch('/:id/status', restrictEdit, validateBody(manufacturerOrderStatusUp
 
 router.patch('/:id', restrictEdit, validateBody(manufacturerOrderUpdate), async (req, res) => {
     const { id } = req.params;
-    const { supplier_id, expected_delivery, notes } = req.validatedBody;
+    const { supplier_id, expected_delivery, notes, items } = req.validatedBody;
 
     try {
-        const checkResult = await db.query(
-            `SELECT status FROM manufacturer_orders WHERE id = $1`,
-            [id]
-        );
-        if (checkResult.rowCount === 0) {
-            return res.status(404).json({ error: 'أمر التشغيل غير موجود.' });
-        }
+        const result = await db.withTransaction(async (client) => {
+            const checkResult = await client.query(
+                `SELECT status FROM manufacturer_orders WHERE id = $1 FOR UPDATE`,
+                [id]
+            );
+            if (checkResult.rowCount === 0) {
+                const notFound = new Error('أمر التشغيل غير موجود.');
+                notFound.statusCode = 404;
+                throw notFound;
+            }
 
-        const currentStatus = checkResult.rows[0].status;
-        if (['received', 'cancelled'].includes(currentStatus)) {
-            return res.status(400).json({
-                error: 'لا يمكن تعديل أمر التشغيل بعد استلامه أو إلغائه.'
-            });
-        }
+            const currentStatus = checkResult.rows[0].status;
+            if (['received', 'cancelled'].includes(currentStatus)) {
+                const blocked = new Error('لا يمكن تعديل أمر التشغيل بعد استلامه أو إلغائه.');
+                blocked.statusCode = 400;
+                throw blocked;
+            }
 
-        const updates = ['updated_at = NOW()'];
-        const params = [];
+            const updates = ['updated_at = NOW()'];
+            const params = [];
 
-        if (supplier_id !== undefined) {
-            updates.push(`manufacturer_id = $${params.length + 1}`);
-            params.push(supplier_id);
-        }
+            if (supplier_id !== undefined) {
+                updates.push(`manufacturer_id = $${params.length + 1}`);
+                params.push(supplier_id);
+            }
 
-        if (expected_delivery !== undefined) {
-            updates.push(`expected_delivery_date = $${params.length + 1}`);
-            params.push(expected_delivery);
-        }
+            if (expected_delivery !== undefined) {
+                updates.push(`expected_delivery_date = $${params.length + 1}`);
+                params.push(expected_delivery);
+            }
 
-        if (notes !== undefined) {
-            updates.push(`notes = $${params.length + 1}`);
-            params.push(notes);
-        }
+            if (notes !== undefined) {
+                updates.push(`notes = $${params.length + 1}`);
+                params.push(notes);
+            }
 
-        params.push(id);
-        const result = await db.query(
-            `UPDATE manufacturer_orders
-             SET ${updates.join(', ')}
-             WHERE id = $${params.length}
-             RETURNING *`,
-            params
-        );
+            params.push(id);
+            const moResult = await client.query(
+                `UPDATE manufacturer_orders
+                 SET ${updates.join(', ')}
+                 WHERE id = $${params.length}
+                 RETURNING *`,
+                params
+            );
+            const manufacturerOrder = moResult.rows[0];
 
-        return res.status(200).json({ data: result.rows[0] });
+            // In-place per-item metadata updates. Items are never deleted or
+            // recreated here, so item ids, receipt history and the existing
+            // share token/link stay intact and the public page reflects the
+            // new values on next load.
+            if (Array.isArray(items)) {
+                for (const item of items) {
+                    const itemSets = [];
+                    const itemParams = [];
+
+                    if (item.design_status !== undefined && item.design_status !== null) {
+                        itemSets.push(`design_status = $${itemParams.length + 1}`);
+                        itemParams.push(item.design_status);
+                    }
+                    if (item.design_id !== undefined) {
+                        itemSets.push(`design_id = $${itemParams.length + 1}`);
+                        itemParams.push(item.design_id || null);
+                    }
+                    if (item.pantone_colors !== undefined || item.pantone_color !== undefined) {
+                        const pantoneColors = Array.isArray(item.pantone_colors)
+                            ? item.pantone_colors.filter(c => c && String(c).trim())
+                            : (item.pantone_color ? [item.pantone_color] : []);
+                        const singlePantone = pantoneColors[0] || item.pantone_color || null;
+                        itemSets.push(`pantone_color = $${itemParams.length + 1}`);
+                        itemParams.push(singlePantone);
+                        itemSets.push(`pantone_colors = $${itemParams.length + 1}`);
+                        itemParams.push(JSON.stringify(pantoneColors));
+                    }
+
+                    if (!itemSets.length) continue;
+
+                    itemParams.push(item.id, id);
+                    const itemUpdate = await client.query(
+                        `UPDATE manufacturer_order_items
+                         SET ${itemSets.join(', ')}
+                         WHERE id = $${itemParams.length - 1}
+                           AND manufacturer_order_id = $${itemParams.length}
+                         RETURNING order_item_id`,
+                        itemParams
+                    );
+                    if (itemUpdate.rowCount === 0) {
+                        const badItem = new Error('أحد الأصناف لا يتبع أمر التشغيل.');
+                        badItem.statusCode = 400;
+                        throw badItem;
+                    }
+
+                    if (item.design_id) {
+                        await ensurePrintTemplateForOrderItem(client, itemUpdate.rows[0].order_item_id);
+                    }
+                }
+            }
+
+            const itemsResult = await client.query(
+                `SELECT id, order_item_id, mo_quantity, received_qty,
+                        design_status, design_id, pantone_color, pantone_colors
+                 FROM manufacturer_order_items
+                 WHERE manufacturer_order_id = $1
+                 ORDER BY created_at`,
+                [id]
+            );
+            manufacturerOrder.items = itemsResult.rows;
+            return manufacturerOrder;
+        });
+
+        return res.status(200).json({ data: result });
     } catch (err) {
         console.error('[ManufacturerOrders] PATCH /:id error:', err.message);
-        return res.status(500).json({ error: 'Internal server error.' });
+        return res.status(err.statusCode || 500).json({ error: err.statusCode ? err.message : 'Internal server error.' });
     }
 });
 

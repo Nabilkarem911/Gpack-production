@@ -302,6 +302,13 @@ const manufacturerOrderUpdate = z.object({
     supplier_id: z.string().uuid().optional(),
     expected_delivery: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
     notes: z.string().max(2000).optional().nullable(),
+    items: z.array(z.object({
+        id: z.string().uuid('Valid manufacturer_order_item id is required'),
+        design_status: z.enum(['new', 'reprint', 'redesign']).optional().nullable(),
+        design_id: z.string().uuid().optional().nullable(),
+        pantone_color: z.string().max(50).optional().nullable(),
+        pantone_colors: z.array(z.string().max(50)).optional().nullable(),
+    }).passthrough()).optional(),
 });
 
 const manufacturerOrderReceive = z.object({

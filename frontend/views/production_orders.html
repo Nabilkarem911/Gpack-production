@@ -594,6 +594,54 @@
     </div>
 </div>
 
+<!-- ═══════════════════════ EDIT SENT MO MODAL ═══════════════════════ -->
+<div id="po-edit-mo-modal" class="fixed inset-0 z-[60] hidden">
+    <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onclick="window.poView.closeEditMOModal()"></div>
+    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg max-h-[90vh] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 shrink-0">
+            <h3 class="font-bold text-slate-800 flex items-center gap-2">
+                <i class="fa-solid fa-pen-to-square text-amber-500"></i> تعديل أمر التشغيل
+            </h3>
+            <button onclick="window.poView.closeEditMOModal()" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 transition-colors">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        <div class="p-5 space-y-4 overflow-y-auto">
+            <div class="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-700 flex items-start gap-2">
+                <i class="fa-solid fa-link mt-0.5 shrink-0"></i>
+                <span>التعديلات تظهر للمورد تلقائيًا على نفس رابط المشاركة المُرسل سابقًا — لا حاجة لإعادة إرسال الرابط. لتعديل الكمية أو المورد استخدم «تراجع عن الإرسال» أولًا.</span>
+            </div>
+            <div class="bg-slate-50 rounded-xl p-3 text-sm flex items-center gap-2">
+                <span class="text-slate-500">المورد:</span>
+                <span id="edit-mo-supplier" class="font-bold text-slate-800"></span>
+                <span class="text-xs text-slate-400 font-mono mr-auto" id="edit-mo-number"></span>
+            </div>
+            <div id="edit-mo-items" class="divide-y divide-slate-100 border border-slate-200 rounded-xl bg-slate-50/50"></div>
+            <div>
+                <label class="block text-sm font-bold text-slate-700 mb-1.5">تاريخ التسليم المتوقع</label>
+                <input type="date" id="edit-mo-expected-delivery"
+                       class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all">
+            </div>
+            <div>
+                <label class="block text-sm font-bold text-slate-700 mb-1.5">ملاحظات للمورد</label>
+                <textarea id="edit-mo-notes" rows="2"
+                          class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 resize-none transition-all"
+                          placeholder="أي تعليمات خاصة..."></textarea>
+            </div>
+        </div>
+        <div class="flex justify-end gap-2 px-5 py-4 border-t border-slate-100 shrink-0 bg-white">
+            <button onclick="window.poView.closeEditMOModal()"
+                    class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold rounded-xl transition-colors">
+                إلغاء
+            </button>
+            <button onclick="window.poView.saveMOEdits()" id="edit-mo-save-btn"
+                    class="px-5 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold rounded-xl shadow transition-all active:scale-[0.98]">
+                <i class="fa-solid fa-save ml-1"></i> حفظ التعديلات
+            </button>
+        </div>
+    </div>
+</div>
+
 <!-- ═══════════════════════ BULK ASSIGN MODAL ═══════════════════════ -->
 <div id="po-bulk-assign-modal" class="fixed inset-0 z-[60] hidden">
     <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onclick="window.poView.closeBulkAssignModal()"></div>
