@@ -94,6 +94,17 @@ describe('Internal notification functions are feature-flagged', () => {
         expect(fetch).not.toHaveBeenCalled();
     });
 
+    test('notifyQuotationConvertedToProduction returns null when disabled', async () => {
+        const result = await NotificationService.notifyQuotationConvertedToProduction({
+            order_id: 'order-1',
+            order_number: 123,
+            client_name: 'Test Client',
+            products: ['Product A'],
+        });
+        expect(result).toBeNull();
+        expect(fetch).not.toHaveBeenCalled();
+    });
+
     test('notifyDirectReceiptCreated returns null when disabled', async () => {
         const result = await NotificationService.notifyDirectReceiptCreated({
             receipt_id: 'receipt-1',

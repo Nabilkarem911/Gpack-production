@@ -7,8 +7,14 @@ const express = require('express');
 
 const mockQuery = jest.fn();
 const mockRelease = jest.fn();
+const mockWriteOutboxEvent = jest.fn();
+jest.mock('../../services/notification-service', () => ({
+    writeOutboxEvent: (...args) => mockWriteOutboxEvent(...args),
+    generateCorrelationId: jest.fn(() => 'QTP-test'),
+}));
 jest.mock('../../db', () => ({
     query: (...args) => mockQuery(...args),
+    withTransaction: async callback => callback({ query: (...args) => mockQuery(...args) }),
     pool: {
         connect: jest.fn(() => Promise.resolve({
             query: (...args) => mockQuery(...args),
@@ -37,6 +43,7 @@ describe('Orders Routes — Zod Validation', () => {
         app.use('/api/orders', orderRoutes);
         mockQuery.mockClear();
         mockRelease.mockClear();
+        mockWriteOutboxEvent.mockClear();
     });
 
     afterEach(() => {
@@ -93,6 +100,48 @@ describe('Orders Routes — Zod Validation', () => {
         expect(res.status).toBe(400);
         expect(res.body.error).toBe('Validation failed');
         expect(res.body.field).toMatch(/order_date/);
+    });
+
+    test('converting a quotation queues one manager notification with client and products', async () => {
+        mockQuery.mockImplementation(async (sql) => {
+            if (sql.includes('FROM orders') && sql.includes('FOR UPDATE')) {
+                return { rowCount: 1, rows: [{
+                    id: 'order-1', order_number: 123, status: 'quote', client_id: 'client-1',
+                    grand_total: '1000', paid_amount: '0', created_by: 1,
+                }] };
+            }
+            if (sql.includes('SELECT name FROM clients')) {
+                return { rowCount: 1, rows: [{ name: 'عميل الاختبار' }] };
+            }
+            if (sql.includes("UPDATE orders\n                 SET status")) return { rowCount: 1, rows: [] };
+            if (sql.includes('FROM notification_settings')) {
+                return { rows: [
+                    { key: 'internal_whatsapp_enabled', value: true },
+                    { key: 'manager_whatsapp_phone', value: '0550000000' },
+                ] };
+            }
+            if (sql.includes('FROM order_items oi')) {
+                return { rows: [{ product_name: 'منتج أول' }, { product_name: 'منتج ثان' }] };
+            }
+            return { rowCount: 1, rows: [] };
+        });
+
+        const res = await request(app)
+            .post('/api/orders/order-1/convert-to-production')
+            .send({});
+
+        expect(res.status).toBe(200);
+        expect(mockWriteOutboxEvent).toHaveBeenCalledWith(expect.objectContaining({
+            event_type: 'quotation_converted_to_production',
+            entity_type: 'order',
+            entity_id: 'order-1',
+            payload: expect.objectContaining({
+                order_number: 123,
+                client_name: 'عميل الاختبار',
+                products: ['منتج أول', 'منتج ثان'],
+            }),
+            session: 'internal',
+        }), expect.anything());
     });
 
     test('GET /:id includes direct receipt supplier and source metadata', async () => {

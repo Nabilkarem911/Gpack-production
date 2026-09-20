@@ -529,6 +529,38 @@ async function notifyManufacturerOrderReceived({ session_id, mo_id, mo_number, s
     return id;
 }
 
+// ── Convenience: Quotation converted to production ───────────────────────────
+async function notifyQuotationConvertedToProduction({ order_id, order_number, client_name, products }) {
+    if (!await _isInternalWhatsAppEnabled()) return null;
+    const phone = await _getSetting('manager_whatsapp_phone');
+    if (!phone) return null;
+
+    const baseUrl = process.env.BASE_URL || 'https://erp.gpacksa.com';
+    const link = `${baseUrl}/#/production_orders?id=${order_id}`;
+    const productList = (products || []).length ? products.join('، ') : '—';
+    const body =
+        `📋 تم تحويل عرض سعر إلى أمر تشغيل\n\n` +
+        `العميل: ${client_name || '—'}\n` +
+        `المنتجات: ${productList}\n` +
+        `رقم أمر التشغيل: #${order_number}\n\n` +
+        `أمر التشغيل الجديد يحتاج إلى إسناد.\n\n` +
+        `🔗 ${link}`;
+
+    return enqueue({
+        channel: 'whatsapp',
+        recipient: WhatsApp.ensureChatId(phone),
+        recipient_name: 'المدير',
+        recipient_role: 'manager',
+        message_type: 'quotation_converted_to_production',
+        body,
+        entity_type: 'order',
+        entity_id: order_id,
+        metadata: { order_number, client_name, products },
+        priority: 'high',
+        session: 'internal',
+    });
+}
+
 // ── Convenience: Release order created ───────────────────────────────────────
 async function notifyReleaseOrderCreated({ order_id, order_number, delivery_note_id, delivery_note_number, client_name, items_summary, warehouse_name }) {
     if (!await _isInternalWhatsAppEnabled()) return null;
@@ -617,6 +649,7 @@ module.exports = {
     notifyQuotationNeedsPricing,
     notifyDirectReceiptCreated,
     notifyManufacturerOrderReceived,
+    notifyQuotationConvertedToProduction,
     notifyReleaseOrderCreated,
     generateCorrelationId,
     getAdminRecipients,

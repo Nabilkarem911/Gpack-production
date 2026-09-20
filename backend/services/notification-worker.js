@@ -337,6 +337,12 @@ async function _processOutbox() {
                             correlation_id: evt.correlation_id,
                         });
                         break;
+                    case 'quotation_converted_to_production':
+                        await NotificationService.notifyQuotationConvertedToProduction({
+                            ...payload,
+                            correlation_id: evt.correlation_id,
+                        });
+                        break;
                     case 'release_order_created':
                         await NotificationService.notifyReleaseOrderCreated({
                             ...payload,

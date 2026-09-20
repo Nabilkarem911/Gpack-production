@@ -1736,6 +1736,46 @@ router.post('/:id/convert-to-production', restrictAdmin, validateBody(orderConve
                 );
             }
 
+            // ── 4. Queue manager notification inside the same transaction ─────
+            const notificationSettingsRes = await client.query(
+                `SELECT key, value
+                 FROM notification_settings
+                 WHERE key IN ('internal_whatsapp_enabled', 'manager_whatsapp_phone')`
+            );
+            const notificationSettings = Object.fromEntries(
+                notificationSettingsRes.rows.map(row => [row.key, row.value])
+            );
+            const internalWhatsAppEnabled = notificationSettings.internal_whatsapp_enabled === true
+                || notificationSettings.internal_whatsapp_enabled === 'true';
+            const managerPhone = notificationSettings.manager_whatsapp_phone;
+
+            if (internalWhatsAppEnabled && managerPhone) {
+                const productRes = await client.query(
+                    `SELECT p.name AS product_name
+                     FROM order_items oi
+                     JOIN product_variants pv ON pv.id = oi.variant_id
+                     JOIN products p ON p.id = pv.product_id
+                     WHERE oi.order_id = $1
+                     ORDER BY oi.id`,
+                    [id]
+                );
+                const products = productRes.rows.map(row => row.product_name).filter(Boolean);
+                const NotificationService = require('../services/notification-service');
+                await NotificationService.writeOutboxEvent({
+                    event_type: 'quotation_converted_to_production',
+                    entity_type: 'order',
+                    entity_id: id,
+                    correlation_id: `QTP-${id}`,
+                    payload: {
+                        order_id: id,
+                        order_number: order.order_number,
+                        client_name: order.client_name,
+                        products,
+                    },
+                    session: 'internal',
+                }, client);
+            }
+
             return {
                 order_id:     id,
                 order_number: order.order_number,
