@@ -98,6 +98,8 @@ const invoiceUpdate = z.object({
         discount_percent: z.coerce.number().min(0).max(100).optional().default(0),
         order_item_id: z.string().uuid().optional().nullable(),
         stock_id: z.string().uuid().optional().nullable(),
+        item_name: z.string().max(255).optional().nullable(),
+        is_extra: z.coerce.boolean().optional(),
     }).passthrough()).min(1, 'At least one item is required'),
 }).passthrough();
 
@@ -594,7 +596,10 @@ const orderInvoice = z.object({
         order_item_id: z.string().uuid().optional().nullable(),
         variant_id: z.string().uuid().optional().nullable(),
         quantity: z.coerce.number().positive().optional(),
+        qty: z.coerce.number().positive().optional(),
         unit_price: z.coerce.number().min(0).optional(),
+        item_name: z.string().max(255).optional().nullable(),
+        is_extra: z.coerce.boolean().optional(),
     }).passthrough()).optional(),
     additional_expenses: z.coerce.number().min(0).optional().default(0),
     additional_expense_label: z.string().max(120).optional().nullable(),

@@ -831,6 +831,11 @@
             <div>
                 <label class="block text-sm font-bold text-slate-700 mb-2">أصناف الفاتورة</label>
                 <div id="invoice-items-container" class="space-y-2 bg-slate-50 rounded-xl p-3 border border-slate-200"></div>
+                <div id="invoice-extras-container" class="hidden space-y-1 bg-slate-50 rounded-xl p-3 border border-slate-200 mt-2"></div>
+                <button type="button" id="invoice-add-extra-btn" onclick="window.poView.addInvoiceExtra()"
+                        class="w-full mt-2 py-2 border-2 border-dashed border-slate-300 hover:border-brand-400 text-slate-500 hover:text-brand-600 text-xs font-bold rounded-xl transition-all">
+                    <i class="fa-solid fa-plus ml-1"></i> إضافة بند إضافي (كلايش، أجور، خدمات...)
+                </button>
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
@@ -1410,4 +1415,4 @@
 
 <script src="/js/data/pantone-colors.js"></script>
 <script src="/js/data/pantone-colors-u.js"></script>
-<script src="/js/views/production_orders_new.js?v=20260826a"></script>
+<script src="/js/views/production_orders_new.js?v=20260921a"></script>

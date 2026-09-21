@@ -805,6 +805,8 @@
                 quantity: parseFloat(item.quantity || 0),
                 unit_price: parseFloat(item.unit_price || 0),
                 line_total: parseFloat(item.line_total || 0),
+                item_name: item.item_name || null,
+                is_extra: item.is_extra === true,
             }));
             _renderModalItems();
             _calcModalTotals();
@@ -849,6 +851,8 @@
                         quantity: item.quantity,
                         unit_price: item.unit_price,
                         discount_percent: 0,
+                        item_name: item.item_name || null,
+                        is_extra: item.is_extra === true,
                     })),
                 };
                 const res = await window.apiFetch(`/api/invoices/${_finalEditingInvoiceId}`, { method: 'PUT', body });

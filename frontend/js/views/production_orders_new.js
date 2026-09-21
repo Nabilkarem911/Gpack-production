@@ -18,6 +18,8 @@
     let _hubInvoices  = [];
     let _activeHubTab = 'items';
     let _invoicePrevPaid = 0;
+    let _invoiceExtras   = [];   // user-added extra lines (proforma only): {name, qty, price}
+    let _proformaExtras  = [];   // extra lines carried from the draft proforma into the final invoice
     let _bulkSelected = {}; // { [itemId]: { id, name, qty, assigned, designId, designName, designThumb, designStatus, variantId } }
     let _bulkDesignTargetId = null;
     let _assignPantoneColors = [];
@@ -2832,6 +2834,8 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
 
     // ── Invoice Modal ──────────────────────────────────────────────────────────
     async function _openInvoiceModal() {
+        _invoiceExtras  = [];
+        _proformaExtras = [];
         _setVal('invoice-notes', '');
         _setVal('invoice-extra-expenses', '');
         _setVal('invoice-extra-desc', '');
@@ -2851,6 +2855,9 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         // Pre-fill expenses & discount from existing proforma (if any)
         const proformaData = proforma?.data;
         if (proformaData) {
+            // Extra lines on the proforma are carried into the final invoice
+            // automatically (displayed read-only; the backend copies them).
+            _proformaExtras = (proformaData.items || []).filter(i => i.is_extra === true);
             if (parseFloat(proformaData.additional_expenses || 0) > 0) {
                 _setVal('invoice-extra-expenses', parseFloat(proformaData.additional_expenses).toFixed(2));
                 const expDesc = (proformaData.expenses && proformaData.expenses[0]?.description) || '';
@@ -2861,6 +2868,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
             }
         }
 
+        _renderInvoiceExtras();
         _calcInvoiceTotal();
         _showModal('po-invoice-modal');
     }
@@ -2911,18 +2919,104 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
                 </div>`;
         }).join('') || '<p class="text-sm text-slate-400 text-center py-3">\u0644\u0627 \u062a\u0648\u062c\u062f \u0628\u0646\u0648\u062f</p>';
 
+        _renderInvoiceExtras();
+    }
+
+    // ── Extra invoice items (free-text lines not present in the quotation) ─────
+    // Added only on the proforma (draft) invoice. When a final invoice is issued,
+    // the proforma's extra lines are copied automatically by the backend and are
+    // shown here as read-only rows.
+    function _renderInvoiceExtras() {
+        const box = _el('invoice-extras-container');
+        const type = _el('invoice-type')?.value || 'proforma';
+        const isProforma = type === 'proforma';
+        let html = '';
+
+        // Carried extras on the final invoice (read-only — backend copies them)
+        if (!isProforma && _proformaExtras.length) {
+            html += `<div class="pt-2 mt-1 border-t border-dashed border-slate-300">
+                <p class="text-[11px] font-bold text-slate-400 mb-1.5"><i class="fa-solid fa-link ml-1"></i>بنود إضافية منقولة من الفاتورة الأولية</p>`
+                + _proformaExtras.map(x => `
+                    <div class="flex items-center gap-2 py-1.5" data-carried-extra>
+                        <div class="flex-1 min-w-0">
+                            <p class="text-sm text-slate-600 font-semibold truncate">${_escapeHtml(x.item_name || '')}
+                                <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 font-bold">بند إضافي</span>
+                            </p>
+                        </div>
+                        <span class="w-20 text-center text-sm font-bold text-slate-500">${_fmt(x.quantity)}</span>
+                        <span class="w-24 text-center text-sm font-bold text-slate-500">${_fmt(x.unit_price)}</span>
+                    </div>`).join('')
+                + `</div>`;
+        }
+
+        // Editable extras on the proforma invoice
+        if (isProforma && _invoiceExtras.length) {
+            html += `<div class="pt-2 mt-1 border-t border-dashed border-slate-300">
+                <p class="text-[11px] font-bold text-slate-400 mb-1.5">بنود إضافية (غير موجودة في عرض السعر)</p>`
+                + _invoiceExtras.map((x, idx) => `
+                    <div class="flex items-center gap-2 py-1.5" data-extra="1">
+                        <input type="text" value="${_escapeHtml(x.name || '')}" data-item-name
+                               placeholder="اسم البند — مثال: كلايش"
+                               oninput="window.poView.updateInvoiceExtra(${idx}, 'name', this.value)"
+                               class="flex-1 min-w-0 px-2 py-1.5 border border-slate-200 rounded-lg text-sm outline-none focus:border-brand-500 bg-white">
+                        <input type="hidden" data-variant-id="">
+                        <input type="number" min="0" step="1" value="${x.qty ?? ''}" data-item-qty
+                               placeholder="الكمية"
+                               oninput="window.poView.updateInvoiceExtra(${idx}, 'qty', this.value)"
+                               class="w-20 px-2 py-1.5 border border-slate-200 rounded-lg text-sm text-center outline-none focus:border-brand-500 bg-white">
+                        <input type="number" min="0" step="0.01" value="${x.price ?? ''}" data-item-price
+                               placeholder="السعر"
+                               oninput="window.poView.updateInvoiceExtra(${idx}, 'price', this.value)"
+                               class="w-24 px-2 py-1.5 border border-slate-200 rounded-lg text-sm text-center outline-none focus:border-brand-500 bg-white">
+                        <button type="button" onclick="window.poView.removeInvoiceExtra(${idx})"
+                                class="w-7 h-7 shrink-0 flex items-center justify-center rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+                                title="حذف البند"><i class="fa-solid fa-trash-can text-xs"></i></button>
+                    </div>`).join('')
+                + `</div>`;
+        }
+
+        if (box) {
+            box.innerHTML = html;
+            box.classList.toggle('hidden', !html);
+        }
+        const addBtn = _el('invoice-add-extra-btn');
+        if (addBtn) addBtn.classList.toggle('hidden', !isProforma);
         _calcInvoiceTotal();
+    }
+
+    function _addInvoiceExtra() {
+        _invoiceExtras.push({ name: '', qty: '', price: '' });
+        _renderInvoiceExtras();
+    }
+
+    function _removeInvoiceExtra(idx) {
+        _invoiceExtras.splice(idx, 1);
+        _renderInvoiceExtras();
+    }
+
+    function _updateInvoiceExtra(idx, field, value) {
+        const row = _invoiceExtras[idx];
+        if (!row) return;
+        row[field] = value;
+        if (field !== 'name') _calcInvoiceTotal();
     }
 
     function _calcInvoiceTotal() {
         const container = _el('invoice-items-container');
         if (!container) return;
         let subtotal = 0;
-        const qtyEls   = container.querySelectorAll('[data-item-qty]');
-        const priceEls = container.querySelectorAll('[data-item-price]');
+        const scope    = _el('po-invoice-modal') || container;
+        const qtyEls   = scope.querySelectorAll('[data-item-qty]');
+        const priceEls = scope.querySelectorAll('[data-item-price]');
         qtyEls.forEach((qEl, i) => {
             subtotal += parseFloat(qEl.value || 0) * parseFloat(priceEls[i]?.value || 0);
         });
+        // Proforma extra lines carried into the final invoice count toward its total
+        if ((_el('invoice-type')?.value || 'proforma') === 'final') {
+            _proformaExtras.forEach(x => {
+                subtotal += parseFloat(x.quantity || 0) * parseFloat(x.unit_price || 0);
+            });
+        }
         const discount = parseFloat(_el('invoice-discount')?.value || 0);
         const extra    = parseFloat(_el('invoice-extra-expenses')?.value || 0);
         const tax   = subtotal * 0.15;
@@ -2943,14 +3037,25 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         const container = _el('invoice-items-container');
         if (!container) return;
 
-        const qtyEls     = container.querySelectorAll('[data-item-qty]');
-        const priceEls   = container.querySelectorAll('[data-item-price]');
-        const variantEls = container.querySelectorAll('[data-variant-id]');
+        const scope      = _el('po-invoice-modal') || container;
+        const qtyEls     = scope.querySelectorAll('[data-item-qty]');
+        const priceEls   = scope.querySelectorAll('[data-item-price]');
+        const variantEls = scope.querySelectorAll('[data-variant-id]');
         const items = [];
 
         for (let i = 0; i < qtyEls.length; i++) {
             const qty   = parseFloat(qtyEls[i].value);
             const price = parseFloat(priceEls[i]?.value);
+            if (qtyEls[i].closest('[data-extra]')) {
+                // Extra line: free-text name required; a partially filled row blocks saving
+                const name = (qtyEls[i].closest('[data-extra]').querySelector('[data-item-name]')?.value || '').trim();
+                if (!name && !(qty > 0) && !(price > 0)) continue;
+                if (!name)          { _toast('أدخل اسم البند الإضافي', 'error'); return; }
+                if (!(qty > 0))     { _toast(`أدخل كمية صحيحة للبند "${name}"`, 'error'); return; }
+                if (!(price > 0))   { _toast(`أدخل سعرًا صحيحًا للبند "${name}"`, 'error'); return; }
+                items.push({ item_name: name, qty, unit_price: price, is_extra: true });
+                continue;
+            }
             const vid   = variantEls[i]?.getAttribute('data-variant-id');
             if (qty > 0 && price > 0 && vid) items.push({ variant_id: vid, qty, unit_price: price });
         }
@@ -3319,11 +3424,14 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
             const typeEl = _el('invoice-type');
             if (typeEl) { typeEl.value = 'proforma'; typeEl.disabled = true; }
 
-            // Render items with existing values
+            // Render items with existing values (extra lines go to the extras box)
             const container = _el('invoice-items-container');
             if (!container) return;
 
-            const items = inv.items || [];
+            const items = (inv.items || []).filter(i => !i.is_extra);
+            _invoiceExtras  = (inv.items || []).filter(i => i.is_extra)
+                .map(i => ({ name: i.item_name || i.product_name || '', qty: parseFloat(i.quantity || 0), price: parseFloat(i.unit_price || 0) }));
+            _proformaExtras = [];
             container.innerHTML = items.map(item => {
                 const qty = parseFloat(item.quantity || 0);
                 const price = parseFloat(item.unit_price || 0);
@@ -3351,7 +3459,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
             _invoicePrevPaid = totalPaid;
             _setText('invoice-prev-paid', `${_fmt(totalPaid)} ر.س`);
 
-            _calcInvoiceTotal();
+            _renderInvoiceExtras();
 
             // Change save button text and action
             const saveBtn = _el('po-invoice-save-btn');
@@ -3381,14 +3489,25 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         const container = _el('invoice-items-container');
         if (!container) return;
 
-        const qtyEls     = container.querySelectorAll('[data-item-qty]');
-        const priceEls   = container.querySelectorAll('[data-item-price]');
-        const variantEls = container.querySelectorAll('[data-variant-id]');
+        const scope      = _el('po-invoice-modal') || container;
+        const qtyEls     = scope.querySelectorAll('[data-item-qty]');
+        const priceEls   = scope.querySelectorAll('[data-item-price]');
+        const variantEls = scope.querySelectorAll('[data-variant-id]');
         const items = [];
 
         for (let i = 0; i < qtyEls.length; i++) {
             const qty   = parseFloat(qtyEls[i].value);
             const price = parseFloat(priceEls[i]?.value);
+            if (qtyEls[i].closest('[data-extra]')) {
+                // Extra line: free-text name required; a partially filled row blocks saving
+                const name = (qtyEls[i].closest('[data-extra]').querySelector('[data-item-name]')?.value || '').trim();
+                if (!name && !(qty > 0) && !(price > 0)) continue;
+                if (!name)          { _toast('أدخل اسم البند الإضافي', 'error'); return; }
+                if (!(qty > 0))     { _toast(`أدخل كمية صحيحة للبند "${name}"`, 'error'); return; }
+                if (!(price > 0))   { _toast(`أدخل سعرًا صحيحًا للبند "${name}"`, 'error'); return; }
+                items.push({ item_name: name, quantity: qty, unit_price: price, is_extra: true });
+                continue;
+            }
             const vid   = variantEls[i]?.getAttribute('data-variant-id');
             if (qty > 0 && price > 0 && vid) items.push({ variant_id: vid, quantity: qty, unit_price: price });
         }
@@ -3411,6 +3530,10 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
 
     function _resetInvoiceModal() {
         _editingInvoiceId = null;
+        _invoiceExtras  = [];
+        _proformaExtras = [];
+        const extrasBox = _el('invoice-extras-container');
+        if (extrasBox) { extrasBox.innerHTML = ''; extrasBox.classList.add('hidden'); }
         const typeEl = _el('invoice-type');
         if (typeEl) typeEl.disabled = false;
         const saveBtn = _el('po-invoice-save-btn');
@@ -4488,6 +4611,9 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         closeInvoiceModal:  () => { _resetInvoiceModal(); _hideModal('po-invoice-modal'); },
         onInvoiceTypeChange: _renderInvoiceItems,
         calcInvoiceTotal:   _calcInvoiceTotal,
+        addInvoiceExtra:    _addInvoiceExtra,
+        removeInvoiceExtra: _removeInvoiceExtra,
+        updateInvoiceExtra: _updateInvoiceExtra,
         saveInvoice:        _saveInvoice,
         printInvoice:       _printInvoice,
         shareInvoice:       _shareInvoice,

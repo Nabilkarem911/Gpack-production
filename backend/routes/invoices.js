@@ -167,18 +167,20 @@ router.get('/:id', async (req, res) => {
             }
         }
 
-        // Invoice items
+        // Invoice items (LEFT JOIN so extra free-text lines with variant_id NULL still show)
         const itemsRes = await db.query(`
             SELECT
                 ii.id, ii.quantity, ii.unit_price, ii.discount_percent, ii.line_total, ii.source_stock_id,
+                ii.item_name, ii.is_extra,
                 pv.id AS variant_id, pv.size_name,
-                p.id AS product_id, p.name AS product_name,
+                p.id AS product_id, COALESCE(p.name, ii.item_name) AS product_name,
                 oi.id AS order_item_id
             FROM invoice_items ii
-            JOIN product_variants pv ON pv.id = ii.variant_id
-            JOIN products p ON p.id = pv.product_id
+            LEFT JOIN product_variants pv ON pv.id = ii.variant_id
+            LEFT JOIN products p ON p.id = pv.product_id
             LEFT JOIN order_items oi ON oi.id = ii.order_item_id
             WHERE ii.invoice_id = $1
+            ORDER BY ii.created_at ASC, ii.id ASC
         `, [id]);
 
         invoice.items = itemsRes.rows;
@@ -749,7 +751,7 @@ router.put('/:id', restrictEdit, validateBody(invoiceUpdate), async (req, res) =
                 `SELECT variant_id, order_item_id, quantity
                  FROM invoice_items
                  WHERE invoice_id = $1
-                 ORDER BY id`,
+                 ORDER BY created_at ASC, id ASC`,
                 [id]
             );
             const quantitiesChanged = existingItemsRes.rows.length !== items.length
@@ -842,16 +844,21 @@ router.put('/:id', restrictEdit, validateBody(invoiceUpdate), async (req, res) =
         `, [subtotal, effectiveTaxRate, taxAmount, addExp, discount, grandTotal,
             notes || null, due_date || null, invoice_date || null, id]);
 
-        // Delete old items and insert new ones
+        // Delete old items and insert new ones (extra lines are free-text: variant_id NULL)
         await client.query('DELETE FROM invoice_items WHERE invoice_id = $1', [id]);
         for (const item of items) {
             const qty = parseFloat(item.quantity) || 0;
             const price = parseFloat(item.unit_price) || 0;
             const disc = parseFloat(item.discount_percent) || 0;
+            const isExtra = item.is_extra === true;
+            if (isExtra && !(item.item_name || '').trim()) {
+                throw new Error('البند الإضافي يتطلب اسم الصنف.');
+            }
             await client.query(`
-                INSERT INTO invoice_items (invoice_id, variant_id, order_item_id, source_stock_id, quantity, unit_price, discount_percent)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
-            `, [id, item.variant_id, item.order_item_id || null, isUnreleasedWarehouse ? item.stock_id : null, qty, price, disc]);
+                INSERT INTO invoice_items (invoice_id, variant_id, order_item_id, source_stock_id, quantity, unit_price, discount_percent, item_name, is_extra)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            `, [id, isExtra ? null : item.variant_id, item.order_item_id || null, isUnreleasedWarehouse ? item.stock_id : null, qty, price, disc,
+                isExtra ? (item.item_name || '').trim() : null, isExtra]);
         }
 
         // Delete old expenses and insert new one

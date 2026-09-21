@@ -1826,7 +1826,7 @@ router.get('/:orderId/invoice/:invoiceId', async (req, res) => {
         if (invRes.rowCount === 0) return res.status(404).json({ error: 'الفاتورة غير موجودة.' });
 
         const itemsRes = await db.query(
-            `SELECT ii.*, p.name AS product_name, pv.size_name
+            `SELECT ii.*, COALESCE(p.name, ii.item_name) AS product_name, pv.size_name
              FROM invoice_items ii
              LEFT JOIN product_variants pv ON pv.id = ii.variant_id
              LEFT JOIN products p ON p.id = pv.product_id
@@ -1895,6 +1895,17 @@ router.get('/:id/proforma', async (req, res) => {
             [invoice.id]
         );
         invoice.expenses = expRes.rows;
+
+        // Items (needed so the UI can preview extra lines carried to the final)
+        const itemsRes = await db.query(
+            `SELECT ii.id, ii.variant_id, ii.order_item_id, ii.item_name, ii.is_extra,
+                    ii.quantity, ii.unit_price, ii.discount_percent
+             FROM invoice_items ii
+             WHERE ii.invoice_id = $1
+             ORDER BY ii.created_at ASC, ii.id ASC`,
+            [invoice.id]
+        );
+        invoice.items = itemsRes.rows;
 
         return success(res, invoice);
     } catch (err) {
@@ -2025,12 +2036,56 @@ router.post('/:id/invoice', restrictAdmin, validateBody(orderInvoice), async (re
                 }
             }
 
+            // ── Extra items (بنود إضافية) ──
+            // Free-text charge lines (e.g. كلايش) that are not part of the
+            // quotation's order_items. They may only be ADDED on the proforma
+            // (draft) invoice; on the final invoice they are copied over
+            // automatically from the draft, so nothing is lost or duplicated.
+            if (type === 'final' && items.some(i => i.is_extra)) {
+                throw new Error('البنود الإضافية تُضاف على الفاتورة الأولية فقط، وتُنقل تلقائيًا إلى الفاتورة النهائية.');
+            }
+            for (const item of items) {
+                if (!item.is_extra) continue;
+                const extraQty   = parseFloat(item.qty ?? item.quantity ?? 0);
+                const extraPrice = parseFloat(item.unit_price ?? 0);
+                if (!(item.item_name || '').trim()) {
+                    throw new Error('البند الإضافي يتطلب اسم الصنف.');
+                }
+                if (!(extraQty > 0)) {
+                    throw new Error(`البند الإضافي "${(item.item_name || '').trim()}" يتطلب كمية أكبر من صفر.`);
+                }
+                if (!(extraPrice > 0)) {
+                    throw new Error(`البند الإضافي "${(item.item_name || '').trim()}" يتطلب سعرًا أكبر من صفر.`);
+                }
+            }
+
+            // Fetch the proforma's extra items so they can be carried into the
+            // final invoice (same transaction => atomic, no loss/duplication).
+            let carriedExtras = [];
+            if (type === 'final') {
+                const pe = await client.query(
+                    `SELECT ii.item_name, ii.quantity, ii.unit_price, ii.discount_percent
+                     FROM invoice_items ii
+                     JOIN invoices pi ON pi.id = ii.invoice_id
+                     WHERE ii.is_extra = TRUE
+                       AND pi.id = (
+                           SELECT id FROM invoices
+                           WHERE order_id = $1 AND status = 'draft'
+                           ORDER BY created_at DESC LIMIT 1
+                       )
+                     ORDER BY ii.created_at ASC, ii.id ASC`,
+                    [id]
+                );
+                carriedExtras = pe.rows;
+            }
+
             // ── Validate received qty per order item (final invoices only) ──
             // A final invoice must not exceed the quantity physically received for
             // THIS order. We check wh_received_qty on order_items, not total
             // warehouse_stock (which is shared across all orders).
             // Proforma = pre-payment before goods arrive, no check needed.
             for (const item of (type === 'final' ? items : [])) {
+                if (item.is_extra) continue;
                 if (!item.variant_id || !item.qty || item.qty <= 0) continue;
 
                 const oi = await client.query(
@@ -2051,10 +2106,13 @@ router.post('/:id/invoice', restrictAdmin, validateBody(orderInvoice), async (re
                 }
             }
 
-            // Calculate totals
+            // Calculate totals (submitted items + proforma extras carried over)
             let subtotal = 0;
             for (const item of items) {
-                subtotal += parseFloat(item.unit_price || 0) * parseFloat(item.qty || 0);
+                subtotal += parseFloat(item.unit_price || 0) * parseFloat(item.qty ?? item.quantity ?? 0);
+            }
+            for (const ex of carriedExtras) {
+                subtotal += parseFloat(ex.unit_price || 0) * parseFloat(ex.quantity || 0);
             }
             subtotal = Math.round(subtotal * 100) / 100;
             const discount = Math.round(parseFloat(discount_amount || 0) * 100) / 100;
@@ -2073,13 +2131,30 @@ router.post('/:id/invoice', restrictAdmin, validateBody(orderInvoice), async (re
             );
             const invoice = invRes.rows[0];
 
-            // Insert invoice items
+            // Insert invoice items (extra lines are free-text: variant_id NULL)
             for (const item of items) {
-                const lineTotal = Math.round(parseFloat(item.unit_price || 0) * parseFloat(item.qty || 0) * 100) / 100;
+                const lineQty = parseFloat(item.qty ?? item.quantity ?? 0);
+                if (item.is_extra) {
+                    await client.query(
+                        `INSERT INTO invoice_items (invoice_id, variant_id, quantity, unit_price, item_name, is_extra)
+                         VALUES ($1, NULL, $2, $3, $4, TRUE)`,
+                        [invoice.id, lineQty, item.unit_price, (item.item_name || '').trim()]
+                    );
+                } else {
+                    await client.query(
+                        `INSERT INTO invoice_items (invoice_id, variant_id, quantity, unit_price)
+                         VALUES ($1, $2, $3, $4)`,
+                        [invoice.id, item.variant_id, lineQty, item.unit_price]
+                    );
+                }
+            }
+
+            // Carry the proforma's extra items into the final invoice
+            for (const ex of carriedExtras) {
                 await client.query(
-                    `INSERT INTO invoice_items (invoice_id, variant_id, quantity, unit_price)
-                     VALUES ($1, $2, $3, $4)`,
-                    [invoice.id, item.variant_id, item.qty, item.unit_price]
+                    `INSERT INTO invoice_items (invoice_id, variant_id, quantity, unit_price, discount_percent, item_name, is_extra)
+                     VALUES ($1, NULL, $2, $3, $4, $5, TRUE)`,
+                    [invoice.id, ex.quantity, ex.unit_price, ex.discount_percent || 0, ex.item_name]
                 );
             }
 

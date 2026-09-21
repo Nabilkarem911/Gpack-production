@@ -78,16 +78,18 @@ router.get('/:identifier', async (req, res) => {
 
         const id = invoice.id;
 
-        // Invoice items
+        // Invoice items (LEFT JOIN so extra free-text lines with variant_id NULL still show)
         const itemsRes = await db.query(`
             SELECT
                 ii.id, ii.quantity, ii.unit_price, ii.discount_percent, ii.line_total,
+                ii.item_name, ii.is_extra,
                 pv.id AS variant_id, pv.size_name,
-                p.id AS product_id, p.name AS product_name
+                p.id AS product_id, COALESCE(p.name, ii.item_name) AS product_name
             FROM invoice_items ii
-            JOIN product_variants pv ON pv.id = ii.variant_id
-            JOIN products p ON p.id = pv.product_id
+            LEFT JOIN product_variants pv ON pv.id = ii.variant_id
+            LEFT JOIN products p ON p.id = pv.product_id
             WHERE ii.invoice_id = $1
+            ORDER BY ii.created_at ASC, ii.id ASC
         `, [id]);
 
         invoice.items = itemsRes.rows;

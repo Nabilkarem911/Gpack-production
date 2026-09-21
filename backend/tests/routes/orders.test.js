@@ -201,6 +201,98 @@ describe('Orders Routes — Zod Validation', () => {
         expect(res.body.data).toMatchObject({ invoice_id: 'inv1', invoice_number: 42 });
     });
 
+    test('POST /:id/invoice stores extra free-text items on a proforma invoice', async () => {
+        mockQuery.mockImplementation(async (sql) => {
+            if (sql.includes('system_settings')) return { rows: [] };
+            if (sql.includes('FOR UPDATE')) {
+                return { rowCount: 1, rows: [{ id: 'o1', order_number: 1, client_id: 'c1', status: 'production', grand_total: '0' }] };
+            }
+            if (sql.includes('FROM invoices') && sql.includes("status = 'draft'")) return { rowCount: 0, rows: [] };
+            if (sql.includes('INSERT INTO invoices')) return { rowCount: 1, rows: [{ id: 'inv1', invoice_number: 50 }] };
+            if (sql.includes('INSERT INTO invoice_items')) return { rowCount: 1, rows: [] };
+            return { rowCount: 0, rows: [] };
+        });
+
+        const res = await request(app)
+            .post('/api/orders/o1/invoice')
+            .send({ type: 'proforma', items: [
+                { variant_id: '550e8400-e29b-41d4-a716-446655440000', qty: 2, unit_price: 100 },
+                { item_name: 'كلايش', qty: 4, unit_price: 250, is_extra: true },
+            ] });
+
+        expect(res.status).toBe(201);
+        const extraInsert = mockQuery.mock.calls.find(([sql, params]) =>
+            sql.includes('INSERT INTO invoice_items') && sql.includes('is_extra'));
+        expect(extraInsert).toBeDefined();
+        expect(extraInsert[1]).toContain('كلايش');
+        expect(extraInsert[1][0]).toBe('inv1');
+    });
+
+    test('POST /:id/invoice copies proforma extra items into the final invoice', async () => {
+        mockQuery.mockImplementation(async (sql) => {
+            if (sql.includes('system_settings')) return { rows: [] };
+            if (sql.includes('FOR UPDATE')) {
+                return { rowCount: 1, rows: [{ id: 'o1', order_number: 1, client_id: 'c1', status: 'delivered', grand_total: '0' }] };
+            }
+            if (sql.includes('FROM invoices') && sql.includes("status = 'issued'")) return { rowCount: 0, rows: [] };
+            if (sql.includes('FROM invoice_items ii') && sql.includes('JOIN invoices pi')) {
+                return { rowCount: 1, rows: [{ item_name: 'كلايش', quantity: '4', unit_price: '250', discount_percent: '0' }] };
+            }
+            if (sql.includes('FROM order_items oi')) return { rowCount: 1, rows: [{ received: '10', product_name: 'P', size_name: 'M' }] };
+            if (sql.includes('INSERT INTO invoices')) return { rowCount: 1, rows: [{ id: 'inv2', invoice_number: 51 }] };
+            if (sql.includes('INSERT INTO invoice_items')) return { rowCount: 1, rows: [] };
+            if (sql.includes('UPDATE orders')) return { rowCount: 1, rows: [] };
+            return { rowCount: 0, rows: [] };
+        });
+
+        const res = await request(app)
+            .post('/api/orders/o1/invoice')
+            .send({ type: 'final', items: [{ variant_id: '550e8400-e29b-41d4-a716-446655440000', qty: 2, unit_price: 100 }] });
+
+        expect(res.status).toBe(201);
+        const carriedInsert = mockQuery.mock.calls.find(([sql, params]) =>
+            sql.includes('INSERT INTO invoice_items') && sql.includes('TRUE') && params.includes('كلايش'));
+        expect(carriedInsert).toBeDefined();
+        expect(carriedInsert[1][0]).toBe('inv2');
+    });
+
+    test('POST /:id/invoice rejects extra items submitted directly on a final invoice', async () => {
+        mockQuery.mockImplementation(async (sql) => {
+            if (sql.includes('system_settings')) return { rows: [] };
+            if (sql.includes('FOR UPDATE')) {
+                return { rowCount: 1, rows: [{ id: 'o1', order_number: 1, client_id: 'c1', status: 'delivered', grand_total: '0' }] };
+            }
+            if (sql.includes('FROM invoices') && sql.includes("status = 'issued'")) return { rowCount: 0, rows: [] };
+            return { rowCount: 0, rows: [] };
+        });
+
+        const res = await request(app)
+            .post('/api/orders/o1/invoice')
+            .send({ type: 'final', items: [{ item_name: 'كلايش', qty: 1, unit_price: 100, is_extra: true }] });
+
+        expect(res.status).toBe(400);
+        expect(res.body.error).toContain('الأولية');
+        expect(mockQuery.mock.calls.some(([sql]) => sql.includes('INSERT INTO invoice_items'))).toBe(false);
+    });
+
+    test('POST /:id/invoice rejects extra items without a name on proforma', async () => {
+        mockQuery.mockImplementation(async (sql) => {
+            if (sql.includes('system_settings')) return { rows: [] };
+            if (sql.includes('FOR UPDATE')) {
+                return { rowCount: 1, rows: [{ id: 'o1', order_number: 1, client_id: 'c1', status: 'production', grand_total: '0' }] };
+            }
+            if (sql.includes('FROM invoices') && sql.includes("status = 'draft'")) return { rowCount: 0, rows: [] };
+            return { rowCount: 0, rows: [] };
+        });
+
+        const res = await request(app)
+            .post('/api/orders/o1/invoice')
+            .send({ type: 'proforma', items: [{ item_name: '  ', qty: 1, unit_price: 100, is_extra: true }] });
+
+        expect(res.status).toBe(400);
+        expect(mockQuery.mock.calls.some(([sql]) => sql.includes('INSERT INTO invoice_items'))).toBe(false);
+    });
+
     test('POST /:id/invoice still rejects non-production statuses like quote', async () => {
         mockQuery.mockImplementation(async (sql) => {
             if (sql.includes('system_settings')) return { rows: [] };
