@@ -107,39 +107,53 @@ router.post('/', authenticate, authorize(['admin', 'manager', 'super_admin', 'sa
 router.patch('/:id', authenticate, authorize(['admin', 'manager', 'super_admin', 'sales_rep']), validateBody(pantoneColorUpdate), async (req, res) => {
     try {
         const { id } = req.params;
-        const { color_code, color_name, hex_value, notes, sort_order } = req.validatedBody;
+        const body = req.validatedBody || {};
+
+        const existing = await db.query(
+            'SELECT id, client_id FROM client_pantone_colors WHERE id = $1 LIMIT 1',
+            [id]
+        );
+        if (!existing.rows.length) return error(res, 'اللون غير موجود', 404);
 
         // Ownership check for sales_rep
         const isSalesRep = req.user.role === 'sales_rep';
         if (isSalesRep) {
-            const colorCheck = await db.query(
-                'SELECT client_id FROM client_pantone_colors WHERE id = $1 LIMIT 1',
-                [id]
+            const clientCheck = await db.query(
+                'SELECT created_by FROM clients WHERE id = $1 LIMIT 1',
+                [existing.rows[0].client_id]
             );
-            if (colorCheck.rows.length) {
-                const clientCheck = await db.query(
-                    'SELECT created_by FROM clients WHERE id = $1 LIMIT 1',
-                    [colorCheck.rows[0].client_id]
-                );
-                if (!clientCheck.rows.length || clientCheck.rows[0].created_by !== req.user.id) {
-                    return error(res, 'غير مصرح لك بتعديل هذا اللون.', 403);
-                }
+            if (!clientCheck.rows.length || clientCheck.rows[0].created_by !== req.user.id) {
+                return error(res, 'غير مصرح لك بتعديل هذا اللون.', 403);
             }
         }
 
+        // Prevent duplicate color_code per client when the code is being changed
+        if (Object.prototype.hasOwnProperty.call(body, 'color_code') && body.color_code) {
+            const dup = await db.query(
+                `SELECT id FROM client_pantone_colors
+                 WHERE client_id = $1 AND color_code = $2 AND id <> $3`,
+                [existing.rows[0].client_id, body.color_code.trim(), id]
+            );
+            if (dup.rowCount > 0) return error(res, 'هذا الكود موجود مسبقاً لهذا العميل', 409);
+        }
+
+        // Update only the fields explicitly provided — an explicit null clears the column
+        const columns = ['color_code', 'color_name', 'hex_value', 'notes', 'sort_order'];
+        const sets   = [];
+        const params = [];
+        for (const col of columns) {
+            if (Object.prototype.hasOwnProperty.call(body, col)) {
+                params.push(col === 'color_code' && typeof body[col] === 'string' ? body[col].trim() : body[col]);
+                sets.push(`${col} = $${params.length}`);
+            }
+        }
+        if (!sets.length) return error(res, 'لا توجد بيانات للتحديث', 400);
+
+        params.push(id);
         const result = await db.query(
-            `UPDATE client_pantone_colors
-             SET color_code  = COALESCE($1, color_code),
-                 color_name  = COALESCE($2, color_name),
-                 hex_value   = COALESCE($3, hex_value),
-                 notes       = COALESCE($4, notes),
-                 sort_order  = COALESCE($5, sort_order)
-             WHERE id = $6
-             RETURNING *`,
-            [color_code || null, color_name || null, hex_value || null, notes || null,
-             sort_order !== undefined ? sort_order : null, id]
+            `UPDATE client_pantone_colors SET ${sets.join(', ')} WHERE id = $${params.length} RETURNING *`,
+            params
         );
-        if (result.rowCount === 0) return error(res, 'اللون غير موجود', 404);
         return res.status(200).json({ success: true, data: result.rows[0], message: 'تم التحديث بنجاح' });
     } catch (err) {
         console.error('[PantoneColors] PATCH error:', err.message);

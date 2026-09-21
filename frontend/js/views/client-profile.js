@@ -784,12 +784,20 @@
                     ${c.hex_value  ? `<p class="text-xs font-mono text-slate-400 mt-0.5">${esc(c.hex_value)}</p>` : ''}
                     ${c.notes      ? `<p class="text-xs text-slate-400 mt-0.5 truncate" title="${esc(c.notes)}">${esc(c.notes)}</p>` : ''}
                 </div>
-                <button onclick="window._cpDeleteColor('${c.id}')"
-                        title="حذف اللون"
-                        class="absolute top-1.5 left-1.5 w-6 h-6 flex items-center justify-center rounded-full
-                               bg-black/30 hover:bg-red-500 text-white text-xs opacity-0 group-hover:opacity-100 transition-all">
-                    <i class="fa-solid fa-xmark"></i>
-                </button>
+                <div class="absolute top-1.5 left-1.5 flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                    <button onclick="window._cpOpenEditColor('${c.id}')"
+                            title="تعديل اللون"
+                            class="w-6 h-6 flex items-center justify-center rounded-full
+                                   bg-black/30 hover:bg-purple-500 text-white text-xs">
+                        <i class="fa-solid fa-pen"></i>
+                    </button>
+                    <button onclick="window._cpDeleteColor('${c.id}')"
+                            title="حذف اللون"
+                            class="w-6 h-6 flex items-center justify-center rounded-full
+                                   bg-black/30 hover:bg-red-500 text-white text-xs">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
             </div>`;
         }).join('');
     }
@@ -806,6 +814,8 @@
     // selected pantone from library
     let _cpSelectedPantone = null;
     let _cpPantoneType = 'C';
+    // id of the color currently being edited (null = add mode)
+    let _cpEditingColorId = null;
 
     window._cpSetPantoneType = function(type) {
         _cpPantoneType = type;
@@ -906,6 +916,7 @@
         const modal = document.getElementById('cp-color-modal');
         if (!modal) return;
         _cpSelectedPantone = null;
+        _cpEditingColorId  = null;
         _cpPantoneType = 'C';
 
         // Reset toggle to C
@@ -934,11 +945,84 @@
         if (selName) selName.textContent = 'ابحث واختر من القائمة أو أدخل يدوياً';
         if (selHex)  selHex.textContent  = '';
 
+        // Reset modal to "add" mode
+        const titleEl = document.getElementById('cp-color-modal-title');
+        const subEl   = document.getElementById('cp-color-modal-sub');
+        if (titleEl) titleEl.textContent = 'إضافة لون بانتون';
+        if (subEl)   subEl.textContent   = 'ابحث في دليل البانتون أو أدخل يدوياً';
+        const saveBtn       = document.getElementById('cp-color-save-btn');
+        const saveAnotherBtn = document.getElementById('cp-color-save-another-btn');
+        if (saveBtn)        saveBtn.innerHTML = '<i class="fa-solid fa-check ml-1"></i> حفظ';
+        if (saveAnotherBtn) saveAnotherBtn.classList.remove('hidden');
+        const details = document.getElementById('cp-manual-details');
+        if (details) details.open = false;
+
         document.getElementById('cp-pantone-results')?.classList.add('hidden');
 
         modal.style.display = 'flex';
         requestAnimationFrame(() => modal.classList.add('opacity-100'));
         setTimeout(() => document.getElementById('cp-pantone-search')?.focus(), 250);
+    };
+
+    window._cpOpenEditColor = function(colorId) {
+        const modal = document.getElementById('cp-color-modal');
+        const color = _colorsData.find(c => String(c.id) === String(colorId));
+        if (!modal || !color) return;
+
+        _cpEditingColorId  = color.id;
+        _cpSelectedPantone = null;
+        _cpPantoneType = 'C';
+
+        // Reset toggle to C
+        const tabC = document.getElementById('cp-pantone-tab-c');
+        const tabU = document.getElementById('cp-pantone-tab-u');
+        if (tabC) { tabC.classList.add('bg-white', 'text-purple-600', 'shadow-sm'); tabC.classList.remove('text-slate-400'); }
+        if (tabU) { tabU.classList.remove('bg-white', 'text-purple-600', 'shadow-sm'); tabU.classList.add('text-slate-400'); }
+
+        const hex = /^#[0-9A-Fa-f]{6}$/.test(color.hex_value || '') ? color.hex_value : '#cccccc';
+
+        // Pre-fill fields with current values
+        const searchEl = document.getElementById('cp-pantone-search');
+        const codeEl   = document.getElementById('cp-color-code');
+        const nameEl   = document.getElementById('cp-color-name');
+        const hexEl    = document.getElementById('cp-color-hex');
+        const hexTxt   = document.getElementById('cp-color-hex-text');
+        const notesEl  = document.getElementById('cp-color-notes');
+        if (searchEl) searchEl.value = color.color_code || '';
+        if (codeEl)   codeEl.value   = color.color_code || '';
+        if (nameEl)   nameEl.value   = color.color_name || '';
+        if (hexEl)    hexEl.value    = hex;
+        if (hexTxt)   hexTxt.value   = color.hex_value || '';
+        if (notesEl)  notesEl.value  = color.notes || '';
+
+        // Selection card shows current values
+        const preview = document.getElementById('cp-color-preview');
+        const selCode = document.getElementById('cp-color-selected-code');
+        const selName = document.getElementById('cp-color-selected-name');
+        const selHex  = document.getElementById('cp-color-selected-hex');
+        if (preview) preview.style.background = hex;
+        if (selCode) selCode.textContent = color.color_code || '';
+        if (selName) selName.textContent = color.color_name || '—';
+        if (selHex)  selHex.textContent  = color.hex_value || '';
+
+        // Expand manual fields so current values are visible/editable
+        const details = document.getElementById('cp-manual-details');
+        if (details) details.open = true;
+
+        // Switch modal to "edit" mode
+        const titleEl = document.getElementById('cp-color-modal-title');
+        const subEl   = document.getElementById('cp-color-modal-sub');
+        if (titleEl) titleEl.textContent = 'تعديل لون بانتون';
+        if (subEl)   subEl.textContent   = 'عدّل بيانات اللون ثم اضغط حفظ التعديلات';
+        const saveBtn        = document.getElementById('cp-color-save-btn');
+        const saveAnotherBtn = document.getElementById('cp-color-save-another-btn');
+        if (saveBtn)        saveBtn.innerHTML = '<i class="fa-solid fa-check ml-1"></i> حفظ التعديلات';
+        if (saveAnotherBtn) saveAnotherBtn.classList.add('hidden');
+
+        document.getElementById('cp-pantone-results')?.classList.add('hidden');
+
+        modal.style.display = 'flex';
+        requestAnimationFrame(() => modal.classList.add('opacity-100'));
     };
 
     window._cpCloseColorModal = function() {
@@ -972,6 +1056,7 @@
     window._cpSaveColor = async function(keepOpen) {
         const clientId = window._cpClientId;
         if (!clientId) return;
+        const editingId = _cpEditingColorId;
 
         // Priority: selected pantone → manual fields
         let code, name, hex;
@@ -984,14 +1069,22 @@
             const manName = (document.getElementById('cp-color-name')?.value || '').trim();
             if (manCode) code = manCode;
             if (manName) name = manName;
+            const manHexTxt = (document.getElementById('cp-color-hex-text')?.value || '').trim();
+            const manHex    = manHexTxt.startsWith('#') ? manHexTxt : '#'+manHexTxt;
+            if (manHexTxt && /^#[0-9A-Fa-f]{6}$/.test(manHex)) hex = manHex;
         } else {
             code = (document.getElementById('cp-color-code')?.value || '').trim();
             name = (document.getElementById('cp-color-name')?.value || '').trim();
             const hexTxt    = (document.getElementById('cp-color-hex-text')?.value || '').trim();
             const hexPicker = document.getElementById('cp-color-hex')?.value || '';
-            hex = hexTxt && /^#[0-9A-Fa-f]{6}$/.test(hexTxt.startsWith('#') ? hexTxt : '#'+hexTxt)
-                ? (hexTxt.startsWith('#') ? hexTxt : '#'+hexTxt)
-                : (hexPicker !== '#cccccc' ? hexPicker : null);
+            const normHex   = hexTxt.startsWith('#') ? hexTxt : '#'+hexTxt;
+            if (hexTxt && /^#[0-9A-Fa-f]{6}$/.test(normHex)) {
+                hex = normHex;
+            } else if (editingId && !hexTxt) {
+                hex = null; // field cleared explicitly while editing
+            } else {
+                hex = hexPicker !== '#cccccc' ? hexPicker : null;
+            }
         }
 
         if (!code) {
@@ -1002,7 +1095,9 @@
 
         const notes = (document.getElementById('cp-color-notes')?.value || '').trim();
         const normalizedCode = code.trim().toLowerCase();
-        const duplicateColor = _colorsData.find(c => String(c.color_code || '').trim().toLowerCase() === normalizedCode);
+        const duplicateColor = _colorsData.find(c =>
+            String(c.id) !== String(editingId || '') &&
+            String(c.color_code || '').trim().toLowerCase() === normalizedCode);
         if (duplicateColor) {
             if (window.showToast) window.showToast('هذا اللون موجود بالفعل في ألوان هذا العميل', 'error');
             document.getElementById('cp-pantone-search')?.focus();
@@ -1010,8 +1105,20 @@
         }
 
         try {
-            const btn = document.getElementById(keepOpen ? 'cp-color-save-another-btn' : 'cp-color-save-btn');
+            const btn = document.getElementById(keepOpen && !editingId ? 'cp-color-save-another-btn' : 'cp-color-save-btn');
             if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin ml-1"></i> جاري الحفظ...'; }
+
+            if (editingId) {
+                await window.apiFetch(`/api/client-pantone-colors/${editingId}`, {
+                    method: 'PATCH',
+                    body: { color_code: code, color_name: name || null, hex_value: hex || null, notes: notes || null }
+                });
+                if (window.showToast) window.showToast('تم تحديث اللون بنجاح', 'success');
+                _cpEditingColorId = null;
+                await _loadColors(clientId);
+                window._cpCloseColorModal();
+                return;
+            }
 
             await window.apiFetch('/api/client-pantone-colors', {
                 method: 'POST',
@@ -1050,7 +1157,12 @@
         } finally {
             const btn1 = document.getElementById('cp-color-save-btn');
             const btn2 = document.getElementById('cp-color-save-another-btn');
-            if (btn1) { btn1.disabled = false; btn1.innerHTML = '<i class="fa-solid fa-check ml-1"></i> حفظ'; }
+            if (btn1) {
+                btn1.disabled = false;
+                btn1.innerHTML = _cpEditingColorId
+                    ? '<i class="fa-solid fa-check ml-1"></i> حفظ التعديلات'
+                    : '<i class="fa-solid fa-check ml-1"></i> حفظ';
+            }
             if (btn2) { btn2.disabled = false; btn2.innerHTML = '<i class="fa-solid fa-plus ml-1"></i> حفظ وإضافة آخر'; }
         }
     };
