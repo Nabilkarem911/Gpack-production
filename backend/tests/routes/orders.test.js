@@ -195,10 +195,14 @@ describe('Orders Routes — Zod Validation', () => {
 
         const res = await request(app)
             .post('/api/orders/o1/invoice')
-            .send({ type: 'final', items: [{ variant_id: '550e8400-e29b-41d4-a716-446655440000', qty: 2, unit_price: 100 }] });
+            .send({ type: 'final', items: [{ order_item_id: '660e8400-e29b-41d4-a716-446655440000', variant_id: '550e8400-e29b-41d4-a716-446655440000', qty: 2, unit_price: 100 }] });
 
         expect(res.status).toBe(201);
         expect(res.body.data).toMatchObject({ invoice_id: 'inv1', invoice_number: 42 });
+        const itemInsert = mockQuery.mock.calls.find(([sql, params]) =>
+            sql.includes('INSERT INTO invoice_items') && !sql.includes('is_extra'));
+        expect(itemInsert[0]).toContain('order_item_id');
+        expect(itemInsert[1]).toContain('660e8400-e29b-41d4-a716-446655440000');
     });
 
     test('POST /:id/invoice stores extra free-text items on a proforma invoice', async () => {

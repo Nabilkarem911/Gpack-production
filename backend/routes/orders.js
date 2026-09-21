@@ -2142,9 +2142,9 @@ router.post('/:id/invoice', restrictAdmin, validateBody(orderInvoice), async (re
                     );
                 } else {
                     await client.query(
-                        `INSERT INTO invoice_items (invoice_id, variant_id, quantity, unit_price)
-                         VALUES ($1, $2, $3, $4)`,
-                        [invoice.id, item.variant_id, lineQty, item.unit_price]
+                        `INSERT INTO invoice_items (invoice_id, variant_id, order_item_id, quantity, unit_price)
+                         VALUES ($1, $2, $3, $4, $5)`,
+                        [invoice.id, item.variant_id, item.order_item_id || null, lineQty, item.unit_price]
                     );
                 }
             }

@@ -2873,52 +2873,97 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         _showModal('po-invoice-modal');
     }
 
-    async function _renderInvoiceItems() {
+    function _invoiceItemRowMarkup(item, saved, isProforma, isFallback = false) {
+        const hasOrderDetails = !isFallback;
+        const whReceived = hasOrderDetails ? Math.floor(parseFloat(item.wh_received_qty || 0)) : null;
+        const orderQty = hasOrderDetails ? Math.floor(parseFloat(item.quantity || 0)) : null;
+        const assignedQty = hasOrderDetails ? Math.floor(parseFloat(item.manufacturer_po_qty || 0)) : null;
+        const savedQty = saved ? parseFloat(saved.quantity || 0) : null;
+        const qty = saved ? savedQty : (isProforma ? orderQty : whReceived);
+        const price = saved ? parseFloat(saved.unit_price || 0) : parseFloat(item.unit_price || 0);
+        const maxQty = isProforma ? orderQty : whReceived;
+        const maxAttr = maxQty === null || maxQty === undefined ? '' : `max="${maxQty}"`;
+        const availableAttr = whReceived === null || whReceived === undefined ? '' : `data-available="${whReceived}"`;
+        const stockBadge = !hasOrderDetails
+            ? '<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">تفاصيل الطلب غير متاحة</span>'
+            : whReceived <= 0
+                ? '<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-600" title="الكمية المستلمة للطلب">لم يُستلم بعد</span>'
+                : `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700" title="الكمية المستلمة للطلب">${whReceived}</span>`;
+        const details = hasOrderDetails
+            ? `<span>الطلب: <b>${orderQty}</b></span>
+               <span>مخصص للتصنيع: <b>${assignedQty}</b></span>
+               <span>المستلم: <b>${whReceived}</b></span>`
+            : '<span>القيم المحفوظة في الفاتورة</span>';
+        const variantId = saved?.variant_id || item.variant_id || '';
+        const orderItemId = saved?.order_item_id || (isFallback ? '' : item.id) || '';
+        const name = _escapeHtml(item.product_name || saved?.product_name || '—');
+        const size = _escapeHtml(item.size_name || saved?.size_name || '');
+
+        return `<div class="flex items-center gap-2 py-2 border-b border-slate-100 last:border-0" data-invoice-order-item="${_escapeHtml(orderItemId)}">
+                <div class="flex-1 min-w-0">
+                    <p class="text-sm text-slate-700 font-semibold truncate">${name} ${size}</p>
+                    <div class="flex flex-wrap items-center gap-x-2 gap-y-1 mt-0.5 text-[10px] text-slate-400">
+                        ${details}
+                        ${stockBadge}
+                    </div>
+                </div>
+                <input type="hidden" data-order-item-id="${_escapeHtml(orderItemId)}">
+                <input type="hidden" data-variant-id="${_escapeHtml(variantId)}">
+                <div class="flex items-center gap-2">
+                    <input type="number" min="0" ${maxAttr} step="1" value="${Number.isFinite(qty) ? qty : 0}"
+                           data-item-qty ${availableAttr}
+                           class="w-20 px-2 py-1.5 border border-slate-200 rounded-lg text-sm text-center outline-none focus:border-brand-500"
+                           oninput="window.poView.calcInvoiceTotal()">
+                    <input type="number" min="0" step="0.01" value="${price.toFixed(2)}"
+                           data-item-price
+                           class="w-24 px-2 py-1.5 border border-slate-200 rounded-lg text-sm text-center outline-none focus:border-brand-500"
+                           oninput="window.poView.calcInvoiceTotal()">
+                </div>
+            </div>`;
+    }
+
+    async function _renderInvoiceItems(savedItems = null) {
         const container = _el('invoice-items-container');
         if (!container) return;
 
         const type = _el('invoice-type')?.value || 'proforma';
         const isProforma = type === 'proforma';
-
         const isDirectReceiptOrder = Boolean(_hubOrder?.direct_receipt_id);
         const billableItems = _hubItems.filter(item =>
             isDirectReceiptOrder || parseFloat(item.manufacturer_po_qty || 0) > 0
         );
+        const savedNormalItems = (savedItems || []).filter(item => !item.is_extra);
+        const matchedSavedIndexes = new Set();
 
-        // Available qty for invoicing = wh_received_qty on this order item (NOT total warehouse stock).
-        // Total warehouse stock is shared across all orders; we must only allow invoicing what was
-        // received specifically for this order.
-        container.innerHTML = billableItems.map(item => {
-            const whReceived = Math.floor(parseFloat(item.wh_received_qty || 0));
-            const orderQty   = Math.floor(parseFloat(item.quantity || 0));
-            const qty        = isProforma ? orderQty : whReceived;
-            const available  = whReceived;
-            const maxAttr    = isProforma ? `max="${orderQty}"` : `max="${available}"`;
-            const stockBadge = available <= 0
-                ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-600" title="الكمية المستلمة للطلب">لم يُستلم بعد</span>`
-                : `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700" title="الكمية المستلمة للطلب">${available}</span>`;
-            return `<div class="flex items-center gap-2 py-2 border-b border-slate-100 last:border-0">
-                    <div class="flex-1 min-w-0">
-                        <p class="text-sm text-slate-700 font-semibold truncate">${item.product_name || '\u2014'} ${item.size_name || ''}</p>
-                        <div class="flex items-center gap-1 mt-0.5">
-                            <span class="text-[10px] text-slate-400">\u0645\u062a\u0627\u062d:</span>
-                            ${stockBadge}
-                        </div>
-                    </div>
-                    <input type="hidden" data-variant-id="${item.variant_id || ''}">
-                    <div class="flex items-center gap-2">
-                        <input type="number" min="0" ${maxAttr} step="1" value="${Math.floor(qty)}"
-                               data-item-qty data-available="${available ?? ''}"
-                               class="w-20 px-2 py-1.5 border border-slate-200 rounded-lg text-sm text-center outline-none focus:border-brand-500"
-                               oninput="window.poView.calcInvoiceTotal()">
-                        <input type="number" min="0" step="0.01" value="${parseFloat(item.unit_price||0).toFixed(2)}"
-                               data-item-price
-                               class="w-24 px-2 py-1.5 border border-slate-200 rounded-lg text-sm text-center outline-none focus:border-brand-500"
-                               oninput="window.poView.calcInvoiceTotal()">
-                    </div>
-                </div>`;
-        }).join('') || '<p class="text-sm text-slate-400 text-center py-3">\u0644\u0627 \u062a\u0648\u062c\u062f \u0628\u0646\u0648\u062f</p>';
+        const findSavedItem = (hubItem) => {
+            let index = savedNormalItems.findIndex((item, idx) =>
+                !matchedSavedIndexes.has(idx)
+                && item.order_item_id
+                && String(item.order_item_id) === String(hubItem.id)
+            );
+            if (index < 0) {
+                index = savedNormalItems.findIndex((item, idx) =>
+                    !matchedSavedIndexes.has(idx)
+                    && item.variant_id
+                    && String(item.variant_id) === String(hubItem.variant_id)
+                );
+            }
+            if (index < 0) return null;
+            matchedSavedIndexes.add(index);
+            return savedNormalItems[index];
+        };
 
+        const rows = billableItems.map(item =>
+            _invoiceItemRowMarkup(item, findSavedItem(item), isProforma)
+        );
+
+        // Preserve old or otherwise unmatched invoice lines instead of silently dropping them.
+        savedNormalItems.forEach((saved, index) => {
+            if (matchedSavedIndexes.has(index)) return;
+            rows.push(_invoiceItemRowMarkup(saved, saved, isProforma, true));
+        });
+
+        container.innerHTML = rows.join('') || '<p class="text-sm text-slate-400 text-center py-3">\u0644\u0627 \u062a\u0648\u062c\u062f \u0628\u0646\u0648\u062f</p>';
         _renderInvoiceExtras();
     }
 
@@ -3039,8 +3084,9 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
 
         const scope      = _el('po-invoice-modal') || container;
         const qtyEls     = scope.querySelectorAll('[data-item-qty]');
-        const priceEls   = scope.querySelectorAll('[data-item-price]');
-        const variantEls = scope.querySelectorAll('[data-variant-id]');
+        const priceEls     = scope.querySelectorAll('[data-item-price]');
+        const variantEls   = scope.querySelectorAll('[data-variant-id]');
+        const orderItemEls = scope.querySelectorAll('[data-order-item-id]');
         const items = [];
 
         for (let i = 0; i < qtyEls.length; i++) {
@@ -3057,7 +3103,8 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
                 continue;
             }
             const vid   = variantEls[i]?.getAttribute('data-variant-id');
-            if (qty > 0 && price > 0 && vid) items.push({ variant_id: vid, qty, unit_price: price });
+            const oid   = orderItemEls[i]?.getAttribute('data-order-item-id') || null;
+            if (qty > 0 && price > 0 && vid) items.push({ order_item_id: oid, variant_id: vid, qty, unit_price: price });
         }
 
         if (!items.length) { _toast('أضف بنداً واحداً على الأقل', 'error'); return; }
@@ -3424,34 +3471,11 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
             const typeEl = _el('invoice-type');
             if (typeEl) { typeEl.value = 'proforma'; typeEl.disabled = true; }
 
-            // Render items with existing values (extra lines go to the extras box)
-            const container = _el('invoice-items-container');
-            if (!container) return;
-
-            const items = (inv.items || []).filter(i => !i.is_extra);
+            // Render the same order details as creation, overlaid with saved invoice values.
             _invoiceExtras  = (inv.items || []).filter(i => i.is_extra)
                 .map(i => ({ name: i.item_name || i.product_name || '', qty: parseFloat(i.quantity || 0), price: parseFloat(i.unit_price || 0) }));
             _proformaExtras = [];
-            container.innerHTML = items.map(item => {
-                const qty = parseFloat(item.quantity || 0);
-                const price = parseFloat(item.unit_price || 0);
-                return `<div class="flex items-center gap-2 py-2 border-b border-slate-100 last:border-0">
-                    <div class="flex-1 min-w-0">
-                        <p class="text-sm text-slate-700 font-semibold truncate">${item.product_name || '—'} ${item.size_name || ''}</p>
-                    </div>
-                    <input type="hidden" data-variant-id="${item.variant_id || ''}">
-                    <div class="flex items-center gap-2">
-                        <input type="number" min="0" step="1" value="${qty}"
-                               data-item-qty
-                               class="w-20 px-2 py-1.5 border border-slate-200 rounded-lg text-sm text-center outline-none focus:border-brand-500"
-                               oninput="window.poView.calcInvoiceTotal()">
-                        <input type="number" min="0" step="0.01" value="${price.toFixed(2)}"
-                               data-item-price
-                               class="w-24 px-2 py-1.5 border border-slate-200 rounded-lg text-sm text-center outline-none focus:border-brand-500"
-                               oninput="window.poView.calcInvoiceTotal()">
-                    </div>
-                </div>`;
-            }).join('');
+            await _renderInvoiceItems(inv.items || []);
 
             // Load previous payments
             const fin = await window.apiFetch(`/api/orders/${_hubOrderId}/financial`).catch(() => null);
@@ -3491,8 +3515,9 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
 
         const scope      = _el('po-invoice-modal') || container;
         const qtyEls     = scope.querySelectorAll('[data-item-qty]');
-        const priceEls   = scope.querySelectorAll('[data-item-price]');
-        const variantEls = scope.querySelectorAll('[data-variant-id]');
+        const priceEls     = scope.querySelectorAll('[data-item-price]');
+        const variantEls   = scope.querySelectorAll('[data-variant-id]');
+        const orderItemEls = scope.querySelectorAll('[data-order-item-id]');
         const items = [];
 
         for (let i = 0; i < qtyEls.length; i++) {
@@ -3509,7 +3534,8 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
                 continue;
             }
             const vid   = variantEls[i]?.getAttribute('data-variant-id');
-            if (qty > 0 && price > 0 && vid) items.push({ variant_id: vid, quantity: qty, unit_price: price });
+            const oid   = orderItemEls[i]?.getAttribute('data-order-item-id') || null;
+            if (qty > 0 && price > 0 && vid) items.push({ order_item_id: oid, variant_id: vid, quantity: qty, unit_price: price });
         }
 
         if (!items.length) { _toast('أضف بنداً واحداً على الأقل', 'error'); return; }

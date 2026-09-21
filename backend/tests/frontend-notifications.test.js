@@ -113,3 +113,32 @@ test('quotation share modal exposes a separate link-change button', () => {
     expect(html).toContain('id="change-share-link-btn"');
     expect(html).toContain('window.changeShareQuoteLink()');
 });
+
+test('production invoice edit reuses order details and matches saved lines safely', () => {
+    const source = fs.readFileSync(
+        require('path').join(__dirname, '..', '..', 'frontend', 'js', 'views', 'production_orders_new.js'),
+        'utf8'
+    );
+
+    expect(source).toContain('async function _renderInvoiceItems(savedItems = null)');
+    expect(source).toContain('item.order_item_id');
+    expect(source).toContain('String(item.order_item_id) === String(hubItem.id)');
+    expect(source).toContain('String(item.variant_id) === String(hubItem.variant_id)');
+    expect(source).toContain('_invoiceItemRowMarkup(saved, saved, isProforma, true)');
+    expect(source).toContain('await _renderInvoiceItems(inv.items || [])');
+    expect(source).toContain('data-order-item-id');
+    expect(source).toContain('data-available');
+});
+
+test('production invoice edit keeps saved extra line values separate', () => {
+    const source = fs.readFileSync(
+        require('path').join(__dirname, '..', '..', 'frontend', 'js', 'views', 'production_orders_new.js'),
+        'utf8'
+    );
+    const editBlock = source.slice(source.indexOf('async function _editInvoice'), source.indexOf('async function _saveEditInvoice'));
+
+    expect(editBlock).toContain('filter(i => i.is_extra)');
+    expect(editBlock).toContain('item_name || i.product_name');
+    expect(editBlock).toContain('parseFloat(i.quantity || 0)');
+    expect(editBlock).toContain('parseFloat(i.unit_price || 0)');
+});
