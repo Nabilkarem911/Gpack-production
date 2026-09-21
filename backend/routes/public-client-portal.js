@@ -256,7 +256,7 @@ router.get('/client-portal/:token', async (req, res) => {
                 SELECT
                     i.order_id,
                     COALESCE(SUM(CASE WHEN i.status != 'cancelled' THEN i.grand_total ELSE 0 END), 0)::numeric AS invoice_total,
-                    COALESCE(SUM(CASE WHEN i.status = 'final' THEN i.grand_total ELSE 0 END), 0)::numeric AS final_invoice_total,
+                    COALESCE(SUM(CASE WHEN i.status IN ('issued', 'paid', 'overdue', 'archived') THEN i.grand_total ELSE 0 END), 0)::numeric AS final_invoice_total,
                     MAX(i.created_at) AS last_invoice_at
                 FROM invoices i
                 GROUP BY i.order_id

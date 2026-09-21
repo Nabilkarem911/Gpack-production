@@ -7,7 +7,7 @@
 (function () {
 
     // ── State ──────────────────────────────────────────────────────────────────
-    let _allOrders    = { pending_assignment: [], active: [], delivering: [], completed: [], archived: [] };
+    let _allOrders    = { pending_assignment: [], active: [], delivering: [], awaiting_invoice: [], completed: [], archived: [] };
     let _suppliers    = [];
     let _warehouses   = [];
     let _activeTab    = 'pending_assignment';
@@ -262,18 +262,22 @@
     // ── Load data ──────────────────────────────────────────────────────────────
     async function _loadOrders() {
         try {
-            const [activeRes, completedRes, archivedRes] = await Promise.all([
+            const [activeRes, doneRes, archivedRes] = await Promise.all([
                 window.apiFetch('/api/orders?statuses=production,processing'),
-                window.apiFetch('/api/orders?status=completed'),
-                window.apiFetch('/api/orders?status=delivered'),
+                window.apiFetch('/api/orders?statuses=completed,delivered'),
+                window.apiFetch('/api/orders?status=archived'),
             ]);
             const productionOrders = (activeRes?.data) || [];
             const assignedOrders = productionOrders.filter(o => _isFullyAssigned(o));
             _allOrders.pending_assignment = productionOrders.filter(o => !_isFullyAssigned(o));
             _allOrders.active             = assignedOrders.filter(o => Number(o.delivery_note_count || 0) === 0);
             _allOrders.delivering         = assignedOrders.filter(o => Number(o.delivery_note_count || 0) > 0);
-            _allOrders.completed = (completedRes?.data) || [];
-            _allOrders.archived  = (archivedRes?.data)  || [];
+            // Delivered goods (completed/delivered) split by final-invoice status:
+            // awaiting_invoice → no issued final invoice yet; completed → invoiced permanently.
+            const doneOrders = (doneRes?.data) || [];
+            _allOrders.awaiting_invoice = doneOrders.filter(o => !o.has_final_invoice);
+            _allOrders.completed        = doneOrders.filter(o =>  o.has_final_invoice);
+            _allOrders.archived         = (archivedRes?.data) || [];
             _updateStats();
             _renderTable();
         } catch (err) {
@@ -304,7 +308,7 @@
         const pending    = _allOrders.pending_assignment.length;
         const processing = [...active, ...delivering].filter(o => o.status === 'processing').length;
         const completed  = _allOrders.completed.length;
-        const unpaid = [..._allOrders.pending_assignment, ...active, ...delivering, ..._allOrders.completed].filter(o =>
+        const unpaid = [..._allOrders.pending_assignment, ...active, ...delivering, ..._allOrders.awaiting_invoice, ..._allOrders.completed].filter(o =>
             parseFloat(o.grand_total || 0) - parseFloat(o.paid_amount || 0) > 0.01
         ).length;
         _setText('po-stat-pending',    pending);
@@ -2982,6 +2986,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
             if (type === 'final') {
                 const fresh = await window.apiFetch(`/api/orders/${_hubOrderId}`);
                 if (fresh?.data) { _hubOrder = fresh.data; _renderHubHeader(); }
+                await _loadOrders();
             }
             await _renderHubFinancial();
         } catch (err) {
@@ -3800,7 +3805,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
     // ── Tab switching (page list) ──────────────────────────────────────────────
     function _switchTab(tab) {
         _activeTab = tab;
-        ['pending_assignment','active','delivering','completed','archived'].forEach(t => {
+        ['pending_assignment','active','delivering','awaiting_invoice','completed','archived'].forEach(t => {
             const btn = _el(`po-tab-${t}`);
             if (!btn) return;
             if (t === tab) {

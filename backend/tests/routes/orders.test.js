@@ -144,6 +144,80 @@ describe('Orders Routes — Zod Validation', () => {
         }), expect.anything());
     });
 
+    test('GET / exposes has_final_invoice derived from valid final invoice statuses', async () => {
+        mockQuery.mockResolvedValueOnce({ rows: [
+            { id: 'o1', status: 'completed', has_final_invoice: true,  total_count: 2 },
+            { id: 'o2', status: 'delivered', has_final_invoice: false, total_count: 2 },
+        ] });
+
+        const res = await request(app).get('/api/orders?statuses=completed,delivered');
+
+        expect(res.status).toBe(200);
+        const sql = mockQuery.mock.calls[0][0];
+        expect(sql).toContain('has_final_invoice');
+        expect(sql).toContain("'issued', 'paid', 'overdue', 'archived'");
+        expect(sql).not.toContain("inv.status = 'final'");
+        expect(res.body.data[0].has_final_invoice).toBe(true);
+        expect(res.body.data[1].has_final_invoice).toBe(false);
+    });
+
+    test('GET /ready-for-invoice excludes orders having a final-status invoice', async () => {
+        mockQuery
+            .mockResolvedValueOnce({ rows: [{ total: 1 }] })
+            .mockResolvedValueOnce({ rows: [{ id: 'o1', order_number: 7, status: 'delivered' }] });
+
+        const res = await request(app).get('/api/orders/ready-for-invoice');
+
+        expect(res.status).toBe(200);
+        expect(res.body.total).toBe(1);
+        for (const call of mockQuery.mock.calls) {
+            expect(call[0]).toContain("'issued', 'paid', 'overdue', 'archived'");
+            expect(call[0]).not.toContain("inv.status = 'final'");
+            expect(call[0]).not.toContain("status = 'final'");
+        }
+        // delivered orders without a final invoice are eligible for invoicing
+        expect(mockQuery.mock.calls[0][0]).toContain("'delivered'");
+    });
+
+    test('POST /:id/invoice issues a final invoice for a delivered order', async () => {
+        mockQuery.mockImplementation(async (sql) => {
+            if (sql.includes('system_settings')) return { rows: [] };
+            if (sql.includes('FOR UPDATE')) {
+                return { rowCount: 1, rows: [{ id: 'o1', order_number: 1, client_id: 'c1', status: 'delivered', grand_total: '0' }] };
+            }
+            if (sql.includes('FROM invoices') && sql.includes("status = 'issued'")) return { rowCount: 0, rows: [] };
+            if (sql.includes('FROM order_items oi')) return { rowCount: 1, rows: [{ received: '10', product_name: 'P', size_name: 'M' }] };
+            if (sql.includes('INSERT INTO invoices')) return { rowCount: 1, rows: [{ id: 'inv1', invoice_number: 42 }] };
+            if (sql.includes('INSERT INTO invoice_items')) return { rowCount: 1, rows: [] };
+            if (sql.includes('UPDATE orders')) return { rowCount: 1, rows: [] };
+            return { rowCount: 0, rows: [] };
+        });
+
+        const res = await request(app)
+            .post('/api/orders/o1/invoice')
+            .send({ type: 'final', items: [{ variant_id: '550e8400-e29b-41d4-a716-446655440000', qty: 2, unit_price: 100 }] });
+
+        expect(res.status).toBe(201);
+        expect(res.body.data).toMatchObject({ invoice_id: 'inv1', invoice_number: 42 });
+    });
+
+    test('POST /:id/invoice still rejects non-production statuses like quote', async () => {
+        mockQuery.mockImplementation(async (sql) => {
+            if (sql.includes('system_settings')) return { rows: [] };
+            if (sql.includes('FOR UPDATE')) {
+                return { rowCount: 1, rows: [{ id: 'o1', order_number: 1, client_id: 'c1', status: 'quote', grand_total: '0' }] };
+            }
+            return { rowCount: 0, rows: [] };
+        });
+
+        const res = await request(app)
+            .post('/api/orders/o1/invoice')
+            .send({ type: 'final', items: [{ variant_id: '550e8400-e29b-41d4-a716-446655440000', qty: 1, unit_price: 10 }] });
+
+        expect(res.status).toBe(400);
+        expect(res.body.error).toContain('فاتورة');
+    });
+
     test('GET /:id includes direct receipt supplier and source metadata', async () => {
         mockQuery
             .mockResolvedValueOnce({ rowCount: 1, rows: [{

@@ -146,6 +146,11 @@ router.get('/', async (req, res) => {
                 o.pricing_status,
                 o.pricing_notes,
                 (SELECT COUNT(*)::int FROM delivery_notes dn WHERE dn.order_id = o.id) AS delivery_note_count,
+                EXISTS (
+                    SELECT 1 FROM invoices inv
+                    WHERE inv.order_id = o.id
+                      AND inv.status IN ('issued', 'paid', 'overdue', 'archived')
+                ) AS has_final_invoice,
                 (SELECT dr.id FROM direct_receipts dr WHERE dr.production_order_id = o.id LIMIT 1) AS direct_receipt_id,
                 (SELECT s.company_name
                  FROM direct_receipts dr
@@ -331,7 +336,7 @@ router.get('/ready-for-invoice', async (req, res) => {
     try {
         const { client_id, search, limit = 50, offset = 0 } = req.query;
 
-        let where = ['o.status IN (\'production\', \'processing\', \'completed\')'];
+        let where = ['o.status IN (\'production\', \'processing\', \'completed\', \'delivered\')'];
         const params = [];
         let paramIdx = 1;
 
@@ -355,7 +360,8 @@ router.get('/ready-for-invoice', async (req, res) => {
             JOIN order_items oi ON oi.order_id = o.id
             WHERE ${whereClause}
               AND NOT EXISTS (
-                  SELECT 1 FROM invoices inv WHERE inv.order_id = o.id AND inv.status = 'final'
+                  SELECT 1 FROM invoices inv WHERE inv.order_id = o.id
+                    AND inv.status IN ('issued', 'paid', 'overdue', 'archived')
               )
         `, params);
 
@@ -371,7 +377,8 @@ router.get('/ready-for-invoice', async (req, res) => {
             JOIN order_items oi ON oi.order_id = o.id
             WHERE ${whereClause}
               AND NOT EXISTS (
-                  SELECT 1 FROM invoices inv WHERE inv.order_id = o.id AND inv.status = 'final'
+                  SELECT 1 FROM invoices inv WHERE inv.order_id = o.id
+                    AND inv.status IN ('issued', 'paid', 'overdue', 'archived')
               )
             GROUP BY o.id, o.order_number, o.order_date, o.status, o.internal_notes, o.created_at,
                      c.id, c.name
@@ -1986,8 +1993,8 @@ router.post('/:id/invoice', restrictAdmin, validateBody(orderInvoice), async (re
             );
             if (orderRes.rowCount === 0) throw new Error('الطلب غير موجود.');
             const order = orderRes.rows[0];
-            if (!['production', 'processing', 'completed'].includes(order.status)) {
-                throw new Error('لا يمكن إصدار فاتورة إلا لأوامر الإنتاج.');
+            if (!['production', 'processing', 'completed', 'delivered'].includes(order.status)) {
+                throw new Error('لا يمكن إصدار فاتورة إلا لأوامر الإنتاج أو المُسلَّمة.');
             }
 
             // ── Prevent duplicate final invoices ──
