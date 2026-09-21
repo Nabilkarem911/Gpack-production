@@ -1535,7 +1535,7 @@
         </div>
 
         <div class="space-y-3">
-            <label class="block text-xs font-bold text-slate-600 mb-1">رابط العرض (صالح 45 يومًا)</label>
+            <label class="block text-xs font-bold text-slate-600 mb-1">رابط العرض</label>
             <div id="share-link-row" class="flex gap-2">
                 <input id="share-quote-link" type="text" readonly
                        class="flex-1 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 outline-none select-all"
@@ -1546,6 +1546,10 @@
                 </button>
             </div>
             <div id="share-quote-status"></div>
+            <button id="change-share-link-btn" onclick="window.changeShareQuoteLink()"
+                    class="hidden w-full py-2 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-700 rounded-xl text-xs font-bold transition-colors">
+                <i class="fa-solid fa-rotate ml-1"></i> تغيير الرابط
+            </button>
         </div>
 
         <div id="share-receipt-section" class="hidden"></div>

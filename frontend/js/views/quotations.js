@@ -23,6 +23,7 @@
     let _standardTerms = [];    // loaded once from /api/terms
     let _viewingOrderId = null;  // tracks order ID when in view-only mode (for clone/back)
     let _quotePollTimer = null;  // polling timer for live quote status updates
+    let _sharingOrderId = null;  // order ID currently shown in the share modal
 
     const DESIGN_IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'svg', 'gif', 'webp', 'bmp', 'tif', 'tiff']);
     const DESIGN_PDF_EXTENSIONS   = new Set(['pdf']);
@@ -3634,6 +3635,7 @@
     // window.shareQuote(orderId) — shows share modal with link + client response
     // ==========================================================================
     window.shareQuote = async function(orderId) {
+        _sharingOrderId = orderId;
         const modal         = document.getElementById('share-quote-modal');
         const linkEl        = document.getElementById('share-quote-link');
         const linkRow       = document.getElementById('share-link-row');
@@ -3664,28 +3666,27 @@
                 ? signaturePath
                 : null;
 
-            // Step 2: Determine token — reuse if still valid, otherwise generate new
-            let token = order.share_token;
-            let expires = order.token_expires_at;
-            const minimumExpiry = new Date(Date.now() + 45 * 24 * 60 * 60 * 1000);
-            const tokenStillValid = token && expires && new Date(expires) > minimumExpiry;
+            // Step 2: Show the existing token only. Changing the link is explicit.
+            const token = order.share_token;
+            const expires = order.token_expires_at ? new Date(order.token_expires_at) : null;
+            const tokenStillValid = token && expires && expires > new Date();
+            const changeLinkBtn = document.getElementById('change-share-link-btn');
 
-            if (!tokenStillValid) {
-                const shareRes = await window.apiFetch(`/api/public/quotations/${orderId}/share`, {
-                    method: 'POST',
-                    body: { expires_days: 45 },
-                });
-                token   = shareRes?.data?.token;
-                expires = shareRes?.data?.expires_at;
-                if (!token) throw new Error('فشل إنشاء الرابط.');
-            }
-
-            const url = `${window.location.origin}/public-quotation.html?token=${token}`;
-            if (linkEl) linkEl.value = url;
-
-            if (statusEl && expires) {
-                const d = new Date(expires).toLocaleDateString('en-GB');
-                statusEl.innerHTML = `<span class="text-xs text-slate-400"><i class="fa-regular fa-clock ml-1"></i>صالح حتى: ${d}</span>`;
+            if (tokenStillValid) {
+                const url = `${window.location.origin}/public-quotation.html?token=${token}`;
+                if (linkEl) linkEl.value = url;
+                if (changeLinkBtn) changeLinkBtn.classList.remove('hidden');
+                if (statusEl) {
+                    const d = expires.toLocaleDateString('en-GB');
+                    statusEl.innerHTML = `<span class="text-xs text-slate-400"><i class="fa-regular fa-clock ml-1"></i>صالح حتى: ${d}</span>`;
+                }
+            } else {
+                if (linkEl) linkEl.value = token ? 'انتهت صلاحية الرابط الحالي.' : 'لم يتم إنشاء رابط مشاركة بعد.';
+                if (changeLinkBtn) changeLinkBtn.classList.remove('hidden');
+                if (statusEl) {
+                    statusEl.innerHTML = '<span class="text-xs text-amber-600"><i class="fa-solid fa-triangle-exclamation ml-1"></i>لا يوجد رابط صالح حاليًا.</span>';
+                }
+                if (copyBtn) copyBtn.classList.add('hidden');
             }
 
             // Step 3: Show client response state
@@ -3741,6 +3742,12 @@
                         </div>`;
                     receiptSection.classList.remove('hidden');
                 }
+            } else if (receiptSection) {
+                receiptSection.innerHTML = `
+                    <div class="mt-3 p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                        <p class="text-xs font-bold text-slate-600"><i class="fa-regular fa-clock ml-1"></i>لم يرد العميل على العرض بعد</p>
+                    </div>`;
+                receiptSection.classList.remove('hidden');
             }
 
             await loadQuotes();
@@ -3749,9 +3756,25 @@
         }
     };
 
+    window.changeShareQuoteLink = async function() {
+        if (!_sharingOrderId) return;
+        if (!confirm('سيتم إلغاء الرابط الحالي وإنشاء رابط جديد. هل تريد المتابعة؟')) return;
+        try {
+            const shareRes = await window.apiFetch(`/api/public/quotations/${_sharingOrderId}/share`, {
+                method: 'POST',
+                body: { expires_days: 45 },
+            });
+            if (!shareRes?.data?.token) throw new Error('فشل إنشاء الرابط الجديد.');
+            await window.shareQuote(_sharingOrderId);
+        } catch (err) {
+            const statusEl = document.getElementById('share-quote-status');
+            if (statusEl) statusEl.innerHTML = `<span class="text-xs text-red-600">${err.message || 'فشل تغيير الرابط'}</span>`;
+        }
+    };
+
     window.copyShareLink = function() {
         const linkEl = document.getElementById('share-quote-link');
-        if (!linkEl || !linkEl.value || linkEl.value.startsWith('جاري') || linkEl.value.startsWith('حدث')) return;
+        if (!linkEl || !/^https?:\/\//.test(linkEl.value)) return;
         navigator.clipboard.writeText(linkEl.value).then(() => {
             const btn = document.getElementById('copy-link-btn');
             if (btn) {
@@ -3769,6 +3792,7 @@
 
     window.closeShareModal = function() {
         const modal = document.getElementById('share-quote-modal');
+        _sharingOrderId = null;
         if (modal) { modal.style.opacity = '0'; setTimeout(() => { modal.style.display = 'none'; }, 200); }
     };
 
