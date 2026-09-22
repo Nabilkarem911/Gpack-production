@@ -27,6 +27,7 @@
     let _editMOPantoneColors = [];
     let _editMODesignTargetId = null;
     let _editMOItems = [];            // full item list of the MO being edited via assign modal
+    let _costCalcData  = null;        // last fetched cost-calculator payload (for Excel export)
 
     const DESIGN_IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'svg', 'gif', 'webp', 'bmp', 'tif', 'tiff']);
     const DESIGN_PDF_EXTENSIONS   = new Set(['pdf']);
@@ -516,14 +517,18 @@
     async function _openCostCalculator() {
         if (!_isCostCalculatorAdmin() || !_hubOrderId) return;
         _showModal('po-cost-modal');
+        _costCalcData = null;
         _el('po-cost-loading')?.classList.remove('hidden');
         _el('po-cost-body')?.classList.add('hidden');
         _el('po-cost-error')?.classList.add('hidden');
+        _el('po-cost-export-btn')?.classList.add('hidden');
         _setText('po-cost-subtitle', `أمر التشغيل #${_hubOrder?.order_number || ''}`);
         try {
             const response = await window.apiFetch(`/api/orders/${_hubOrderId}/cost-calculator`);
-            _renderCostCalculator(response?.data || {});
+            _costCalcData = response?.data || {};
+            _renderCostCalculator(_costCalcData);
             _el('po-cost-body')?.classList.remove('hidden');
+            _el('po-cost-export-btn')?.classList.remove('hidden');
         } catch (err) {
             const errorEl = _el('po-cost-error');
             if (errorEl) {
@@ -535,7 +540,67 @@
         }
     }
 
+    function _exportCostCalculator() {
+        try {
+            if (typeof XLSX === 'undefined') {
+                _toast('مكتبة Excel غير محملة', 'error');
+                return;
+            }
+            if (!_costCalcData) {
+                _toast('لا توجد بيانات للتصدير', 'warning');
+                return;
+            }
+
+            const summary = _costCalcData.summary || {};
+            const items = Array.isArray(_costCalcData.items) ? _costCalcData.items : [];
+            const orderNum = _hubOrder?.order_number || _costCalcData.order_id || '';
+            const clientName = _hubOrder?.client_name || '';
+            const parentName = _hubOrder?.parent_client_name || '';
+            const na = (v) => (v === null || v === undefined ? '—' : v);
+
+            const rows = [
+                [`حاسبة التكاليف — أمر التشغيل #${orderNum}`],
+                clientName ? [`العميل: ${clientName}${parentName ? ` (الفرع الرئيسي: ${parentName})` : ''}`] : [],
+                [],
+                ['إجمالي البيع (ر.س)', 'إجمالي التكلفة (ر.س)', 'قيمة الربح (ر.س)', 'هامش الربح %'],
+                [na(summary.sales_total), na(summary.cost_total), na(summary.profit), na(summary.margin_percent)],
+                [],
+            ];
+            if (summary.missing_cost_items > 0) {
+                rows.push([`يوجد ${summary.missing_cost_items} صنف بدون تكلفة شراء مسجلة في فواتير الشراء؛ تم ترك الربح والهامش الإجمالي فارغين.`], []);
+            }
+            rows.push(['الصنف / المقاس', 'الكمية', 'سعر البيع (ر.س)', 'إجمالي البيع (ر.س)', 'تكلفة الشراء (ر.س)', 'إجمالي التكلفة (ر.س)', 'الربح (ر.س)', 'هامش الربح %']);
+            items.forEach(item => {
+                rows.push([
+                    `${item.product_name || ''}${item.size_name ? ` / ${item.size_name}` : ''}`,
+                    na(item.quantity),
+                    na(item.sale_unit_price),
+                    na(item.sale_total),
+                    na(item.unit_cost),
+                    na(item.cost_total),
+                    na(item.profit),
+                    na(item.margin_percent),
+                ]);
+            });
+
+            const ws = XLSX.utils.aoa_to_sheet(rows);
+            ws['!cols'] = [
+                { wch: 42 }, { wch: 10 }, { wch: 14 }, { wch: 16 },
+                { wch: 16 }, { wch: 18 }, { wch: 14 }, { wch: 12 },
+            ];
+            const wb = XLSX.utils.book_new();
+            wb.Workbook = { Views: [{ RTL: true }] };
+            XLSX.utils.book_append_sheet(wb, ws, 'حاسبة التكاليف');
+            XLSX.writeFile(wb, `GPACK_حاسبة_التكاليف_أمر_${orderNum || 'NA'}.xlsx`);
+            _toast('تم تصدير Excel بنجاح', 'success');
+        } catch (err) {
+            console.error('[poView] Cost calculator export error:', err);
+            _toast('فشل تصدير Excel: ' + err.message, 'error');
+        }
+    }
+
     function _closeCostCalculator() {
+        _costCalcData = null;
         _hideModal('po-cost-modal');
     }
 
@@ -4592,6 +4657,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         closeHub:           () => _hideModal('po-hub-modal'),
         openCostCalculator: _openCostCalculator,
         closeCostCalculator: _closeCostCalculator,
+        exportCostCalculator: _exportCostCalculator,
         switchHubTab:       _switchHubTab,
         updateStatus:       _updateStatus,
         closeOrder:         _closeOrder,
