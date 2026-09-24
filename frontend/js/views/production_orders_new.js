@@ -482,6 +482,24 @@
         return value === null || value === undefined ? '—' : `${_fmt(value)} ر.س`;
     }
 
+    function _fmtDiscount(item) {
+        const pct = Number(item.discount_percent || 0);
+        const amt = Number(item.discount_amount || 0);
+        if (!pct && !amt) return '—';
+        const parts = [];
+        if (pct) parts.push(`${pct}%`);
+        if (amt) parts.push(`${_fmt(amt)} ر.س`);
+        return parts.join(' + ');
+    }
+
+    const COST_STATUS_META = {
+        final:       { label: 'معتمدة',                     cls: 'text-emerald-600' },
+        preliminary: { label: 'تقديرية — بانتظار الفاتورة', cls: 'text-amber-600' },
+        estimated:   { label: 'تقديرية — متوسط تاريخي',     cls: 'text-slate-400' },
+        mixed:       { label: 'مختلطة',                      cls: 'text-blue-600' },
+        unknown:     { label: 'غير معروفة',                  cls: 'text-slate-400' },
+    };
+
     function _renderCostCalculator(data) {
         const summary = data.summary || {};
         const items = Array.isArray(data.items) ? data.items : [];
@@ -493,25 +511,57 @@
         const missingEl = _el('po-cost-missing');
         if (missingEl) {
             missingEl.textContent = summary.missing_cost_items > 0
-                ? `يوجد ${summary.missing_cost_items} صنف بدون تكلفة شراء مسجلة في فواتير الشراء؛ تم ترك الربح والهامش الإجمالي فارغين.`
+                ? `يوجد ${summary.missing_cost_items} صنف بدون أي بيانات تكلفة؛ تم ترك الربح والهامش الإجمالي فارغين.`
                 : '';
             missingEl.classList.toggle('hidden', !(summary.missing_cost_items > 0));
+        }
+
+        const flagsEl = _el('po-cost-flags');
+        if (flagsEl) {
+            const msgs = [];
+            if (summary.qty_variance_items > 0) {
+                msgs.push(`فرق بين المتفق والمستلم في ${summary.qty_variance_items} صنف — التكلفة والربح محسوبان على الكمية المستهلكة فعليًا.`);
+            }
+            if (summary.preliminary_cost_items > 0) {
+                msgs.push(`${summary.preliminary_cost_items} صنف بتكلفة تقديرية من جلسة الاستلام بانتظار اعتماد فاتورة الشراء.`);
+            }
+            flagsEl.textContent = msgs.join(' ');
+            flagsEl.classList.toggle('hidden', msgs.length === 0);
+        }
+
+        const contractEl = _el('po-cost-contract');
+        if (contractEl) {
+            const showContract = summary.qty_variance_items > 0
+                && summary.contract_profit !== null && summary.contract_profit !== undefined;
+            contractEl.innerHTML = showContract
+                ? `<i class="fa-solid fa-scale-balanced ml-1"></i>مرجع — على أساس الكمية المتفقة: تكلفة <b>${_money(summary.contract_cost_total)}</b> • ربح <b>${_money(summary.contract_profit)}</b> • هامش <b>${summary.contract_margin_percent}%</b>`
+                : '';
+            contractEl.classList.toggle('hidden', !showContract);
         }
 
         const tbody = _el('po-cost-items');
         if (!tbody) return;
         tbody.innerHTML = items.length ? items.map(item => {
             const name = `${item.product_name || '—'}${item.size_name ? ` / ${item.size_name}` : ''}`;
+            const hasDiscount = Number(item.discount_percent || 0) > 0 || Number(item.discount_amount || 0) > 0;
+            const statusMeta = COST_STATUS_META[item.cost_status] || COST_STATUS_META.unknown;
+            const varianceTitle = item.qty_variance ? `المتفق: ${_fmt(item.quantity)} — المستلم: ${_fmt(item.received_qty)}` : '';
             return `<tr class="border-b border-slate-100">
                 <td class="py-3 px-3 font-semibold text-slate-700">${_escapeHtml(name)}</td>
                 <td class="py-3 px-3 text-center">${_fmt(item.quantity)}</td>
+                <td class="py-3 px-3 text-center ${item.qty_variance ? 'text-purple-700 font-bold' : ''}" title="${varianceTitle}">${_fmt(item.received_qty)}</td>
                 <td class="py-3 px-3 text-center">${_money(item.sale_unit_price)}</td>
+                <td class="py-3 px-3 text-center ${hasDiscount ? 'text-purple-700 font-bold' : 'text-slate-400'}">${_fmtDiscount(item)}</td>
+                <td class="py-3 px-3 text-center font-semibold">${_money(item.sale_total)}</td>
                 <td class="py-3 px-3 text-center ${item.cost_known ? 'text-orange-700 font-bold' : 'text-slate-400'}">${_money(item.unit_cost)}</td>
-                <td class="py-3 px-3 text-center ${item.cost_known ? 'text-orange-700 font-bold' : 'text-slate-400'}">${_money(item.cost_total)}</td>
+                <td class="py-3 px-3 text-center ${item.cost_known ? 'text-orange-700 font-bold' : 'text-slate-400'}">
+                    ${_money(item.cost_total)}
+                    <span class="block text-[10px] font-semibold ${statusMeta.cls}">${statusMeta.label}</span>
+                </td>
                 <td class="py-3 px-3 text-center ${item.profit === null ? 'text-slate-400' : item.profit >= 0 ? 'text-emerald-700 font-bold' : 'text-red-600 font-bold'}">${_money(item.profit)}</td>
                 <td class="py-3 px-3 text-center ${item.margin_percent === null ? 'text-slate-400' : 'text-blue-700 font-bold'}">${item.margin_percent === null || item.margin_percent === undefined ? '—' : `${item.margin_percent}%`}</td>
             </tr>`;
-        }).join('') : '<tr><td colspan="7" class="py-10 text-center text-slate-400">لا توجد أصناف في أمر التشغيل</td></tr>';
+        }).join('') : '<tr><td colspan="10" class="py-10 text-center text-slate-400">لا توجد أصناف في أمر التشغيل</td></tr>';
     }
 
     async function _openCostCalculator() {
@@ -562,22 +612,39 @@
                 [`حاسبة التكاليف — أمر التشغيل #${orderNum}`],
                 clientName ? [`العميل: ${clientName}${parentName ? ` (الفرع الرئيسي: ${parentName})` : ''}`] : [],
                 [],
-                ['إجمالي البيع (ر.س)', 'إجمالي التكلفة (ر.س)', 'قيمة الربح (ر.س)', 'هامش الربح %'],
+                ['إجمالي البيع (ر.س)', 'إجمالي التكلفة الفعلية (ر.س)', 'قيمة الربح (ر.س)', 'هامش الربح %'],
                 [na(summary.sales_total), na(summary.cost_total), na(summary.profit), na(summary.margin_percent)],
-                [],
             ];
-            if (summary.missing_cost_items > 0) {
-                rows.push([`يوجد ${summary.missing_cost_items} صنف بدون تكلفة شراء مسجلة في فواتير الشراء؛ تم ترك الربح والهامش الإجمالي فارغين.`], []);
+            if (summary.qty_variance_items > 0 && summary.contract_profit !== null && summary.contract_profit !== undefined) {
+                rows.push(['مرجع — على أساس الكمية المتفقة:', na(summary.contract_cost_total), na(summary.contract_profit), na(summary.contract_margin_percent)]);
             }
-            rows.push(['الصنف / المقاس', 'الكمية', 'سعر البيع (ر.س)', 'إجمالي البيع (ر.س)', 'تكلفة الشراء (ر.س)', 'إجمالي التكلفة (ر.س)', 'الربح (ر.س)', 'هامش الربح %']);
+            rows.push([]);
+            const warnings = [];
+            if (summary.missing_cost_items > 0) {
+                warnings.push(`يوجد ${summary.missing_cost_items} صنف بدون أي بيانات تكلفة؛ تم ترك الربح والهامش الإجمالي فارغين.`);
+            }
+            if (summary.qty_variance_items > 0) {
+                warnings.push(`فرق بين المتفق والمستلم في ${summary.qty_variance_items} صنف — التكلفة والربح محسوبان على الكمية المستهلكة فعليًا.`);
+            }
+            if (summary.preliminary_cost_items > 0) {
+                warnings.push(`${summary.preliminary_cost_items} صنف بتكلفة تقديرية من جلسة الاستلام بانتظار اعتماد فاتورة الشراء.`);
+            }
+            warnings.forEach(w => rows.push([w]));
+            if (warnings.length) rows.push([]);
+            rows.push(['الصنف / المقاس', 'الكمية المتفقة', 'المستلم', 'سعر البيع (ر.س)', 'خصم %', 'خصم (ر.س)', 'إجمالي البيع بعد الخصم (ر.س)', 'متوسط التكلفة (ر.س)', 'إجمالي التكلفة (ر.س)', 'أساس التكلفة', 'فرق اعتماد الفاتورة (ر.س)', 'الربح (ر.س)', 'هامش الربح %']);
             items.forEach(item => {
                 rows.push([
                     `${item.product_name || ''}${item.size_name ? ` / ${item.size_name}` : ''}`,
                     na(item.quantity),
+                    na(item.received_qty),
                     na(item.sale_unit_price),
+                    Number(item.discount_percent || 0),
+                    Number(item.discount_amount || 0),
                     na(item.sale_total),
                     na(item.unit_cost),
                     na(item.cost_total),
+                    COST_STATUS_META[item.cost_status]?.label || '—',
+                    Number(item.approval_delta || 0),
                     na(item.profit),
                     na(item.margin_percent),
                 ]);
@@ -585,8 +652,8 @@
 
             const ws = XLSX.utils.aoa_to_sheet(rows);
             ws['!cols'] = [
-                { wch: 42 }, { wch: 10 }, { wch: 14 }, { wch: 16 },
-                { wch: 16 }, { wch: 18 }, { wch: 14 }, { wch: 12 },
+                { wch: 42 }, { wch: 12 }, { wch: 10 }, { wch: 14 }, { wch: 8 }, { wch: 11 },
+                { wch: 24 }, { wch: 16 }, { wch: 18 }, { wch: 26 }, { wch: 20 }, { wch: 14 }, { wch: 12 },
             ];
             const wb = XLSX.utils.book_new();
             wb.Workbook = { Views: [{ RTL: true }] };

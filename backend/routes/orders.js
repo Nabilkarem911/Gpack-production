@@ -669,7 +669,9 @@ router.get('/client-history/:clientId', async (req, res) => {
 // =============================================================================
 // GET /api/orders/:id/cost-calculator
 // Confidential purchase-cost and margin data — administrators only.
-// Purchase cost is a weighted average of non-draft/non-cancelled purchase invoices.
+// Cost is charged on actually-received quantities: approved purchase-invoice
+// cost takes precedence, receipt-session cost is a preliminary estimate until
+// invoice approval, and the historical weighted average fills any remainder.
 // =============================================================================
 router.get('/:id/cost-calculator', restrictCostCalculator, async (req, res) => {
     const { id } = req.params;
@@ -682,11 +684,21 @@ router.get('/:id/cost-calculator', restrictCostCalculator, async (req, res) => {
                 pv.size_name,
                 pv.sku,
                 oi.quantity,
+                oi.wh_received_qty,
                 oi.unit_price AS sale_unit_price,
+                oi.discount_percent,
+                oi.discount_amount,
                 oi.line_total AS sale_total,
-                purchase_cost.unit_cost,
+                purchase_cost.unit_cost AS avg_unit_cost,
                 purchase_cost.invoice_count,
-                purchase_cost.latest_invoice_date
+                purchase_cost.latest_invoice_date,
+                recv.sess_qty,
+                recv.approved_qty,
+                recv.approved_cost,
+                recv.approved_sess_cost,
+                recv.preliminary_qty,
+                recv.preliminary_cost,
+                recv.uncosted_qty
              FROM order_items oi
              JOIN orders o ON o.id = oi.order_id
              LEFT JOIN product_variants pv ON pv.id = oi.variant_id
@@ -703,6 +715,32 @@ router.get('/:id/cost-calculator', restrictCostCalculator, async (req, res) => {
                   AND pii.quantity > 0
                   AND pii.unit_cost > 0
              ) purchase_cost ON true
+             LEFT JOIN LATERAL (
+                SELECT
+                    SUM(rsi.quantity) AS sess_qty,
+                    COALESCE(SUM(rsi.quantity) FILTER (WHERE ap.qty IS NOT NULL), 0) AS approved_qty,
+                    COALESCE(SUM(ap.cost), 0) AS approved_cost,
+                    COALESCE(SUM(rsi.quantity * rsi.unit_cost) FILTER (WHERE ap.qty IS NOT NULL), 0) AS approved_sess_cost,
+                    COALESCE(SUM(rsi.quantity) FILTER (WHERE ap.qty IS NULL AND rsi.unit_cost > 0), 0) AS preliminary_qty,
+                    COALESCE(SUM(rsi.quantity * rsi.unit_cost) FILTER (WHERE ap.qty IS NULL AND rsi.unit_cost > 0), 0) AS preliminary_cost,
+                    COALESCE(SUM(rsi.quantity) FILTER (WHERE ap.qty IS NULL AND rsi.unit_cost <= 0), 0) AS uncosted_qty
+                FROM mo_receipt_session_items rsi
+                JOIN mo_receipt_sessions rs
+                     ON rs.id = rsi.session_id AND rs.status <> 'reversed'
+                JOIN manufacturer_order_items moi
+                     ON moi.id = rsi.manufacturer_order_item_id
+                LEFT JOIN LATERAL (
+                    SELECT SUM(pii2.quantity) AS qty,
+                           SUM(pii2.quantity * pii2.unit_cost) AS cost
+                    FROM purchase_invoice_items pii2
+                    JOIN purchase_invoices pi2 ON pi2.id = pii2.purchase_invoice_id
+                    WHERE pii2.purchase_invoice_id = rs.purchase_invoice_id
+                      AND pii2.manufacturer_order_item_id = rsi.manufacturer_order_item_id
+                      AND pi2.status NOT IN ('draft', 'merged', 'cancelled')
+                      AND pii2.unit_cost > 0
+                ) ap ON true
+                WHERE moi.order_item_id = oi.id
+             ) recv ON true
              WHERE oi.order_id = $1
              ORDER BY oi.created_at ASC, oi.id ASC`,
             [id]
@@ -713,47 +751,112 @@ router.get('/:id/cost-calculator', restrictCostCalculator, async (req, res) => {
             if (!orderCheck.rowCount) return res.status(404).json({ error: 'أمر التشغيل غير موجود.' });
         }
 
+        const round2 = v => Math.round(v * 100) / 100;
         const items = result.rows.map(row => {
-            const quantity = Number(row.quantity || 0);
-            const saleTotal = Number(row.sale_total ?? (quantity * Number(row.sale_unit_price || 0)));
-            const unitCost = row.unit_cost === null ? null : Number(row.unit_cost);
-            const costTotal = unitCost === null ? null : Math.round(quantity * unitCost * 100) / 100;
-            const profit = costTotal === null ? null : Math.round((saleTotal - costTotal) * 100) / 100;
+            const quantity    = Number(row.quantity || 0);           // contracted (order line)
+            const receivedQty = Number(row.wh_received_qty || 0);    // physically received
+            const saleTotal   = Number(row.sale_total ?? (quantity * Number(row.sale_unit_price || 0)));
+            const avgCost     = row.avg_unit_cost === null ? null : Number(row.avg_unit_cost);
+
+            const sessQty         = Number(row.sess_qty || 0);          // received via receipt sessions
+            const approvedQty     = Number(row.approved_qty || 0);      // session units covered by an approved invoice
+            const approvedCost    = Number(row.approved_cost || 0);     // final cost from approved invoices
+            const approvedSess    = Number(row.approved_sess_cost || 0);// what those units estimated at receiving
+            const preliminaryQty  = Number(row.preliminary_qty || 0);   // received, invoice still pending — session cost
+            const preliminaryCost = Number(row.preliminary_cost || 0);
+            const uncostedQty     = Number(row.uncosted_qty || 0);      // received but no cost data anywhere
+
+            // Received outside sessions + units still expected → priced at the global weighted average
+            const uncoveredQty  = Math.max(0, receivedQty - sessQty);
+            const remainingQty  = Math.max(0, quantity - receivedQty);
+            const estimateQty   = uncoveredQty + remainingQty;
+            const estimatedCost = avgCost === null ? null : estimateQty * avgCost;
+
+            const cost_known = uncostedQty === 0 && (estimateQty === 0 || avgCost !== null);
+            const costedQty  = approvedQty + preliminaryQty + estimateQty;
+            const costTotal  = cost_known
+                ? round2(approvedCost + preliminaryCost + (estimatedCost || 0))
+                : null;
+            const unitCost = cost_known && costedQty > 0
+                ? Math.round((costTotal / costedQty) * 10000) / 10000
+                : (cost_known ? 0 : null);
+
+            const profit = costTotal === null ? null : round2(saleTotal - costTotal);
             const margin = profit === null || Math.abs(saleTotal) < 0.000001
                 ? null
                 : Math.round((profit / saleTotal) * 10000) / 100;
+
+            // Contract-basis reference: same unit cost applied to the agreed quantity.
+            const contractCost = cost_known && costedQty > 0
+                ? round2(quantity * (costTotal / costedQty))
+                : (cost_known ? 0 : null);
+            const contractProfit = contractCost === null ? null : round2(saleTotal - contractCost);
+            const contractMargin = contractProfit === null || Math.abs(saleTotal) < 0.000001
+                ? null
+                : Math.round((contractProfit / saleTotal) * 10000) / 100;
+
+            // Difference between the session estimate and the approved invoice cost.
+            const approvalDelta = round2(approvedCost - approvedSess);
+
+            let costStatus;
+            if (!cost_known)                                               costStatus = 'unknown';
+            else if (costedQty > 0 && approvedQty === costedQty)           costStatus = 'final';
+            else if (approvedQty === 0 && preliminaryQty === 0)            costStatus = 'estimated';
+            else if (approvedQty === 0 && estimateQty === 0)               costStatus = 'preliminary';
+            else                                                           costStatus = 'mixed';
+
             return {
                 ...row,
                 quantity,
+                received_qty: receivedQty,
                 sale_unit_price: Number(row.sale_unit_price || 0),
-                sale_total: Math.round(saleTotal * 100) / 100,
+                discount_percent: Number(row.discount_percent || 0),
+                discount_amount: Number(row.discount_amount || 0),
+                sale_total: round2(saleTotal),
                 unit_cost: unitCost,
                 cost_total: costTotal,
+                approved_cost: round2(approvedCost),
+                preliminary_cost: round2(preliminaryCost),
+                preliminary_qty: preliminaryQty,
+                estimated_cost: estimatedCost === null ? null : round2(estimatedCost),
+                approval_delta: approvalDelta,
+                cost_status: costStatus,
+                cost_known,
+                qty_variance: receivedQty > 0 && receivedQty !== quantity,
                 profit,
                 margin_percent: margin,
-                cost_known: unitCost !== null,
+                contract_cost_total: contractCost,
+                contract_profit: contractProfit,
+                contract_margin_percent: contractMargin,
             };
         });
 
         const summary = items.reduce((acc, item) => {
             acc.sales_total += item.sale_total;
-            if (item.cost_total !== null) {
-                acc.cost_total += item.cost_total;
+            if (item.cost_known) {
                 acc.known_cost_total += item.cost_total;
+                acc.contract_cost_total += item.contract_cost_total;
             } else {
                 acc.missing_cost_items += 1;
             }
+            if (item.preliminary_qty > 0) acc.preliminary_cost_items += 1;
+            if (item.qty_variance) acc.qty_variance_items += 1;
             return acc;
-        }, { sales_total: 0, cost_total: 0, known_cost_total: 0, missing_cost_items: 0 });
+        }, { sales_total: 0, known_cost_total: 0, contract_cost_total: 0,
+             missing_cost_items: 0, preliminary_cost_items: 0, qty_variance_items: 0 });
         summary.sales_total = Math.round(summary.sales_total * 100) / 100;
         summary.known_cost_total = Math.round(summary.known_cost_total * 100) / 100;
-        summary.cost_total = summary.missing_cost_items > 0 ? null : summary.known_cost_total;
-        summary.profit = summary.missing_cost_items > 0
-            ? null
-            : Math.round((summary.sales_total - summary.cost_total) * 100) / 100;
+        summary.contract_cost_total = Math.round(summary.contract_cost_total * 100) / 100;
+        const hasMissing = summary.missing_cost_items > 0;
+        summary.cost_total = hasMissing ? null : summary.known_cost_total;
+        summary.profit = hasMissing ? null : round2(summary.sales_total - summary.cost_total);
         summary.margin_percent = summary.profit === null || Math.abs(summary.sales_total) < 0.000001
             ? null
             : Math.round((summary.profit / summary.sales_total) * 10000) / 100;
+        summary.contract_profit = hasMissing ? null : round2(summary.sales_total - summary.contract_cost_total);
+        summary.contract_margin_percent = summary.contract_profit === null || Math.abs(summary.sales_total) < 0.000001
+            ? null
+            : Math.round((summary.contract_profit / summary.sales_total) * 10000) / 100;
 
         return res.status(200).json({ data: { order_id: id, items, summary } });
     } catch (err) {
