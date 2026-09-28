@@ -5,7 +5,7 @@ const db      = require('../db');
 const { success, created, paginated } = require('../utils/response');
 const { getVatRate } = require('../utils/settings');
 const { decryptShareToken } = require('../utils/crypto');
-const { orderCreate, orderUpdate, orderStatusUpdate, orderConvertToProduction, orderInvoice, orderPayment, orderNote, orderRelease, validateBody } = require('../utils/validators');
+const { orderCreate, orderUpdate, orderStatusUpdate, orderConvertToProduction, orderInvoice, orderPayment, orderNote, orderRelease, orderItemCancel, validateBody } = require('../utils/validators');
 const authorize = require('../middleware/authorize');
 const eventBus = require('../utils/event-bus');
 
@@ -203,7 +203,7 @@ router.get('/', async (req, res) => {
              FROM orders o
              LEFT JOIN clients c  ON c.id = o.client_id
              LEFT JOIN clients p  ON p.id = c.parent_id
-             LEFT JOIN order_items oi ON oi.order_id = o.id
+             LEFT JOIN order_items oi ON oi.order_id = o.id AND oi.cancelled_at IS NULL
              LEFT JOIN (
                  SELECT
                      mo.order_id,
@@ -357,7 +357,7 @@ router.get('/ready-for-invoice', async (req, res) => {
             SELECT COUNT(DISTINCT o.id)::int AS total
             FROM orders o
             JOIN clients c ON c.id = o.client_id
-            JOIN order_items oi ON oi.order_id = o.id
+            JOIN order_items oi ON oi.order_id = o.id AND oi.cancelled_at IS NULL
             WHERE ${whereClause}
               AND NOT EXISTS (
                   SELECT 1 FROM invoices inv WHERE inv.order_id = o.id
@@ -374,7 +374,7 @@ router.get('/ready-for-invoice', async (req, res) => {
                 SUM(oi.quantity * oi.unit_price) AS estimated_total
             FROM orders o
             JOIN clients c ON c.id = o.client_id
-            JOIN order_items oi ON oi.order_id = o.id
+            JOIN order_items oi ON oi.order_id = o.id AND oi.cancelled_at IS NULL
             WHERE ${whereClause}
               AND NOT EXISTS (
                   SELECT 1 FROM invoices inv WHERE inv.order_id = o.id
@@ -460,12 +460,13 @@ router.get('/price-history', async (req, res) => {
                 oi.quantity,
                 oi.unit_price,
                 oi.line_total,
-                (SELECT COUNT(*) FROM order_items oi2 WHERE oi2.order_id = o.id)::int as item_count,
-                (SELECT COALESCE(SUM(oi3.quantity), 0) FROM order_items oi3 WHERE oi3.order_id = o.id)::numeric as total_qty
+                (SELECT COUNT(*) FROM order_items oi2 WHERE oi2.order_id = o.id AND oi2.cancelled_at IS NULL)::int as item_count,
+                (SELECT COALESCE(SUM(oi3.quantity), 0) FROM order_items oi3 WHERE oi3.order_id = o.id AND oi3.cancelled_at IS NULL)::numeric as total_qty
              FROM order_items oi
              JOIN orders o ON o.id = oi.order_id
              WHERE o.client_id = $1
                AND oi.variant_id = $2
+               AND oi.cancelled_at IS NULL
                AND o.status != 'cancelled'
              ORDER BY o.order_date DESC, oi.created_at DESC
              LIMIT 10`,
@@ -621,7 +622,7 @@ router.get('/:id/details', async (req, res) => {
              FROM order_items oi
              LEFT JOIN product_variants pv ON pv.id = oi.variant_id
              LEFT JOIN products p ON p.id = pv.product_id
-             WHERE oi.order_id = $1
+             WHERE oi.order_id = $1 AND oi.cancelled_at IS NULL
              ORDER BY oi.created_at ASC`,
             [id]
         );
@@ -741,7 +742,7 @@ router.get('/:id/cost-calculator', restrictCostCalculator, async (req, res) => {
                 ) ap ON true
                 WHERE moi.order_item_id = oi.id
              ) recv ON true
-             WHERE oi.order_id = $1
+             WHERE oi.order_id = $1 AND oi.cancelled_at IS NULL
              ORDER BY oi.created_at ASC, oi.id ASC`,
             [id]
         );
@@ -990,10 +991,25 @@ router.get('/:id', async (req, res) => {
              LEFT JOIN products p          ON p.id  = pv.product_id
              LEFT JOIN units u             ON u.id  = pv.unit_id
              LEFT JOIN client_designs cd   ON cd.id = oi.design_id
-             WHERE oi.order_id = $1
+             WHERE oi.order_id = $1 AND oi.cancelled_at IS NULL
              ORDER BY oi.id ASC`,
             [id]
         );
+
+        // Soft-cancelled items — kept for history display (أصناف ملغاة section).
+        const cancelledResult = await db.query(
+            `SELECT oi.id, oi.quantity, oi.cancelled_at, oi.cancellation_reason,
+                    pv.size_name, p.name AS product_name,
+                    u2.name AS cancelled_by_name
+             FROM order_items oi
+             LEFT JOIN product_variants pv ON pv.id = oi.variant_id
+             LEFT JOIN products p          ON p.id  = pv.product_id
+             LEFT JOIN users u2            ON u2.id = oi.cancelled_by
+             WHERE oi.order_id = $1 AND oi.cancelled_at IS NOT NULL
+             ORDER BY oi.cancelled_at DESC`,
+            [id]
+        );
+        order.cancelled_items = cancelledResult.rows;
 
         order.items = itemsResult.rows;
 
@@ -1865,7 +1881,7 @@ router.post('/:id/convert-to-production', restrictAdmin, validateBody(orderConve
                      FROM order_items oi
                      JOIN product_variants pv ON pv.id = oi.variant_id
                      JOIN products p ON p.id = pv.product_id
-                     WHERE oi.order_id = $1
+                     WHERE oi.order_id = $1 AND oi.cancelled_at IS NULL
                      ORDER BY oi.id`,
                     [id]
                 );
@@ -2197,7 +2213,7 @@ router.post('/:id/invoice', restrictAdmin, validateBody(orderInvoice), async (re
                      FROM order_items oi
                      JOIN product_variants pv ON pv.id = oi.variant_id
                      JOIN products p          ON p.id  = pv.product_id
-                     WHERE oi.order_id = $1 AND oi.variant_id = $2
+                     WHERE oi.order_id = $1 AND oi.variant_id = $2 AND oi.cancelled_at IS NULL
                      LIMIT 1`,
                     [id, item.variant_id]
                 );
@@ -2531,7 +2547,7 @@ router.post('/:id/release', restrictAdmin, validateBody(orderRelease), async (re
              JOIN orders o ON o.id = oi.order_id
              JOIN clients c ON c.id = o.client_id
              LEFT JOIN warehouses w ON w.id = $2
-             WHERE oi.order_id = $1`,
+             WHERE oi.order_id = $1 AND oi.cancelled_at IS NULL`,
             [id, warehouse_id || null]
         );
         
@@ -2626,6 +2642,317 @@ router.post('/:id/release', restrictAdmin, validateBody(orderRelease), async (re
             error: err.message || 'Failed to release order', 
             details: err.details || null 
         });
+    }
+});
+
+// =============================================================================
+// POST /api/orders/:id/items/:itemId/cancel
+// Soft-cancels a single order item while the production order is still in
+// 'production'/'processing' — without the full revert & archive flow.
+//
+// Guards (all enforced in one transaction with FOR UPDATE locks):
+//   - order status must be 'production' or 'processing'
+//   - item has zero progress: manufacturer_po_qty / wh_received_qty /
+//     released_qty / delivered_qty all = 0
+//   - no manufacturer_order_items / delivery_note_items referencing the item
+//   - no ACTIVE invoice references the item (cancelled invoices don't count):
+//       * issued/paid/overdue/archived → always rejected (an issued document
+//         is never silently edited; cancel the invoice or create a return)
+//       * draft → requires remove_from_draft_invoice=true, then the line is
+//         deleted and the invoice totals recomputed atomically
+//   - the order must keep at least one active item
+// On success the item stays in order_items (all fields/design links intact)
+// with cancelled_at/by/reason set, and order totals are recomputed over
+// active items only.
+// Body: { reason: string (required), remove_from_draft_invoice?: boolean }
+// =============================================================================
+router.post('/:id/items/:itemId/cancel', restrictAdmin, validateBody(orderItemCancel), async (req, res) => {
+    const { id, itemId } = req.params;
+    const { reason, remove_from_draft_invoice } = req.validatedBody;
+    const userId   = req.user?.id || null;
+    const userName = req.user?.name || req.user?.username || req.user?.email || 'مستخدم';
+
+    try {
+        const result = await db.withTransaction(async (client) => {
+            const orderRes = await client.query(
+                `SELECT id, order_number, status, subtotal, tax_rate FROM orders WHERE id = $1 FOR UPDATE`,
+                [id]
+            );
+            if (orderRes.rowCount === 0) throw new Error('الطلب غير موجود.');
+            const order = orderRes.rows[0];
+            if (!['production', 'processing'].includes(order.status)) {
+                throw new Error('يمكن إلغاء الأصناف فقط أثناء مرحلة الإنتاج.');
+            }
+
+            const itemRes = await client.query(
+                `SELECT * FROM order_items WHERE id = $1 AND order_id = $2 FOR UPDATE`,
+                [itemId, id]
+            );
+            if (itemRes.rowCount === 0) throw new Error('البند غير موجود في هذا الطلب.');
+            const item = itemRes.rows[0];
+            if (item.cancelled_at) throw new Error('هذا البند ملغي بالفعل.');
+
+            if (parseFloat(item.manufacturer_po_qty || 0) > 0) {
+                throw new Error('لا يمكن إلغاء بند تم إسناده لأمر مورد — ألغِ أمر المورد أولاً.');
+            }
+            if (parseFloat(item.wh_received_qty || 0) > 0) {
+                throw new Error('لا يمكن إلغاء بند تم استلام بضاعة له.');
+            }
+            if (parseFloat(item.released_qty || 0) > 0) {
+                throw new Error('لا يمكن إلغاء بند تم صرف مخزون له.');
+            }
+            if (parseFloat(item.delivered_qty || 0) > 0) {
+                throw new Error('لا يمكن إلغاء بند تم تسليمه للعميل.');
+            }
+
+            const moiRes = await client.query(
+                'SELECT 1 FROM manufacturer_order_items WHERE order_item_id = $1 LIMIT 1',
+                [itemId]
+            );
+            if (moiRes.rowCount) {
+                throw new Error('لا يمكن إلغاء بند مرتبط بأمر مورد — ألغِ أمر المورد أولاً.');
+            }
+            const dniRes = await client.query(
+                'SELECT 1 FROM delivery_note_items WHERE order_item_id = $1 LIMIT 1',
+                [itemId]
+            );
+            if (dniRes.rowCount) {
+                throw new Error('لا يمكن إلغاء بند مرتبط بإذن تسليم.');
+            }
+
+            // Active invoices only — a logically-cancelled invoice keeps its
+            // invoice_items rows but is no longer a valid document, so it must
+            // not block cancelling the item after the user cancels it.
+            const invRes = await client.query(
+                `SELECT inv.id, inv.invoice_number, inv.status,
+                        inv.tax_rate, inv.additional_expenses, inv.discount_amount
+                 FROM invoice_items ii
+                 JOIN invoices inv ON inv.id = ii.invoice_id
+                 WHERE inv.status <> 'cancelled'
+                   AND (ii.order_item_id = $1
+                        OR (ii.order_item_id IS NULL AND inv.order_id = $2 AND ii.variant_id = $3))
+                 LIMIT 1`,
+                [itemId, id, item.variant_id]
+            );
+            let draftInvoice = null;
+            if (invRes.rowCount) {
+                const inv = invRes.rows[0];
+                if (inv.status !== 'draft') {
+                    throw new Error(`لا يمكن إلغاء بند موجود في فاتورة صادرة رقم ${inv.invoice_number} — ألغِ الفاتورة أولاً أو أنشئ مرتجع مبيعات.`);
+                }
+                draftInvoice = inv;
+            }
+
+            const activeCount = await client.query(
+                `SELECT COUNT(*)::int AS c FROM order_items
+                 WHERE order_id = $1 AND cancelled_at IS NULL AND id <> $2`,
+                [id, itemId]
+            );
+            if (activeCount.rows[0].c === 0) {
+                throw new Error('لا يمكن إلغاء آخر بند في الأمر — استخدم «تراجع وأرشفة» لإلغاء الأمر كاملاً.');
+            }
+
+            const productRes = await client.query(
+                `SELECT p.name AS product_name, pv.size_name
+                 FROM order_items oi
+                 LEFT JOIN product_variants pv ON pv.id = oi.variant_id
+                 LEFT JOIN products p ON p.id = pv.product_id
+                 WHERE oi.id = $1`,
+                [itemId]
+            );
+            const itemName = [productRes.rows[0]?.product_name, productRes.rows[0]?.size_name]
+                .filter(Boolean).join(' — ') || 'بند';
+
+            // Remove the line from a draft proforma invoice — same effect as
+            // editing the invoice: delete the line then recompute its totals.
+            if (draftInvoice) {
+                if (!remove_from_draft_invoice) {
+                    const e = new Error(`البند موجود في الفاتورة الأولية رقم ${draftInvoice.invoice_number} — أكّد حذفه منها لإتمام الإلغاء.`);
+                    e.code = 'DRAFT_INVOICE_LINE';
+                    e.invoice_number = draftInvoice.invoice_number;
+                    throw e;
+                }
+                await client.query(
+                    `DELETE FROM invoice_items
+                     WHERE invoice_id = $1
+                       AND (order_item_id = $2 OR (order_item_id IS NULL AND variant_id = $3))`,
+                    [draftInvoice.id, itemId, item.variant_id]
+                );
+                const remainRes = await client.query(
+                    'SELECT COUNT(*)::int AS c FROM invoice_items WHERE invoice_id = $1',
+                    [draftInvoice.id]
+                );
+                if (remainRes.rows[0].c === 0) {
+                    throw new Error('حذف السطر سيترك الفاتورة الأولية فارغة — احذف الفاتورة يدوياً أولاً.');
+                }
+                const invSubRes = await client.query(
+                    `SELECT COALESCE(SUM(quantity * unit_price * (1 - COALESCE(discount_percent, 0) / 100)), 0) AS subtotal
+                     FROM invoice_items WHERE invoice_id = $1`,
+                    [draftInvoice.id]
+                );
+                const invSub    = parseFloat(invSubRes.rows[0].subtotal);
+                const invTax    = Math.round(invSub * parseFloat(draftInvoice.tax_rate || 0) * 100) / 100;
+                const invAddExp = parseFloat(draftInvoice.additional_expenses || 0);
+                const invDisc   = parseFloat(draftInvoice.discount_amount || 0);
+                const invGrand  = Math.round((invSub + invTax + invAddExp - invDisc) * 100) / 100;
+                await client.query(
+                    `UPDATE invoices SET subtotal = $1, tax_amount = $2, grand_total = $3 WHERE id = $4`,
+                    [invSub, invTax, invGrand, draftInvoice.id]
+                );
+                await client.query(
+                    `UPDATE client_transactions SET amount = $1 WHERE invoice_id = $2 AND type = 'invoice'`,
+                    [invGrand, draftInvoice.id]
+                );
+            }
+
+            await client.query(
+                `UPDATE order_items
+                 SET cancelled_at = NOW(), cancelled_by = $2, cancellation_reason = $3
+                 WHERE id = $1`,
+                [itemId, userId, reason.trim()]
+            );
+
+            // Recompute order totals over active items only (commercial orders;
+            // VMI orders keep NULL financials).
+            if (order.subtotal !== null) {
+                await client.query(
+                    `UPDATE orders
+                     SET subtotal    = (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE order_id = $1 AND cancelled_at IS NULL),
+                         tax_amount  = (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE order_id = $1 AND cancelled_at IS NULL) * COALESCE(tax_rate, $2),
+                         grand_total = (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE order_id = $1 AND cancelled_at IS NULL) * (1 + COALESCE(tax_rate, $2)),
+                         updated_at  = NOW()
+                     WHERE id = $1`,
+                    [id, order.tax_rate]
+                );
+            }
+
+            await client.query(
+                `INSERT INTO order_notes (order_id, user_id, user_name, message)
+                 VALUES ($1, $2, $3, $4)`,
+                [id, userId, userName, `تم إلغاء البند «${itemName}» — السبب: ${reason.trim()}`]
+            );
+
+            return { item_id: itemId, removed_from_invoice: draftInvoice ? draftInvoice.invoice_number : null };
+        });
+
+        return res.status(200).json({ data: result, message: 'تم إلغاء البند بنجاح' });
+    } catch (err) {
+        console.error('[Orders] POST /:id/items/:itemId/cancel error:', err.message);
+        return res.status(400).json({
+            error: err.message || 'تعذر إلغاء البند.',
+            code: err.code || null,
+            invoice_number: err.invoice_number || null,
+        });
+    }
+});
+
+// =============================================================================
+// POST /api/orders/:id/items/:itemId/restore
+// Restores a soft-cancelled item to active. Re-checks the same zero-progress
+// guards at restore time — if the item got assigned or invoiced after being
+// cancelled (impossible through the UI, but defends the invariant), the
+// restore is rejected. NOTE: a draft-invoice line removed during cancel is
+// NOT recreated — re-add it to the invoice manually if needed.
+// =============================================================================
+router.post('/:id/items/:itemId/restore', restrictAdmin, async (req, res) => {
+    const { id, itemId } = req.params;
+    const userId   = req.user?.id || null;
+    const userName = req.user?.name || req.user?.username || req.user?.email || 'مستخدم';
+
+    try {
+        const result = await db.withTransaction(async (client) => {
+            const orderRes = await client.query(
+                `SELECT id, status, subtotal, tax_rate FROM orders WHERE id = $1 FOR UPDATE`,
+                [id]
+            );
+            if (orderRes.rowCount === 0) throw new Error('الطلب غير موجود.');
+            const order = orderRes.rows[0];
+            if (!['production', 'processing'].includes(order.status)) {
+                throw new Error('يمكن التراجع عن إلغاء الأصناف فقط أثناء مرحلة الإنتاج.');
+            }
+
+            const itemRes = await client.query(
+                `SELECT * FROM order_items WHERE id = $1 AND order_id = $2 FOR UPDATE`,
+                [itemId, id]
+            );
+            if (itemRes.rowCount === 0) throw new Error('البند غير موجود في هذا الطلب.');
+            const item = itemRes.rows[0];
+            if (!item.cancelled_at) throw new Error('هذا البند غير ملغي.');
+
+            if (parseFloat(item.manufacturer_po_qty || 0) > 0
+                || parseFloat(item.wh_received_qty || 0) > 0
+                || parseFloat(item.released_qty || 0) > 0
+                || parseFloat(item.delivered_qty || 0) > 0) {
+                throw new Error('لا يمكن التراجع عن الإلغاء — البند لم يعد في حالة صفر تقدّم.');
+            }
+            const moiRes = await client.query(
+                'SELECT 1 FROM manufacturer_order_items WHERE order_item_id = $1 LIMIT 1',
+                [itemId]
+            );
+            if (moiRes.rowCount) {
+                throw new Error('لا يمكن التراجع عن الإلغاء — البند أصبح مرتبطاً بأمر مورد.');
+            }
+            const dniRes = await client.query(
+                'SELECT 1 FROM delivery_note_items WHERE order_item_id = $1 LIMIT 1',
+                [itemId]
+            );
+            if (dniRes.rowCount) {
+                throw new Error('لا يمكن التراجع عن الإلغاء — البند أصبح مرتبطاً بإذن تسليم.');
+            }
+            const invRes = await client.query(
+                `SELECT inv.invoice_number FROM invoice_items ii
+                 JOIN invoices inv ON inv.id = ii.invoice_id
+                 WHERE inv.status <> 'cancelled' AND ii.order_item_id = $1
+                 LIMIT 1`,
+                [itemId]
+            );
+            if (invRes.rowCount) {
+                throw new Error(`لا يمكن التراجع عن الإلغاء — البند مرتبط بالفاتورة رقم ${invRes.rows[0].invoice_number}.`);
+            }
+
+            await client.query(
+                `UPDATE order_items
+                 SET cancelled_at = NULL, cancelled_by = NULL, cancellation_reason = NULL
+                 WHERE id = $1`,
+                [itemId]
+            );
+
+            if (order.subtotal !== null) {
+                await client.query(
+                    `UPDATE orders
+                     SET subtotal    = (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE order_id = $1 AND cancelled_at IS NULL),
+                         tax_amount  = (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE order_id = $1 AND cancelled_at IS NULL) * COALESCE(tax_rate, $2),
+                         grand_total = (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE order_id = $1 AND cancelled_at IS NULL) * (1 + COALESCE(tax_rate, $2)),
+                         updated_at  = NOW()
+                     WHERE id = $1`,
+                    [id, order.tax_rate]
+                );
+            }
+
+            const productRes = await client.query(
+                `SELECT p.name AS product_name, pv.size_name
+                 FROM order_items oi
+                 LEFT JOIN product_variants pv ON pv.id = oi.variant_id
+                 LEFT JOIN products p ON p.id = pv.product_id
+                 WHERE oi.id = $1`,
+                [itemId]
+            );
+            const itemName = [productRes.rows[0]?.product_name, productRes.rows[0]?.size_name]
+                .filter(Boolean).join(' — ') || 'بند';
+
+            await client.query(
+                `INSERT INTO order_notes (order_id, user_id, user_name, message)
+                 VALUES ($1, $2, $3, $4)`,
+                [id, userId, userName, `تم التراجع عن إلغاء البند «${itemName}»`]
+            );
+
+            return { item_id: itemId };
+        });
+
+        return res.status(200).json({ data: result, message: 'تم التراجع عن الإلغاء — البند نشط مجدداً' });
+    } catch (err) {
+        console.error('[Orders] POST /:id/items/:itemId/restore error:', err.message);
+        return res.status(400).json({ error: err.message || 'تعذر التراجع عن الإلغاء.' });
     }
 });
 

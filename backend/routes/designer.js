@@ -148,7 +148,7 @@ async function _checkDesignerAccess(orderId, user) {
     if (orderResult.rows.length === 0) return false;
     if (orderResult.rows[0].assigned_designer_id === user.id) return true;
     const itemResult = await db.query(
-        'SELECT 1 FROM order_items WHERE order_id = $1 AND assigned_designer_id = $2 LIMIT 1',
+        'SELECT 1 FROM order_items WHERE order_id = $1 AND assigned_designer_id = $2 AND cancelled_at IS NULL LIMIT 1',
         [orderId, user.id]
     );
     return itemResult.rows.length > 0;
@@ -167,7 +167,7 @@ async function _recalcOrderDesignStatus(client, orderId) {
             COUNT(*) FILTER (WHERE design_status = 'approved') as approved,
             COUNT(*) FILTER (WHERE design_status = 'client_revision') as client_revision,
             COUNT(*) as total
-         FROM order_items WHERE order_id = $1`,
+         FROM order_items WHERE order_id = $1 AND cancelled_at IS NULL`,
         [orderId]
     );
     const c = counts.rows[0];
@@ -213,7 +213,7 @@ router.post('/assign', authorize(['admin', 'manager', 'super_admin']), upload.an
 
         const legacyDesignerId = req.body.designer_id;
         if (itemAssignments.length === 0 && legacyDesignerId) {
-            const itemsResult = await db.query('SELECT id FROM order_items WHERE order_id = $1', [order_id]);
+            const itemsResult = await db.query('SELECT id FROM order_items WHERE order_id = $1 AND cancelled_at IS NULL', [order_id]);
             itemAssignments = itemsResult.rows.map(it => ({
                 item_id: it.id,
                 designer_id: legacyDesignerId,
@@ -295,7 +295,7 @@ router.post('/assign', authorize(['admin', 'manager', 'super_admin']), upload.an
         );
 
         await client.query(
-            `UPDATE order_items SET design_status = 'waiting_design' WHERE order_id = $1`,
+            `UPDATE order_items SET design_status = 'waiting_design' WHERE order_id = $1 AND cancelled_at IS NULL`,
             [order_id]
         );
 
@@ -424,9 +424,9 @@ router.get('/pending-review', authorize(['admin', 'manager', 'super_admin']), as
                     o.design_brief, o.design_brief_files,
                     c.name as client_name,
                     u.name as designer_name,
-                    (SELECT COUNT(*) FROM order_items WHERE order_id = o.id) as item_count,
-                    (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND design_status = 'manager_review') as manager_review_count,
-                    (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND design_status = 'approved') as approved_count
+                    (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND cancelled_at IS NULL) as item_count,
+                    (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND design_status = 'manager_review' AND cancelled_at IS NULL) as manager_review_count,
+                    (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND design_status = 'approved' AND cancelled_at IS NULL) as approved_count
              FROM orders o
              JOIN clients c ON c.id = o.client_id
              LEFT JOIN users u ON u.id = o.assigned_designer_id
@@ -463,7 +463,7 @@ router.get('/my-tasks', async (req, res) => {
 
             if (designer_id) {
                 params.push(designer_id);
-                filterClause = `AND EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = o.id AND oi.assigned_designer_id = $${paramIdx++})`;
+                filterClause = `AND EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = o.id AND oi.assigned_designer_id = $${paramIdx++} AND oi.cancelled_at IS NULL)`;
             }
 
             const result = await db.query(
@@ -471,11 +471,11 @@ router.get('/my-tasks', async (req, res) => {
                         o.design_sent_at, o.created_at, o.design_client_status,
                         c.name as client_name,
                         u.name as designer_name,
-                        (SELECT COUNT(*) FROM order_items WHERE order_id = o.id) as item_count,
-                        (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND design_status = 'waiting_design') as waiting_count,
-                        (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND design_status = 'in_progress') as in_progress_count,
-                        (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND design_status = 'manager_review') as manager_review_count,
-                        (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND design_status = 'client_review') as client_review_count,
+                        (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND cancelled_at IS NULL) as item_count,
+                        (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND design_status = 'waiting_design' AND cancelled_at IS NULL) as waiting_count,
+                        (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND design_status = 'in_progress' AND cancelled_at IS NULL) as in_progress_count,
+                        (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND design_status = 'manager_review' AND cancelled_at IS NULL) as manager_review_count,
+                        (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND design_status = 'client_review' AND cancelled_at IS NULL) as client_review_count,
                         (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND design_status = 'approved') as approved_count,
                         (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND design_status = 'client_revision') as client_revision_count,
                         (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND design_files IS NOT NULL AND design_files != '[]'::jsonb) as designed_count
@@ -500,11 +500,11 @@ router.get('/my-tasks', async (req, res) => {
             `SELECT o.id, o.order_number, o.design_status, o.design_brief, o.design_brief_files,
                     o.design_sent_at, o.created_at,
                     c.name as client_name,
-                    (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND assigned_designer_id = $1) as item_count,
-                    (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND assigned_designer_id = $1 AND design_status = 'waiting_design') as waiting_count,
-                    (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND assigned_designer_id = $1 AND design_status = 'in_progress') as in_progress_count,
-                    (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND assigned_designer_id = $1 AND design_status = 'manager_review') as manager_review_count,
-                    (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND assigned_designer_id = $1 AND design_status = 'client_review') as client_review_count,
+                    (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND assigned_designer_id = $1 AND cancelled_at IS NULL) as item_count,
+                    (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND assigned_designer_id = $1 AND design_status = 'waiting_design' AND cancelled_at IS NULL) as waiting_count,
+                    (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND assigned_designer_id = $1 AND design_status = 'in_progress' AND cancelled_at IS NULL) as in_progress_count,
+                    (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND assigned_designer_id = $1 AND design_status = 'manager_review' AND cancelled_at IS NULL) as manager_review_count,
+                    (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND assigned_designer_id = $1 AND design_status = 'client_review' AND cancelled_at IS NULL) as client_review_count,
                     (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND assigned_designer_id = $1 AND design_status = 'approved') as approved_count,
                     (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND assigned_designer_id = $1 AND design_status = 'client_revision') as client_revision_count,
                     (SELECT COUNT(*) FROM order_items WHERE order_id = o.id AND assigned_designer_id = $1 AND design_files IS NOT NULL AND design_files != '[]'::jsonb) as designed_count
@@ -588,7 +588,7 @@ router.get('/task/:orderId', async (req, res) => {
              FROM order_items oi
              LEFT JOIN product_variants pv ON pv.id = oi.variant_id
              LEFT JOIN products p ON p.id = pv.product_id
-             WHERE oi.order_id = $1 ${statusCondition}
+             WHERE oi.order_id = $1 AND oi.cancelled_at IS NULL ${statusCondition}
              ORDER BY oi.id ASC`,
             itemsParams
         );
@@ -814,7 +814,7 @@ router.get('/my-completed', async (req, res) => {
              WHERE EXISTS (
                  SELECT 1 FROM order_items oi
                  WHERE oi.order_id = o.id AND oi.assigned_designer_id = $1
-                   AND oi.design_status = 'approved'
+                   AND oi.design_status = 'approved' AND oi.cancelled_at IS NULL
              )
              ORDER BY o.design_completed_at DESC NULLS LAST LIMIT 30`,
             [req.user.id]
@@ -1082,7 +1082,7 @@ router.post('/send-to-client/:orderId', authorize(['admin', 'manager', 'super_ad
 
         const itemsWithDesigns = await db.query(
             `SELECT COUNT(*) as count FROM order_items
-             WHERE order_id = $1 AND design_files IS NOT NULL AND design_files != '[]'::jsonb`,
+             WHERE order_id = $1 AND cancelled_at IS NULL AND design_files IS NOT NULL AND design_files != '[]'::jsonb`,
             [orderId]
         );
         if (parseInt(itemsWithDesigns.rows[0].count) === 0) {
@@ -1122,7 +1122,7 @@ router.post('/send-to-client/:orderId', authorize(['admin', 'manager', 'super_ad
 
         const noDesignCount = await db.query(
             `SELECT COUNT(*) as count FROM order_items
-             WHERE order_id = $1
+             WHERE order_id = $1 AND cancelled_at IS NULL
                AND (design_files IS NULL OR design_files = '[]'::jsonb)`,
             [orderId]
         );
@@ -1217,7 +1217,7 @@ router.get('/client-view/:token', async (req, res) => {
              FROM order_items oi
              LEFT JOIN product_variants pv ON pv.id = oi.variant_id
              LEFT JOIN products p ON p.id = pv.product_id
-             WHERE oi.order_id = $1
+             WHERE oi.order_id = $1 AND oi.cancelled_at IS NULL
              ORDER BY oi.id ASC`,
             [order.id]
         );
@@ -1333,7 +1333,7 @@ router.post('/client-response/:token', async (req, res) => {
         if (revisionCount === 0 && approvedCount > 0) {
             const pendingRes = await client.query(
                 `SELECT COUNT(*) as count FROM order_items
-                 WHERE order_id = $1 AND design_status != 'approved'`,
+                 WHERE order_id = $1 AND design_status != 'approved' AND cancelled_at IS NULL`,
                 [order.id]
             );
             if (parseInt(pendingRes.rows[0].count) === 0) {
@@ -1350,6 +1350,7 @@ router.post('/client-response/:token', async (req, res) => {
                     `SELECT oi.variant_id, oi.design_files, oi.order_id
                      FROM order_items oi
                      WHERE oi.order_id = $1
+                       AND oi.cancelled_at IS NULL
                        AND oi.design_files IS NOT NULL AND oi.design_files != '[]'::jsonb`,
                     [order.id]
                 );

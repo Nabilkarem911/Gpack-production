@@ -146,7 +146,10 @@ window.apiFetch = async function (endpoint, options = {}) {
         let message = (data && data.error) ? data.error : `خطأ في الخادم (${response.status})`;
         if (data && data.message) message += `: ${data.message}`;
         if (data && data.field) message += ` (${data.field})`;
-        throw new Error(message);
+        const err = new Error(message);
+        err.code = data && data.code ? data.code : null;
+        err.invoice_number = data && data.invoice_number ? data.invoice_number : null;
+        throw err;
     }
 
     return data;

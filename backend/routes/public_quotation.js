@@ -207,7 +207,7 @@ router.get('/quotation/:token', async (req, res) => {
              JOIN product_variants pv ON pv.id = oi.variant_id
              JOIN products p          ON p.id  = pv.product_id
              LEFT JOIN units u        ON u.id  = pv.unit_id
-             WHERE oi.order_id = $1
+             WHERE oi.order_id = $1 AND oi.cancelled_at IS NULL
              ORDER BY oi.created_at ASC`,
             [order.id]
         );

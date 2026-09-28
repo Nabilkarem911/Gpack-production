@@ -21,6 +21,7 @@
     let _invoiceExtras   = [];   // user-added extra lines (proforma only): {name, qty, price}
     let _proformaExtras  = [];   // extra lines carried from the draft proforma into the final invoice
     let _bulkSelected = {}; // { [itemId]: { id, name, qty, assigned, designId, designName, designThumb, designStatus, variantId } }
+    let _pendingRemoveFromInvoice = false; // set after the draft-invoice warning so the retry sends consent
     let _bulkDesignTargetId = null;
     let _assignPantoneColors = [];
     let _editMOState = null;          // { moId, clientId, items: { [moiId]: {...} } }
@@ -478,6 +479,114 @@
         return ['admin', 'super_admin'].includes(window.GpackUser?.role);
     }
 
+    // ── Item cancellation (أصناف ملغاة) ───────────────────────────────────────
+
+    function _canCancelItem(item) {
+        const isAdminRole = ['admin', 'manager', 'super_admin'].includes(window.GpackUser?.role);
+        if (!isAdminRole) return false;
+        return !(parseFloat(item.manufacturer_po_qty || 0) > 0
+              || parseFloat(item.wh_received_qty     || 0) > 0
+              || parseFloat(item.released_qty        || 0) > 0
+              || parseFloat(item.delivered_qty       || 0) > 0);
+    }
+
+    function _renderCancelledItems() {
+        const section = _el('hub-cancelled-section');
+        const list    = _el('hub-cancelled-list');
+        const count   = _el('hub-cancelled-count');
+        if (!section || !list) return;
+
+        const cancelled = _hubOrder?.cancelled_items || [];
+        if (!cancelled.length) {
+            section.classList.add('hidden');
+            list.innerHTML = '';
+            return;
+        }
+        section.classList.remove('hidden');
+        if (count) count.textContent = cancelled.length;
+
+        const isAdminRole = ['admin', 'manager', 'super_admin'].includes(window.GpackUser?.role);
+        list.innerHTML = cancelled.map(item => {
+            const when = item.cancelled_at ? new Date(item.cancelled_at).toLocaleString('ar-EG', { dateStyle: 'short', timeStyle: 'short' }) : '';
+            return `<div class="flex items-center justify-between gap-3 px-4 py-2.5">
+                <div class="min-w-0">
+                    <span class="text-sm font-semibold text-slate-700 line-through decoration-red-300">${item.product_name || '—'}</span>
+                    ${item.size_name ? `<span class="text-xs text-slate-400 mr-1">${item.size_name}</span>` : ''}
+                    <div class="text-xs text-slate-400 mt-0.5">
+                        ${parseFloat(item.quantity || 0)} — ${item.cancellation_reason || 'بدون سبب'}
+                        ${when ? ` · ${when}` : ''}${item.cancelled_by_name ? ` · ${item.cancelled_by_name}` : ''}
+                    </div>
+                </div>
+                ${isAdminRole ? `<button onclick="window.poView.restoreItem('${item.id}')"
+                        class="shrink-0 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold rounded-lg transition-all">
+                    <i class="fa-solid fa-rotate-left ml-1"></i> تراجع عن الإلغاء
+                </button>` : ''}
+            </div>`;
+        }).join('');
+    }
+
+    function _toggleCancelledSection() {
+        const list    = _el('hub-cancelled-list');
+        const chevron = _el('hub-cancelled-chevron');
+        if (!list) return;
+        list.classList.toggle('hidden');
+        chevron?.classList.toggle('fa-chevron-down');
+        chevron?.classList.toggle('fa-chevron-up');
+    }
+
+    function _openCancelItemModal(orderItemId) {
+        const item = _hubItems.find(i => i.id === orderItemId);
+        if (!item) { _toast('البند غير موجود', 'error'); return; }
+        _pendingRemoveFromInvoice = false;
+        _el('cancel-item-id').value       = orderItemId;
+        _el('cancel-item-name').textContent = ((item.product_name || '') + ' ' + (item.size_name || '')).trim() || '—';
+        _el('cancel-item-qty').textContent  = parseFloat(item.quantity || 0);
+        _el('cancel-item-reason').value     = '';
+        _el('cancel-invoice-warning').classList.add('hidden');
+        _showModal('po-cancel-item-modal');
+    }
+
+    async function _submitCancelItem() {
+        const itemId = _el('cancel-item-id').value;
+        const reason = (_el('cancel-item-reason').value || '').trim();
+        if (!reason) { _toast('سبب الإلغاء مطلوب', 'error'); return; }
+        const btn = _el('cancel-item-confirm-btn');
+        if (btn) btn.disabled = true;
+        try {
+            await window.apiFetch(`/api/orders/${_hubOrderId}/items/${itemId}/cancel`, {
+                method: 'POST',
+                body: { reason, remove_from_draft_invoice: _pendingRemoveFromInvoice },
+            });
+            _hideModal('po-cancel-item-modal');
+            _toast('تم إلغاء الصنف');
+            await _openHub(_hubOrderId);
+            await _loadOrders();
+        } catch (err) {
+            if (err.code === 'DRAFT_INVOICE_LINE') {
+                // Show warning; next confirm sends remove_from_draft_invoice=true
+                _pendingRemoveFromInvoice = true;
+                const warn = _el('cancel-invoice-warning');
+                warn.innerHTML = `<i class="fa-solid fa-triangle-exclamation ml-1"></i> ${err.message}<br>اضغط «تأكيد إلغاء الصنف» مرة تانية للموافقة على حذفه من الفاتورة الأولية.`;
+                warn.classList.remove('hidden');
+            } else {
+                _toast(err.message || 'تعذر إلغاء الصنف', 'error');
+            }
+        } finally {
+            if (btn) btn.disabled = false;
+        }
+    }
+
+    async function _restoreItem(itemId) {
+        try {
+            await window.apiFetch(`/api/orders/${_hubOrderId}/items/${itemId}/restore`, { method: 'POST' });
+            _toast('تم التراجع عن الإلغاء');
+            await _openHub(_hubOrderId);
+            await _loadOrders();
+        } catch (err) {
+            _toast(err.message || 'تعذر التراجع عن الإلغاء', 'error');
+        }
+    }
+
     function _money(value) {
         return value === null || value === undefined ? '—' : `${_fmt(value)} ر.س`;
     }
@@ -813,6 +922,7 @@
                     const received  = parseFloat(item.wh_received_qty     || 0);
                     const qty       = parseFloat(item.quantity             || 0);
                     const canAssign = qty > assigned;
+                    const canCancel = _canCancelItem(item);
                     const safeName  = ((item.product_name || '') + ' ' + (item.size_name || '')).trim().replace(/'/g, "\\'");
                     const designId    = item.design_id || '';
                     const designName  = item.design_name || '';
@@ -849,17 +959,28 @@
                             <span class="${received > 0 ? 'text-emerald-600 font-bold' : 'text-slate-300'}">${received || '—'}</span>
                         </td>
                         <td class="py-2.5 px-4 text-center">
+                            <div class="flex items-center justify-center gap-1.5">
                             ${canAssign
                                 ? `<button onclick="window.poView.openAssignModal('${item.id}')"
                                            class="inline-flex items-center gap-1 px-3 py-1.5 bg-purple-100 hover:bg-purple-200 text-purple-700 text-xs font-bold rounded-lg transition-all">
                                        <i class="fa-solid fa-plus"></i> إسناد
                                    </button>`
                                 : `<span class="text-xs font-bold text-emerald-600">مكتمل ✓</span>`}
+                            ${canCancel
+                                ? `<button onclick="window.poView.openCancelItemModal('${item.id}')"
+                                           class="inline-flex items-center justify-center w-7 h-7 bg-red-50 hover:bg-red-100 text-red-500 rounded-lg transition-all"
+                                           title="إلغاء الصنف من أمر التشغيل">
+                                       <i class="fa-solid fa-trash-can text-xs"></i>
+                                   </button>`
+                                : ''}
+                            </div>
                         </td>
                     </tr>`;
                 }).join('')
                 : '<tr><td colspan="8" class="py-8 text-center text-slate-400 text-xs">لا توجد بنود في هذا الأمر</td></tr>';
         }
+
+        _renderCancelledItems();
 
         // MO list
         const moListEl  = _el('hub-mo-list');
@@ -4752,6 +4873,11 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         _onReceiveInvoiceToggle: _onReceiveInvoiceToggle,
         openAssignModal:      _openAssignModal,
         closeAssignModal:     () => _hideModal('po-assign-modal'),
+        openCancelItemModal:  _openCancelItemModal,
+        closeCancelItemModal: () => _hideModal('po-cancel-item-modal'),
+        submitCancelItem:     _submitCancelItem,
+        restoreItem:          _restoreItem,
+        toggleCancelledSection: _toggleCancelledSection,
         openAssignPreview:    _openAssignPreview,
         closeAssignPreview:   _closeAssignPreview,
         saveAssignment:       _saveAssignment,

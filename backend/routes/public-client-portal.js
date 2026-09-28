@@ -250,6 +250,7 @@ router.get('/client-portal/:token', async (req, res) => {
                     COALESCE(SUM(oi.released_qty), 0)::numeric AS released_qty,
                     COALESCE(SUM(oi.delivered_qty), 0)::numeric AS delivered_qty
                 FROM order_items oi
+                WHERE oi.cancelled_at IS NULL
                 GROUP BY oi.order_id
             ),
             invoice_totals AS (
@@ -473,7 +474,7 @@ router.get('/client-portal/:token/orders/:id', async (req, res) => {
              FROM order_items oi
              LEFT JOIN product_variants pv ON pv.id = oi.variant_id
              LEFT JOIN products p ON p.id = pv.product_id
-             WHERE oi.order_id = $1
+             WHERE oi.order_id = $1 AND oi.cancelled_at IS NULL
              ORDER BY oi.created_at ASC`,
             [order.id]
         );

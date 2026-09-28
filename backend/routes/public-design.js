@@ -254,7 +254,7 @@ router.get('/view/:token', async (req, res) => {
              FROM order_items oi
              LEFT JOIN product_variants pv ON pv.id = oi.variant_id
              LEFT JOIN products p ON p.id = pv.product_id
-             WHERE oi.order_id = $1
+             WHERE oi.order_id = $1 AND oi.cancelled_at IS NULL
              ORDER BY oi.id ASC`,
             [order.id]
         );
@@ -428,7 +428,7 @@ router.post('/respond/:token', clientUpload.array('client_files', 10), async (re
         } else if (allApprove) {
             const pendingRes = await client.query(
                 `SELECT COUNT(*) as count FROM order_items
-                 WHERE order_id = $1
+                 WHERE order_id = $1 AND cancelled_at IS NULL
                    AND design_files IS NOT NULL AND design_files != '[]'::jsonb
                    AND client_design_status != 'approved'`,
                 [order.id]
@@ -437,7 +437,7 @@ router.post('/respond/:token', clientUpload.array('client_files', 10), async (re
             // Check if there are items WITHOUT design_files yet (not yet designed)
             const noDesignRes = await client.query(
                 `SELECT COUNT(*) as count FROM order_items
-                 WHERE order_id = $1
+                 WHERE order_id = $1 AND cancelled_at IS NULL
                    AND (design_files IS NULL OR design_files = '[]'::jsonb)`,
                 [order.id]
             );
@@ -470,7 +470,7 @@ router.post('/respond/:token', clientUpload.array('client_files', 10), async (re
                      FROM order_items oi
                      LEFT JOIN product_variants pv ON pv.id = oi.variant_id
                      LEFT JOIN products p ON p.id = pv.product_id
-                     WHERE oi.order_id = $1
+                     WHERE oi.order_id = $1 AND oi.cancelled_at IS NULL
                        AND oi.design_files IS NOT NULL AND oi.design_files != '[]'::jsonb`,
                     [order.id]
                 );
@@ -577,7 +577,7 @@ router.post('/respond/:token', clientUpload.array('client_files', 10), async (re
                     signer_name: signer_name,
                     partial: true,
                     designed_items: allItemsRes.rows.length,
-                    total_items: (await client.query(`SELECT COUNT(*) as c FROM order_items WHERE order_id = $1`, [order.id])).rows[0].c,
+                    total_items: (await client.query(`SELECT COUNT(*) as c FROM order_items WHERE order_id = $1 AND cancelled_at IS NULL`, [order.id])).rows[0].c,
                 });
             }
         }
@@ -929,7 +929,7 @@ router.post('/item/:token/respond', clientUpload.array('client_files', 10), asyn
             // Check if all items in order are approved → save client designs
             const pendingRes = await client.query(
                 `SELECT COUNT(*) as count FROM order_items
-                 WHERE order_id = $1 AND design_status != 'approved'`,
+                 WHERE order_id = $1 AND design_status != 'approved' AND cancelled_at IS NULL`,
                 [item.order_id]
             );
             if (parseInt(pendingRes.rows[0].count) === 0) {
@@ -946,7 +946,7 @@ router.post('/item/:token/respond', clientUpload.array('client_files', 10), asyn
                 const allItemsRes = await client.query(
                     `SELECT oi.variant_id, oi.design_files
                      FROM order_items oi
-                     WHERE oi.order_id = $1
+                     WHERE oi.order_id = $1 AND oi.cancelled_at IS NULL
                        AND oi.design_files IS NOT NULL AND oi.design_files != '[]'::jsonb`,
                     [item.order_id]
                 );

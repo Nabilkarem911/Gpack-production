@@ -610,7 +610,7 @@ router.get('/:id/lifecycle', async (req, res) => {
                         MIN(oi.unit_price)   FILTER (WHERE o.id IS NOT NULL) AS min_price,
                         MAX(oi.unit_price)   FILTER (WHERE o.id IS NOT NULL) AS max_price
                      FROM product_variants pv
-                     LEFT JOIN order_items oi ON oi.variant_id = pv.id
+                     LEFT JOIN order_items oi ON oi.variant_id = pv.id AND oi.cancelled_at IS NULL
                      LEFT JOIN orders o ON o.id = oi.order_id
                         AND o.status NOT IN ('quote', 'draft', 'cancelled')
                         AND o.grand_total IS NOT NULL
@@ -630,6 +630,7 @@ router.get('/:id/lifecycle', async (req, res) => {
                      JOIN product_variants pv ON pv.id = oi.variant_id
                      WHERE pv.product_id = $1
                        AND o.status NOT IN ('quote', 'draft', 'cancelled')
+                       AND oi.cancelled_at IS NULL
                        AND o.grand_total IS NOT NULL
                        AND o.order_date >= NOW() - INTERVAL '12 months'
                        ${vCond}
@@ -649,6 +650,7 @@ router.get('/:id/lifecycle', async (req, res) => {
                      JOIN product_variants pv ON pv.id = oi.variant_id
                      WHERE pv.product_id = $1
                        AND o.status NOT IN ('quote', 'draft', 'cancelled')
+                       AND oi.cancelled_at IS NULL
                        AND o.grand_total IS NOT NULL
                        ${vCond}
                      GROUP BY c.id, c.name
@@ -674,6 +676,7 @@ router.get('/:id/lifecycle', async (req, res) => {
                      JOIN product_variants pv ON pv.id = oi.variant_id
                      WHERE pv.product_id = $1
                        AND o.status NOT IN ('quote', 'draft', 'cancelled')
+                       AND oi.cancelled_at IS NULL
                        AND o.grand_total IS NOT NULL
                        ${vCond}
                      ORDER BY o.order_date DESC, o.id DESC
@@ -811,6 +814,7 @@ router.get('/:id/lifecycle', async (req, res) => {
                 FROM order_items oi
                 JOIN orders o ON o.id = oi.order_id
                 WHERE o.status NOT IN ('quote', 'draft', 'cancelled')
+                  AND oi.cancelled_at IS NULL
                   AND o.grand_total IS NOT NULL
                 GROUP BY oi.variant_id
              ) stats ON stats.variant_id = pv.id

@@ -500,7 +500,7 @@ router.get('/recent-orders', authenticate, async (req, res) => {
                 COUNT(oi.id) as items_count
              FROM orders o
              JOIN clients c ON o.client_id = c.id
-             LEFT JOIN order_items oi ON o.id = oi.order_id
+             LEFT JOIN order_items oi ON o.id = oi.order_id AND oi.cancelled_at IS NULL
              ${whereClause}
              GROUP BY o.id, o.order_number, c.name, o.status, o.grand_total, o.created_at
              ORDER BY o.created_at DESC
@@ -595,6 +595,7 @@ router.get('/chart-data', authenticate, async (req, res) => {
              JOIN products p ON pv.product_id = p.id
              JOIN orders o ON oi.order_id = o.id
              WHERE o.status != 'cancelled'
+             AND oi.cancelled_at IS NULL
              AND o.created_at >= NOW() - INTERVAL '30 days'
              ${isSalesRep ? `AND o.created_by = $1` : ''}
              GROUP BY p.name
@@ -773,9 +774,9 @@ router.put('/pending-pricing/:id', authenticate, authorize(['admin', 'manager', 
             // Recalculate order totals
             await client.query(
                 `UPDATE orders
-                 SET subtotal = (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE order_id = $1),
-                     tax_amount = (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE order_id = $1) * COALESCE(tax_rate, $3),
-                     grand_total = (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE order_id = $1) * (1 + COALESCE(tax_rate, $3)),
+                 SET subtotal = (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE order_id = $1 AND cancelled_at IS NULL),
+                     tax_amount = (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE order_id = $1 AND cancelled_at IS NULL) * COALESCE(tax_rate, $3),
+                     grand_total = (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE order_id = $1 AND cancelled_at IS NULL) * (1 + COALESCE(tax_rate, $3)),
                      pricing_status = 'priced',
                      pricing_notes = COALESCE($2, pricing_notes),
                      updated_at = NOW()
@@ -828,7 +829,7 @@ router.get('/pending-pricing/:id', authenticate, authorize(['admin', 'manager', 
              FROM order_items oi
              JOIN product_variants pv ON oi.variant_id = pv.id
              JOIN products p ON pv.product_id = p.id
-             WHERE oi.order_id = $1
+             WHERE oi.order_id = $1 AND oi.cancelled_at IS NULL
              ORDER BY oi.created_at ASC`,
             [id]
         );
@@ -871,7 +872,7 @@ router.get('/unassigned-production', authenticate, async (req, res) => {
              FROM orders o
              JOIN clients c ON o.client_id = c.id
              LEFT JOIN users u ON o.created_by = u.id
-             JOIN order_items oi ON oi.order_id = o.id
+             JOIN order_items oi ON oi.order_id = o.id AND oi.cancelled_at IS NULL
              WHERE o.status = 'production'
                AND NOT EXISTS (
                    SELECT 1 FROM manufacturer_orders mo

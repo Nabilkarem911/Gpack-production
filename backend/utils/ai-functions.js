@@ -104,7 +104,7 @@ const AI_FUNCTIONS = [
                  JOIN orders o ON o.id = oi.order_id
                  JOIN product_variants pv ON pv.id = oi.variant_id
                  JOIN products p ON p.id = pv.product_id
-                 WHERE o.status NOT IN ('quote', 'cancelled', 'draft')
+                 WHERE oi.cancelled_at IS NULL AND o.status NOT IN ('quote', 'cancelled', 'draft')
                    AND ${dateFilter}
                  GROUP BY p.name, pv.size_name
                  ORDER BY total_qty DESC
@@ -1037,7 +1037,7 @@ const AI_FUNCTIONS = [
                             COUNT(*) as times_sold
                      FROM order_items oi
                      JOIN orders o ON o.id = oi.order_id
-                     WHERE oi.variant_id = $1 AND o.status NOT IN ('cancelled', 'draft', 'quote')`,
+                     WHERE oi.cancelled_at IS NULL AND oi.variant_id = $1 AND o.status NOT IN ('cancelled', 'draft', 'quote')`,
                     [v.variant_id]
                 );
                 const cost = parseFloat(v.cost_price || 0);
@@ -1089,7 +1089,7 @@ const AI_FUNCTIONS = [
                                     COUNT(DISTINCT DATE(o.created_at)) as selling_days
                              FROM order_items oi
                              JOIN orders o ON o.id = oi.order_id
-                             WHERE o.status NOT IN ('cancelled', 'draft', 'quote')
+                             WHERE oi.cancelled_at IS NULL AND o.status NOT IN ('cancelled', 'draft', 'quote')
                                AND o.created_at >= NOW() - INTERVAL '90 days'
                              GROUP BY oi.variant_id
                          )
@@ -1119,7 +1119,7 @@ const AI_FUNCTIONS = [
                                     COUNT(DISTINCT DATE(o.created_at)) as selling_days
                              FROM order_items oi
                              JOIN orders o ON o.id = oi.order_id
-                             WHERE o.status NOT IN ('cancelled', 'draft', 'quote')
+                             WHERE oi.cancelled_at IS NULL AND o.status NOT IN ('cancelled', 'draft', 'quote')
                                AND o.created_at >= NOW() - INTERVAL '90 days'
                              GROUP BY oi.variant_id
                          )
@@ -1285,7 +1285,7 @@ const AI_FUNCTIONS = [
                             SUM(oi.quantity) as total_sold_90d
                      FROM order_items oi
                      JOIN orders o ON o.id = oi.order_id
-                     WHERE o.status NOT IN ('cancelled', 'draft', 'quote')
+                     WHERE oi.cancelled_at IS NULL AND o.status NOT IN ('cancelled', 'draft', 'quote')
                        AND o.created_at >= NOW() - INTERVAL '90 days'
                      GROUP BY oi.variant_id
                  )
@@ -1512,7 +1512,7 @@ const AI_FUNCTIONS = [
                  FROM order_items oi
                  LEFT JOIN product_variants pv ON pv.id = oi.variant_id
                  LEFT JOIN products p ON p.id = pv.product_id
-                 WHERE oi.order_id = $1
+                 WHERE oi.cancelled_at IS NULL AND oi.order_id = $1
                  ORDER BY oi.id`,
                 [order.id]
             );
@@ -1817,7 +1817,7 @@ const AI_FUNCTIONS = [
                      FROM order_items oi
                      JOIN orders o ON o.id = oi.order_id
                      JOIN clients c ON c.id = o.client_id
-                     WHERE oi.variant_id = $1 AND c.name ILIKE $2
+                     WHERE oi.cancelled_at IS NULL AND oi.variant_id = $1 AND c.name ILIKE $2
                        AND o.status NOT IN ('cancelled', 'draft')
                      ORDER BY o.created_at DESC LIMIT 5`,
                     [v.id, `%${client_name}%`]
@@ -1836,7 +1836,7 @@ const AI_FUNCTIONS = [
                             COUNT(*) as times_sold
                      FROM order_items oi
                      JOIN orders o ON o.id = oi.order_id
-                     WHERE oi.variant_id = $1 AND o.status NOT IN ('cancelled', 'draft', 'quote')`,
+                     WHERE oi.cancelled_at IS NULL AND oi.variant_id = $1 AND o.status NOT IN ('cancelled', 'draft', 'quote')`,
                     [v.id]
                 );
                 const avgMarketPrice = parseFloat(marketHistRes.rows[0].avg_price || 0);
@@ -2021,7 +2021,7 @@ const AI_FUNCTIONS = [
                  JOIN clients c ON c.id = o.client_id
                  LEFT JOIN product_variants pv ON pv.id = oi.variant_id
                  LEFT JOIN products p ON p.id = pv.product_id
-                 WHERE c.name ILIKE $1 AND o.status NOT IN ('cancelled', 'draft')
+                 WHERE oi.cancelled_at IS NULL AND c.name ILIKE $1 AND o.status NOT IN ('cancelled', 'draft')
                  ORDER BY o.created_at DESC
                  LIMIT $2`,
                 [`%${client_name}%`, parseInt(limit) || 20]
@@ -2073,7 +2073,7 @@ const AI_FUNCTIONS = [
                  FROM order_items oi
                  JOIN orders o ON o.id = oi.order_id
                  LEFT JOIN product_variants pv ON pv.id = oi.variant_id
-                 WHERE o.client_id = $1 AND o.status NOT IN ('cancelled', 'draft')`,
+                 WHERE oi.cancelled_at IS NULL AND o.client_id = $1 AND o.status NOT IN ('cancelled', 'draft')`,
                 [clientId]
             );
 
@@ -2097,7 +2097,7 @@ const AI_FUNCTIONS = [
                  JOIN orders o ON o.id = oi.order_id
                  LEFT JOIN product_variants pv ON pv.id = oi.variant_id
                  LEFT JOIN products p ON p.id = pv.product_id
-                 WHERE o.client_id = $1 AND o.status NOT IN ('cancelled', 'draft')
+                 WHERE oi.cancelled_at IS NULL AND o.client_id = $1 AND o.status NOT IN ('cancelled', 'draft')
                  GROUP BY p.name, pv.size_name
                  ORDER BY profit DESC
                  LIMIT 10`,
@@ -2113,7 +2113,7 @@ const AI_FUNCTIONS = [
                  FROM order_items oi
                  JOIN orders o ON o.id = oi.order_id
                  LEFT JOIN product_variants pv ON pv.id = oi.variant_id
-                 WHERE o.client_id = $1 AND o.status NOT IN ('cancelled', 'draft')
+                 WHERE oi.cancelled_at IS NULL AND o.client_id = $1 AND o.status NOT IN ('cancelled', 'draft')
                    AND o.created_at >= NOW() - INTERVAL '6 months'
                  GROUP BY DATE_TRUNC('month', o.created_at)
                  ORDER BY month DESC`,
@@ -2989,7 +2989,7 @@ const AI_FUNCTIONS = [
                      FROM order_items oi
                      JOIN orders o ON o.id = oi.order_id
                      JOIN product_variants pv ON pv.id = oi.variant_id
-                     WHERE ${dateFilter.replace('created_at', 'o.created_at')} AND o.status NOT IN ('cancelled', 'draft', 'quote')`
+                     WHERE oi.cancelled_at IS NULL AND ${dateFilter.replace('created_at', 'o.created_at')} AND o.status NOT IN ('cancelled', 'draft', 'quote')`
                 );
                 const r = res.rows[0];
                 const revenue = parseFloat(r.revenue || 0);
@@ -3069,7 +3069,7 @@ const AI_FUNCTIONS = [
                      JOIN orders o ON o.id = oi.order_id
                      JOIN product_variants pv ON pv.id = oi.variant_id
                      JOIN products p ON p.id = pv.product_id
-                     WHERE ${dateFilter.replace('created_at', 'o.created_at')} AND o.status NOT IN ('cancelled', 'draft', 'quote')
+                     WHERE oi.cancelled_at IS NULL AND ${dateFilter.replace('created_at', 'o.created_at')} AND o.status NOT IN ('cancelled', 'draft', 'quote')
                      GROUP BY p.name, pv.size_name
                      ORDER BY total_revenue DESC NULLS LAST
                      LIMIT 15`
@@ -3139,7 +3139,7 @@ const AI_FUNCTIONS = [
                  JOIN orders o ON o.id = oi.order_id
                  JOIN product_variants pv ON pv.id = oi.variant_id
                  JOIN products p ON p.id = pv.product_id
-                 WHERE o.status NOT IN ('cancelled', 'draft', 'quote')
+                 WHERE oi.cancelled_at IS NULL AND o.status NOT IN ('cancelled', 'draft', 'quote')
                    AND o.created_at >= NOW() - INTERVAL '12 months'
                    ${productFilter}
                  GROUP BY p.name, TO_CHAR(o.created_at, 'YYYY-MM')
@@ -3423,7 +3423,7 @@ const AI_FUNCTIONS = [
                  JOIN order_items oi ON oi.order_id = o.id
                  JOIN product_variants pv ON pv.id = oi.variant_id
                  JOIN products p ON p.id = pv.product_id
-                 WHERE o.status NOT IN ('cancelled', 'draft')
+                 WHERE oi.cancelled_at IS NULL AND o.status NOT IN ('cancelled', 'draft')
                    AND o.created_at >= NOW() - INTERVAL '90 days'
                    ${clientFilter}
                  GROUP BY o.id, o.client_id, c.name, o.created_at, o.status
@@ -3880,7 +3880,7 @@ const AI_FUNCTIONS = [
                      FROM order_items oi
                      JOIN orders o ON o.id = oi.order_id
                      JOIN product_variants pv ON pv.id = oi.variant_id
-                     WHERE o.status NOT IN ('cancelled', 'draft', 'quote')
+                     WHERE oi.cancelled_at IS NULL AND o.status NOT IN ('cancelled', 'draft', 'quote')
                        AND o.created_at >= NOW() - INTERVAL '${interval}'`
                 );
                 previousRes = await db.query(
@@ -3888,7 +3888,7 @@ const AI_FUNCTIONS = [
                      FROM order_items oi
                      JOIN orders o ON o.id = oi.order_id
                      JOIN product_variants pv ON pv.id = oi.variant_id
-                     WHERE o.status NOT IN ('cancelled', 'draft', 'quote')
+                     WHERE oi.cancelled_at IS NULL AND o.status NOT IN ('cancelled', 'draft', 'quote')
                        AND o.created_at >= NOW() - INTERVAL '${parseInt(interval) * 2} days'
                        AND o.created_at < NOW() - INTERVAL '${interval}'`
                 );
@@ -4100,7 +4100,7 @@ const AI_FUNCTIONS = [
                  FROM order_items oi
                  JOIN orders o ON o.id = oi.order_id
                  JOIN product_variants pv ON pv.id = oi.variant_id
-                 WHERE o.status NOT IN ('cancelled', 'draft', 'quote')
+                 WHERE oi.cancelled_at IS NULL AND o.status NOT IN ('cancelled', 'draft', 'quote')
                    AND o.created_at >= NOW() - INTERVAL '${interval}'`
             );
             const profitActual = parseFloat(profitRes.rows[0].profit || 0);
@@ -4247,7 +4247,7 @@ const AI_FUNCTIONS = [
                  FROM order_items oi
                  JOIN orders o ON o.id = oi.order_id
                  JOIN product_variants pv ON pv.id = oi.variant_id
-                 WHERE o.status NOT IN ('cancelled', 'draft', 'quote')
+                 WHERE oi.cancelled_at IS NULL AND o.status NOT IN ('cancelled', 'draft', 'quote')
                    AND o.created_at >= NOW() - INTERVAL '30 days'`
             );
             const baselineProfit = parseFloat(profitRes.rows[0].profit || 0);
@@ -4307,7 +4307,7 @@ const AI_FUNCTIONS = [
                      JOIN orders o ON o.id = oi.order_id
                      JOIN product_variants pv ON pv.id = oi.variant_id
                      JOIN products p ON p.id = pv.product_id
-                     WHERE o.status NOT IN ('cancelled', 'draft', 'quote')
+                     WHERE oi.cancelled_at IS NULL AND o.status NOT IN ('cancelled', 'draft', 'quote')
                        AND o.created_at >= NOW() - INTERVAL '30 days'
                        AND p.name ILIKE $1`,
                     [`%${product_name}%`]
@@ -4736,7 +4736,7 @@ const AI_FUNCTIONS = [
                          FROM order_items oi
                          JOIN orders o ON o.id = oi.order_id
                          JOIN product_variants pv ON pv.id = oi.variant_id
-                         WHERE o.status NOT IN ('cancelled', 'draft', 'quote')
+                         WHERE oi.cancelled_at IS NULL AND o.status NOT IN ('cancelled', 'draft', 'quote')
                            AND o.created_at >= $1 AND o.created_at <= $2`,
                         [goal.start_date, goal.end_date]
                     );
@@ -4939,7 +4939,7 @@ const AI_FUNCTIONS = [
                      JOIN orders o ON o.id = oi.order_id
                      JOIN product_variants pv ON pv.id = oi.variant_id
                      JOIN products p ON p.id = pv.product_id
-                     WHERE o.status NOT IN ('cancelled', 'draft', 'quote')
+                     WHERE oi.cancelled_at IS NULL AND o.status NOT IN ('cancelled', 'draft', 'quote')
                        AND o.created_at >= NOW() - INTERVAL '12 months'
                      GROUP BY p.id, p.name
                      ORDER BY total_revenue DESC
@@ -4970,7 +4970,7 @@ const AI_FUNCTIONS = [
                      LEFT JOIN order_items oi ON oi.variant_id = pv.id
                      LEFT JOIN orders o ON o.id = oi.order_id AND o.status NOT IN ('cancelled', 'draft', 'quote')
                          AND o.created_at >= NOW() - INTERVAL '90 days'
-                     WHERE p.status = 'active'
+                     WHERE oi.cancelled_at IS NULL AND p.status = 'active'
                      GROUP BY p.id, p.name
                      HAVING COALESCE(SUM(oi.line_total), 0) = 0
                      LIMIT 5`

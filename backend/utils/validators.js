@@ -734,6 +734,15 @@ const orderRelease = z.object({
 }).passthrough();
 
 // =============================================================================
+// Order Item Cancellation
+// =============================================================================
+
+const orderItemCancel = z.object({
+    reason: z.string().min(1, 'سبب الإلغاء مطلوب').max(1000),
+    remove_from_draft_invoice: z.coerce.boolean().optional().default(false),
+}).passthrough();
+
+// =============================================================================
 // Invoice Share & Status
 // =============================================================================
 
@@ -867,6 +876,7 @@ module.exports = {
     userPermissionsUpdate,
     orderNote,
     orderRelease,
+    orderItemCancel,
     invoiceShare,
     invoiceStatusUpdate,
     invoiceMarkIssued,

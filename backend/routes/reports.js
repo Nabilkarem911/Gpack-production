@@ -387,6 +387,7 @@ router.get('/profitability', async (req, res) => {
                 LEFT JOIN manufacturer_order_items moi ON moi.order_item_id = oi.id
                 LEFT JOIN manufacturer_orders mo ON mo.id = moi.manufacturer_order_id AND mo.status NOT IN ('cancelled')
                 WHERE o.status NOT IN ('quote', 'draft', 'cancelled')
+                  AND oi.cancelled_at IS NULL
                   AND o.order_date BETWEEN $1 AND $2
                   AND o.grand_total IS NOT NULL
                 GROUP BY pv.id, p.name, pv.size_name
@@ -623,6 +624,7 @@ router.get('/sales', async (req, res) => {
                 JOIN product_variants pv ON pv.id = oi.variant_id
                 JOIN products p ON p.id = pv.product_id
                 WHERE o.status NOT IN ('quote', 'draft', 'cancelled')
+                  AND oi.cancelled_at IS NULL
                   AND o.grand_total IS NOT NULL
                   AND o.order_date BETWEEN $1 AND $2
                 GROUP BY pv.id, p.name, pv.size_name
@@ -1025,6 +1027,7 @@ router.get('/design-approval', async (req, res) => {
                 COUNT(*) AS count
             FROM order_items
             WHERE design_status != 'new'
+              AND cancelled_at IS NULL
               AND created_at >= $1::date
               AND created_at < ($2::date + 1)
             GROUP BY design_status

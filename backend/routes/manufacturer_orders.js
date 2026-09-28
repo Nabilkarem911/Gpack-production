@@ -613,6 +613,13 @@ router.post('/', restrictWrite, validateBody(manufacturerOrderCreate), async (re
             for (const item of items) {
                 if (!item.order_item_id || !item.quantity) continue;
 
+                const oiCheck = await client.query(
+                    'SELECT cancelled_at FROM order_items WHERE id = $1 AND order_id = $2',
+                    [item.order_item_id, order_id]
+                );
+                if (!oiCheck.rowCount) throw new Error('بند غير موجود في هذا الطلب.');
+                if (oiCheck.rows[0].cancelled_at) throw new Error('لا يمكن إسناد بند ملغي — راجع قسم الأصناف الملغاة.');
+
                 const pantoneColors = Array.isArray(item.pantone_colors)
                     ? item.pantone_colors.filter(c => c && String(c).trim())
                     : (item.pantone_color ? [item.pantone_color] : []);
@@ -965,6 +972,13 @@ router.put('/:id', restrictEdit, validateBody(manufacturerOrderCreate), async (r
             const insertedItems = [];
             for (const item of items) {
                 if (!item.order_item_id || !item.quantity) continue;
+
+                const oiCheck = await client.query(
+                    'SELECT cancelled_at FROM order_items WHERE id = $1 AND order_id = $2',
+                    [item.order_item_id, mo.order_id]
+                );
+                if (!oiCheck.rowCount) throw new Error('بند غير موجود في هذا الطلب.');
+                if (oiCheck.rows[0].cancelled_at) throw new Error('لا يمكن إسناد بند ملغي — راجع قسم الأصناف الملغاة.');
 
                 const pantoneColors = Array.isArray(item.pantone_colors)
                     ? item.pantone_colors.filter(c => c && String(c).trim())

@@ -228,7 +228,7 @@ router.post('/', restrictWrite, validateBody(deliveryNoteCreate), async (req, re
                 let orderItemId = item.order_item_id || null;
                 if (!orderItemId && order_id && item.variant_id) {
                     const oiRes = await client.query(
-                        `SELECT id FROM order_items WHERE order_id = $1 AND variant_id = $2 LIMIT 1`,
+                        `SELECT id FROM order_items WHERE order_id = $1 AND variant_id = $2 AND cancelled_at IS NULL LIMIT 1`,
                         [order_id, item.variant_id]
                     );
                     if (oiRes.rowCount > 0) orderItemId = oiRes.rows[0].id;
@@ -260,6 +260,7 @@ router.post('/', restrictWrite, validateBody(deliveryNoteCreate), async (req, re
                              FROM warehouse_stock ws
                              JOIN order_items oi ON oi.variant_id = ws.variant_id
                              WHERE oi.order_id = o.id
+                               AND oi.cancelled_at IS NULL
                                AND ws.reserved_qty > 0
                              LIMIT 1
                          ))
