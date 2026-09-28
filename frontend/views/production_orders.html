@@ -238,6 +238,7 @@
                                 <th class="text-center py-2.5 px-4 text-xs font-bold text-slate-500 hidden sm:table-cell">مُسندة</th>
                                 <th class="text-center py-2.5 px-4 text-xs font-bold text-slate-500 hidden sm:table-cell">مستلمة</th>
                                 <th class="text-center py-2.5 px-4 text-xs font-bold text-slate-500">إسناد لمورد</th>
+                                <th class="text-center py-2.5 px-3 text-xs font-bold text-slate-500 w-10">تعديل</th>
                             </tr>
                         </thead>
                         <tbody id="hub-items-tbody"></tbody>
@@ -652,6 +653,91 @@
             <button onclick="window.poView.saveMOEdits()" id="edit-mo-save-btn"
                     class="px-5 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold rounded-xl shadow transition-all active:scale-[0.98]">
                 <i class="fa-solid fa-save ml-1"></i> حفظ التعديلات
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════ EDIT ORDER ITEM MODAL ═══════════════════════ -->
+<div id="po-edit-item-modal" class="fixed inset-0 z-[60] hidden">
+    <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onclick="window.poView.closeEditItemModal()"></div>
+    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md max-h-[90vh] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 shrink-0">
+            <h3 class="font-bold text-slate-800 flex items-center gap-2">
+                <i class="fa-solid fa-pen-to-square text-brand-500"></i> تعديل الصنف
+            </h3>
+            <button onclick="window.poView.closeEditItemModal()" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 transition-colors">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <!-- Edit form state -->
+        <div id="edit-item-form" class="p-5 space-y-4 overflow-y-auto flex-1">
+            <div class="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-700 flex items-start gap-2">
+                <i class="fa-solid fa-link mt-0.5 shrink-0"></i>
+                <span>التعديل يتم على نفس الصنف — رابط المورد المُرسل سابقًا يفضل شغال ويعرض البيانات المحدّثة تلقائيًا.</span>
+            </div>
+            <input type="hidden" id="edit-item-id">
+            <div class="bg-slate-50 rounded-xl p-3 text-sm">
+                <span class="text-slate-500">الصنف الحالي: </span>
+                <span id="edit-item-current" class="font-bold text-slate-800"></span>
+            </div>
+            <div>
+                <label class="block text-sm font-bold text-slate-700 mb-1.5">المنتج</label>
+                <select id="edit-item-product" onchange="window.poView._onEditItemProductChange()"
+                        class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all">
+                    <option value="">جاري التحميل...</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-bold text-slate-700 mb-1.5">المقاس / الصنف <span class="text-red-500">*</span></label>
+                <select id="edit-item-variant"
+                        class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all">
+                    <option value="">— اختر المنتج أولًا —</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-bold text-slate-700 mb-1.5">الكمية</label>
+                <input type="number" id="edit-item-qty" min="0.001" step="any"
+                       class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all">
+                <p id="edit-item-qty-hint" class="hidden text-xs text-amber-600 mt-1.5 flex items-start gap-1">
+                    <i class="fa-solid fa-triangle-exclamation mt-0.5 shrink-0"></i>
+                    <span>تغيير الكمية في أمر مُسعّر هيغيّر الإجمالي المعتمد من العميل — التعديل هيتم رفضه ويتطلب مراجعة عرض السعر وإعادة اعتماد العميل.</span>
+                </p>
+            </div>
+            <div>
+                <label class="block text-sm font-bold text-slate-700 mb-1.5">ملاحظات</label>
+                <textarea id="edit-item-notes" rows="2"
+                          class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 resize-none transition-all"
+                          placeholder="ملاحظات الصنف..."></textarea>
+            </div>
+            <div id="edit-item-error" class="hidden bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-700"></div>
+        </div>
+
+        <!-- Success state -->
+        <div id="edit-item-done" class="hidden p-5 space-y-4 overflow-y-auto flex-1">
+            <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-sm text-emerald-700 flex items-start gap-2">
+                <i class="fa-solid fa-circle-check mt-0.5 shrink-0"></i>
+                <span>تم حفظ التعديل بنجاح — رابط المورد لم يتغيّر ويعرض البيانات الجديدة.</span>
+            </div>
+            <div id="edit-item-design-warning" class="hidden bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-700 flex items-start gap-2">
+                <i class="fa-solid fa-triangle-exclamation mt-0.5 shrink-0"></i>
+                <span>المقاس اتغيّر والصنف له تصميم مرتبط — راجع التصميم قبل متابعة الإنتاج.</span>
+            </div>
+            <div>
+                <p class="text-xs font-bold text-slate-500 mb-2">إشعار المورد بالتحديث (نفس رابط المشاركة):</p>
+                <div id="edit-item-notify-list" class="space-y-2"></div>
+            </div>
+        </div>
+
+        <div class="flex justify-end gap-2 px-5 py-4 border-t border-slate-100 shrink-0 bg-white">
+            <button onclick="window.poView.closeEditItemModal()"
+                    class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold rounded-xl transition-colors">
+                إغلاق
+            </button>
+            <button onclick="window.poView.saveItemEdit()" id="edit-item-save-btn"
+                    class="px-5 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold rounded-xl shadow transition-all active:scale-[0.98]">
+                <i class="fa-solid fa-save ml-1"></i> حفظ التعديل
             </button>
         </div>
     </div>

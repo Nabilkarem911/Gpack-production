@@ -446,7 +446,7 @@
         _showModal('po-hub-modal');
 
         // Show loader
-        _setHTML('hub-items-tbody', '<tr><td colspan="5" class="py-8 text-center text-slate-400"><i class="fa-solid fa-circle-notch fa-spin text-xl"></i></td></tr>');
+        _setHTML('hub-items-tbody', '<tr><td colspan="9" class="py-8 text-center text-slate-400"><i class="fa-solid fa-circle-notch fa-spin text-xl"></i></td></tr>');
         _setHTML('hub-mo-list', '');
         _el('hub-mo-empty')?.classList.add('hidden');
 
@@ -806,6 +806,7 @@
 
         // Items rows
         const tbody = _el('hub-items-tbody');
+        const canEditItems = ['production', 'processing'].includes(_hubOrder.status);
         if (tbody) {
             tbody.innerHTML = _hubItems.length
                 ? _hubItems.map(item => {
@@ -856,9 +857,18 @@
                                    </button>`
                                 : `<span class="text-xs font-bold text-emerald-600">مكتمل ✓</span>`}
                         </td>
+                        <td class="py-2.5 px-3 text-center">
+                            ${canEditItems
+                                ? `<button onclick="window.poView.openEditItemModal('${item.id}')"
+                                           class="inline-flex items-center justify-center w-7 h-7 bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-brand-600 text-xs rounded-lg transition-all"
+                                           title="تعديل الصنف/المقاس أو الكمية — رابط المورد يفضل ثابت">
+                                       <i class="fa-solid fa-pen"></i>
+                                   </button>`
+                                : ''}
+                        </td>
                     </tr>`;
                 }).join('')
-                : '<tr><td colspan="8" class="py-8 text-center text-slate-400 text-xs">لا توجد بنود في هذا الأمر</td></tr>';
+                : '<tr><td colspan="9" class="py-8 text-center text-slate-400 text-xs">لا توجد بنود في هذا الأمر</td></tr>';
         }
 
         // MO list
@@ -1155,6 +1165,166 @@
             console.error('[poView] closeOrder:', err);
             _toast(err.message || 'فشل إغلاق الطلب', 'error');
         }
+    }
+
+    // ── Edit order item (in-place — supplier link & MO row stay untouched) ─────
+    let _editItemState = null; // { itemId, item, products }
+
+    async function _openEditItemModal(itemId) {
+        const item = _hubItems.find(i => i.id === itemId);
+        if (!item) { _toast('الصنف غير موجود', 'error'); return; }
+
+        _editItemState = { itemId, item, products: [] };
+
+        _setVal('edit-item-id', itemId);
+        _setText('edit-item-current', `${item.product_name || '—'} ${item.size_name || ''}`.trim());
+        _setVal('edit-item-qty',   parseFloat(item.quantity || 0));
+        _setVal('edit-item-notes', item.notes || '');
+
+        const errBox  = _el('edit-item-error');
+        const formBox = _el('edit-item-form');
+        const doneBox = _el('edit-item-done');
+        const saveBtn = _el('edit-item-save-btn');
+        if (errBox)  { errBox.classList.add('hidden'); errBox.textContent = ''; }
+        if (doneBox) doneBox.classList.add('hidden');
+        if (formBox) formBox.classList.remove('hidden');
+        if (saveBtn) saveBtn.classList.remove('hidden');
+
+        // Priced orders: a quantity change alters the approved total → backend
+        // rejects it pending client re-approval. Show the hint upfront.
+        const qtyHint  = _el('edit-item-qty-hint');
+        const isPriced = _hubOrder && _hubOrder.grand_total !== null && _hubOrder.grand_total !== undefined;
+        if (qtyHint) qtyHint.classList.toggle('hidden', !isPriced);
+
+        const productSel = _el('edit-item-product');
+        const variantSel = _el('edit-item-variant');
+        if (productSel) productSel.innerHTML = '<option value="">جاري تحميل المنتجات...</option>';
+        if (variantSel) variantSel.innerHTML = '<option value="">— اختر المنتج أولًا —</option>';
+
+        _showModal('po-edit-item-modal');
+
+        try {
+            const res = await window.apiFetch('/api/products?include_variants=true&status=active');
+            const products = (res && res.data) || [];
+            _editItemState.products = products;
+            if (productSel) {
+                productSel.innerHTML = products.map(p =>
+                    `<option value="${p.id}" ${p.id === item.product_id ? 'selected' : ''}>${_escapeHtml(p.name)}</option>`
+                ).join('') || '<option value="">— لا توجد منتجات —</option>';
+            }
+            _fillEditItemVariants();
+        } catch (err) {
+            console.error('[poView] editItem products load:', err);
+            if (productSel) productSel.innerHTML = '<option value="">— فشل تحميل المنتجات —</option>';
+        }
+    }
+
+    function _fillEditItemVariants() {
+        const item       = _editItemState?.item;
+        const productSel = _el('edit-item-product');
+        const variantSel = _el('edit-item-variant');
+        if (!productSel || !variantSel || !item) return;
+
+        const product  = (_editItemState.products || []).find(p => p.id === productSel.value);
+        const variants = (product && product.variants) || [];
+        const currentVariantId = item.variant_id || item.product_variant_id || '';
+
+        variantSel.innerHTML = '<option value="">— اختر المقاس —</option>' +
+            variants.map(v =>
+                `<option value="${v.id}" ${v.id === currentVariantId ? 'selected' : ''}>${_escapeHtml(v.size_name || v.sku || '')}${v.sku && v.size_name ? ' — ' + _escapeHtml(v.sku) : ''}</option>`
+            ).join('');
+
+        // If the current variant is inactive/missing, keep it selectable so the
+        // user can see what the item currently points to — only when the item's
+        // own product is selected.
+        if (currentVariantId && productSel.value === item.product_id
+            && ![...variantSel.options].some(o => o.value === currentVariantId)) {
+            const opt = document.createElement('option');
+            opt.value = currentVariantId;
+            opt.textContent = `${item.size_name || 'المقاس الحالي'} (حالي)`;
+            opt.selected = true;
+            variantSel.appendChild(opt);
+        }
+    }
+
+    function _onEditItemProductChange() { _fillEditItemVariants(); }
+
+    async function _saveItemEdit() {
+        if (!_editItemState) return;
+        const { itemId, item } = _editItemState;
+
+        const errBox = _el('edit-item-error');
+        const showErr = (msg) => {
+            if (errBox) { errBox.textContent = msg; errBox.classList.remove('hidden'); }
+            else _toast(msg, 'error');
+        };
+        if (errBox) { errBox.classList.add('hidden'); errBox.textContent = ''; }
+
+        // Only send fields that actually changed
+        const body = {};
+        const newVariant = (_el('edit-item-variant') || {}).value || '';
+        const curVariant = item.variant_id || item.product_variant_id || '';
+        if (newVariant && newVariant !== curVariant) body.variant_id = newVariant;
+        const newQty = parseFloat((_el('edit-item-qty') || {}).value);
+        if (!isNaN(newQty) && newQty !== parseFloat(item.quantity)) body.quantity = newQty;
+        const newNotes = ((_el('edit-item-notes') || {}).value || '').trim();
+        if (newNotes !== (item.notes || '').trim()) body.notes = newNotes || null;
+
+        if (!Object.keys(body).length) { _toast('لم يتم تغيير أي حقل', 'info'); return; }
+
+        const saveBtn = _el('edit-item-save-btn');
+        try {
+            if (saveBtn) { saveBtn.disabled = true; saveBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin ml-1"></i> جاري الحفظ...'; }
+
+            const res = await window.apiFetch(`/api/orders/${_hubOrderId}/items/${itemId}`, {
+                method: 'PATCH',
+                body,
+            });
+
+            // Refresh hub data first so MO cards/items reflect the edit
+            await _openHub(_hubOrderId);
+
+            // Supplier notification — reuse shareMO(): the endpoint returns the
+            // SAME token/URL for the existing MO row, so the link never changes.
+            const linkedMos = (_hubMOs || []).filter(mo =>
+                (mo.items || []).some(i => i.order_item_id === itemId) && mo.status !== 'cancelled'
+            );
+            const notifyList = _el('edit-item-notify-list');
+            if (notifyList) {
+                notifyList.innerHTML = linkedMos.length
+                    ? linkedMos.map(mo => `
+                        <button onclick="window.shareMO('${mo.id}')"
+                                class="w-full flex items-center justify-between px-3 py-2.5 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-xl text-sm font-bold text-purple-700 transition-all">
+                            <span><i class="fa-brands fa-whatsapp ml-1"></i> إشعار ${(_escapeHtml(mo.supplier_name) || 'المورد')} — أمر #${mo.po_number || ''}</span>
+                            <i class="fa-solid fa-arrow-up-left-from-circle text-xs"></i>
+                        </button>`).join('')
+                    : '<p class="text-xs text-slate-400">لا يوجد أمر مورد مرتبط بهذا الصنف.</p>';
+            }
+
+            const designWarn = _el('edit-item-design-warning');
+            if (designWarn) designWarn.classList.toggle('hidden', !(res?.data && res.data.design_review_needed));
+
+            const formBox = _el('edit-item-form');
+            const doneBox = _el('edit-item-done');
+            if (formBox) formBox.classList.add('hidden');
+            if (doneBox) doneBox.classList.remove('hidden');
+            if (saveBtn) saveBtn.classList.add('hidden');
+            _toast('تم تعديل الصنف بنجاح');
+        } catch (err) {
+            console.error('[poView] saveItemEdit:', err);
+            if (err && err.code === 'TOTAL_CHANGE_REQUIRES_REAPPROVAL') {
+                showErr('تغيير الكمية هيغيّر إجمالي الطلب المعتمد. مطلوب مراجعة عرض السعر وإعادة اعتماد العميل أولًا — التعديل لم يُحفظ.');
+            } else {
+                showErr(err.message || 'فشل حفظ التعديل');
+            }
+        } finally {
+            if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = '<i class="fa-solid fa-save ml-1"></i> حفظ التعديل'; }
+        }
+    }
+
+    function _closeEditItemModal() {
+        _editItemState = null;
+        _hideModal('po-edit-item-modal');
     }
 
     // ── Update order status ────────────────────────────────────────────────────
@@ -4757,6 +4927,10 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         saveAssignment:       _saveAssignment,
         toggleItemCheck:      _toggleItemCheck,
         toggleAllItems:       _toggleAllItems,
+        openEditItemModal:    _openEditItemModal,
+        closeEditItemModal:   _closeEditItemModal,
+        saveItemEdit:         _saveItemEdit,
+        _onEditItemProductChange: _onEditItemProductChange,
         openBulkAssignModal:  _openBulkAssignModal,
         closeBulkAssignModal: () => _hideModal('po-bulk-assign-modal'),
         saveBulkAssignment:   _saveBulkAssignment,

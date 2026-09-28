@@ -142,3 +142,35 @@ test('production invoice edit keeps saved extra line values separate', () => {
     expect(editBlock).toContain('parseFloat(i.quantity || 0)');
     expect(editBlock).toContain('parseFloat(i.unit_price || 0)');
 });
+
+test('order item edit UI calls the in-place PATCH endpoint and never touches the MO link', () => {
+    const source = fs.readFileSync(
+        require('path').join(__dirname, '..', '..', 'frontend', 'js', 'views', 'production_orders_new.js'),
+        'utf8'
+    );
+    const html = fs.readFileSync(
+        require('path').join(__dirname, '..', '..', 'frontend', 'views', 'production_orders.html'),
+        'utf8'
+    );
+    const editBlock = source.slice(
+        source.indexOf('// ── Edit order item'),
+        source.indexOf('// ── Update order status')
+    );
+
+    // Edit affordance is gated to production/processing, backend stays the authority
+    expect(source).toContain("['production', 'processing'].includes(_hubOrder.status)");
+    // In-place update — same endpoint, PATCH, no MO deletion/recreation
+    expect(editBlock).toContain('`/api/orders/${_hubOrderId}/items/${itemId}`');
+    expect(editBlock).toContain("method: 'PATCH'");
+    expect(editBlock).not.toContain('revert-send');
+    expect(editBlock).not.toContain('DELETE');
+    // Supplier notification reuses shareMO → the share endpoint reuses the same token/URL
+    expect(editBlock).toContain("window.shareMO('${mo.id}')");
+    // Re-approval and design-review feedback paths
+    expect(editBlock).toContain('TOTAL_CHANGE_REQUIRES_REAPPROVAL');
+    expect(editBlock).toContain('design_review_needed');
+    // Modal wiring
+    expect(html).toContain('id="po-edit-item-modal"');
+    expect(html).toContain('window.poView.saveItemEdit()');
+    expect(source).toContain("window.poView.openEditItemModal('${item.id}')");
+});

@@ -5,7 +5,7 @@ const db      = require('../db');
 const { success, created, paginated } = require('../utils/response');
 const { getVatRate } = require('../utils/settings');
 const { decryptShareToken } = require('../utils/crypto');
-const { orderCreate, orderUpdate, orderStatusUpdate, orderConvertToProduction, orderInvoice, orderPayment, orderNote, orderRelease, validateBody } = require('../utils/validators');
+const { orderCreate, orderUpdate, orderStatusUpdate, orderItemEdit, orderConvertToProduction, orderInvoice, orderPayment, orderNote, orderRelease, validateBody } = require('../utils/validators');
 const authorize = require('../middleware/authorize');
 const eventBus = require('../utils/event-bus');
 
@@ -1598,6 +1598,254 @@ router.put('/:id', restrictEdit, validateBody(orderUpdate), async (req, res) => 
     } catch (err) {
         console.error('[Orders] PUT /:id error:', err.message);
         return res.status(400).json({ error: err.message || 'Internal server error.' });
+    }
+});
+
+// =============================================================================
+// PATCH /api/orders/:id/items/:itemId
+// In-place edit of a single order item (variant / quantity / notes) while the
+// order is in production. The item row is UPDATEd, never deleted/recreated, so
+// every foreign key — manufacturer_order_items, MO share tokens, print
+// templates — stays intact and existing supplier links keep working as-is.
+//
+// BLOCKED when:
+//   - any quantity was already received/released/delivered on the item
+//   - a linked MO item has received_qty > 0, an active receipt session, or a
+//     non-cancelled purchase invoice
+//   - a non-cancelled delivery note or sales invoice references the item
+//   - the order is priced (grand_total NOT NULL) and quantity would change —
+//     that requires a client re-approval flow (rejected with code
+//     TOTAL_CHANGE_REQUIRES_REAPPROVAL)
+// =============================================================================
+
+router.patch('/:id/items/:itemId', restrictEdit, validateBody(orderItemEdit), async (req, res) => {
+    const { id, itemId } = req.params;
+    const { variant_id, quantity, notes } = req.validatedBody;
+
+    if (variant_id === undefined && quantity === undefined && notes === undefined) {
+        return res.status(400).json({ error: 'لا توجد حقول للتعديل.' });
+    }
+
+    const blocked = (message, code) => Object.assign(new Error(message), { statusCode: 400, code });
+
+    try {
+        const result = await db.withTransaction(async (client) => {
+
+            // ── 1. Lock order & validate status ─────────────────────────────
+            const orderRes = await client.query(
+                `SELECT id, order_number, status, client_id, grand_total
+                 FROM orders WHERE id = $1 FOR UPDATE`,
+                [id]
+            );
+            if (orderRes.rowCount === 0) {
+                throw Object.assign(new Error('الطلب غير موجود.'), { statusCode: 404 });
+            }
+            const order = orderRes.rows[0];
+            if (!['production', 'processing'].includes(order.status)) {
+                throw blocked('لا يمكن تعديل أصناف الأمر إلا وهو في حالة الإنتاج أو قيد التنفيذ.');
+            }
+
+            // ── 2. Lock the item ────────────────────────────────────────────
+            const itemRes = await client.query(
+                `SELECT id, variant_id, quantity, unit_price,
+                        COALESCE(wh_received_qty, 0) AS wh_received_qty,
+                        COALESCE(released_qty, 0)    AS released_qty,
+                        COALESCE(delivered_qty, 0)   AS delivered_qty,
+                        design_id, notes
+                 FROM order_items WHERE id = $1 AND order_id = $2 FOR UPDATE`,
+                [itemId, id]
+            );
+            if (itemRes.rowCount === 0) {
+                throw Object.assign(new Error('الصنف غير موجود في هذا الطلب.'), { statusCode: 404 });
+            }
+            const item = itemRes.rows[0];
+
+            // ── 3. Guards ───────────────────────────────────────────────────
+            if (parseFloat(item.wh_received_qty) > 0
+                || parseFloat(item.delivered_qty) > 0
+                || parseFloat(item.released_qty) > 0) {
+                throw blocked('لا يمكن تعديل الصنف — تم استلام أو تسليم كميات منه بالفعل.');
+            }
+
+            const moItemsRes = await client.query(
+                `SELECT moi.id, moi.mo_quantity, COALESCE(moi.received_qty, 0) AS received_qty,
+                        moi.manufacturer_order_id, mo.status AS mo_status, mo.mo_number
+                 FROM manufacturer_order_items moi
+                 JOIN manufacturer_orders mo ON mo.id = moi.manufacturer_order_id
+                 WHERE moi.order_item_id = $1`,
+                [itemId]
+            );
+            const moItems = moItemsRes.rows;
+            if (moItems.some(r => parseFloat(r.received_qty) > 0)) {
+                throw blocked('لا يمكن التعديل — يوجد استلام مسجل من المورد على هذا الصنف.');
+            }
+            const moIds = [...new Set(moItems.map(r => r.manufacturer_order_id))];
+
+            if (moIds.length) {
+                const sessRes = await client.query(
+                    `SELECT 1 FROM mo_receipt_sessions
+                     WHERE manufacturer_order_id = ANY($1::uuid[]) AND status = 'active' LIMIT 1`,
+                    [moIds]
+                );
+                if (sessRes.rowCount > 0) {
+                    throw blocked('لا يمكن التعديل — توجد جلسة استلام نشطة مرتبطة بأمر المورد.');
+                }
+
+                const piRes = await client.query(
+                    `SELECT 1 FROM purchase_invoices
+                     WHERE manufacturer_order_id = ANY($1::uuid[]) AND status <> 'cancelled' LIMIT 1`,
+                    [moIds]
+                );
+                if (piRes.rowCount > 0) {
+                    throw blocked('لا يمكن التعديل — توجد فاتورة مشتريات مرتبطة بأمر المورد.');
+                }
+            }
+
+            const dnRes = await client.query(
+                `SELECT 1 FROM delivery_note_items dni
+                 JOIN delivery_notes dn ON dn.id = dni.delivery_note_id
+                 WHERE dni.order_item_id = $1 AND dn.status <> 'cancelled' LIMIT 1`,
+                [itemId]
+            );
+            if (dnRes.rowCount > 0) {
+                throw blocked('لا يمكن التعديل — الصنف مرتبط بإذن تسليم.');
+            }
+
+            const invRes = await client.query(
+                `SELECT 1 FROM invoice_items ii
+                 JOIN invoices i ON i.id = ii.invoice_id
+                 WHERE ii.order_item_id = $1 AND i.status <> 'cancelled' LIMIT 1`,
+                [itemId]
+            );
+            if (invRes.rowCount > 0) {
+                throw blocked('لا يمكن التعديل — الصنف مرتبط بفاتورة بيع.');
+            }
+
+            // Financial guard — priced orders: a quantity change alters the
+            // approved grand_total, which needs a client re-approval cycle.
+            // VMI orders (grand_total IS NULL) have no client-facing totals.
+            const isVmiOrder  = order.grand_total === null || order.grand_total === undefined;
+            const qtyChanged  = quantity !== undefined && parseFloat(quantity) !== parseFloat(item.quantity);
+            if (!isVmiOrder && qtyChanged) {
+                const err = new Error('تغيير الكمية سيغيّر إجمالي الطلب المعتمد. يتطلب ذلك مراجعة عرض السعر وإعادة اعتماد العميل أولاً.');
+                err.statusCode = 409;
+                err.code = 'TOTAL_CHANGE_REQUIRES_REAPPROVAL';
+                throw err;
+            }
+
+            const variantChanged = variant_id !== undefined && variant_id !== item.variant_id;
+            if (variantChanged) {
+                const vRes = await client.query(
+                    `SELECT id FROM product_variants WHERE id = $1`,
+                    [variant_id]
+                );
+                if (vRes.rowCount === 0) {
+                    throw Object.assign(new Error('الصنف/المقاس الجديد غير موجود.'), { statusCode: 404 });
+                }
+            }
+
+            // ── 4. In-place update (id preserved → all FKs + MO link intact) ──
+            const updRes = await client.query(
+                `UPDATE order_items SET
+                    variant_id = COALESCE($1, variant_id),
+                    quantity   = COALESCE($2, quantity),
+                    notes      = CASE WHEN $3 THEN $4 ELSE notes END
+                 WHERE id = $5
+                 RETURNING *`,
+                [
+                    variantChanged ? variant_id : null,
+                    qtyChanged ? quantity : null,
+                    notes !== undefined,
+                    notes !== undefined ? notes : null,
+                    itemId,
+                ]
+            );
+            const updatedItem = updRes.rows[0];
+
+            // ── 5. Sync linked MO quantities when quantity changed ───────────
+            // Scale each active MO item proportionally so the supplier portal
+            // (same link) reflects the new quantity. manufacturer_orders rows
+            // themselves are never touched — status and share_token stay as-is.
+            const moItemsUpdated = [];
+            if (qtyChanged && moItems.length) {
+                const oldQty = parseFloat(item.quantity);
+                const newQty = parseFloat(quantity);
+                for (const r of moItems) {
+                    if (!['pending', 'sent'].includes(r.mo_status)) continue;
+                    const newMoQty = Math.round((parseFloat(r.mo_quantity) * newQty / oldQty) * 1000) / 1000;
+                    if (!(newMoQty > 0)) {
+                        throw blocked('تغيير الكمية سيجعل كمية أمر المورد صفراً — راجع أمر المورد يدوياً.');
+                    }
+                    await client.query(
+                        `UPDATE manufacturer_order_items SET mo_quantity = $1 WHERE id = $2`,
+                        [newMoQty, r.id]
+                    );
+                    moItemsUpdated.push({
+                        manufacturer_order_item_id: r.id,
+                        manufacturer_order_id:      r.manufacturer_order_id,
+                        mo_number:                  r.mo_number,
+                        old_quantity:               parseFloat(r.mo_quantity),
+                        new_quantity:               newMoQty,
+                    });
+                }
+                await client.query(
+                    `UPDATE order_items
+                     SET manufacturer_po_qty = (
+                         SELECT COALESCE(SUM(mo_quantity), 0)
+                         FROM manufacturer_order_items WHERE order_item_id = $1
+                     )
+                     WHERE id = $1`,
+                    [itemId]
+                );
+                updatedItem.manufacturer_po_qty = moItems.reduce(
+                    (sum, r) => {
+                        const u = moItemsUpdated.find(x => x.manufacturer_order_item_id === r.id);
+                        return sum + (u ? u.new_quantity : parseFloat(r.mo_quantity));
+                    }, 0
+                );
+            }
+
+            // ── 6. Audit note on the order ───────────────────────────────────
+            const userId   = req.user?.id || null;
+            const userName = req.user?.name || req.user?.username || req.user?.email || 'مستخدم';
+            const changes  = [];
+            if (variantChanged) {
+                const ids = [item.variant_id, variant_id].filter(Boolean);
+                const nameRes = await client.query(
+                    `SELECT pv.id, p.name AS product_name, pv.size_name
+                     FROM product_variants pv JOIN products p ON p.id = pv.product_id
+                     WHERE pv.id = ANY($1::uuid[])`,
+                    [ids]
+                );
+                const nameOf = vid => {
+                    const v = nameRes.rows.find(r => r.id === vid);
+                    return v ? `${v.product_name} (${v.size_name || '—'})` : (vid || '—');
+                };
+                changes.push(`الصنف: ${nameOf(item.variant_id)} ← ${nameOf(variant_id)}`);
+            }
+            if (qtyChanged) {
+                changes.push(`الكمية: ${parseFloat(item.quantity)} ← ${parseFloat(quantity)}`);
+            }
+            if (notes !== undefined) changes.push('تحديث الملاحظات');
+            await client.query(
+                `INSERT INTO order_notes (order_id, user_id, user_name, message)
+                 VALUES ($1, $2, $3, $4)`,
+                [id, userId, userName, `تعديل صنف في أمر التشغيل — ${changes.join(' | ')}`]
+            );
+
+            return {
+                item:                  updatedItem,
+                mo_items_updated:      moItemsUpdated,
+                design_review_needed:  variantChanged && !!item.design_id,
+            };
+        });
+
+        return res.status(200).json({ data: result });
+    } catch (err) {
+        console.error('[Orders] PATCH /:id/items/:itemId error:', err.message);
+        const body = { error: err.message || 'Internal server error.' };
+        if (err.code) body.code = err.code;
+        return res.status(err.statusCode || 400).json(body);
     }
 });
 

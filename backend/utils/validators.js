@@ -580,6 +580,12 @@ const orderStatusUpdate = z.object({
     status: z.enum(['quote', 'confirmed', 'production', 'processing', 'completed', 'delivered', 'cancelled', 'archived']),
 });
 
+const orderItemEdit = z.object({
+    variant_id: z.string().uuid().optional(),
+    quantity: z.coerce.number().positive().optional(),
+    notes: z.string().max(500).optional().nullable(),
+}).passthrough();
+
 const orderConvertToProduction = z.object({
     down_payment_amount: z.coerce.number().min(0).optional().default(0),
     payment_method: z.string().max(50).optional().nullable(),
@@ -854,6 +860,7 @@ module.exports = {
     termsUpdate,
     orderUpdate,
     orderStatusUpdate,
+    orderItemEdit,
     orderConvertToProduction,
     orderInvoice,
     orderPayment,
