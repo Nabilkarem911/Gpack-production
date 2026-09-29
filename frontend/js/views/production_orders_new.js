@@ -3772,14 +3772,29 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
     // ── Share Invoice ─────────────────────────────────────────────────────────
     let _currentInvoiceShareData = null;
 
+    function _applyInvoiceShareResult(invoiceId, res) {
+        const linkEl   = document.getElementById('share-invoice-link');
+        const statusEl = document.getElementById('share-invoice-status');
+        if (!res?.url) throw new Error('تعذّر إنشاء الرابط');
+
+        _currentInvoiceShareData = { invoiceId, ...res };
+        if (linkEl) linkEl.value = res.url;
+        if (statusEl && res.expires_at) {
+            const date = new Date(res.expires_at).toLocaleDateString('en-GB');
+            statusEl.innerHTML = `<span class="text-xs text-slate-400"><i class="fa-regular fa-clock ml-1"></i>صالح حتى: ${date}</span>`;
+        }
+    }
+
     async function _shareInvoice(invoiceId) {
         const modal = document.getElementById('share-invoice-modal');
         const linkEl = document.getElementById('share-invoice-link');
         const statusEl = document.getElementById('share-invoice-status');
         if (!modal || !linkEl) return;
 
-        _currentInvoiceShareData = null;
-        linkEl.value = 'جاري إنشاء الرابط...';
+        // The share endpoint is idempotent: while the token is still valid it
+        // returns the SAME link, so opening/copying never rotates it.
+        _currentInvoiceShareData = { invoiceId };
+        linkEl.value = 'جاري تحميل الرابط...';
         if (statusEl) statusEl.innerHTML = '';
         modal.style.display = 'flex';
         setTimeout(() => { modal.style.opacity = '1'; }, 10);
@@ -3789,18 +3804,35 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
                 method: 'POST',
                 body: { expires_days: 90 },
             });
-            if (!res?.url) throw new Error('تعذّر إنشاء الرابط');
-
-            _currentInvoiceShareData = { invoiceId, ...res };
-            linkEl.value = res.url;
-            if (statusEl && res.expires_at) {
-                const date = new Date(res.expires_at).toLocaleDateString('en-GB');
-                statusEl.innerHTML = `<span class="text-xs text-slate-400"><i class="fa-regular fa-clock ml-1"></i>صالح حتى: ${date}</span>`;
-            }
+            _applyInvoiceShareResult(invoiceId, res);
         } catch (err) {
             console.error('[poView] shareInvoice:', err);
             linkEl.value = 'حدث خطأ: ' + (err.message || 'فشل إنشاء الرابط');
             _toast(err.message || 'فشل إنشاء رابط المشاركة', 'error');
+        }
+    }
+
+    async function _regenerateInvoiceLink() {
+        const invoiceId = _currentInvoiceShareData?.invoiceId;
+        if (!invoiceId) return;
+        if (!confirm('سيتم إلغاء الرابط الحالي نهائيًا وإنشاء رابط جديد.\nأي رابط سابق أُرسل للعميل سيتوقف عن العمل فورًا.\n\nهل تريد المتابعة؟')) return;
+
+        const linkEl   = document.getElementById('share-invoice-link');
+        const statusEl = document.getElementById('share-invoice-status');
+        if (linkEl) linkEl.value = 'جاري إنشاء رابط جديد...';
+        if (statusEl) statusEl.innerHTML = '';
+
+        try {
+            const res = await window.apiFetch(`/api/invoices/${invoiceId}/share`, {
+                method: 'POST',
+                body: { expires_days: 90, regenerate: true },
+            });
+            _applyInvoiceShareResult(invoiceId, res);
+            _toast('تم إنشاء رابط جديد — الرابط السابق لم يعد صالحًا', 'success');
+        } catch (err) {
+            console.error('[poView] regenerateInvoiceLink:', err);
+            if (linkEl) linkEl.value = 'حدث خطأ: ' + (err.message || 'فشل إنشاء الرابط');
+            _toast(err.message || 'فشل تغيير الرابط', 'error');
         }
     }
 
@@ -5058,6 +5090,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         printInvoice:       _printInvoice,
         shareInvoice:       _shareInvoice,
         copyInvoiceLink:    _copyInvoiceLink,
+        regenerateInvoiceLink: _regenerateInvoiceLink,
         shareInvoiceWhatsApp: _shareInvoiceWhatsApp,
         getInvoiceShareMessage: _getInvoiceShareMessage,
         openInvoiceLink:    _openInvoiceLink,

@@ -745,6 +745,7 @@ const orderRelease = z.object({
 
 const invoiceShare = z.object({
     expires_days: z.coerce.number().int().min(1).max(365).optional().default(30),
+    regenerate:   z.boolean().optional().default(false),
 }).passthrough();
 
 const invoiceStatusUpdate = z.object({

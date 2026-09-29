@@ -15,7 +15,7 @@ const { success, created } = require('../utils/response');
 const { authenticate } = require('../middleware/authMiddleware');
 const authorize = require('../middleware/authorize');
 const { getVatRate } = require('../utils/settings');
-const { hashToken, hasShareTokenSecret } = require('../utils/crypto');
+const { encryptToken, decryptShareToken, hashToken, hasShareTokenSecret } = require('../utils/crypto');
 const { invoiceCreate, invoiceUpdate, invoiceShare, invoiceStatusUpdate, invoiceMarkIssued, receiptVoucherCreate, validateBody } = require('../utils/validators');
 
 // View permission: all authenticated users with 'sales' view can list/get
@@ -202,37 +202,69 @@ router.get('/:id', async (req, res) => {
 });
 
 // ── POST /api/invoices/:id/share
-// Generate a public share token for an invoice
+// Returns the public share link for an invoice. Idempotent: a still-valid
+// token is reused so copying the link always yields the same URL.
+// Body: { expires_days?, regenerate? } — regenerate=true force-rotates the
+// token (explicit "change link" action), invalidating the previous URL.
 router.post('/:id/share', authenticate, validateBody(invoiceShare), async (req, res) => {
     try {
         const { id } = req.params;
         const expiresDays = req.validatedBody.expires_days || 90;
+        const regenerate  = req.validatedBody.regenerate === true;
 
-        const plainToken = crypto.randomBytes(32).toString('hex');
-        let tokenHash;
-        try {
-            tokenHash = hashToken(plainToken);
-        } catch (cryptoErr) {
-            console.error('[Invoices] share crypto error:', cryptoErr.message);
-            tokenHash = crypto.createHmac('sha256', plainToken).digest('hex');
+        const invRes = await db.query(
+            `SELECT id, status, share_token, token_expires_at FROM invoices WHERE id = $1`,
+            [id]
+        );
+        if (!invRes.rowCount) {
+            return res.status(404).json({ error: 'الفاتورة غير موجودة.' });
         }
-        const expiresAt  = new Date(Date.now() + expiresDays * 24 * 60 * 60 * 1000);
+        const invoice = invRes.rows[0];
+        if (invoice.status === 'cancelled') {
+            return res.status(400).json({ error: 'لا يمكن مشاركة فاتورة ملغية.' });
+        }
 
-        try {
-            await db.query(
-                `UPDATE invoices SET share_token = $1, share_token_hash = $2, token_expires_at = $3 WHERE id = $4`,
-                [plainToken, tokenHash, expiresAt, id]
-            );
-        } catch (dbErr) {
-            const missingHashColumn = dbErr?.code === '42703' || /share_token_hash/i.test(dbErr?.message || '');
-            if (missingHashColumn) {
-                console.warn('[Invoices] share_token_hash column missing — falling back to plaintext column only. Please run migrations.');
+        let plainToken = null;
+        let expiresAt  = invoice.token_expires_at ? new Date(invoice.token_expires_at) : null;
+
+        // Reuse the existing token while it is still valid. The stored value
+        // may be AES-256-GCM encrypted (new) or plaintext (legacy rows) —
+        // decryptShareToken handles both.
+        if (!regenerate && invoice.share_token && expiresAt && expiresAt > new Date()) {
+            plainToken = decryptShareToken(invoice.share_token);
+        }
+
+        if (!plainToken) {
+            plainToken = crypto.randomBytes(32).toString('hex');
+            expiresAt  = new Date(Date.now() + expiresDays * 24 * 60 * 60 * 1000);
+
+            let storedToken = plainToken;
+            let tokenHash;
+            try {
+                storedToken = encryptToken(plainToken);
+                tokenHash   = hashToken(plainToken);
+            } catch (cryptoErr) {
+                console.error('[Invoices] share crypto error:', cryptoErr.message);
+                tokenHash   = crypto.createHmac('sha256', plainToken).digest('hex');
+                storedToken = plainToken;
+            }
+
+            try {
                 await db.query(
-                    `UPDATE invoices SET share_token = $1, token_expires_at = $2 WHERE id = $3`,
-                    [plainToken, expiresAt, id]
+                    `UPDATE invoices SET share_token = $1, share_token_hash = $2, token_expires_at = $3 WHERE id = $4`,
+                    [storedToken, tokenHash, expiresAt, id]
                 );
-            } else {
-                throw dbErr;
+            } catch (dbErr) {
+                const missingHashColumn = dbErr?.code === '42703' || /share_token_hash/i.test(dbErr?.message || '');
+                if (missingHashColumn) {
+                    console.warn('[Invoices] share_token_hash column missing — falling back to plaintext column only. Please run migrations.');
+                    await db.query(
+                        `UPDATE invoices SET share_token = $1, token_expires_at = $2 WHERE id = $3`,
+                        [plainToken, expiresAt, id]
+                    );
+                } else {
+                    throw dbErr;
+                }
             }
         }
 

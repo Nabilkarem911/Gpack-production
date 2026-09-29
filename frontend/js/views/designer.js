@@ -966,7 +966,8 @@
             });
         });
 
-        // Copy review link buttons
+        // Copy review link buttons — reads the SAVED link; never rotates it.
+        // Rotation only happens via the explicit "إعادة إرسال" action.
         document.querySelectorAll('.item-copy-link-btn').forEach(btn => {
             btn.addEventListener('click', async () => {
                 const itemId = btn.getAttribute('data-item-id');
@@ -974,9 +975,7 @@
                 btn.disabled = true;
                 btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin ml-1"></i>جاري...';
                 try {
-                    const res = await window.apiFetch(`/api/designer/item/${oid}/${itemId}/resend-review`, {
-                        method: 'POST',
-                    });
+                    const res = await window.apiFetch(`/api/designer/item/${oid}/${itemId}/review-link`);
                     if (res.share_url) {
                         try {
                             await navigator.clipboard.writeText(res.share_url);
@@ -984,6 +983,12 @@
                         } catch {
                             window.showToast?.(`رابط المراجعة: ${res.share_url}`, 'info');
                         }
+                    } else if (res.has_token && res.is_expired) {
+                        window.showToast?.('انتهت صلاحية الرابط الحالي — استخدم «إعادة إرسال» لإنشاء رابط جديد', 'warning');
+                    } else if (res.has_token) {
+                        window.showToast?.('تعذّر استرجاع الرابط الحالي — استخدم «إعادة إرسال» لإنشاء رابط جديد', 'warning');
+                    } else {
+                        window.showToast?.('لا يوجد رابط مراجعة لهذا الصنف', 'warning');
                     }
                 } catch (err) {
                     window.showToast?.(err.message || 'فشل في جلب الرابط', 'error');

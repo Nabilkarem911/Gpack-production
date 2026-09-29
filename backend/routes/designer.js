@@ -24,7 +24,7 @@ const crypto = require('crypto');
 const db = require('../db');
 const authorize = require('../middleware/authorize');
 const { success, error } = require('../utils/response');
-const { encryptToken, hashToken, safeHashToken, hasShareTokenSecret, decryptShareToken } = require('../utils/crypto');
+const { encryptToken, decryptToken, hashToken, safeHashToken, hasShareTokenSecret, decryptShareToken } = require('../utils/crypto');
 
 // =============================================================================
 // WORKFLOW DEFINITION — Design State Machine
@@ -864,6 +864,16 @@ router.post('/item/:orderId/:itemId/send-to-client', authorize(['admin', 'manage
     try {
         const { orderId, itemId } = req.params;
 
+        // Detect the optional column BEFORE BEGIN — a failed statement inside a
+        // transaction would abort it in PostgreSQL.
+        let hasEncCol = true;
+        try {
+            await client.query(`SELECT review_token_encrypted FROM order_items WHERE 1 = 0`);
+        } catch (colErr) {
+            if (colErr?.code === '42703') hasEncCol = false;
+            else throw colErr;
+        }
+
         await client.query('BEGIN');
 
         const itemRes = await client.query(
@@ -895,9 +905,13 @@ router.post('/item/:orderId/:itemId/send-to-client', authorize(['admin', 'manage
 
         const rawToken = crypto.randomBytes(32).toString('hex');
         const tokenHash = safeHashToken(rawToken);
+        let encryptedToken = null;
+        try { encryptedToken = encryptToken(rawToken); } catch { /* SECRET missing — link cannot be re-displayed later */ }
 
         const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
 
+        // review_token_encrypted keeps a recoverable copy of the token so the
+        // same link can be copied later without rotating it (migration 095).
         await client.query(
             `UPDATE order_items SET
                 design_status = 'client_review',
@@ -905,8 +919,11 @@ router.post('/item/:orderId/:itemId/send-to-client', authorize(['admin', 'manage
                 review_token_expires_at = $2,
                 review_sent_at = NOW(),
                 client_design_status = 'sent'
+                ${hasEncCol ? ', review_token_encrypted = $5' : ''}
              WHERE id = $3 AND order_id = $4`,
-            [tokenHash, expiresAt, itemId, orderId]
+            hasEncCol
+                ? [tokenHash, expiresAt, itemId, orderId, encryptedToken]
+                : [tokenHash, expiresAt, itemId, orderId]
         );
 
         await _logTransition(client, 'order_item', itemId, 'design', curStatus, 'client_review',
@@ -943,27 +960,53 @@ router.post('/item/:orderId/:itemId/send-to-client', authorize(['admin', 'manage
 });
 
 // ── GET /api/designer/item/:orderId/:itemId/review-link ─────────────────────
-// Returns the current review link status for an item (without exposing the raw token).
+// Returns the current review link for an item. When a valid token exists its
+// share_url is returned (decrypted from review_token_encrypted) so the UI can
+// copy the SAME link without rotating it. share_url is null for legacy
+// hash-only tokens — the user must resend once to get a recoverable link.
 router.get('/item/:orderId/:itemId/review-link', authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
     try {
         const { orderId, itemId } = req.params;
-        const result = await db.query(
-            `SELECT design_status, review_token_hash, review_token_expires_at, review_sent_at
-             FROM order_items WHERE id = $1 AND order_id = $2`,
-            [itemId, orderId]
-        );
+        let result;
+        let hasEncCol = true;
+        try {
+            result = await db.query(
+                `SELECT design_status, review_token_hash, review_token_encrypted, review_token_expires_at, review_sent_at
+                 FROM order_items WHERE id = $1 AND order_id = $2`,
+                [itemId, orderId]
+            );
+        } catch (colErr) {
+            // review_token_encrypted missing (migration not applied yet)
+            if (colErr?.code !== '42703') throw colErr;
+            hasEncCol = false;
+            result = await db.query(
+                `SELECT design_status, review_token_hash, review_token_expires_at, review_sent_at
+                 FROM order_items WHERE id = $1 AND order_id = $2`,
+                [itemId, orderId]
+            );
+        }
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'الصنف غير موجود' });
         }
         const item = result.rows[0];
         const hasToken = !!item.review_token_hash;
         const isExpired = item.review_token_expires_at && new Date(item.review_token_expires_at) < new Date();
+
+        let shareUrl = null;
+        if (hasEncCol && hasToken && !isExpired && item.review_token_encrypted) {
+            try {
+                const plainToken = decryptToken(item.review_token_encrypted);
+                shareUrl = `${req.protocol}://${req.get('host')}/design-review/${plainToken}`;
+            } catch { /* corrupt/legacy value — cannot reconstruct link */ }
+        }
+
         res.json({
             has_token: hasToken,
             is_expired: isExpired,
             review_sent_at: item.review_sent_at,
             expires_at: item.review_token_expires_at,
             design_status: item.design_status,
+            share_url: shareUrl,
         });
     } catch (err) {
         console.error('[Designer] Review link info error:', err.message);
@@ -972,13 +1015,22 @@ router.get('/item/:orderId/:itemId/review-link', authorize(['admin', 'manager', 
 });
 
 // ── POST /api/designer/item/:orderId/:itemId/resend-review ──────────────────
-// Resend review link: if token still valid, regenerate URL from existing hash is impossible
-// (we only store hash, not plaintext). So we always generate a new token + hash.
+// Explicit resend/rotate action: always generates a NEW token + hash.
 // Old token is invalidated by overwriting review_token_hash.
 router.post('/item/:orderId/:itemId/resend-review', authorize(['admin', 'manager', 'super_admin']), async (req, res) => {
     const client = await db.getClient();
     try {
         const { orderId, itemId } = req.params;
+
+        // Detect the optional column BEFORE BEGIN — a failed statement inside a
+        // transaction would abort it in PostgreSQL.
+        let hasEncCol = true;
+        try {
+            await client.query(`SELECT review_token_encrypted FROM order_items WHERE 1 = 0`);
+        } catch (colErr) {
+            if (colErr?.code === '42703') hasEncCol = false;
+            else throw colErr;
+        }
 
         await client.query('BEGIN');
 
@@ -1000,6 +1052,8 @@ router.post('/item/:orderId/:itemId/resend-review', authorize(['admin', 'manager
 
         const rawToken = crypto.randomBytes(32).toString('hex');
         const tokenHash = safeHashToken(rawToken);
+        let encryptedToken = null;
+        try { encryptedToken = encryptToken(rawToken); } catch { /* SECRET missing — link cannot be re-displayed later */ }
 
         const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
 
@@ -1010,8 +1064,11 @@ router.post('/item/:orderId/:itemId/resend-review', authorize(['admin', 'manager
                 review_sent_at = NOW(),
                 design_status = 'client_review',
                 client_design_status = 'sent'
+                ${hasEncCol ? ', review_token_encrypted = $5' : ''}
              WHERE id = $3 AND order_id = $4`,
-            [tokenHash, expiresAt, itemId, orderId]
+            hasEncCol
+                ? [tokenHash, expiresAt, itemId, orderId, encryptedToken]
+                : [tokenHash, expiresAt, itemId, orderId]
         );
 
         await _logTransition(client, 'order_item', itemId, 'design', item.design_status, 'client_review',
