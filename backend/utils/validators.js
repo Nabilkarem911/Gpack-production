@@ -290,8 +290,11 @@ const manufacturerOrderCreate = z.object({
     items: z.array(z.object({
         order_item_id: z.string().uuid(),
         quantity: z.coerce.number().positive(),
+        design_status: z.enum(['new', 'reprint', 'redesign']).optional().nullable(),
+        design_id: z.string().uuid().optional().nullable(),
         pantone_color: z.string().max(50).optional().nullable(),
         pantone_colors: z.array(z.string().max(50)).optional().nullable(),
+        mockup_path: z.string().max(500).optional().nullable(),
     }).passthrough()).min(1, 'At least one item is required'),
 }).passthrough();
 

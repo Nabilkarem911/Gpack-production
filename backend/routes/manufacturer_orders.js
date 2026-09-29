@@ -25,6 +25,16 @@ async function ensurePantoneColorsColumn() {
 }
 ensurePantoneColorsColumn();
 
+// Ensure the mockup column exists (same fallback pattern as pantone_colors)
+async function ensureMockupColumn() {
+    try {
+        await db.query(`ALTER TABLE manufacturer_order_items ADD COLUMN IF NOT EXISTS mockup_path TEXT`);
+    } catch (err) {
+        console.error('[ManufacturerOrders] ensure mockup_path column error:', err.message);
+    }
+}
+ensureMockupColumn();
+
 // Allow both production_orders and receiving roles to view manufacturer orders
 // (warehouse staff need to see MOs to receive goods against them)
 router.use((req, res, next) => {
@@ -135,6 +145,40 @@ function cleanupMultipartFiles(req) {
         }
     }
 }
+
+// ── Upload config for per-item mockups ───────────────────────────────────────
+const MOCKUP_UPLOAD_BASE = path.join(__dirname, '..', 'uploads', 'mockups');
+if (!fs.existsSync(MOCKUP_UPLOAD_BASE)) {
+    fs.mkdirSync(MOCKUP_UPLOAD_BASE, { recursive: true });
+}
+
+const mockupUpload = multer({
+    storage: multer.diskStorage({
+        destination: (_req, _file, cb) => cb(null, MOCKUP_UPLOAD_BASE),
+        filename: (_req, file, cb) => {
+            const ext = path.extname(file.originalname || '').toLowerCase();
+            cb(null, `mockup-${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`);
+        }
+    }),
+    limits: { fileSize: 20 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+        const allowed = /jpeg|jpg|png|gif|webp/;
+        const extOk = allowed.test(path.extname(file.originalname || '').toLowerCase());
+        const mimeOk = allowed.test(file.mimetype || '');
+        if (extOk && mimeOk) return cb(null, true);
+        cb(new Error('الموكاب يجب أن يكون صورة (JPG, PNG, WEBP, GIF)'));
+    }
+});
+
+// POST /api/manufacturer-orders/mockup-upload
+// Uploads a mockup image for a single MO item. Returns its public path which the
+// caller sends back as items[].mockup_path when saving the assignment.
+router.post('/mockup-upload', restrictWrite, mockupUpload.single('mockup'), (req, res) => {
+    if (!req.file) {
+        return res.status(400).json({ error: 'اختر ملف الموكاب' });
+    }
+    return success(res, { path: `/uploads/mockups/${req.file.filename}` });
+});
 
 // ── Auto-update order status based on aggregate MO statuses ──────────────────
 // Rules:
@@ -268,7 +312,8 @@ router.get('/', async (req, res) => {
                 p.name AS product_name,
                 pv.size_name,
                 moi.pantone_color,
-                moi.pantone_colors
+                moi.pantone_colors,
+                moi.mockup_path
              FROM manufacturer_order_items moi
              LEFT JOIN order_items oi ON oi.id = moi.order_item_id
              LEFT JOIN product_variants pv ON pv.id = oi.variant_id
@@ -347,7 +392,8 @@ router.get('/by-order/:orderId', async (req, res) => {
                 p.name AS product_name,
                 pv.size_name,
                 moi.pantone_color,
-                moi.pantone_colors
+                moi.pantone_colors,
+                moi.mockup_path
              FROM manufacturer_order_items moi
              LEFT JOIN order_items oi ON oi.id = moi.order_item_id
              LEFT JOIN product_variants pv ON pv.id = oi.variant_id
@@ -434,6 +480,7 @@ router.get('/:id', async (req, res) => {
                 moi.design_id,
                 moi.pantone_color,
                 moi.pantone_colors,
+                moi.mockup_path,
                 cd.design_name,
                 cd.design_number,
                 cdf.file_path AS design_thumbnail,
@@ -622,10 +669,15 @@ router.post('/', restrictWrite, validateBody(manufacturerOrderCreate), async (re
                     await ensurePrintTemplateForOrderItem(client, item.order_item_id);
                 }
 
+                // Only server-uploaded mockup paths are accepted (no external URLs)
+                const mockupPath = (typeof item.mockup_path === 'string' && item.mockup_path.startsWith('/uploads/'))
+                    ? item.mockup_path.slice(0, 500)
+                    : null;
+
                 const itemResult = await client.query(
                     `INSERT INTO manufacturer_order_items (
-                        manufacturer_order_id, order_item_id, mo_quantity, design_status, design_id, pantone_color, pantone_colors, created_at
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+                        manufacturer_order_id, order_item_id, mo_quantity, design_status, design_id, pantone_color, pantone_colors, mockup_path, created_at
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
                     RETURNING *`,
                     [
                         manufacturerOrder.id,
@@ -634,7 +686,8 @@ router.post('/', restrictWrite, validateBody(manufacturerOrderCreate), async (re
                         item.design_status || 'new',
                         item.design_id || null,
                         singlePantone,
-                        JSON.stringify(pantoneColors)
+                        JSON.stringify(pantoneColors),
+                        mockupPath
                     ]
                 );
                 insertedItems.push(itemResult.rows[0]);
@@ -926,10 +979,13 @@ router.put('/:id', restrictEdit, validateBody(manufacturerOrderCreate), async (r
 
             // Revert order_item manufacturer_po_qty for old items
             const oldItems = await client.query(
-                `SELECT order_item_id, mo_quantity
+                `SELECT order_item_id, mo_quantity, mockup_path
                  FROM manufacturer_order_items
                  WHERE manufacturer_order_id = $1`,
                 [id]
+            );
+            const prevMockupByOrderItem = new Map(
+                oldItems.rows.filter(r => r.mockup_path).map(r => [r.order_item_id, r.mockup_path])
             );
             for (const it of oldItems.rows) {
                 if (it.order_item_id) {
@@ -975,10 +1031,16 @@ router.put('/:id', restrictEdit, validateBody(manufacturerOrderCreate), async (r
                     await ensurePrintTemplateForOrderItem(client, item.order_item_id);
                 }
 
+                // Preserve the existing mockup unless a replacement was uploaded
+                const prevMockup = prevMockupByOrderItem.get(item.order_item_id) || null;
+                const mockupPath = (typeof item.mockup_path === 'string' && item.mockup_path.startsWith('/uploads/'))
+                    ? item.mockup_path.slice(0, 500)
+                    : prevMockup;
+
                 const itemResult = await client.query(
                     `INSERT INTO manufacturer_order_items (
-                        manufacturer_order_id, order_item_id, mo_quantity, design_status, design_id, pantone_color, pantone_colors, created_at
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+                        manufacturer_order_id, order_item_id, mo_quantity, design_status, design_id, pantone_color, pantone_colors, mockup_path, created_at
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
                     RETURNING *`,
                     [
                         id,
@@ -987,7 +1049,8 @@ router.put('/:id', restrictEdit, validateBody(manufacturerOrderCreate), async (r
                         item.design_status || 'new',
                         item.design_id || null,
                         singlePantone,
-                        JSON.stringify(pantoneColors)
+                        JSON.stringify(pantoneColors),
+                        mockupPath
                     ]
                 );
                 insertedItems.push(itemResult.rows[0]);

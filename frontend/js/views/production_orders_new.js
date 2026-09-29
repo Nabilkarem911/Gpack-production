@@ -1557,6 +1557,10 @@
                 r.checked = r.value === designStatus;
             });
 
+            // Preserve the item's existing mockup unless the user replaces it
+            _assignMockupPath = moItem.mockup_path || null;
+            _renderAssignMockupChip(moItem.mockup_path ? 'موكاب محفوظ' : '');
+
             const designId = moItem.design_id || '';
             const designThumb = moItem.design_thumbnail || '';
             const designName = moItem.design_name || (designId ? 'تصميم #' + designId.substring(0, 8) : '');
@@ -2756,16 +2760,17 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         _setVal('assign-expected-delivery','');
         _setVal('assign-notes',           '');
 
-        // Design status - read from order item and set radio button
+        // Design type starts unselected — the user must explicitly pick
+        // "تصميم جديد" or "إعادة طباعة" before saving the assignment.
         const designStatus = item.design_status || 'new';
         const isNew = designStatus === 'new';
-        const isRedesign = !isNew; // anything other than 'new' is reprint/redesign
 
-        // Set radio button based on item's design_status
         const radios = document.querySelectorAll('input[name="assign-design-status"]');
-        radios.forEach(r => {
-            r.checked = (r.value === 'new' && isNew) || (r.value === 'reprint' && isRedesign);
-        });
+        radios.forEach(r => { r.checked = false; });
+
+        // Reset mockup state for a fresh assignment
+        _assignMockupPath = null;
+        _renderAssignMockupChip();
 
         // Set hidden design_id input
         _setVal('assign-selected-design-id', item.design_id || '');
@@ -2898,6 +2903,71 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         // Placeholder for any future selected-summary UI; kept for checkbox onchange binding
     }
 
+    // ── Item mockup (single assign) ───────────────────────────────────────────
+    let _assignMockupPath = null;
+
+    function _pickAssignMockup() {
+        const input = _el('assign-mockup-file');
+        if (!input) return;
+        input.value = '';
+        input.click();
+    }
+
+    async function _onAssignMockupFile(input) {
+        const file = input?.files?.[0];
+        if (!file) return;
+        if (!file.type.startsWith('image/')) {
+            _toast('الموكاب يجب أن يكون صورة', 'error');
+            return;
+        }
+        try {
+            const path = await _uploadMockupFile(file);
+            _assignMockupPath = path;
+            _renderAssignMockupChip(file.name, path);
+            _toast('تم رفع الموكاب');
+        } catch (err) {
+            _assignMockupPath = null;
+            _renderAssignMockupChip();
+            _toast(err.message || 'فشل رفع الموكاب', 'error');
+        }
+    }
+
+    function _removeAssignMockup() {
+        _assignMockupPath = null;
+        _renderAssignMockupChip();
+    }
+
+    function _renderAssignMockupChip(name, url) {
+        const box = _el('assign-mockup-preview');
+        const img = _el('assign-mockup-thumb');
+        const nameEl = _el('assign-mockup-name');
+        if (!box) return;
+        if (_assignMockupPath) {
+            if (img) img.src = url || _assignMockupPath;
+            if (nameEl) nameEl.textContent = name || 'موكاب مرفق';
+            box.classList.remove('hidden');
+            box.classList.add('flex');
+        } else {
+            box.classList.add('hidden');
+            box.classList.remove('flex');
+            if (img) img.src = '';
+        }
+    }
+
+    // Shared upload helper — returns the server-side /uploads/mockups/... path
+    async function _uploadMockupFile(file) {
+        const fd = new FormData();
+        fd.append('mockup', file);
+        const res = await fetch('/api/manufacturer-orders/mockup-upload', {
+            method: 'POST',
+            body: fd,
+            credentials: 'include'
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `فشل الرفع: ${res.status}`);
+        return data?.data?.path || null;
+    }
+
     async function _saveAssignment() {
         const orderItemId = _el('assign-order-item-id')?.value;
         const orderId     = _el('assign-order-id')?.value;
@@ -2907,9 +2977,13 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         const notes       = _el('assign-notes')?.value;
         const pantoneColors = _getSelectedPantoneColors();
 
-        // Get selected design status from radio buttons
+        // Design type is required — no default selection
         const designStatusRadio = document.querySelector('input[name="assign-design-status"]:checked');
-        const selectedDesignStatus = designStatusRadio?.value || 'new';
+        if (!designStatusRadio) {
+            _toast('اختر نوع التصميم: تصميم جديد أو إعادة طباعة', 'error');
+            return;
+        }
+        const selectedDesignStatus = designStatusRadio.value;
 
         // Get the selected design_id from the hidden input (set when selecting/uploading design)
         const selectedDesignId = _el('assign-selected-design-id')?.value;
@@ -2934,7 +3008,8 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
             design_status: selectedDesignStatus,
             design_id: designId,
             pantone_color: pantoneColors[0] || null,
-            pantone_colors: pantoneColors.length ? pantoneColors : null
+            pantone_colors: pantoneColors.length ? pantoneColors : null,
+            mockup_path: _assignMockupPath || null
         };
         const itemsPayload = (moId && _editMOItems.length > 1)
             ? _editMOItems.map(it => it.order_item_id === orderItemId
@@ -2948,6 +3023,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
                     pantone_colors: Array.isArray(it.pantone_colors) && it.pantone_colors.length
                         ? it.pantone_colors
                         : (it.pantone_color ? [it.pantone_color] : null),
+                    mockup_path: it.mockup_path || null,
                 })
             : [editedItem];
 
@@ -2981,7 +3057,10 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
     }
 
     // ── Design Selector Modal ────────────────────────────────────────────────
-    let _clientDesigns = [];
+    let _itemDesigns = [];          // designs linked to the item's variant
+    let _clientDesigns = [];        // all designs of the client
+    let _designSelectorTab = 'item';
+    let _designLoadFailed = false;
     let _currentAssignItem = null;
 
     async function _openDesignSelector() {
@@ -2989,19 +3068,66 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
             _toast('لا يوجد عميل مرتبط بالصنف', 'error');
             return;
         }
+        await _loadDesignPickerLists();
+    }
 
+    // Loads both lists in parallel: item designs (variant-scoped) and all client
+    // designs. Shared by the single-assign, bulk-assign, and sent-MO edit flows.
+    async function _loadDesignPickerLists() {
         _showModal('po-design-selector-modal');
         _setVal('design-search', '');
+        _designSelectorTab = 'item';
+        _itemDesigns = [];
+        _clientDesigns = [];
+        _designLoadFailed = false;
+        _updateDesignTabsUI();
         document.getElementById('design-selector-list').innerHTML = '<p class="text-center text-slate-400 py-4">جاري تحميل التصاميم...</p>';
 
-        try {
-            const variantId = _currentAssignItem?.variant_id || _currentAssignItem?.product_variant_id;
-            const res = await window.apiFetch(`/api/client-designs?client_id=${_currentAssignItem.client_id}&variant_id=${variantId}`);
-            _clientDesigns = res?.data || [];
-            _renderDesignList(_clientDesigns);
-        } catch (err) {
-            document.getElementById('design-selector-list').innerHTML = '<p class="text-center text-red-400 py-4">فشل تحميل التصاميم</p>';
+        const clientId = _currentAssignItem.client_id;
+        const variantId = _currentAssignItem?.variant_id || _currentAssignItem?.product_variant_id;
+
+        const [itemRes, clientRes] = await Promise.all([
+            variantId
+                ? window.apiFetch(`/api/client-designs?client_id=${clientId}&variant_id=${variantId}`).catch(() => null)
+                : Promise.resolve(null),
+            window.apiFetch(`/api/client-designs?client_id=${clientId}`).catch(() => null),
+        ]);
+
+        _itemDesigns = itemRes?.data || [];
+        _clientDesigns = clientRes?.data || [];
+        _designLoadFailed = !clientRes;
+        _updateDesignTabsUI();
+        _renderActiveDesignTab();
+    }
+
+    function _switchDesignTab(tab) {
+        if (tab !== 'item' && tab !== 'client') return;
+        _designSelectorTab = tab;
+        _setVal('design-search', '');
+        _updateDesignTabsUI();
+        _renderActiveDesignTab();
+    }
+
+    function _updateDesignTabsUI() {
+        const tabs = { item: 'design-tab-item', client: 'design-tab-client' };
+        const ACTIVE = ['bg-brand-600', 'text-white', 'border-brand-600'];
+        const INACTIVE = ['bg-slate-50', 'text-slate-600', 'border-slate-200', 'hover:border-brand-300'];
+        for (const [tab, id] of Object.entries(tabs)) {
+            const btn = _el(id);
+            if (!btn) continue;
+            btn.classList.remove(...ACTIVE, ...INACTIVE);
+            btn.classList.add(...(_designSelectorTab === tab ? ACTIVE : INACTIVE));
         }
+        _setText('design-tab-item-count', _itemDesigns.length ? `(${_itemDesigns.length})` : '');
+        _setText('design-tab-client-count', _clientDesigns.length ? `(${_clientDesigns.length})` : '');
+    }
+
+    function _renderActiveDesignTab() {
+        const list = _designSelectorTab === 'client' ? _clientDesigns : _itemDesigns;
+        const emptyMsg = _designSelectorTab === 'client'
+            ? 'لا توجد تصاميم مسجلة لهذا العميل'
+            : 'لا توجد تصاميم لهذا الصنف — جرّب تاب «تصاميم العميل»';
+        _renderDesignList(list, emptyMsg);
     }
 
     function _closeDesignSelector() {
@@ -3009,10 +3135,14 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         _hideModal('po-design-selector-modal');
     }
 
-    function _renderDesignList(designs) {
+    function _renderDesignList(designs, emptyMsg) {
         const container = document.getElementById('design-selector-list');
+        if (_designLoadFailed) {
+            container.innerHTML = '<p class="text-center text-red-400 py-4">فشل تحميل التصاميم</p>';
+            return;
+        }
         if (!designs.length) {
-            container.innerHTML = '<p class="text-center text-slate-400 py-4">لا توجد تصاميم لهذا الصنف</p>';
+            container.innerHTML = `<p class="text-center text-slate-400 py-4">${emptyMsg || 'لا توجد تصاميم'}</p>`;
             return;
         }
 
@@ -3038,12 +3168,13 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
     }
 
     function _filterDesigns(query) {
+        const source = _designSelectorTab === 'client' ? _clientDesigns : _itemDesigns;
         const q = query.toLowerCase();
-        const filtered = _clientDesigns.filter(d =>
+        const filtered = source.filter(d =>
             (d.design_name || '').toLowerCase().includes(q) ||
             (d.design_number || '').toString().includes(q)
         );
-        _renderDesignList(filtered);
+        _renderDesignList(filtered, 'لا توجد نتائج مطابقة');
     }
 
     function _selectDesign(designId, designName, thumbnail, extension) {
@@ -4440,10 +4571,9 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         const designId     = cb.dataset.designId || null;
         const designName   = cb.dataset.designName || '';
         const designThumb  = cb.dataset.designThumb || '';
-        const designStatus = cb.dataset.designStatus || 'new';
         const variantId    = cb.dataset.variantId || '';
         if (cb.checked) {
-            _bulkSelected[id] = { id, name, qty, assigned, designId, designName, designThumb, designStatus, variantId };
+            _bulkSelected[id] = { id, name, qty, assigned, designId, designName, designThumb, designStatus: null, variantId, mockupPath: null };
         } else {
             delete _bulkSelected[id];
         }
@@ -4469,18 +4599,20 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
                     designId:     cb.dataset.designId || null,
                     designName:   cb.dataset.designName || '',
                     designThumb:  cb.dataset.designThumb || '',
-                    designStatus: cb.dataset.designStatus || 'new',
+                    designStatus: null,
                     variantId:    cb.dataset.variantId || '',
+                    mockupPath:   null,
                 };
             }
         });
         _updateBulkBtn();
     }
 
-    function _openBulkAssignModal() {
+    // Renders only the per-item rows inside the bulk modal. Design/mockup
+    // pickers call this so the supplier, delivery date, and notes the user
+    // already filled are not wiped on every selection.
+    function _renderBulkItemsSummary() {
         const items = Object.values(_bulkSelected);
-        if (!items.length) { _toast('اختر صنفاً واحداً على الأقل', 'error'); return; }
-
         const summaryEl = _el('bulk-items-summary');
         if (summaryEl) {
             summaryEl.innerHTML = items.map(i => {
@@ -4488,7 +4620,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
                 const hasDesign = !!i.designId;
                 const thumbUrl = i.designThumb || '';
                 const isImage = thumbUrl && _isDesignImage(thumbUrl);
-                const statusVal = i.designStatus || 'new';
+                const statusVal = i.designStatus || '';
 
                 const thumbMarkup = hasDesign && isImage
                     ? `<img src="${thumbUrl}" alt="design" class="w-10 h-10 rounded-lg object-cover border border-slate-200">`
@@ -4518,6 +4650,18 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
                                 title="رفع تصميم جديد">
                             <i class="fa-solid fa-upload"></i>
                         </button>
+                        <button onclick="window.poView._bulkPickMockup('${i.id}')"
+                                class="shrink-0 px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg text-xs font-bold text-indigo-700 transition-all"
+                                title="رفع موكاب للصنف">
+                            <i class="fa-solid fa-image"></i>
+                        </button>
+                        <input type="file" id="bulk-mockup-file-${i.id}" accept="image/*" class="hidden"
+                               onchange="window.poView._onBulkMockupFile('${i.id}', this)">
+                    </div>
+                    <div id="bulk-mockup-chip-${i.id}" class="${i.mockupPath ? '' : 'hidden'} mt-1 flex items-center gap-1.5 text-[11px] font-bold text-indigo-600">
+                        <i class="fa-solid fa-image"></i>
+                        <span>موكاب مرفق</span>
+                        <button type="button" onclick="window.poView._bulkRemoveMockup('${i.id}')" class="text-indigo-400 hover:text-red-500" title="إزالة الموكاب"><i class="fa-solid fa-xmark"></i></button>
                     </div>
                     <div class="flex gap-2 mt-2">
                         <label class="flex-1 cursor-pointer">
@@ -4553,6 +4697,18 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
                 </div>`;
             }).join('');
         }
+
+        // Repopulate pantone lists for the recreated rows
+        for (const itemId of Object.keys(_bulkSelected)) {
+            _renderBulkPantoneList(itemId);
+        }
+    }
+
+    function _openBulkAssignModal() {
+        const items = Object.values(_bulkSelected);
+        if (!items.length) { _toast('اختر صنفاً واحداً على الأقل', 'error'); return; }
+
+        _renderBulkItemsSummary();
 
         const sel = _el('bulk-supplier-select');
         if (sel) {
@@ -4651,6 +4807,38 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         }
     }
 
+    // ── Bulk item mockups ────────────────────────────────────────────────────
+    function _bulkPickMockup(itemId) {
+        const input = _el(`bulk-mockup-file-${itemId}`);
+        if (!input) return;
+        input.value = '';
+        input.click();
+    }
+
+    async function _onBulkMockupFile(itemId, input) {
+        const file = input?.files?.[0];
+        if (!file || !_bulkSelected[itemId]) return;
+        if (!file.type.startsWith('image/')) {
+            _toast('الموكاب يجب أن يكون صورة', 'error');
+            return;
+        }
+        try {
+            const path = await _uploadMockupFile(file);
+            _bulkSelected[itemId].mockupPath = path;
+            const chip = _el(`bulk-mockup-chip-${itemId}`);
+            if (chip) chip.classList.remove('hidden');
+            _toast('تم رفع الموكاب');
+        } catch (err) {
+            _toast(err.message || 'فشل رفع الموكاب', 'error');
+        }
+    }
+
+    function _bulkRemoveMockup(itemId) {
+        if (_bulkSelected[itemId]) _bulkSelected[itemId].mockupPath = null;
+        const chip = _el(`bulk-mockup-chip-${itemId}`);
+        if (chip) chip.classList.add('hidden');
+    }
+
     async function _bulkSelectDesign(itemId) {
         const item = _bulkSelected[itemId];
         if (!item) return;
@@ -4668,18 +4856,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         };
 
         _bulkDesignTargetId = itemId;
-        _showModal('po-design-selector-modal');
-        _setVal('design-search', '');
-        document.getElementById('design-selector-list').innerHTML = '<p class="text-center text-slate-400 py-4">جاري تحميل التصاميم...</p>';
-
-        try {
-            const variantId = item.variantId;
-            const res = await window.apiFetch(`/api/client-designs?client_id=${clientId}&variant_id=${variantId}`);
-            _clientDesigns = res?.data || [];
-            _renderDesignList(_clientDesigns);
-        } catch (err) {
-            document.getElementById('design-selector-list').innerHTML = '<p class="text-center text-red-400 py-4">فشل تحميل التصاميم</p>';
-        }
+        await _loadDesignPickerLists();
     }
 
     function _bulkOnDesignSelected(designId, designName, thumbnailUrl) {
@@ -4690,7 +4867,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
             _bulkSelected[_bulkDesignTargetId].designStatus = 'reprint';
             _bulkDesignTargetId = null;
             _closeDesignSelector();
-            _openBulkAssignModal();
+            _renderBulkItemsSummary();
             _toast('تم اختيار التصميم');
         }
     }
@@ -4738,7 +4915,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
             _bulkSelected[_bulkDesignTargetId].designStatus = 'new';
             _bulkDesignTargetId = null;
             _hideModal('po-design-upload-modal');
-            _openBulkAssignModal();
+            _renderBulkItemsSummary();
             _toast('تم رفع التصميم');
         }
     }
@@ -4750,13 +4927,20 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
 
         if (!supplierId) { _toast('اختر المورد', 'error'); return; }
 
+        const missingType = Object.values(_bulkSelected).filter(i => !i.designStatus).map(i => i.name);
+        if (missingType.length) {
+            _toast(`حدد نوع التصميم (جديد / إعادة طباعة) للأصناف: ${missingType.join('، ')}`, 'error');
+            return;
+        }
+
         const items = Object.values(_bulkSelected).map(i => ({
             order_item_id: i.id,
             quantity:      i.qty - i.assigned,
-            design_status: i.designStatus || 'new',
+            design_status: i.designStatus,
             design_id:     i.designId || null,
             pantone_color: (i.pantoneColors && i.pantoneColors[0]) || null,
             pantone_colors: (i.pantoneColors && i.pantoneColors.length) ? i.pantoneColors : null,
+            mockup_path:   i.mockupPath || null,
         }));
 
         if (!items.length) { _toast('لا توجد أصناف محددة', 'error'); return; }
@@ -5079,6 +5263,12 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         _toggleBulkPantone:   _toggleBulkPantone,
         _filterBulkPantone:   _filterBulkPantone,
         _onBulkPantoneChange: _onBulkPantoneChange,
+        _bulkPickMockup:      _bulkPickMockup,
+        _onBulkMockupFile:    _onBulkMockupFile,
+        _bulkRemoveMockup:    _bulkRemoveMockup,
+        pickAssignMockup:     _pickAssignMockup,
+        _onAssignMockupFile:  _onAssignMockupFile,
+        removeAssignMockup:   _removeAssignMockup,
         openInvoiceModal:   _openInvoiceModal,
         closeInvoiceModal:  () => { _resetInvoiceModal(); _hideModal('po-invoice-modal'); },
         onInvoiceTypeChange: _renderInvoiceItems,
@@ -5110,6 +5300,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         _openDesignSelector:   _openDesignSelector,
         _closeDesignSelector:  _closeDesignSelector,
         _filterDesigns:        _filterDesigns,
+        _switchDesignTab:      _switchDesignTab,
         _selectDesign:         _selectDesign,
         _openDesignUpload:     _openDesignUpload,
         _closeDesignUpload:    _closeDesignUpload,
