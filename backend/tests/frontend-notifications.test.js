@@ -223,3 +223,28 @@ test('order item edit modal has searchable selects and inline product/variant qu
     expect(source).toContain('_saveNewProductInline:    _saveNewProductInline');
     expect(source).toContain('_saveNewVariantInline:    _saveNewVariantInline');
 });
+
+test('quotation item rows support Enter-key field navigation ending in a new row', () => {
+    const source = fs.readFileSync(
+        require('path').join(__dirname, '..', '..', 'frontend', 'js', 'views', 'quotations.js'),
+        'utf8'
+    );
+
+    // POS-style chain: رقم الصنف → التصنيف → المنتج → المقاس → الكمية → السعر
+    expect(source).toContain("const _rowEnterChain = ['row-product-code', 'row-category', 'row-product', 'row-variant', 'row-qty', 'row-price']");
+
+    // Delegated capture-phase listener scoped to item rows only
+    expect(source).toContain('_wireRowEnterNavigation');
+    expect(source).toContain("e.target.closest('.quote-item-row')");
+    expect(source).toContain("e.key !== 'Enter'");
+
+    // Last field (price) creates the next row and lands on its code input
+    expect(source).toContain('window.addQuoteItemRow()');
+
+    // Searchable selects: Enter picks highlighted/first match then advances
+    expect(source).toContain("dd.querySelector('.bg-brand-100')");
+    expect(source).toContain("dd.querySelector('.cursor-pointer')");
+
+    // Wired from the view init
+    expect(source).toMatch(/async function initQuotationsView\(\) \{[\s\S]*?_wireRowEnterNavigation\(\);/);
+});

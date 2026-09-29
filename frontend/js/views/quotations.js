@@ -1301,6 +1301,88 @@
     };
 
     // ==========================================================================
+    // Enter-key field navigation inside item rows (POS-style fast entry)
+    // رقم الصنف → التصنيف → المنتج → المقاس → الكمية → السعر → صف جديد
+    // ==========================================================================
+    const _rowEnterChain = ['row-product-code', 'row-category', 'row-product', 'row-variant', 'row-qty', 'row-price'];
+
+    // Maps the focused element to its index in _rowEnterChain. Searchable
+    // selects hide the <select> — their visible input lives in .searchable-wrap.
+    function _rowFieldIndex(row, el) {
+        const wrap = el.closest('.searchable-wrap');
+        if (wrap) {
+            for (let i = 0; i < _rowEnterChain.length; i++) {
+                const sel = row.querySelector('select.' + _rowEnterChain[i]);
+                if (sel && wrap.contains(sel)) return i;
+            }
+            return -1;
+        }
+        for (let i = 0; i < _rowEnterChain.length; i++) {
+            if (el.classList && el.classList.contains(_rowEnterChain[i])) return i;
+        }
+        return -1;
+    }
+
+    function _rowFieldTarget(row, i) {
+        const cls = _rowEnterChain[i];
+        if (i >= 1 && i <= 3) { // selects wrapped by makeSelectSearchable
+            const sel   = row.querySelector('select.' + cls);
+            const input = sel && sel.closest('.searchable-wrap') &&
+                          sel.closest('.searchable-wrap').querySelector('input[type="text"]');
+            if (input) return input;
+            return sel && sel.style.display !== 'none' ? sel : null; // skip unfocusable hidden select
+        }
+        return row.querySelector('.' + cls);
+    }
+
+    function _wireRowEnterNavigation() {
+        const container = document.getElementById('quote-items-container');
+        if (!container || container.dataset.enterNav === '1') return;
+        container.dataset.enterNav = '1';
+
+        container.addEventListener('keydown', (e) => {
+            if (e.key !== 'Enter') return;
+            const row = e.target.closest('.quote-item-row');
+            if (!row) return;
+            const idx = _rowFieldIndex(row, e.target);
+            if (idx === -1) return;
+
+            const advance = () => setTimeout(() => {
+                if (idx === _rowEnterChain.length - 1) {
+                    // السعر → صف جديد. addQuoteItemRow itself focuses qty at +50ms,
+                    // so land on رقم الصنف a beat later to win focus.
+                    window.addQuoteItemRow();
+                    setTimeout(() => {
+                        const rows = container.querySelectorAll('.quote-item-row');
+                        const last = rows[rows.length - 1];
+                        const codeEl = last && _rowFieldTarget(last, 0);
+                        if (codeEl) codeEl.focus();
+                    }, 100);
+                } else {
+                    const t = _rowFieldTarget(row, idx + 1);
+                    if (t) { t.focus(); if (t.select) t.select(); }
+                }
+            }, 30);
+
+            const wrap = e.target.closest('.searchable-wrap');
+            const dd   = wrap && wrap.querySelector('.searchable-dd');
+            if (dd && !dd.classList.contains('hidden')) {
+                // Dropdown open: Enter picks the highlighted option (handled by
+                // the helper's own listener) or the first filtered match, then
+                // advances. An empty query just moves on without picking.
+                if (dd.querySelector('.bg-brand-100')) { advance(); return; }
+                const firstOpt = (e.target.value || '').trim() ? dd.querySelector('.cursor-pointer') : null;
+                e.preventDefault();
+                if (firstOpt) firstOpt.click();
+                advance();
+                return;
+            }
+            e.preventDefault();
+            advance();
+        }, true); // capture — runs before the searchable input's own Enter handler
+    }
+
+    // ==========================================================================
     // window._onRowCategoryChange(selectEl)
     // When category dropdown changes: repopulate product dropdown filtered by category.
     // ==========================================================================
@@ -3527,6 +3609,7 @@
         var _myToken = window.getCurrentNavToken ? window.getCurrentNavToken() : 0;
         _wireModalEvents();
         _initSearch();
+        _wireRowEnterNavigation();
 
         const addBtn = document.getElementById('add-quote-btn');
         if (addBtn) addBtn.addEventListener('click', () => window.openQuoteModal());
