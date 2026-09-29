@@ -13,7 +13,7 @@
     <div class="flex flex-col sm:flex-row gap-3">
         <div class="relative flex-1">
             <i class="fa-solid fa-magnifying-glass absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
-            <input id="print-templates-search" type="search" placeholder="ابحث بالكود أو اسم الصنف أو المقاس..."
+            <input id="print-templates-search" type="search" placeholder="ابحث بالكود أو اسم الصنف أو المقاس أو التصنيف أو اسم العميل..."
                    class="w-full pr-9 pl-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-brand-500" />
         </div>
         <select id="print-templates-filter" class="sm:w-48 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-brand-500">
@@ -21,6 +21,21 @@
             <option value="used">المستخدمة مع مورد</option>
             <option value="missing">تحتاج مراجعة</option>
         </select>
+    </div>
+    <div class="flex flex-col sm:flex-row gap-3 mt-3">
+        <select id="print-templates-filter-category" class="flex-1 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-brand-500">
+            <option value="all">كل التصنيفات</option>
+        </select>
+        <select id="print-templates-filter-product" class="flex-1 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-brand-500">
+            <option value="all">كل الأصناف</option>
+        </select>
+        <select id="print-templates-filter-variant" class="flex-1 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-brand-500">
+            <option value="all">كل المقاسات</option>
+        </select>
+        <button id="print-templates-clear-filters" type="button"
+                class="hidden sm:w-auto px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 text-sm font-bold rounded-xl transition-colors">
+            <i class="fa-solid fa-rotate-left ml-1"></i> مسح الفلاتر
+        </button>
     </div>
 </div>
 
@@ -33,7 +48,7 @@
     <p class="font-bold text-slate-500">لا توجد قوالب طباعة</p>
     <p class="text-xs mt-1">ستظهر القوالب تلقائيًا بعد إسناد تصميم لمورد.</p>
 </div>
-<div id="print-templates-grid" class="hidden grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"></div>
+<div id="print-templates-grid" class="hidden space-y-2"></div>
 
 <div id="print-template-details-modal" class="hidden fixed inset-0 z-[9999] items-center justify-center p-4 bg-black/60" data-close-template-modal>
     <div class="bg-white w-full max-w-5xl max-h-[92vh] overflow-hidden rounded-2xl shadow-2xl flex flex-col">
@@ -54,4 +69,4 @@
     </div>
 </div>
 
-<script src="/js/views/print-templates.js?v=20260825a"></script>
+<script src="/js/views/print-templates.js?v=20260826a"></script>

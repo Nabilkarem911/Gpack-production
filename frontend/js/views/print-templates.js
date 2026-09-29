@@ -50,23 +50,106 @@
     function cardTemplate(template) {
         const review = Number(template.missing_design_count || 0) > 0;
         return `<button type="button" data-template-id="${escapeHtml(template.id)}"
-            class="template-card text-right bg-white border ${review ? 'border-amber-200' : 'border-slate-100'} rounded-2xl shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all p-5">
-            <div class="flex items-start justify-between gap-3">
-                <div class="w-11 h-11 rounded-xl bg-brand-50 text-brand-600 flex items-center justify-center shrink-0"><i class="fa-solid fa-print text-lg"></i></div>
-                <span class="font-mono text-sm font-extrabold text-brand-700 bg-brand-50 px-2.5 py-1 rounded-lg">${escapeHtml(template.template_code)}</span>
+            class="template-card w-full text-right bg-white border ${review ? 'border-amber-200' : 'border-slate-100'} rounded-xl shadow-sm hover:shadow-md hover:border-brand-200 transition-all px-4 py-3">
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+                <span class="font-mono text-xs font-extrabold text-brand-700 bg-brand-50 px-2 py-1 rounded-lg shrink-0">${escapeHtml(template.template_code)}</span>
+                <span class="text-xs font-bold text-slate-500 bg-slate-50 px-2 py-1 rounded-lg shrink-0"><i class="fa-solid fa-tag ml-1"></i>${escapeHtml(template.category_name || 'بدون تصنيف')}</span>
+                <span class="font-bold text-slate-800 text-sm">${escapeHtml(template.product_name)}</span>
+                <span class="text-red-600 font-extrabold text-base shrink-0"><i class="fa-solid fa-ruler-combined ml-1"></i>${escapeHtml(template.size_name)}</span>
+                <span class="ms-auto flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] text-slate-500">
+                    <span><b class="text-slate-800">${template.design_count || 0}</b> تصميم</span>
+                    <span class="text-slate-200">|</span>
+                    <span><b class="text-slate-800">${template.client_count || 0}</b> عميل</span>
+                    <span class="text-slate-200">|</span>
+                    <span><b class="text-slate-800">${template.supplier_count || 0}</b> مورد</span>
+                    <span class="text-slate-200">|</span>
+                    <span><b class="text-slate-800">${template.order_count || 0}</b> أمر تشغيل</span>
+                </span>
+                ${review ? '<span class="text-[11px] font-bold text-amber-700 bg-amber-50 rounded-lg px-2 py-1"><i class="fa-solid fa-triangle-exclamation ml-1"></i>مراجعة</span>' : ''}
+                <i class="fa-solid fa-chevron-left text-slate-300 text-xs shrink-0"></i>
             </div>
-            <div class="mt-4">
-                <h3 class="font-extrabold text-slate-800 truncate">${escapeHtml(template.product_name)}</h3>
-                <p class="text-sm text-slate-500 mt-1"><i class="fa-solid fa-ruler-combined ml-1"></i>${escapeHtml(template.size_name)}</p>
-            </div>
-            <div class="grid grid-cols-2 gap-2 mt-5 text-xs">
-                <span class="bg-slate-50 rounded-lg p-2 text-slate-600"><b class="block text-base text-slate-800">${template.design_count || 0}</b>تصميم</span>
-                <span class="bg-slate-50 rounded-lg p-2 text-slate-600"><b class="block text-base text-slate-800">${template.client_count || 0}</b>عميل</span>
-                <span class="bg-slate-50 rounded-lg p-2 text-slate-600"><b class="block text-base text-slate-800">${template.supplier_count || 0}</b>مورد</span>
-                <span class="bg-slate-50 rounded-lg p-2 text-slate-600"><b class="block text-base text-slate-800">${template.order_count || 0}</b>أمر تشغيل</span>
-            </div>
-            ${review ? '<p class="mt-4 text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2"><i class="fa-solid fa-triangle-exclamation ml-1"></i>يوجد إسناد بتصميم غير موجود</p>' : ''}
         </button>`;
+    }
+
+    // ── Cascading filters: التصنيف → الصنف → المقاس ─────────────────────────
+    // Options are derived from the loaded templates themselves so every choice
+    // is guaranteed to return results (no dead-end filter states).
+    const FILTER_ALL = 'all';
+    const FILTER_NONE_CATEGORY = 'none';
+
+    function _distinctBy(items, keyFn) {
+        const seen = new Map();
+        items.forEach(item => {
+            const { value, label } = keyFn(item);
+            if (!seen.has(value)) seen.set(value, label);
+        });
+        return [...seen.entries()].map(([value, label]) => ({ value, label }));
+    }
+
+    function _fillCascadeSelect(selectEl, options, allLabel, preserveValue) {
+        if (!selectEl) return;
+        const prev = preserveValue ? selectEl.value : FILTER_ALL;
+        selectEl.innerHTML = `<option value="${FILTER_ALL}">${allLabel}</option>` +
+            options.map(o => `<option value="${escapeHtml(o.value)}">${escapeHtml(o.label)}</option>`).join('');
+        selectEl.value = options.some(o => o.value === prev) ? prev : FILTER_ALL;
+    }
+
+    function _templatesMatchingCategory() {
+        const cat = $('print-templates-filter-category')?.value || FILTER_ALL;
+        if (cat === FILTER_ALL) return templates;
+        if (cat === FILTER_NONE_CATEGORY) return templates.filter(t => !t.category_id);
+        return templates.filter(t => String(t.category_id) === cat);
+    }
+
+    function _rebuildCategoryOptions() {
+        const cats = _distinctBy(
+            templates.filter(t => t.category_id),
+            t => ({ value: String(t.category_id), label: t.category_name || 'بدون تصنيف' })
+        );
+        if (templates.some(t => !t.category_id)) {
+            cats.push({ value: FILTER_NONE_CATEGORY, label: 'بدون تصنيف' });
+        }
+        cats.sort((a, b) => a.label.localeCompare(b.label, 'ar'));
+        _fillCascadeSelect($('print-templates-filter-category'), cats, 'كل التصنيفات', true);
+    }
+
+    function _rebuildProductOptions(resetSelection = false) {
+        const inScope = _templatesMatchingCategory();
+        const prods = _distinctBy(inScope, t => ({ value: String(t.product_id), label: t.product_name }));
+        prods.sort((a, b) => a.label.localeCompare(b.label, 'ar'));
+        _fillCascadeSelect($('print-templates-filter-product'), prods, 'كل الأصناف', !resetSelection);
+    }
+
+    function _rebuildVariantOptions(resetSelection = false) {
+        const prod = $('print-templates-filter-product')?.value || FILTER_ALL;
+        const inScope = prod === FILTER_ALL
+            ? _templatesMatchingCategory()
+            : _templatesMatchingCategory().filter(t => String(t.product_id) === prod);
+        const vars = _distinctBy(inScope, t => ({ value: String(t.variant_id), label: t.size_name }));
+        vars.sort((a, b) => a.label.localeCompare(b.label, 'ar'));
+        _fillCascadeSelect($('print-templates-filter-variant'), vars, 'كل المقاسات', !resetSelection);
+        const variantSel = $('print-templates-filter-variant');
+        if (variantSel) variantSel.disabled = vars.length === 0;
+    }
+
+    function _rebuildAllCascade() {
+        _rebuildCategoryOptions();
+        _rebuildProductOptions();
+        _rebuildVariantOptions();
+    }
+
+    function _updateClearFiltersButton() {
+        const active = [$('print-templates-filter-category'), $('print-templates-filter-product'), $('print-templates-filter-variant')]
+            .some(sel => sel && sel.value && sel.value !== FILTER_ALL);
+        $('print-templates-clear-filters')?.classList.toggle('hidden', !active);
+    }
+
+    function _clearCascade() {
+        const catSel = $('print-templates-filter-category');
+        if (catSel) catSel.value = FILTER_ALL;
+        _rebuildProductOptions(true);
+        _rebuildVariantOptions(true);
+        render();
     }
 
     function render() {
@@ -74,14 +157,28 @@
         const empty = $('print-templates-empty');
         const query = ($('print-templates-search')?.value || '').trim().toLowerCase();
         const filter = $('print-templates-filter')?.value || 'all';
+        const cat = $('print-templates-filter-category')?.value || FILTER_ALL;
+        const prod = $('print-templates-filter-product')?.value || FILTER_ALL;
+        const vari = $('print-templates-filter-variant')?.value || FILTER_ALL;
         const filtered = templates.filter(template => {
-            const matchesSearch = !query || [template.template_code, template.product_name, template.size_name]
-                .some(value => String(value || '').toLowerCase().includes(query));
+            const matchesSearch = !query || [
+                template.template_code,
+                template.product_name,
+                template.size_name,
+                template.category_name,
+                ...(Array.isArray(template.client_names) ? template.client_names : []),
+            ].some(value => String(value || '').toLowerCase().includes(query));
             const matchesFilter = filter === 'all'
                 || (filter === 'used' && Number(template.supplier_count || 0) > 0)
                 || (filter === 'missing' && Number(template.missing_design_count || 0) > 0);
-            return matchesSearch && matchesFilter;
+            const matchesCascade =
+                (cat === FILTER_ALL || (cat === FILTER_NONE_CATEGORY ? !template.category_id : String(template.category_id) === cat)) &&
+                (prod === FILTER_ALL || String(template.product_id) === prod) &&
+                (vari === FILTER_ALL || String(template.variant_id) === vari);
+            return matchesSearch && matchesFilter && matchesCascade;
         });
+
+        _updateClearFiltersButton();
 
         if (!grid || !empty) return;
         grid.innerHTML = filtered.map(cardTemplate).join('');
@@ -98,6 +195,7 @@
             if (window.isViewActive && !window.isViewActive(activeToken)) return;
             templates = Array.isArray(response?.data) ? response.data : [];
             $('print-templates-loading')?.classList.add('hidden');
+            _rebuildAllCascade();
             render();
         } catch (err) {
             $('print-templates-loading').innerHTML = `<div class="text-red-400"><i class="fa-solid fa-circle-exclamation text-2xl"></i><p class="text-sm mt-3">${escapeHtml(err.message || 'فشل تحميل القوالب')}</p></div>`;
@@ -168,6 +266,19 @@
     $('print-templates-refresh')?.addEventListener('click', load);
     $('print-templates-search')?.addEventListener('input', render);
     $('print-templates-filter')?.addEventListener('change', render);
+    $('print-templates-filter-category')?.addEventListener('change', () => {
+        // changing category resets product and variant selections
+        _rebuildProductOptions(true);
+        _rebuildVariantOptions(true);
+        render();
+    });
+    $('print-templates-filter-product')?.addEventListener('change', () => {
+        // changing product resets variant selection
+        _rebuildVariantOptions(true);
+        render();
+    });
+    $('print-templates-filter-variant')?.addEventListener('change', render);
+    $('print-templates-clear-filters')?.addEventListener('click', _clearCascade);
     $('print-template-details-close')?.addEventListener('click', closeDetails);
     $('print-template-supplier-privacy')?.addEventListener('click', toggleSupplierPrivacy);
     $('print-template-details-modal')?.addEventListener('click', event => {

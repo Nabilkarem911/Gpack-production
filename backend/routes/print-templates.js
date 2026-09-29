@@ -21,6 +21,14 @@ router.get('/', async (req, res) => {
             pt.template_code ILIKE $1
             OR p.name ILIKE $1
             OR pv.size_name ILIKE $1
+            OR cat.name ILIKE $1
+            OR EXISTS (
+                SELECT 1
+                FROM client_designs cd_search
+                JOIN clients c_search ON c_search.id = cd_search.client_id
+                WHERE cd_search.variant_id = pv.id
+                  AND c_search.name ILIKE $1
+            )
         )`);
     }
 
@@ -34,6 +42,8 @@ router.get('/', async (req, res) => {
                 pt.variant_id,
                 p.id AS product_id,
                 p.name AS product_name,
+                p.category_id,
+                cat.name AS category_name,
                 pv.size_name,
                 COALESCE((
                     SELECT COUNT(*)::int
@@ -86,10 +96,21 @@ router.get('/', async (req, res) => {
                     WHERE oi.variant_id = pv.id
                       AND moi.design_id IS NOT NULL
                       AND cd.id IS NULL
-                ), 0) AS missing_design_count
+                ), 0) AS missing_design_count,
+                COALESCE((
+                    SELECT json_agg(name)
+                    FROM (
+                        SELECT DISTINCT c.name
+                        FROM client_designs cd
+                        JOIN clients c ON c.id = cd.client_id
+                        WHERE cd.variant_id = pv.id
+                        ORDER BY c.name
+                    ) distinct_client_names
+                ), '[]'::json) AS client_names
              FROM print_templates pt
              JOIN product_variants pv ON pv.id = pt.variant_id
              JOIN products p ON p.id = pv.product_id
+             LEFT JOIN categories cat ON cat.id = p.category_id
              ${where}
              ORDER BY pt.template_code ASC`,
             params

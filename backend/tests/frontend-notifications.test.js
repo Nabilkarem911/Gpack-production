@@ -248,3 +248,64 @@ test('quotation item rows support Enter-key field navigation ending in a new row
     // Wired from the view init
     expect(source).toMatch(/async function initQuotationsView\(\) \{[\s\S]*?_wireRowEnterNavigation\(\);/);
 });
+
+test('print templates list exposes deduped client names and category without row multiplication', () => {
+    const source = fs.readFileSync(
+        require('path').join(__dirname, '..', 'routes', 'print-templates.js'),
+        'utf8'
+    );
+
+    // Client names come from a scalar subquery with DISTINCT — one row per template
+    expect(source).toContain('SELECT DISTINCT c.name');
+    expect(source).toContain('AS client_names');
+    expect(source).not.toContain('JOIN client_designs cd ON cd.variant_id');
+
+    // Category is a LEFT JOIN on the one-to-one product relationship
+    expect(source).toContain('p.category_id');
+    expect(source).toContain('cat.name AS category_name');
+    expect(source).toContain('LEFT JOIN categories cat ON cat.id = p.category_id');
+
+    // Server-side search covers category + client names via EXISTS (no join fan-out)
+    expect(source).toContain('cat.name ILIKE $1');
+    expect(source).toContain('EXISTS (');
+    expect(source).toContain('cd_search.variant_id = pv.id');
+    expect(source).toContain('c_search.name ILIKE $1');
+});
+
+test('print templates view renders compact strips with red size and cascading filters', () => {
+    const source = fs.readFileSync(
+        require('path').join(__dirname, '..', '..', 'frontend', 'js', 'views', 'print-templates.js'),
+        'utf8'
+    );
+    const html = fs.readFileSync(
+        require('path').join(__dirname, '..', '..', 'frontend', 'views', 'print-templates.html'),
+        'utf8'
+    );
+
+    // Cascade selects exist and are wired
+    expect(html).toContain('id="print-templates-filter-category"');
+    expect(html).toContain('id="print-templates-filter-product"');
+    expect(html).toContain('id="print-templates-filter-variant"');
+    expect(html).toContain('id="print-templates-clear-filters"');
+    expect(source).toContain("$('print-templates-filter-category')?.addEventListener('change'");
+    expect(source).toContain("$('print-templates-filter-product')?.addEventListener('change'");
+    expect(source).toContain("$('print-templates-filter-variant')?.addEventListener('change'");
+
+    // Category change resets product+variant; product change resets variant
+    expect(source).toContain('_rebuildProductOptions(true);');
+    expect(source).toContain('_rebuildVariantOptions(true);');
+
+    // Search matches client names + category; filters combine (AND)
+    expect(source).toContain('template.client_names');
+    expect(source).toContain('template.category_name');
+    expect(source).toContain('matchesSearch && matchesFilter && matchesCascade');
+
+    // Compact strip: red prominent size + details modal still opens on click
+    expect(source).toContain('text-red-600 font-extrabold text-base');
+    expect(source).toContain('openDetails(card.dataset.templateId)');
+
+    // Details endpoint/modal untouched — full data preserved
+    expect(source).toContain('/api/print-templates/${encodeURIComponent(id)}');
+    expect(source).toContain('print-template-supplier-privacy');
+    expect(html).toContain('id="print-template-details-modal"');
+});
