@@ -683,18 +683,66 @@
                 <span id="edit-item-current" class="font-bold text-slate-800"></span>
             </div>
             <div>
-                <label class="block text-sm font-bold text-slate-700 mb-1.5">المنتج</label>
+                <div class="flex items-center justify-between mb-1.5">
+                    <label class="text-sm font-bold text-slate-700">المنتج</label>
+                    <button type="button" onclick="window.poView._toggleItemAddPanel('product')"
+                            class="text-xs font-bold text-brand-600 hover:text-brand-700 transition-colors">
+                        <i class="fa-solid fa-plus ml-0.5"></i> منتج جديد
+                    </button>
+                </div>
                 <select id="edit-item-product" onchange="window.poView._onEditItemProductChange()"
                         class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all">
                     <option value="">جاري التحميل...</option>
                 </select>
+                <div id="edit-item-add-product" class="hidden mt-2 bg-brand-50/50 border border-brand-200 rounded-xl p-3 space-y-2">
+                    <input type="text" id="edit-item-new-product-name" maxlength="255"
+                           class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-brand-500 transition-all"
+                           placeholder="اسم المنتج الجديد *">
+                    <input type="text" id="edit-item-new-product-variant" maxlength="100"
+                           class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-brand-500 transition-all"
+                           placeholder="اسم أول مقاس (اختياري — مثال: 12oz)">
+                    <div class="flex gap-2">
+                        <button type="button" onclick="window.poView._saveNewProductInline()"
+                                class="flex-1 px-3 py-2 bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold rounded-lg transition-all">
+                            إضافة المنتج
+                        </button>
+                        <button type="button" onclick="window.poView._toggleItemAddPanel('product')"
+                                class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold rounded-lg transition-all">
+                            إلغاء
+                        </button>
+                    </div>
+                </div>
             </div>
             <div>
-                <label class="block text-sm font-bold text-slate-700 mb-1.5">المقاس / الصنف <span class="text-red-500">*</span></label>
+                <div class="flex items-center justify-between mb-1.5">
+                    <label class="text-sm font-bold text-slate-700">المقاس / الصنف <span class="text-red-500">*</span></label>
+                    <button type="button" onclick="window.poView._toggleItemAddPanel('variant')"
+                            class="text-xs font-bold text-brand-600 hover:text-brand-700 transition-colors">
+                        <i class="fa-solid fa-plus ml-0.5"></i> مقاس جديد
+                    </button>
+                </div>
                 <select id="edit-item-variant"
                         class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all">
                     <option value="">— اختر المنتج أولًا —</option>
                 </select>
+                <div id="edit-item-add-variant" class="hidden mt-2 bg-brand-50/50 border border-brand-200 rounded-xl p-3 space-y-2">
+                    <input type="text" id="edit-item-new-variant-name" maxlength="100"
+                           class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-brand-500 transition-all"
+                           placeholder="اسم المقاس الجديد * (مثال: 16oz)">
+                    <input type="number" id="edit-item-new-variant-price" min="0" step="any"
+                           class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-brand-500 transition-all"
+                           placeholder="سعر البيع للكتالوج (اختياري)">
+                    <div class="flex gap-2">
+                        <button type="button" onclick="window.poView._saveNewVariantInline()"
+                                class="flex-1 px-3 py-2 bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold rounded-lg transition-all">
+                            إضافة المقاس
+                        </button>
+                        <button type="button" onclick="window.poView._toggleItemAddPanel('variant')"
+                                class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold rounded-lg transition-all">
+                            إلغاء
+                        </button>
+                    </div>
+                </div>
             </div>
             <div>
                 <label class="block text-sm font-bold text-slate-700 mb-1.5">الكمية</label>

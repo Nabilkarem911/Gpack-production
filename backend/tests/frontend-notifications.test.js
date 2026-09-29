@@ -174,3 +174,52 @@ test('order item edit UI calls the in-place PATCH endpoint and never touches the
     expect(html).toContain('window.poView.saveItemEdit()');
     expect(source).toContain("window.poView.openEditItemModal('${item.id}')");
 });
+
+test('order item edit modal has searchable selects and inline product/variant quick-add', () => {
+    const source = fs.readFileSync(
+        require('path').join(__dirname, '..', '..', 'frontend', 'js', 'views', 'production_orders_new.js'),
+        'utf8'
+    );
+    const html = fs.readFileSync(
+        require('path').join(__dirname, '..', '..', 'frontend', 'views', 'production_orders.html'),
+        'utf8'
+    );
+    const indexHtml = fs.readFileSync(
+        require('path').join(__dirname, '..', '..', 'frontend', 'index.html'),
+        'utf8'
+    );
+    const editBlock = source.slice(
+        source.indexOf('// ── Edit order item'),
+        source.indexOf('// ── Update order status')
+    );
+
+    // The shared searchable-dropdown helper is globally loaded and applied to
+    // both selects (in-modal absolute dropdown + text search, no OS popup)
+    expect(indexHtml).toContain('/js/utils/select-search.js');
+    expect(editBlock).toContain('window.makeSelectSearchable');
+    expect(editBlock.match(/makeSelectSearchable/g).length).toBeGreaterThanOrEqual(2);
+
+    // Variant list is always rebuilt from the selected product's own variants
+    expect(editBlock).toContain('(_editItemState.products || []).find(p => p.id === productSel.value)');
+    expect(editBlock).toContain('(product && product.variants) || []');
+
+    // Quick-add panels exist in the modal and are wired to exported handlers
+    expect(html).toContain('id="edit-item-add-product"');
+    expect(html).toContain('id="edit-item-add-variant"');
+    expect(html).toContain('id="edit-item-new-product-name"');
+    expect(html).toContain('id="edit-item-new-variant-name"');
+    expect(html).toContain("window.poView._toggleItemAddPanel('product')");
+    expect(html).toContain("window.poView._toggleItemAddPanel('variant')");
+
+    // Quick-add uses the existing catalog endpoints — variant creation is
+    // scoped to the selected product via the route path
+    expect(editBlock).toContain("'/api/products'");
+    expect(editBlock).toContain('`/api/products/${productId}/variants`');
+    expect(editBlock).not.toContain('method: \'DELETE\'');
+
+    // Newly created records are selected and sent through the same PATCH payload
+    expect(editBlock).toContain('sel.dispatchEvent(new Event(\'change\'');
+    expect(source).toContain('_toggleItemAddPanel:      _toggleItemAddPanel');
+    expect(source).toContain('_saveNewProductInline:    _saveNewProductInline');
+    expect(source).toContain('_saveNewVariantInline:    _saveNewVariantInline');
+});

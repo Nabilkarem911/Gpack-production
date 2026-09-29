@@ -1168,7 +1168,8 @@
     }
 
     // ── Edit order item (in-place — supplier link & MO row stay untouched) ─────
-    let _editItemState = null; // { itemId, item, products }
+    let _editItemState  = null; // { itemId, item, products }
+    let _editItemSearch = { product: null, variant: null }; // makeSelectSearchable handles
 
     async function _openEditItemModal(itemId) {
         const item = _hubItems.find(i => i.id === itemId);
@@ -1201,7 +1202,27 @@
         if (productSel) productSel.innerHTML = '<option value="">جاري تحميل المنتجات...</option>';
         if (variantSel) variantSel.innerHTML = '<option value="">— اختر المنتج أولًا —</option>';
 
+        // Reset the inline "add new" panels
+        ['product', 'variant'].forEach(which => {
+            const panel = _el(`edit-item-add-${which}`);
+            if (panel) panel.classList.add('hidden');
+        });
+        ['edit-item-new-product-name', 'edit-item-new-product-variant',
+         'edit-item-new-variant-name', 'edit-item-new-variant-price']
+            .forEach(id => { const e = _el(id); if (e) e.value = ''; });
+
         _showModal('po-edit-item-modal');
+
+        // Wrap the native selects in the shared searchable dropdown — the panel
+        // is absolute-positioned inside the modal instead of an OS popup that
+        // escapes it, and gains instant text search. The real <select> stays
+        // wired underneath (its onchange still fires on every pick).
+        if (window.makeSelectSearchable) {
+            if (productSel && !productSel.dataset.searchable)
+                _editItemSearch.product = window.makeSelectSearchable(productSel, '🔍 ابحث عن المنتج...');
+            if (variantSel && !variantSel.dataset.searchable)
+                _editItemSearch.variant = window.makeSelectSearchable(variantSel, '🔍 ابحث عن المقاس...');
+        }
 
         try {
             const res = await window.apiFetch('/api/products?include_variants=true&status=active');
@@ -1248,6 +1269,89 @@
     }
 
     function _onEditItemProductChange() { _fillEditItemVariants(); }
+
+    // ── Inline quick-add: new product / new variant without leaving the modal ──
+    function _toggleItemAddPanel(which) {
+        const panel = _el(`edit-item-add-${which}`);
+        if (!panel) return;
+        panel.classList.toggle('hidden');
+        if (!panel.classList.contains('hidden')) {
+            const first = panel.querySelector('input');
+            if (first) setTimeout(() => first.focus(), 60);
+        }
+    }
+
+    async function _saveNewProductInline() {
+        const nameEl = _el('edit-item-new-product-name');
+        const varEl  = _el('edit-item-new-product-variant');
+        const name   = (nameEl?.value || '').trim();
+        const vName  = (varEl?.value  || '').trim();
+        if (!name) { _toast('اكتب اسم المنتج أولًا', 'error'); return; }
+
+        try {
+            const body = { name };
+            if (vName) body.variants = [{ size_name: vName }];
+            const res = await window.apiFetch('/api/products', { method: 'POST', body });
+            const product = res && res.data;
+            if (!product || !product.id) throw new Error('استجابة غير متوقعة من الخادم');
+
+            if (_editItemState) _editItemState.products.push(product);
+            const sel = _el('edit-item-product');
+            const opt = document.createElement('option');
+            opt.value = product.id;
+            opt.textContent = product.name;
+            sel.appendChild(opt);
+            sel.value = product.id;
+            sel.dispatchEvent(new Event('change', { bubbles: true })); // refills variants + syncs search input
+
+            // If a first variant was created inline, preselect it
+            const newVariant = (product.variants || [])[0];
+            if (newVariant) {
+                const vSel = _el('edit-item-variant');
+                vSel.value = newVariant.id;
+                vSel.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+
+            nameEl.value = ''; varEl.value = '';
+            _el('edit-item-add-product').classList.add('hidden');
+            _toast('تمت إضافة المنتج واختياره');
+        } catch (err) {
+            console.error('[poView] saveNewProduct:', err);
+            _toast(err.message || 'فشل إضافة المنتج', 'error');
+        }
+    }
+
+    async function _saveNewVariantInline() {
+        const nameEl     = _el('edit-item-new-variant-name');
+        const priceEl    = _el('edit-item-new-variant-price');
+        const name       = (nameEl?.value || '').trim();
+        const productId  = (_el('edit-item-product') || {}).value || '';
+        if (!productId) { _toast('اختر المنتج أولًا', 'error'); return; }
+        if (!name)      { _toast('اكتب اسم المقاس أولًا', 'error'); return; }
+
+        try {
+            const body  = { size_name: name };
+            const price = parseFloat(priceEl?.value);
+            if (!isNaN(price) && price > 0) body.selling_price = price;
+            const res = await window.apiFetch(`/api/products/${productId}/variants`, { method: 'POST', body });
+            const variant = res && res.data;
+            if (!variant || !variant.id) throw new Error('استجابة غير متوقعة من الخادم');
+
+            const product = (_editItemState?.products || []).find(p => p.id === productId);
+            if (product) (product.variants = product.variants || []).push(variant);
+            _fillEditItemVariants(); // rebuild options from the updated variants list
+            const vSel = _el('edit-item-variant');
+            vSel.value = variant.id;
+            vSel.dispatchEvent(new Event('change', { bubbles: true }));
+
+            nameEl.value = ''; priceEl.value = '';
+            _el('edit-item-add-variant').classList.add('hidden');
+            _toast('تمت إضافة المقاس واختياره');
+        } catch (err) {
+            console.error('[poView] saveNewVariant:', err);
+            _toast(err.message || 'فشل إضافة المقاس', 'error');
+        }
+    }
 
     async function _saveItemEdit() {
         if (!_editItemState) return;
@@ -4931,6 +5035,9 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         closeEditItemModal:   _closeEditItemModal,
         saveItemEdit:         _saveItemEdit,
         _onEditItemProductChange: _onEditItemProductChange,
+        _toggleItemAddPanel:      _toggleItemAddPanel,
+        _saveNewProductInline:    _saveNewProductInline,
+        _saveNewVariantInline:    _saveNewVariantInline,
         openBulkAssignModal:  _openBulkAssignModal,
         closeBulkAssignModal: () => _hideModal('po-bulk-assign-modal'),
         saveBulkAssignment:   _saveBulkAssignment,
