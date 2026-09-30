@@ -958,6 +958,15 @@ router.post('/:id/reverse', restrictWrite, async (req, res) => {
                     `UPDATE invoices SET status = 'issued', delivery_status = 'pending' WHERE id = $1 AND status <> 'cancelled'`,
                     [dn.invoice_id]
                 );
+                // The re-issued invoice counts as its order's final invoice —
+                // clear the manual closed-without-invoice flag if it was set.
+                await client.query(
+                    `UPDATE orders o
+                     SET closed_without_invoice = FALSE, closed_at = NULL, closed_by = NULL, updated_at = NOW()
+                     FROM invoices inv
+                     WHERE inv.id = $1 AND o.id = inv.order_id AND o.closed_without_invoice = TRUE`,
+                    [dn.invoice_id]
+                );
             }
 
             return { note_number: dn.note_number, reversed_items: itemsRes.rowCount };

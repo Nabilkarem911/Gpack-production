@@ -276,10 +276,11 @@
             _allOrders.active             = assignedOrders.filter(o => Number(o.delivery_note_count || 0) === 0);
             _allOrders.delivering         = assignedOrders.filter(o => Number(o.delivery_note_count || 0) > 0);
             // Delivered goods (completed/delivered) split by final-invoice status:
-            // awaiting_invoice → no issued final invoice yet; completed → invoiced permanently.
+            // awaiting_invoice → no issued final invoice yet and not manually closed;
+            // completed        → invoiced permanently OR closed without invoice.
             const doneOrders = (doneRes?.data) || [];
-            _allOrders.awaiting_invoice = doneOrders.filter(o => !o.has_final_invoice);
-            _allOrders.completed        = doneOrders.filter(o =>  o.has_final_invoice);
+            _allOrders.awaiting_invoice = doneOrders.filter(o => !o.has_final_invoice && !o.closed_without_invoice);
+            _allOrders.completed        = doneOrders.filter(o =>  o.has_final_invoice ||  o.closed_without_invoice);
             _allOrders.archived         = (archivedRes?.data) || [];
             _updateStats();
             _renderTable();
@@ -419,6 +420,9 @@
                     <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold ${cfg.cls}">
                         <i class="fa-solid ${cfg.icon} text-[10px]"></i> ${cfg.label}
                     </span>
+                    ${o.closed_without_invoice
+                        ? '<span class="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold bg-slate-100 text-slate-500 mr-1" title="أُغلق بدون فاتورة نهائية"><i class="fa-solid fa-file-circle-xmark"></i> بدون فاتورة</span>'
+                        : ''}
                 </td>
                 <td class="py-3 px-4 text-center">
                     ${o.receive_status !== 'none'
@@ -430,10 +434,19 @@
                     }
                 </td>
                 <td class="py-3 px-4 text-center">
+                    <div class="inline-flex items-center gap-1.5">
+                    ${_activeTab === 'awaiting_invoice'
+                        ? `<button onclick="event.stopPropagation(); window.poView.closeWithoutInvoice('${o.id}')"
+                                class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 text-xs font-bold rounded-lg transition-all active:scale-[0.98]"
+                                title="نقل إلى المكتملة بدون إصدار فاتورة نهائية — لا يؤثر على المخزون أو الصرف">
+                            <i class="fa-solid fa-circle-check"></i> نقل إلى مكتملة
+                        </button>`
+                        : ''}
                     <button onclick="event.stopPropagation(); window.poView.openHub('${o.id}')"
                             class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold rounded-lg transition-all active:scale-[0.98]">
                         <i class="fa-solid fa-gears"></i> إدارة
                     </button>
+                    </div>
                 </td>
             </tr>`;
         }).join('');
@@ -692,7 +705,9 @@
             }
         }
         _setText('hub-order-num',         `#${o.order_number}`);
-        _setHTML('hub-status-badge',      _badge(o.status, STATUS_CFG));
+        _setHTML('hub-status-badge',      _badge(o.status, STATUS_CFG) + (o.closed_without_invoice
+            ? ' <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 text-slate-500" title="أُغلق بدون فاتورة نهائية"><i class="fa-solid fa-file-circle-xmark text-[10px]"></i> بدون فاتورة نهائية</span>'
+            : ''));
         const sourceEl = _el('hub-source-info');
         if (sourceEl) {
             const sourceParts = o.direct_receipt_id ? [
@@ -769,6 +784,9 @@
             const canCloseOrder = ['production', 'processing'].includes(_hubOrder.status);
             const canRevertOrder = ['production', 'processing'].includes(_hubOrder.status) && !_hubOrder.direct_receipt_id;
             const canRevertExecution = _hubOrder.status === 'processing';
+            const isAwaitingInvoice = ['completed', 'delivered'].includes(_hubOrder.status)
+                && !_hubOrder.has_final_invoice && !_hubOrder.closed_without_invoice;
+            const isClosedNoInvoice = !!_hubOrder.closed_without_invoice;
             const hasMOs = _hubMOs && _hubMOs.length > 0;
             const autoHint = hasMOs && ['production', 'processing', 'completed'].includes(_hubOrder.status)
                 ? `<span class="text-xs text-slate-400 italic flex items-center gap-1"><i class="fa-solid fa-circle-info"></i> الحالة تتحدث تلقائياً حسب أوامر الموردين</span>`
@@ -799,8 +817,22 @@
                        <i class="fa-solid fa-rotate-left"></i> تراجع وأرشفة
                    </button>`
                 : '';
-            actionsEl.innerHTML = (nextBtns || closeOrderBtn || revertBtn || revertExecBtn || autoHint)
-                ? nextBtns + closeOrderBtn + revertExecBtn + revertBtn + autoHint
+            const closeNoInvoiceBtn = isAwaitingInvoice
+                ? `<button onclick="window.poView.closeWithoutInvoice('${_hubOrderId}')"
+                           class="flex items-center gap-2 px-4 py-2.5 text-sm font-bold rounded-xl shadow bg-emerald-600 hover:bg-emerald-700 text-white transition-all active:scale-[0.98]"
+                           title="نقل إلى المكتملة بدون إصدار فاتورة نهائية — لا يؤثر على المخزون أو صرف العميل">
+                       <i class="fa-solid fa-circle-check"></i> نقل إلى مكتملة بدون فاتورة
+                   </button>`
+                : '';
+            const reopenQueueBtn = isClosedNoInvoice
+                ? `<button onclick="window.poView.reopenToAwaiting('${_hubOrderId}')"
+                           class="flex items-center gap-2 px-4 py-2.5 text-sm font-bold rounded-xl border-2 border-amber-300 text-amber-600 hover:bg-amber-50 transition-all active:scale-[0.98]"
+                           title="إرجاع الأمر إلى تاب بانتظار الفاتورة">
+                       <i class="fa-solid fa-rotate-left"></i> إرجاع إلى بانتظار الفاتورة
+                   </button>`
+                : '';
+            actionsEl.innerHTML = (nextBtns || closeOrderBtn || revertBtn || revertExecBtn || closeNoInvoiceBtn || reopenQueueBtn || autoHint)
+                ? nextBtns + closeOrderBtn + closeNoInvoiceBtn + reopenQueueBtn + revertExecBtn + revertBtn + autoHint
                 : '<span class="text-xs text-slate-400">لا يوجد إجراء متاح</span>';
         }
 
@@ -1164,6 +1196,105 @@
         } catch (err) {
             console.error('[poView] closeOrder:', err);
             _toast(err.message || 'فشل إغلاق الطلب', 'error');
+        }
+    }
+
+    // ── Move to Completed without a final invoice ──────────────────────────────
+    // For storage (VMI) clients: goods are dispensed in partial batches, so the
+    // order never gets a single final invoice. Closing only affects the
+    // awaiting-invoice queue — stock, delivery notes and later invoicing keep
+    // working. The confirm dialog surfaces any remaining quantities first.
+    async function _closeWithoutInvoice(orderId) {
+        const oid = orderId || _hubOrderId;
+        if (!oid) return;
+        try {
+            const res   = await window.apiFetch(`/api/orders/${oid}`);
+            const ord   = res?.data || {};
+            const items = ord.items || [];
+
+            const remaining = items
+                .map(it => ({
+                    name: `${it.product_name || ''} ${it.size_name || ''}`.trim() || 'صنف',
+                    rem:  Math.max(0, parseFloat(it.wh_received_qty || 0) - parseFloat(it.delivered_qty || 0)),
+                }))
+                .filter(r => r.rem > 0);
+
+            // Client's live warehouse stock for the order's variants (storage
+            // clients pull from stock, not from the order — shown as a warning
+            // so we don't close an order the client is still withdrawing from).
+            let stockLines = [];
+            try {
+                const variantIds = new Set(items.map(i => i.variant_id).filter(Boolean));
+                const sres = await window.apiFetch(`/api/vmi/stock?client_id=${ord.client_id}`);
+                let stockRows = sres?.data || [];
+                // Branch clients draw from the parent's stock — merge it so the
+                // warning doesn't silently miss quantities owned by the parent.
+                const parentId = sres?.client?.parent_id;
+                if (parentId) {
+                    const pres = await window.apiFetch(`/api/vmi/stock?client_id=${parentId}`).catch(() => null);
+                    stockRows = stockRows.concat(pres?.data || []);
+                }
+                // Aggregate per variant — branch + parent rows are separate
+                // physical stock but one logical pool to the user; two lines
+                // with the same label would read like a duplicate.
+                const stockByVariant = new Map();
+                for (const s of stockRows) {
+                    if (!variantIds.has(s.variant_id)) continue;
+                    const qty = parseFloat(s.quantity || 0);
+                    if (!(qty > 0)) continue;
+                    const cur = stockByVariant.get(s.variant_id) ||
+                        { label: `${s.product_name || ''} ${s.size_name || ''}`.trim(), qty: 0 };
+                    cur.qty += qty;
+                    stockByVariant.set(s.variant_id, cur);
+                }
+                stockLines = [...stockByVariant.values()].map(v => `• ${v.label}: ${v.qty}`);
+            } catch { /* no vmi_dispatch permission — skip stock check */ }
+
+            let msg = `نقل الأمر #${ord.order_number} إلى «مكتملة» بدون فاتورة نهائية؟\n`;
+            msg += `هيختفي من تاب «بانتظار الفاتورة» وقائمة «جاهز للفوترة» — بدون أي تأثير على المخزون أو الحسابات.`;
+            if (remaining.length) {
+                msg += `\n\n⚠️ كميات مستلمة ولم تُسلَّم بعد عبر أوامر الفسح:\n` + remaining.map(r => `• ${r.name}: ${r.rem}`).join('\n');
+            }
+            if (stockLines.length) {
+                msg += `\n\n⚠️ رصيد العميل الحالي بالمخزن من أصناف الأمر:\n` + stockLines.join('\n');
+            }
+            if (remaining.length || stockLines.length) {
+                msg += `\n\nصرف العميل من المخزون لن يتوقف بعد النقل، وإصدار فاتورة نهائية لاحقًا يظل متاحًا.`;
+            }
+            if (!confirm(msg)) return;
+
+            await window.apiFetch(`/api/orders/${oid}/closure`, {
+                method: 'PATCH',
+                body: { closed: true },
+            });
+            _toast('تم النقل إلى المكتملة بدون فاتورة');
+            await _loadOrders();
+            if (_hubOrderId === oid && !_el('po-hub-modal')?.classList.contains('hidden')) {
+                await _openHub(oid);
+            }
+        } catch (err) {
+            console.error('[poView] closeWithoutInvoice:', err);
+            _toast(err.message || 'فشل النقل إلى المكتملة', 'error');
+        }
+    }
+
+    async function _reopenToAwaiting(orderId) {
+        const oid = orderId || _hubOrderId;
+        if (!oid) return;
+        if (!confirm('إرجاع الأمر إلى تاب «بانتظار الفاتورة»؟')) return;
+        try {
+            await window.apiFetch(`/api/orders/${oid}/closure`, {
+                method: 'PATCH',
+                body: { closed: false },
+            });
+            _toast('تم الإرجاع إلى بانتظار الفاتورة');
+            await _loadOrders();
+            if (_hubOrderId === oid && !_el('po-hub-modal')?.classList.contains('hidden')) {
+                await _openHub(oid);
+            }
+        } catch (err) {
+            console.error('[poView] reopenToAwaiting:', err);
+            _toast(err.message || 'فشل الإرجاع', 'error');
         }
     }
 
@@ -5218,6 +5349,8 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         switchHubTab:       _switchHubTab,
         updateStatus:       _updateStatus,
         closeOrder:         _closeOrder,
+        closeWithoutInvoice: _closeWithoutInvoice,
+        reopenToAwaiting:   _reopenToAwaiting,
         updateMOStatus:     _updateMOStatus,
         revertSendToSupplier: _revertSendToSupplier,
         editMO:             _editMO,

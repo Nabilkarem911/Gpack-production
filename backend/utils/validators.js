@@ -583,6 +583,10 @@ const orderStatusUpdate = z.object({
     status: z.enum(['quote', 'confirmed', 'production', 'processing', 'completed', 'delivered', 'cancelled', 'archived']),
 });
 
+const orderClosure = z.object({
+    closed: z.boolean(),
+});
+
 const orderItemEdit = z.object({
     variant_id: z.string().uuid().optional(),
     quantity: z.coerce.number().positive().optional(),
@@ -864,6 +868,7 @@ module.exports = {
     termsUpdate,
     orderUpdate,
     orderStatusUpdate,
+    orderClosure,
     orderItemEdit,
     orderConvertToProduction,
     orderInvoice,

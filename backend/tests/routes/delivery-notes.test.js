@@ -109,3 +109,62 @@ describe('delivery note dispatch stock lookup', () => {
         expect(stockLookup[1]).toEqual([variantId, stockId, null, clientId]);
     });
 });
+
+describe('delivery note reverse and order closure flag', () => {
+    beforeEach(() => {
+        mockClientQuery.mockReset();
+        mockClient.release.mockReset();
+    });
+
+    test('reverse re-issues the linked invoice and clears closed_without_invoice on its order', async () => {
+        mockClientQuery.mockImplementation(async (sql) => {
+            if (sql.includes('FROM delivery_notes dn WHERE dn.id')) {
+                return { rowCount: 1, rows: [{
+                    id: deliveryNoteId, status: 'completed', note_number: 5,
+                    client_id: clientId, warehouse_id: null, invoice_id: 'inv-9',
+                }] };
+            }
+            if (sql.includes('FROM delivery_note_items dni')) {
+                return { rowCount: 1, rows: [{
+                    id: itemId, order_item_id: 'oi-1', variant_id: variantId,
+                    source_stock_id: null, delivered_qty: '2', oi_id: 'oi-1',
+                }] };
+            }
+            if (sql.includes('FROM warehouse_stock')) {
+                return { rowCount: 1, rows: [{ id: stockId, quantity: '5' }] };
+            }
+            return { rowCount: 1, rows: [] };
+        });
+
+        const res = await request(buildApp())
+            .post(`/api/delivery-notes/${deliveryNoteId}/reverse`)
+            .send({});
+
+        expect(res.status).toBe(200);
+        const flagClear = mockClientQuery.mock.calls.find(([sql, params]) =>
+            sql.includes('UPDATE orders o') && sql.includes('closed_without_invoice = FALSE') && params.includes('inv-9'));
+        expect(flagClear).toBeDefined();
+    });
+
+    test('reverse without a linked invoice does not touch orders', async () => {
+        mockClientQuery.mockImplementation(async (sql) => {
+            if (sql.includes('FROM delivery_notes dn WHERE dn.id')) {
+                return { rowCount: 1, rows: [{
+                    id: deliveryNoteId, status: 'completed', note_number: 5,
+                    client_id: clientId, warehouse_id: null, invoice_id: null,
+                }] };
+            }
+            if (sql.includes('FROM delivery_note_items dni')) {
+                return { rowCount: 0, rows: [] };
+            }
+            return { rowCount: 1, rows: [] };
+        });
+
+        const res = await request(buildApp())
+            .post(`/api/delivery-notes/${deliveryNoteId}/reverse`)
+            .send({});
+
+        expect(res.status).toBe(200);
+        expect(mockClientQuery.mock.calls.some(([sql]) => sql.includes('UPDATE orders'))).toBe(false);
+    });
+});

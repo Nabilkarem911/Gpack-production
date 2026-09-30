@@ -665,6 +665,17 @@ router.post('/', restrictWrite, validateBody(invoiceCreate), async (req, res) =>
             `, [invoiceId, 'additional', label, additional_expenses]);
         }
 
+        // An issued invoice linked to an order counts as its final invoice:
+        // clear the manual closed-without-invoice flag if it was set.
+        if (order_id && status === 'issued') {
+            await client.query(
+                `UPDATE orders
+                 SET closed_without_invoice = FALSE, closed_at = NULL, closed_by = NULL, updated_at = NOW()
+                 WHERE id = $1 AND closed_without_invoice = TRUE`,
+                [order_id]
+            );
+        }
+
         // Client transaction record (only for invoices that affect the account statement)
         if (source !== 'sales_invoices') {
             await client.query(`
@@ -701,7 +712,7 @@ router.patch('/:id/mark-issued', restrictEdit, validateBody(invoiceMarkIssued), 
         await client.query('BEGIN');
 
         const invRes = await client.query(
-            `SELECT id, invoice_number, source, status FROM invoices WHERE id = $1 FOR UPDATE`,
+            `SELECT id, invoice_number, source, status, order_id FROM invoices WHERE id = $1 FOR UPDATE`,
             [id]
         );
         if (invRes.rowCount === 0) throw new Error('الفاتورة غير موجودة.');
@@ -718,6 +729,17 @@ router.patch('/:id/mark-issued', restrictEdit, validateBody(invoiceMarkIssued), 
             WHERE id = $2
             RETURNING id, invoice_number, status, external_invoice_number, external_issued_at
         `, [external_invoice_number || null, id]);
+
+        // Invoice is now issued and order-linked: it counts as the order's
+        // final invoice — clear the manual closed-without-invoice flag.
+        if (inv.order_id) {
+            await client.query(
+                `UPDATE orders
+                 SET closed_without_invoice = FALSE, closed_at = NULL, closed_by = NULL, updated_at = NOW()
+                 WHERE id = $1 AND closed_without_invoice = TRUE`,
+                [inv.order_id]
+            );
+        }
 
         await client.query('COMMIT');
 
@@ -949,7 +971,7 @@ router.patch('/:id/status', restrictEdit, validateBody(invoiceStatusUpdate), asy
 
         // Check invoice exists
         const invRes = await client.query(`
-            SELECT id, invoice_number, grand_total, status, client_id
+            SELECT id, invoice_number, grand_total, status, client_id, order_id
             FROM invoices WHERE id = $1
         `, [id]);
 
@@ -970,6 +992,16 @@ router.patch('/:id/status', restrictEdit, validateBody(invoiceStatusUpdate), asy
             UPDATE invoices SET status = $1
             WHERE id = $2
         `, [status, id]);
+
+        // An order-linked invoice reaching 'issued' counts as the order's
+        // final invoice — clear the manual closed-without-invoice flag.
+        if (status === 'issued' && invoice.order_id) {
+            await client.query(`
+                UPDATE orders
+                SET closed_without_invoice = FALSE, closed_at = NULL, closed_by = NULL, updated_at = NOW()
+                WHERE id = $1 AND closed_without_invoice = TRUE
+            `, [invoice.order_id]);
+        }
 
         // If marking as paid, create receipt transaction if not already paid
         if (status === 'paid' && invoice.status !== 'paid') {

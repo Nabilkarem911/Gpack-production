@@ -5,7 +5,7 @@ const db      = require('../db');
 const { success, created, paginated } = require('../utils/response');
 const { getVatRate } = require('../utils/settings');
 const { decryptShareToken } = require('../utils/crypto');
-const { orderCreate, orderUpdate, orderStatusUpdate, orderItemEdit, orderConvertToProduction, orderInvoice, orderPayment, orderNote, orderRelease, validateBody } = require('../utils/validators');
+const { orderCreate, orderUpdate, orderStatusUpdate, orderClosure, orderItemEdit, orderConvertToProduction, orderInvoice, orderPayment, orderNote, orderRelease, validateBody } = require('../utils/validators');
 const authorize = require('../middleware/authorize');
 const eventBus = require('../utils/event-bus');
 
@@ -145,6 +145,7 @@ router.get('/', async (req, res) => {
                 o.responded_at,
                 o.pricing_status,
                 o.pricing_notes,
+                o.closed_without_invoice,
                 (SELECT COUNT(*)::int FROM delivery_notes dn WHERE dn.order_id = o.id) AS delivery_note_count,
                 EXISTS (
                     SELECT 1 FROM invoices inv
@@ -336,7 +337,12 @@ router.get('/ready-for-invoice', async (req, res) => {
     try {
         const { client_id, search, limit = 50, offset = 0 } = req.query;
 
-        let where = ['o.status IN (\'production\', \'processing\', \'completed\', \'delivered\')'];
+        let where = [
+            'o.status IN (\'production\', \'processing\', \'completed\', \'delivered\')',
+            // Orders manually moved to Completed without a final invoice
+            // must not be offered for invoicing again.
+            'COALESCE(o.closed_without_invoice, FALSE) = FALSE',
+        ];
         const params = [];
         let paramIdx = 1;
 
@@ -910,6 +916,12 @@ router.get('/:id', async (req, res) => {
                 o.down_payment_required,
                 o.pricing_status,
                 o.pricing_notes,
+                o.closed_without_invoice,
+                EXISTS (
+                    SELECT 1 FROM invoices inv
+                    WHERE inv.order_id = o.id
+                      AND inv.status IN ('issued', 'paid', 'overdue', 'archived')
+                ) AS has_final_invoice,
                 (SELECT dr.id FROM direct_receipts dr WHERE dr.production_order_id = o.id LIMIT 1) AS direct_receipt_id,
                 (SELECT s.company_name
                  FROM direct_receipts dr
@@ -980,6 +992,7 @@ router.get('/:id', async (req, res) => {
                 oi.line_total,
                 oi.manufacturer_po_qty,
                 oi.wh_received_qty,
+                oi.delivered_qty,
                 oi.design_status,
                 oi.design_id,
                 cd.design_name     AS design_name,
@@ -1887,6 +1900,61 @@ router.patch('/:id/status', restrictAdmin, validateBody(orderStatusUpdate), asyn
 });
 
 // =============================================================================
+// PATCH /api/orders/:id/closure
+// Moves an order out of / back into the "awaiting invoice" queue WITHOUT a
+// final invoice and WITHOUT changing order status. Intended for storage (VMI)
+// clients whose stock is dispensed in partial batches over time.
+//
+// Body: { closed: boolean }
+//
+// Impact: none on warehouse_stock, order_items quantities or accounting.
+// A final invoice can still be issued later (status stays completed/delivered)
+// and issuing one automatically clears this flag.
+// =============================================================================
+
+router.patch('/:id/closure', restrictAdmin, validateBody(orderClosure), async (req, res) => {
+    const { id }     = req.params;
+    const { closed } = req.validatedBody;
+
+    try {
+        const orderRes = await db.query(
+            `SELECT id, status FROM orders WHERE id = $1`,
+            [id]
+        );
+        if (orderRes.rowCount === 0) {
+            return res.status(404).json({ error: 'الطلب غير موجود.' });
+        }
+
+        const order = orderRes.rows[0];
+
+        // Only orders already in the awaiting-invoice bucket can be closed
+        // without an invoice. Production/processing orders must go through
+        // the normal delivery/close flow first.
+        if (closed && !['completed', 'delivered'].includes(order.status)) {
+            return res.status(400).json({
+                error: 'يمكن النقل إلى المكتملة بدون فاتورة فقط للأوامر المكتملة أو المُسلَّمة.'
+            });
+        }
+
+        const result = await db.query(
+            `UPDATE orders
+             SET closed_without_invoice = $1,
+                 closed_at   = CASE WHEN $1 THEN NOW()    ELSE NULL END,
+                 closed_by   = CASE WHEN $1 THEN $3::uuid ELSE NULL END,
+                 updated_at  = NOW()
+             WHERE id = $2
+             RETURNING id, status, closed_without_invoice, closed_at`,
+            [closed, id, req.user.id || null]
+        );
+
+        return res.status(200).json({ data: result.rows[0] });
+    } catch (err) {
+        console.error('[Orders] PATCH /:id/closure error:', err.message);
+        return res.status(500).json({ error: 'Internal server error.' });
+    }
+});
+
+// =============================================================================
 // POST /api/orders/:id/convert-to-production
 // Converts a quote to a production order. Optionally records a down payment.
 // ATOMIC TRANSACTION — wraps status change + accounting in one commit.
@@ -2528,6 +2596,9 @@ router.post('/:id/invoice', restrictAdmin, validateBody(orderInvoice), async (re
                          FROM invoices
                          WHERE order_id = $1 AND status = 'issued'
                      ),
+                     closed_without_invoice = FALSE,
+                     closed_at = NULL,
+                     closed_by = NULL,
                      updated_at = NOW()
                      WHERE id = $1`,
                     [id]

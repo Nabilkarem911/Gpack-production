@@ -340,5 +340,128 @@ describe('Orders Routes — Zod Validation', () => {
             direct_receipt_purchase_invoice_number: 2001,
         });
         expect(mockQuery.mock.calls[0][0]).toContain('direct_receipt_supplier_name');
+        // Hub needs closure + final-invoice state to offer "move to completed"
+        expect(mockQuery.mock.calls[0][0]).toContain('closed_without_invoice');
+        expect(mockQuery.mock.calls[0][0]).toContain('has_final_invoice');
+        // Items must expose delivered_qty so remaining = received - delivered
+        expect(mockQuery.mock.calls[2][0]).toContain('oi.delivered_qty');
+    });
+
+    // ── closed_without_invoice (move to Completed without a final invoice) ────
+
+    test('PATCH /:id/closure marks a delivered order closed without invoice', async () => {
+        mockQuery.mockImplementation(async (sql) => {
+            if (sql.includes('SELECT id, status FROM orders')) {
+                return { rowCount: 1, rows: [{ id: 'o1', status: 'delivered' }] };
+            }
+            if (sql.includes('closed_without_invoice = $1')) {
+                return { rowCount: 1, rows: [{ id: 'o1', status: 'delivered', closed_without_invoice: true, closed_at: 'now' }] };
+            }
+            return { rowCount: 0, rows: [] };
+        });
+
+        const res = await request(app)
+            .patch('/api/orders/o1/closure')
+            .send({ closed: true });
+
+        expect(res.status).toBe(200);
+        expect(res.body.data.closed_without_invoice).toBe(true);
+        const update = mockQuery.mock.calls.find(([sql]) => sql.includes('closed_without_invoice = $1'));
+        expect(update).toBeDefined();
+        expect(update[1][0]).toBe(true);
+    });
+
+    test('PATCH /:id/closure rejects closing an order still in production', async () => {
+        mockQuery.mockImplementation(async (sql) => {
+            if (sql.includes('SELECT id, status FROM orders')) {
+                return { rowCount: 1, rows: [{ id: 'o1', status: 'production' }] };
+            }
+            return { rowCount: 0, rows: [] };
+        });
+
+        const res = await request(app)
+            .patch('/api/orders/o1/closure')
+            .send({ closed: true });
+
+        expect(res.status).toBe(400);
+        expect(res.body.error).toContain('بدون فاتورة');
+        expect(mockQuery.mock.calls.some(([sql]) => sql.includes('closed_without_invoice = $1'))).toBe(false);
+    });
+
+    test('PATCH /:id/closure reopens a closed order back to awaiting invoice', async () => {
+        mockQuery.mockImplementation(async (sql) => {
+            if (sql.includes('SELECT id, status FROM orders')) {
+                return { rowCount: 1, rows: [{ id: 'o1', status: 'completed' }] };
+            }
+            if (sql.includes('closed_without_invoice = $1')) {
+                return { rowCount: 1, rows: [{ id: 'o1', status: 'completed', closed_without_invoice: false, closed_at: null }] };
+            }
+            return { rowCount: 0, rows: [] };
+        });
+
+        const res = await request(app)
+            .patch('/api/orders/o1/closure')
+            .send({ closed: false });
+
+        expect(res.status).toBe(200);
+        expect(res.body.data.closed_without_invoice).toBe(false);
+        const update = mockQuery.mock.calls.find(([sql]) => sql.includes('closed_without_invoice = $1'));
+        expect(update[1][0]).toBe(false);
+    });
+
+    test('PATCH /:id/closure requires the closed flag (Zod)', async () => {
+        const res = await request(app)
+            .patch('/api/orders/o1/closure')
+            .send({});
+        expect(res.status).toBe(400);
+        expect(res.body.error).toBe('Validation failed');
+    });
+
+    test('PATCH /:id/closure returns 404 for a missing order', async () => {
+        mockQuery.mockImplementation(async () => ({ rowCount: 0, rows: [] }));
+
+        const res = await request(app)
+            .patch('/api/orders/o-missing/closure')
+            .send({ closed: true });
+
+        expect(res.status).toBe(404);
+        expect(mockQuery.mock.calls.some(([sql]) => sql.includes('closed_without_invoice = $1'))).toBe(false);
+    });
+
+    test('GET /ready-for-invoice also excludes orders closed without invoice', async () => {
+        mockQuery
+            .mockResolvedValueOnce({ rows: [{ total: 0 }] })
+            .mockResolvedValueOnce({ rows: [] });
+
+        const res = await request(app).get('/api/orders/ready-for-invoice');
+
+        expect(res.status).toBe(200);
+        for (const call of mockQuery.mock.calls) {
+            expect(call[0]).toContain('closed_without_invoice');
+        }
+    });
+
+    test('POST /:id/invoice issuing a final invoice clears closed_without_invoice', async () => {
+        mockQuery.mockImplementation(async (sql) => {
+            if (sql.includes('system_settings')) return { rows: [] };
+            if (sql.includes('FOR UPDATE')) {
+                return { rowCount: 1, rows: [{ id: 'o1', order_number: 1, client_id: 'c1', status: 'delivered', grand_total: '0' }] };
+            }
+            if (sql.includes('FROM invoices') && sql.includes("status = 'issued'")) return { rowCount: 0, rows: [] };
+            if (sql.includes('FROM order_items oi')) return { rowCount: 1, rows: [{ received: '10', product_name: 'P', size_name: 'M' }] };
+            if (sql.includes('INSERT INTO invoices')) return { rowCount: 1, rows: [{ id: 'inv1', invoice_number: 42 }] };
+            if (sql.includes('INSERT INTO invoice_items')) return { rowCount: 1, rows: [] };
+            if (sql.includes('UPDATE orders')) return { rowCount: 1, rows: [] };
+            return { rowCount: 0, rows: [] };
+        });
+
+        const res = await request(app)
+            .post('/api/orders/o1/invoice')
+            .send({ type: 'final', items: [{ variant_id: '550e8400-e29b-41d4-a716-446655440000', qty: 2, unit_price: 100 }] });
+
+        expect(res.status).toBe(201);
+        const orderUpdate = mockQuery.mock.calls.find(([sql]) =>
+            sql.includes('UPDATE orders') && sql.includes('closed_without_invoice = FALSE'));
+        expect(orderUpdate).toBeDefined();
     });
 });
