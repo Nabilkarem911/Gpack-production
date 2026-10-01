@@ -148,6 +148,10 @@
                   class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:text-slate-700 transition-all">
             <i class="fa-solid fa-clock-rotate-left text-purple-500"></i>الحركات
           </button>
+          <button id="det-tab-shelves" onclick="whDetailSwitchTab('shelves')"
+                  class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:text-slate-700 transition-all">
+            <i class="fa-solid fa-layer-group text-brand-600"></i>الرفوف
+          </button>
         </div>
 
         <!-- Stock sub-tab -->
@@ -218,6 +222,31 @@
           <div id="det-hist-empty" class="hidden py-10 text-center text-slate-300">
             <i class="fa-solid fa-clock-rotate-left text-3xl mb-2 block"></i>لا توجد حركات
           </div>
+        </div>
+
+        <!-- Shelves sub-tab -->
+        <div id="det-section-shelves" class="hidden p-4">
+          <div class="flex flex-wrap items-center gap-3 mb-4">
+            <div class="flex items-center gap-2 text-xs text-slate-500">
+              <span class="font-bold text-slate-600">دليل الإشغال:</span>
+              <span class="inline-flex items-center gap-1"><span class="w-3 h-3 rounded bg-slate-200 inline-block"></span>فاضي</span>
+              <span class="inline-flex items-center gap-1"><span class="w-3 h-3 rounded bg-emerald-300 inline-block"></span>25%</span>
+              <span class="inline-flex items-center gap-1"><span class="w-3 h-3 rounded bg-amber-300 inline-block"></span>50%</span>
+              <span class="inline-flex items-center gap-1"><span class="w-3 h-3 rounded bg-orange-400 inline-block"></span>75%</span>
+              <span class="inline-flex items-center gap-1"><span class="w-3 h-3 rounded bg-red-400 inline-block"></span>100%</span>
+            </div>
+            <div class="flex-1"></div>
+            <input id="shelf-search" type="text" placeholder="كود الرف… (A1-03)"
+                   oninput="renderShelfGrid()"
+                   class="w-40 px-3 py-1.5 border border-slate-200 rounded-xl text-xs focus:border-brand-500 outline-none">
+            <button onclick="loadShelfGrid()" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-bold">
+              <i class="fa-solid fa-rotate"></i> تحديث
+            </button>
+          </div>
+          <div id="shelf-grid" class="space-y-4">
+            <div class="text-center py-10 text-slate-300"><i class="fa-solid fa-circle-notch fa-spin text-2xl"></i></div>
+          </div>
+          <div id="shelf-unassigned-box" class="mt-4"></div>
         </div>
       </div>
     </div>
@@ -443,6 +472,71 @@
         <button onclick="closeWarehouseModal()" class="flex-1 py-2.5 text-slate-600 border border-slate-200 rounded-xl text-sm font-bold hover:bg-slate-50">إلغاء</button>
         <button onclick="saveWarehouse()" class="flex-1 py-2.5 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-sm font-bold transition-colors">حفظ</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     Modal: محتويات رف / نقل بضاعة
+══════════════════════════════════════════════════════════ -->
+<div id="shelf-modal" class="fixed inset-0 z-50 hidden bg-black/50 overflow-y-auto">
+  <div class="min-h-screen flex items-center justify-center p-4">
+    <div class="w-full max-w-lg bg-white rounded-2xl shadow-2xl p-5">
+      <div class="flex items-center justify-between mb-4">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-brand-100 text-brand-600 flex items-center justify-center">
+            <i class="fa-solid fa-layer-group"></i>
+          </div>
+          <div>
+            <h3 class="text-base font-bold text-slate-800" id="shelf-modal-title">رف —</h3>
+            <p class="text-xs text-slate-400" id="shelf-modal-meta"></p>
+          </div>
+        </div>
+        <button onclick="closeShelfModal()" class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <!-- Occupancy quick-set -->
+      <div class="mb-4" id="shelf-occ-section">
+        <p class="text-xs font-bold text-slate-500 mb-2">الإشغال التقديري (بالعين):</p>
+        <div class="flex gap-2" id="shelf-occ-btns">
+          <button data-pct="25"  onclick="setShelfOccupancy(25)"  class="flex-1 py-2 rounded-xl text-xs font-bold border border-slate-200 hover:bg-emerald-50">25%</button>
+          <button data-pct="50"  onclick="setShelfOccupancy(50)"  class="flex-1 py-2 rounded-xl text-xs font-bold border border-slate-200 hover:bg-amber-50">50%</button>
+          <button data-pct="75"  onclick="setShelfOccupancy(75)"  class="flex-1 py-2 rounded-xl text-xs font-bold border border-slate-200 hover:bg-orange-50">75%</button>
+          <button data-pct="100" onclick="setShelfOccupancy(100)" class="flex-1 py-2 rounded-xl text-xs font-bold border border-slate-200 hover:bg-red-50">100%</button>
+          <button data-pct=""    onclick="setShelfOccupancy(null)" title="مسح الإشغال"
+                  class="flex-1 py-2 rounded-xl text-xs font-bold border border-dashed border-slate-300 text-slate-400 hover:bg-slate-50">فاضي</button>
+        </div>
+      </div>
+
+      <!-- Contents -->
+      <div class="mb-4" id="shelf-contents-section">
+        <p class="text-xs font-bold text-slate-500 mb-2">المحتويات:</p>
+        <div id="shelf-contents" class="max-h-56 overflow-y-auto rounded-xl border border-slate-200 divide-y divide-slate-100"></div>
+      </div>
+
+      <!-- Move / assign -->
+      <div id="shelf-move-box" class="hidden mb-4 bg-slate-50 border border-slate-200 rounded-xl p-3">
+        <p class="text-xs font-bold text-slate-600 mb-2" id="shelf-move-title">نقل كمية</p>
+        <div class="flex gap-2">
+          <input type="number" id="shelf-move-qty" min="0" step="any" placeholder="الكمية"
+                 class="w-24 px-3 py-2 border border-slate-200 rounded-xl text-sm text-center font-mono focus:border-brand-500 outline-none">
+          <select id="shelf-move-target" class="flex-1 px-3 py-2 border border-slate-200 rounded-xl text-sm focus:border-brand-500 outline-none"></select>
+        </div>
+        <div class="flex gap-2 mt-2" id="shelf-move-occ">
+          <button data-pct="25"  onclick="_shelfMoveOcc=25;highlightMoveOcc()"  class="flex-1 py-1.5 rounded-lg text-[11px] font-bold border border-slate-200">25%</button>
+          <button data-pct="50"  onclick="_shelfMoveOcc=50;highlightMoveOcc()"  class="flex-1 py-1.5 rounded-lg text-[11px] font-bold border border-slate-200">50%</button>
+          <button data-pct="75"  onclick="_shelfMoveOcc=75;highlightMoveOcc()"  class="flex-1 py-1.5 rounded-lg text-[11px] font-bold border border-slate-200">75%</button>
+          <button data-pct="100" onclick="_shelfMoveOcc=100;highlightMoveOcc()" class="flex-1 py-1.5 rounded-lg text-[11px] font-bold border border-slate-200">100%</button>
+        </div>
+        <div class="flex gap-2 mt-3">
+          <button onclick="cancelShelfMove()" class="flex-1 py-2 text-slate-600 border border-slate-200 rounded-xl text-xs font-bold hover:bg-slate-100">إلغاء</button>
+          <button onclick="submitShelfMove()" class="flex-1 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-xs font-bold transition-colors">تنفيذ النقل</button>
+        </div>
+      </div>
+
+      <button onclick="closeShelfModal()" class="w-full py-2.5 text-slate-600 border border-slate-200 rounded-xl text-sm font-bold hover:bg-slate-50">إغلاق</button>
     </div>
   </div>
 </div>
@@ -694,13 +788,14 @@ function closeWarehouseDetail() {
 function whDetailSwitchTab(tab) {
   const activeClass   = 'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-white shadow-sm text-slate-700 transition-all';
   const inactiveClass = 'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:text-slate-700 transition-all';
-  ['stock','history'].forEach(t => {
+  ['stock','history','shelves'].forEach(t => {
     const btn = document.getElementById('det-tab-' + t);
     if (btn) btn.className = (t === tab) ? activeClass : inactiveClass;
     const sec = document.getElementById('det-section-' + t);
     if (sec) sec.classList.toggle('hidden', t !== tab);
   });
   if (tab === 'history' && _activeWhId) loadDetailHistory(_activeWhId);
+  if (tab === 'shelves' && _activeWhId) loadShelfGrid();
 }
 
 // ── Render Detail Stock ───────────────────────────────────────────────────
@@ -1740,6 +1835,267 @@ async function loadItemMovements() {
   } catch (e) {
     if (loading) loading.classList.add('hidden');
     if (body) body.innerHTML = '<p class="text-center text-red-400 py-8">فشل تحميل الحركات</p>';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Shelves (الرفوف) — grid + contents + occupancy + move
+// ═══════════════════════════════════════════════════════════════════════════
+var _shelfData   = { shelves: [], unassigned: [] };
+var _activeShelf = null;   // shelf object open in modal
+var _shelfMoveCtx = null;  // {stock_id, from_shelf_id|null, max}
+var _shelfMoveOcc = null;
+
+function _shelfChipClass(s) {
+  var items = parseInt(s.items_count || 0, 10);
+  var pct   = s.occupancy_pct ? parseInt(s.occupancy_pct, 10) : null;
+  if (items <= 0) return 'bg-slate-100 text-slate-400 hover:bg-slate-200';
+  if (pct === 100) return 'bg-red-100 text-red-700 hover:bg-red-200 border-red-300';
+  if (pct === 75)  return 'bg-orange-100 text-orange-700 hover:bg-orange-200 border-orange-300';
+  if (pct === 50)  return 'bg-amber-100 text-amber-700 hover:bg-amber-200 border-amber-300';
+  if (pct === 25)  return 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border-emerald-300';
+  return 'bg-blue-100 text-blue-700 hover:bg-blue-200 border-blue-300'; // occupied, no estimate
+}
+
+async function loadShelfGrid() {
+  var grid = document.getElementById('shelf-grid');
+  if (!_activeWhId) return;
+  if (grid) grid.innerHTML = '<div class="text-center py-10 text-slate-300"><i class="fa-solid fa-circle-notch fa-spin text-2xl"></i></div>';
+  try {
+    var res = await window.apiFetch('/api/inventory/shelves?warehouse_id=' + _activeWhId);
+    _shelfData = res.data || { shelves: [], unassigned: [] };
+    renderShelfGrid();
+    renderUnassignedBox();
+  } catch (e) {
+    if (grid) grid.innerHTML = '<p class="text-center text-red-400 py-8">فشل تحميل الرفوف</p>';
+  }
+}
+
+async function provisionShelves() {
+  try {
+    var res = await window.apiFetch('/api/inventory/warehouses/' + _activeWhId + '/shelves/provision', { method: 'POST' });
+    showToast((res && res.message) || 'تم إنشاء الرفوف');
+    loadShelfGrid();
+  } catch (e) {
+    showToast(e.message || 'فشل إنشاء الرفوف', 'error');
+  }
+}
+
+function renderShelfGrid() {
+  var grid = document.getElementById('shelf-grid');
+  if (!grid) return;
+  var shelves = _shelfData.shelves || [];
+  var filter  = (document.getElementById('shelf-search') || { value: '' }).value.trim().toUpperCase();
+
+  if (!shelves.length) {
+    grid.innerHTML =
+      '<div class="text-center py-10">' +
+        '<i class="fa-solid fa-layer-group text-4xl text-slate-200 mb-3 block"></i>' +
+        '<p class="text-sm text-slate-400 font-bold mb-3">لم يتم إنشاء رفوف لهذا المستودع بعد</p>' +
+        '<button onclick="provisionShelves()" class="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-sm font-bold">إنشاء الرفوف (324 رف)</button>' +
+      '</div>';
+    return;
+  }
+
+  var zones = {};
+  shelves.forEach(function(s) {
+    if (filter && String(s.code).toUpperCase().indexOf(filter) === -1) return;
+    (zones[s.zone] = zones[s.zone] || {})[s.floor] = (zones[s.zone][s.floor] || []).concat(s);
+  });
+
+  var html = Object.keys(zones).sort().map(function(zone) {
+    var floors = zones[zone];
+    var floorsHtml = Object.keys(floors).sort().map(function(floor) {
+      var chips = floors[floor].sort(function(a, b) { return a.slot - b.slot; }).map(function(s) {
+        var items = parseInt(s.items_count || 0, 10);
+        var pct   = s.occupancy_pct ? s.occupancy_pct + '%' : '';
+        return '<button onclick="openShelf(\'' + s.id + '\')" title="' + s.code + (items ? ' — ' + items + ' صنف' : ' — فاضي') + '"' +
+               ' class="' + _shelfChipClass(s) + ' border rounded-lg px-1.5 py-1 text-[10px] font-mono font-bold leading-tight transition-colors min-w-[52px]">' +
+                 '<span class="block">' + s.code + '</span>' +
+                 '<span class="block opacity-70">' + (items > 0 ? items + ' صنف' + (pct ? ' · ' + pct : '') : '—') + '</span>' +
+               '</button>';
+      }).join('');
+      return '<div class="flex items-center gap-1.5 flex-wrap">' +
+               '<span class="text-[10px] text-slate-400 font-mono w-8 flex-shrink-0">د' + floor + '</span>' + chips +
+             '</div>';
+    }).join('');
+    return '<div class="bg-white border border-slate-200 rounded-xl p-3">' +
+             '<p class="text-xs font-black text-slate-600 mb-2"><i class="fa-solid fa-location-dot text-brand-500 ml-1"></i>منطقة ' + zone + '</p>' +
+             '<div class="space-y-1.5">' + floorsHtml + '</div>' +
+           '</div>';
+  }).join('');
+
+  grid.innerHTML = html || '<p class="text-center text-slate-400 py-8">لا توجد رفوف مطابقة للبحث</p>';
+}
+
+function renderUnassignedBox() {
+  var box = document.getElementById('shelf-unassigned-box');
+  if (!box) return;
+  var rows = _shelfData.unassigned || [];
+  if (!rows.length) { box.innerHTML = ''; return; }
+  box.innerHTML =
+    '<div class="bg-amber-50 border border-amber-200 rounded-xl p-3">' +
+      '<p class="text-xs font-black text-amber-700 mb-2"><i class="fa-solid fa-inbox ml-1"></i>مخزون غير موزّع على رفوف (' + rows.length + ')</p>' +
+      '<div class="max-h-48 overflow-y-auto divide-y divide-amber-100">' +
+        rows.map(function(r) {
+          var label = (r.product_name || '') + ' — ' + (r.size_name || '') + (r.client_name ? ' · ' + r.client_name : '');
+          return '<div class="flex items-center gap-2 py-1.5">' +
+                   '<span class="flex-1 text-xs text-slate-700">' + escHtml(label) + '</span>' +
+                   '<span class="text-xs font-mono font-bold text-amber-700">' + parseFloat(r.unassigned_qty) + '</span>' +
+                   '<button onclick="openAssignMove(\'' + escAttr(r.stock_id) + '\', ' + parseFloat(r.unassigned_qty) + ')"' +
+                           ' class="px-2 py-1 bg-white border border-amber-300 text-amber-700 rounded-lg text-[11px] font-bold hover:bg-amber-100">توزيع</button>' +
+                 '</div>';
+        }).join('') +
+      '</div>' +
+    '</div>';
+}
+
+async function openShelf(shelfId) {
+  try {
+    var res = await window.apiFetch('/api/inventory/shelves/' + shelfId + '/contents');
+    var d = res.data;
+    _activeShelf = d.shelf;
+    document.getElementById('shelf-occ-section').classList.remove('hidden');
+    document.getElementById('shelf-contents-section').classList.remove('hidden');
+    document.getElementById('shelf-modal-title').textContent = 'رف ' + d.shelf.code;
+    document.getElementById('shelf-modal-meta').textContent  = (d.shelf.warehouse_name || '') + ' · منطقة ' + d.shelf.zone + ' · دور ' + d.shelf.floor;
+
+    document.querySelectorAll('#shelf-occ-btns button').forEach(function(b) {
+      if (b.dataset.pct === '') {
+        // «فاضي» keeps its dashed look; highlighted only when cleared
+        var cleared = !d.shelf.occupancy_pct;
+        b.className = 'flex-1 py-2 rounded-xl text-xs font-bold border ' +
+          (cleared ? 'bg-brand-600 text-white border-brand-600' : 'border-dashed border-slate-300 text-slate-400 hover:bg-slate-50');
+        return;
+      }
+      var active = d.shelf.occupancy_pct && parseInt(b.dataset.pct, 10) === parseInt(d.shelf.occupancy_pct, 10);
+      b.className = 'flex-1 py-2 rounded-xl text-xs font-bold border ' +
+        (active ? 'bg-brand-600 text-white border-brand-600' : 'border-slate-200 hover:bg-slate-50');
+    });
+
+    var box = document.getElementById('shelf-contents');
+    if (!d.items.length) {
+      box.innerHTML = '<p class="text-center text-slate-300 py-6 text-sm">الرف فاضي</p>';
+    } else {
+      box.innerHTML = d.items.map(function(it) {
+        return '<div class="flex items-center gap-2 px-3 py-2">' +
+                 '<div class="flex-1">' +
+                   '<p class="text-sm font-bold text-slate-700">' + escHtml(it.product_name || '') + ' — ' + escHtml(it.size_name || '') + '</p>' +
+                   '<p class="text-[11px] text-slate-400">' + escHtml(it.client_name || 'مخزون عام') + '</p>' +
+                 '</div>' +
+                 '<span class="text-sm font-mono font-bold text-slate-700">' + parseFloat(it.quantity) + '</span>' +
+                 '<button onclick="openShelfMove(\'' + escAttr(it.stock_id) + '\', \'' + escAttr(shelfId) + '\', ' + parseFloat(it.quantity) + ')"' +
+                         ' class="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-[11px] font-bold">نقل</button>' +
+               '</div>';
+      }).join('');
+    }
+    document.getElementById('shelf-move-box').classList.add('hidden');
+    _shelfMoveCtx = null; _shelfMoveOcc = null;
+    document.getElementById('shelf-modal').classList.remove('hidden');
+  } catch (e) {
+    showToast(e.message || 'فشل تحميل محتويات الرف', 'error');
+  }
+}
+
+function closeShelfModal() {
+  document.getElementById('shelf-modal').classList.add('hidden');
+  _activeShelf = null; _shelfMoveCtx = null; _shelfMoveOcc = null;
+}
+
+async function setShelfOccupancy(pct) {
+  if (!_activeShelf) return;
+  try {
+    await window.apiFetch('/api/inventory/shelves/' + _activeShelf.id + '/occupancy', {
+      method: 'PATCH', body: { occupancy_pct: pct }
+    });
+    _activeShelf.occupancy_pct = pct;
+    document.querySelectorAll('#shelf-occ-btns button').forEach(function(b) {
+      if (b.dataset.pct === '') {
+        b.className = 'flex-1 py-2 rounded-xl text-xs font-bold border ' +
+          (pct === null ? 'bg-brand-600 text-white border-brand-600' : 'border-dashed border-slate-300 text-slate-400 hover:bg-slate-50');
+        return;
+      }
+      var active = parseInt(b.dataset.pct, 10) === pct;
+      b.className = 'flex-1 py-2 rounded-xl text-xs font-bold border ' +
+        (active ? 'bg-brand-600 text-white border-brand-600' : 'border-slate-200 hover:bg-slate-50');
+    });
+    loadShelfGrid();
+  } catch (e) {
+    showToast(e.message || 'فشل تحديث الإشغال', 'error');
+  }
+}
+
+function _fillMoveTargets(excludeShelfId) {
+  var sel = document.getElementById('shelf-move-target');
+  sel.innerHTML = (_shelfData.shelves || [])
+    .filter(function(s) { return s.id !== excludeShelfId && s.status === 'active'; })
+    .map(function(s) { return '<option value="' + s.id + '">' + s.code + '</option>'; })
+    .join('');
+}
+
+function openShelfMove(stockId, fromShelfId, maxQty) {
+  _shelfMoveCtx = { stock_id: stockId, from_shelf_id: fromShelfId || null, max: maxQty };
+  _shelfMoveOcc = null;
+  document.getElementById('shelf-move-title').textContent = 'نقل كمية (المتاح: ' + maxQty + ')';
+  document.getElementById('shelf-move-qty').value = maxQty;
+  _fillMoveTargets(fromShelfId);
+  highlightMoveOcc();
+  document.getElementById('shelf-move-box').classList.remove('hidden');
+}
+
+function openAssignMove(stockId, maxQty) {
+  _activeShelf = null;
+  var row = (_shelfData.unassigned || []).find(function(r) { return r.stock_id === stockId; });
+  var label = row ? (row.product_name || '') + ' — ' + (row.size_name || '') + (row.client_name ? ' · ' + row.client_name : '') : '';
+  document.getElementById('shelf-modal-title').textContent = 'توزيع مخزون غير موزّع';
+  document.getElementById('shelf-modal-meta').textContent  = label;
+  document.getElementById('shelf-occ-section').classList.add('hidden');
+  document.getElementById('shelf-contents-section').classList.add('hidden');
+  document.getElementById('shelf-contents').innerHTML = '';
+  document.querySelectorAll('#shelf-occ-btns button').forEach(function(b) {
+    b.className = 'flex-1 py-2 rounded-xl text-xs font-bold border border-slate-200 hover:bg-slate-50';
+  });
+  openShelfMove(stockId, null, maxQty);
+  document.getElementById('shelf-modal').classList.remove('hidden');
+}
+
+function cancelShelfMove() {
+  document.getElementById('shelf-move-box').classList.add('hidden');
+  _shelfMoveCtx = null; _shelfMoveOcc = null;
+}
+
+function highlightMoveOcc() {
+  document.querySelectorAll('#shelf-move-occ button').forEach(function(b) {
+    var active = _shelfMoveOcc && parseInt(b.dataset.pct, 10) === _shelfMoveOcc;
+    b.className = 'flex-1 py-1.5 rounded-lg text-[11px] font-bold border ' +
+      (active ? 'bg-brand-600 text-white border-brand-600' : 'border-slate-200');
+  });
+}
+
+async function submitShelfMove() {
+  if (!_shelfMoveCtx) return;
+  var qty    = parseFloat(document.getElementById('shelf-move-qty').value);
+  var target = document.getElementById('shelf-move-target').value;
+  if (!qty || qty <= 0) { showToast('أدخل كمية صحيحة', 'error'); return; }
+  if (qty > _shelfMoveCtx.max) { showToast('الكمية أكبر من المتاح (' + _shelfMoveCtx.max + ')', 'error'); return; }
+  if (!target) { showToast('اختر الرف الهدف', 'error'); return; }
+  try {
+    await window.apiFetch('/api/inventory/placements/move', {
+      method: 'POST',
+      body: {
+        stock_id: _shelfMoveCtx.stock_id,
+        from_shelf_id: _shelfMoveCtx.from_shelf_id,
+        to_shelf_id: target,
+        quantity: qty,
+        occupancy_pct: _shelfMoveOcc,
+      }
+    });
+    showToast('تم النقل بنجاح');
+    cancelShelfMove();
+    if (_activeShelf) { closeShelfModal(); }
+    loadShelfGrid();
+  } catch (e) {
+    showToast(e.message || 'فشل النقل', 'error');
   }
 }
 
