@@ -19,6 +19,7 @@ const {
     createProductionOrderFromReceipt,
     revertDirectReceiptToReview,
 } = require('../services/direct-receipt-order-service');
+const shelfService = require('../services/shelf-service');
 
 // ── Upload config ────────────────────────────────────────────────────────────
 const UPLOAD_BASE = path.join(__dirname, '../uploads/direct-receipts');
@@ -308,7 +309,7 @@ router.post('/', upload.fields([
             data: { id: receiptId, receipt_number: receiptNumber },
         });
     } catch (err) {
-        await client.query('ROLLBACK');
+        await client.query('ROLLBACK').catch(() => {});
         console.error('[DirectReceipts] POST / error:', err.message);
         res.status(500).json({ error: 'Internal server error.' });
     } finally {
@@ -373,16 +374,65 @@ router.put('/:id([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/r
                 await client.query('ROLLBACK');
                 return res.status(400).json({ error: `Item "${item.product_name}" must be linked to a product variant` });
             }
+
+            const confirmedQty = parseFloat(item.confirmed_quantity) || 0;
+
+            // Shelf split: explicit item.shelves replaces the stored split;
+            // omitting it keeps what was saved — but the stored sum is still
+            // re-validated against the new confirmed_quantity so quantity
+            // edits can never leave an over-allocated item behind.
+            let allocs;
+            if (item.shelves !== undefined) {
+                if (!Array.isArray(item.shelves)) {
+                    await client.query('ROLLBACK');
+                    return res.status(400).json({ error: 'shelves يجب أن تكون مصفوفة لكل صنف.' });
+                }
+                allocs = item.shelves.filter(s => s && s.shelf_id && parseFloat(s.quantity) > 0);
+            } else {
+                const cur = await client.query(
+                    `SELECT shelf_allocations FROM direct_receipt_items
+                     WHERE id = $1 AND direct_receipt_id = $2`,
+                    [item.id, id]
+                );
+                const stored = cur.rows[0]?.shelf_allocations;
+                allocs = Array.isArray(stored) ? stored : [];
+            }
+            const allocSum = allocs.reduce((s, a) => s + (parseFloat(a.quantity) || 0), 0);
+            if (allocSum - confirmedQty > 1e-9) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ error: `مجموع توزيع الرفوف (${allocSum}) يتجاوز الكمية المؤكدة (${confirmedQty}) لأحد الأصناف.` });
+            }
+            const badOcc = allocs.find(a => a.occupancy_pct != null
+                && ![25, 50, 75, 100].includes(parseInt(a.occupancy_pct, 10)));
+            if (badOcc) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ error: 'نسبة الإشغال يجب أن تكون 25 أو 50 أو 75 أو 100.' });
+            }
+            if (allocs.length) {
+                const shelfIds = allocs.map(a => a.shelf_id);
+                const okShelves = await client.query(
+                    `SELECT COUNT(*)::int AS n FROM warehouse_shelves
+                     WHERE id = ANY($1::uuid[]) AND warehouse_id = $2`,
+                    [shelfIds, warehouse_id]
+                );
+                if (okShelves.rows[0].n !== new Set(shelfIds).size) {
+                    await client.query('ROLLBACK');
+                    return res.status(400).json({ error: 'أحد الرفوف المحددة لا يتبع المستودع المختار.' });
+                }
+            }
+
             await client.query(`
                 UPDATE direct_receipt_items
-                SET variant_id = $1, unit_id = $2, confirmed_quantity = $3, unit_cost = $4, client_id = $5
-                WHERE id = $6 AND direct_receipt_id = $7
+                SET variant_id = $1, unit_id = $2, confirmed_quantity = $3, unit_cost = $4, client_id = $5,
+                    shelf_allocations = $6::jsonb
+                WHERE id = $7 AND direct_receipt_id = $8
             `, [
                 item.variant_id,
                 item.unit_id || null,
-                parseFloat(item.confirmed_quantity) || 0,
+                confirmedQty,
                 parseFloat(item.unit_cost) || 0,
                 item.client_id || null,
+                JSON.stringify(allocs),
                 item.id,
                 id,
             ]);
@@ -409,7 +459,7 @@ router.put('/:id([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/r
 
         res.json({ message: 'Review saved successfully' });
     } catch (err) {
-        await client.query('ROLLBACK');
+        await client.query('ROLLBACK').catch(() => {});
         console.error('[DirectReceipts] PUT /review error:', err.message);
         res.status(500).json({ error: 'Internal server error.' });
     } finally {
@@ -538,17 +588,45 @@ router.post('/:id([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/
                 FOR UPDATE
             `, [receipt.warehouse_id, item.variant_id, stockClientId]);
 
+            let stockId;
             if (stockRes.rows.length) {
+                stockId = stockRes.rows[0].id;
                 await client.query(`
                     UPDATE warehouse_stock
                     SET quantity = quantity + $1, last_updated = NOW()
                     WHERE id = $2
-                `, [qty, stockRes.rows[0].id]);
+                `, [qty, stockId]);
             } else {
-                await client.query(`
+                const insStock = await client.query(`
                     INSERT INTO warehouse_stock (warehouse_id, variant_id, client_id, quantity)
                     VALUES ($1, $2, $3, $4)
+                    RETURNING id
                 `, [receipt.warehouse_id, item.variant_id, stockClientId, qty]);
+                stockId = insStock.rows[0].id;
+            }
+
+            // Shelf split saved at review — applied exactly once here (the
+            // status guard above makes this endpoint single-fire). Any
+            // remainder stays in the unassigned bucket. Strict: a failed
+            // placement rolls back the whole conversion.
+            const allocs = Array.isArray(item.shelf_allocations)
+                ? item.shelf_allocations.filter(s => s && s.shelf_id && parseFloat(s.quantity) > 0)
+                : [];
+            const allocSum = allocs.reduce((s, a) => s + (parseFloat(a.quantity) || 0), 0);
+            if (allocSum - qty > 1e-9) {
+                throw new Error(`مجموع توزيع الرفوف (${allocSum}) يتجاوز الكمية المؤكدة (${qty}) لأحد الأصناف.`);
+            }
+            for (const alloc of allocs) {
+                await shelfService.placeOnShelf(client, {
+                    shelfId:  alloc.shelf_id,
+                    stockId,
+                    quantity: alloc.quantity,
+                    occupancyPct: alloc.occupancy_pct ?? null,
+                    refType:  'direct_receipt',
+                    refId:    item.id,
+                    userId:   req.user.id,
+                    notes:    `استلام مؤقت #${receipt.receipt_number}`,
+                });
             }
 
             // Record inventory transaction
@@ -595,7 +673,7 @@ router.post('/:id([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/
             },
         });
     } catch (err) {
-        await client.query('ROLLBACK');
+        await client.query('ROLLBACK').catch(() => {});
         console.error('[DirectReceipts] POST /convert error:', err.message);
         res.status(err.statusCode || 500).json({ error: err.message || 'Internal server error.' });
     } finally {
@@ -624,7 +702,7 @@ router.post('/:id([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/
             data: result,
         });
     } catch (err) {
-        await client.query('ROLLBACK');
+        await client.query('ROLLBACK').catch(() => {});
         console.error('[DirectReceipts] POST /revert-to-review error:', err.message);
         return res.status(err.statusCode || 500).json({ error: err.message || 'Internal server error.' });
     } finally {

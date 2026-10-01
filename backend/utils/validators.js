@@ -271,7 +271,10 @@ const deliveryNoteCreate = z.object({
 const shelfAllocation = z.object({
     shelf_id: z.string().uuid('Valid shelf_id is required'),
     quantity: z.coerce.number().positive(),
-    occupancy_pct: z.coerce.number().int().optional().nullable(),
+    occupancy_pct: z.coerce.number().int().optional().nullable()
+        .refine(v => v == null || [25, 50, 75, 100].includes(v), {
+            message: 'نسبة الإشغال يجب أن تكون 25 أو 50 أو 75 أو 100.',
+        }),
 }).passthrough();
 
 const deliveryNoteDispatch = z.object({
@@ -517,6 +520,7 @@ const receivingVoucherCreate = z.object({
         variant_id: z.string().uuid(),
         quantity: z.coerce.number().positive(),
         unit_cost: z.coerce.number().min(0).optional().default(0),
+        shelves: z.array(shelfAllocation).optional().nullable(),
     }).passthrough()).min(1, 'At least one item is required'),
 }).passthrough();
 

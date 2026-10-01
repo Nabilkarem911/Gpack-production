@@ -38,6 +38,7 @@ const directReceiptRoutes = require('../../routes/direct-receipts');
 
 function buildApp() {
     const app = express();
+    app.use(express.json());
     app.use('/api/direct-receipts', directReceiptRoutes);
     return app;
 }
@@ -79,7 +80,7 @@ describe('direct receipt conversion idempotency', () => {
             if (sql.includes('INSERT INTO purchase_invoices')) return { rows: [{ id: invoiceId, invoice_number: 2001 }] };
             if (sql.includes('INSERT INTO purchase_invoice_items')) return {};
             if (sql.includes('FROM warehouse_stock')) return { rowCount: 0, rows: [] };
-            if (sql.includes('INSERT INTO warehouse_stock')) return {};
+            if (sql.includes('INSERT INTO warehouse_stock')) return { rows: [{ id: 'st-1' }] };
             if (sql.includes('INSERT INTO inventory_transactions')) return {};
             if (sql.includes('UPDATE direct_receipts')) {
                 converted = true;
@@ -103,5 +104,78 @@ describe('direct receipt conversion idempotency', () => {
 
         expect(mockClientQuery.mock.calls.filter(([sql]) => sql.includes('INSERT INTO purchase_invoices'))).toHaveLength(1);
         expect(mockCreateProductionOrderFromReceipt).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('direct receipt review — shelf payload validation', () => {
+    const itemId = '99999999-9999-4999-9999-999999999999';
+    const shelfId = 'ec8cc4fd-4e2c-4973-a0a7-4e30e8101c21';
+
+    beforeEach(() => {
+        mockClientQuery.mockReset();
+        mockClientQuery.mockImplementation(async (sql) => {
+            if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') return {};
+            if (sql.includes('SELECT status FROM direct_receipts')) {
+                return { rowCount: 1, rows: [{ status: 'pending_review' }] };
+            }
+            if (sql.includes('UPDATE direct_receipts SET supplier_id')) return {};
+            if (sql.includes('FROM warehouse_shelves')) return { rows: [{ n: 1 }] };
+            if (sql.includes('UPDATE direct_receipt_items')) return {};
+            if (sql.includes('FROM direct_receipt_items')) return { rows: [{ subtotal: '40' }] };
+            if (sql.includes('UPDATE direct_receipts')) return {};
+            throw new Error(`Unexpected query: ${sql}`);
+        });
+    });
+
+    const reviewBody = (shelves) => ({
+        supplier_id: '88888888-8888-4888-8888-888888888888',
+        warehouse_id: warehouseId,
+        items: [{
+            id: itemId, variant_id: variantId, confirmed_quantity: 4, unit_cost: 10,
+            shelves,
+        }],
+    });
+
+    test('non-array shelves is rejected with 400 and no item update runs', async () => {
+        const res = await request(buildApp())
+            .put(`/api/direct-receipts/${receiptId}/review`)
+            .send(reviewBody('oops'));
+        expect(res.status).toBe(400);
+        expect(res.body.error).toContain('مصفوفة');
+        // the item UPDATE must never run — stored allocations stay intact
+        expect(mockClientQuery.mock.calls.filter(([sql]) =>
+            sql.includes('UPDATE direct_receipt_items')).length).toBe(0);
+    });
+
+    test('valid shelves array saves review with 200', async () => {
+        const res = await request(buildApp())
+            .put(`/api/direct-receipts/${receiptId}/review`)
+            .send(reviewBody([{ shelf_id: shelfId, quantity: 2 }]));
+        expect(res.status).toBe(200);
+        expect(res.body.message).toContain('saved');
+        expect(mockClientQuery.mock.calls.filter(([sql]) =>
+            sql.includes('UPDATE direct_receipt_items')).length).toBe(1);
+    });
+
+    test('failed ROLLBACK does not mask the original error or skip release', async () => {
+        mockClient.release.mockReset();
+        mockClientQuery.mockImplementation(async (sql) => {
+            if (sql === 'BEGIN' || sql === 'COMMIT') return {};
+            if (sql === 'ROLLBACK') throw new Error('connection dead');
+            if (sql.includes('SELECT status FROM direct_receipts')) {
+                return { rowCount: 1, rows: [{ status: 'pending_review' }] };
+            }
+            if (sql.includes('UPDATE direct_receipts SET supplier_id')) {
+                throw new Error('original failure');
+            }
+            throw new Error(`Unexpected query: ${sql}`);
+        });
+
+        const res = await request(buildApp())
+            .put(`/api/direct-receipts/${receiptId}/review`)
+            .send(reviewBody([{ shelf_id: shelfId, quantity: 2 }]));
+        expect(res.status).toBe(500);
+        expect(res.body.error).toBe('Internal server error.');
+        expect(mockClient.release).toHaveBeenCalled();
     });
 });

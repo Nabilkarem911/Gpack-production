@@ -372,6 +372,16 @@
             if (whSel) {
                 whSel.innerHTML = '<option value="">— اختر —</option>' +
                     _warehouses.map(w => `<option value="${w.id}" ${_currentReceipt.warehouse_id === w.id ? 'selected' : ''}>${_esc(w.name)}</option>`).join('');
+                whSel.onchange = _drOnReviewWarehouseChange;
+            }
+            _drShelves = [];
+            _drShelfLoadFailed = false;
+            _drPrevWarehouseId = _currentReceipt.warehouse_id || '';
+            if (_currentReceipt.warehouse_id) {
+                await _drLoadShelves();
+                if (_drShelfLoadFailed) {
+                    window.showToast('تعذّر تحميل رفوف المستودع — لن يُسمح بالحفظ قبل نجاح التحميل', 'error');
+                }
             }
 
             const invRef = _el('dr-review-invoice-ref');
@@ -425,6 +435,15 @@
                         <td class="py-2 px-3">
                             <input type="number" class="dr-review-cost w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none text-center"
                                    value="${item.unit_cost || ''}" min="0" step="0.01" placeholder="0.00">
+                        </td>
+                    </tr>
+                    <tr data-shelf-subrow>
+                        <td colspan="6" class="pt-0 pb-2.5 px-3">
+                            <div data-shelf-allocs class="space-y-1.5">${_drShelfRowsHtml(item.shelf_allocations)}</div>
+                            <button type="button" onclick="window.drAddShelfAllocRow(this)"
+                                    class="mt-1 text-[11px] font-bold text-brand-600 hover:text-brand-800 transition-colors">
+                                <i class="fa-solid fa-plus ml-1"></i>توزيع على رف (اختياري — الباقي غير موزّع)
+                            </button>
                         </td>
                     </tr>`;
                 }).join('');
@@ -539,6 +558,104 @@
         if (sugBox) sugBox.classList.add('hidden');
     }
 
+    // ── Shelf allocation helpers (review modal) ──
+    let _drShelves = [];
+    let _drShelfLoadFailed = false;
+    let _drPrevWarehouseId = '';
+
+    async function _drLoadShelves() {
+        const wId = _el('dr-review-warehouse')?.value;
+        _drShelves = [];
+        _drShelfLoadFailed = false;
+        _drRefreshShelfSelects();
+        if (!wId) return;
+        try {
+            const res = await window.apiFetch(`/api/inventory/shelves?warehouse_id=${wId}`);
+            const list = res?.data?.shelves ?? res?.data;
+            if (!Array.isArray(list)) throw new Error('bad shelves payload');
+            _drShelves = list;
+        } catch (_e) {
+            _drShelves = [];
+            _drShelfLoadFailed = true;
+        }
+        _drRefreshShelfSelects();
+    }
+
+    async function _drOnReviewWarehouseChange() {
+        const whSel = _el('dr-review-warehouse');
+        const hasAllocs = [...document.querySelectorAll('#dr-review-items-tbody [data-dr-alloc-shelf]')]
+            .some(s => s.value);
+        if (hasAllocs && !window.confirm('تغيير المستودع سيمسح توزيعات الرفوف المدخلة. هل تريد المتابعة؟')) {
+            whSel.value = _drPrevWarehouseId || '';
+            return;
+        }
+        _drPrevWarehouseId = whSel.value;
+        await _drLoadShelves();
+        if (_drShelfLoadFailed) {
+            window.showToast('تعذّر تحميل رفوف المستودع — لن يُسمح بالحفظ قبل نجاح التحميل', 'error');
+        }
+    }
+
+    function _drShelfOptionsHtml(selectedId) {
+        return '<option value="">— رف —</option>' +
+            _drShelves.map(s =>
+                `<option value="${s.id}" ${s.id === selectedId ? 'selected' : ''}>${_esc(s.code)}${parseInt(s.items_count || 0, 10) > 0 ? ' · مشغول' : ''}</option>`
+            ).join('');
+    }
+
+    function _drShelfRowHtml(alloc) {
+        const occ = alloc?.occupancy_pct;
+        return `<div data-dr-shelf-row class="flex items-center gap-1.5 bg-brand-50/60 border border-brand-100 rounded-lg px-2 py-1.5">
+            <select data-dr-alloc-shelf class="flex-1 px-1.5 py-1 border border-slate-200 rounded-md text-xs bg-white outline-none focus:border-brand-400">${_drShelfOptionsHtml(alloc?.shelf_id)}</select>
+            <input type="number" data-dr-alloc-qty min="0" step="1" placeholder="كمية" value="${alloc?.quantity ?? ''}"
+                   class="w-16 px-1.5 py-1 border border-slate-200 rounded-md text-xs text-center font-mono outline-none focus:border-brand-400">
+            <select data-dr-alloc-occ title="تقدير الإشغال (بالعين)"
+                    class="w-[70px] px-1 py-1 border border-slate-200 rounded-md text-xs bg-white outline-none">
+                <option value="" ${occ == null ? 'selected' : ''}>إشغال؟</option>
+                <option value="25" ${occ === 25 ? 'selected' : ''}>25%</option>
+                <option value="50" ${occ === 50 ? 'selected' : ''}>50%</option>
+                <option value="75" ${occ === 75 ? 'selected' : ''}>75%</option>
+                <option value="100" ${occ === 100 ? 'selected' : ''}>100%</option>
+            </select>
+            <button type="button" onclick="window.drRemoveShelfAllocRow(this)"
+                    class="text-red-400 hover:text-red-600 px-1"><i class="fa-solid fa-xmark"></i></button>
+        </div>`;
+    }
+
+    function _drShelfRowsHtml(allocs) {
+        return (Array.isArray(allocs) ? allocs : [])
+            .filter(a => a && a.shelf_id && parseFloat(a.quantity) > 0)
+            .map(_drShelfRowHtml).join('');
+    }
+
+    function _drRefreshShelfSelects() {
+        document.querySelectorAll('#dr-review-items-tbody [data-dr-alloc-shelf]').forEach(sel => {
+            const keep = sel.value;
+            sel.innerHTML = _drShelfOptionsHtml(keep);
+        });
+    }
+
+    window.drAddShelfAllocRow = function (btn) {
+        const box = btn?.closest('td')?.querySelector('[data-shelf-allocs]');
+        if (!box) return;
+        box.insertAdjacentHTML('beforeend', _drShelfRowHtml(null));
+    };
+
+    window.drRemoveShelfAllocRow = function (btn) {
+        btn?.closest('[data-dr-shelf-row]')?.remove();
+    };
+
+    function _drCollectShelves(itemRow) {
+        const subrow = itemRow?.nextElementSibling;
+        if (!subrow || !subrow.hasAttribute('data-shelf-subrow')) return [];
+        return [...subrow.querySelectorAll('[data-dr-shelf-row]')].map(r => ({
+            shelf_id:      r.querySelector('[data-dr-alloc-shelf]')?.value || '',
+            quantity:      parseFloat(r.querySelector('[data-dr-alloc-qty]')?.value),
+            occupancy_pct: r.querySelector('[data-dr-alloc-occ]')?.value
+                               ? parseInt(r.querySelector('[data-dr-alloc-occ]').value, 10) : undefined,
+        })).filter(a => a.shelf_id && a.quantity > 0);
+    }
+
     async function _saveReview() {
         if (!_currentReceipt) return;
         const supplierId = (_el('dr-review-supplier') || {}).value;
@@ -547,10 +664,17 @@
         const invoiceDate = _currentReceipt.supplier_invoice_date || null;
 
         if (!supplierId || !warehouseId) { window.showToast('اختر المورد والمستودع', 'error'); return; }
+        if (_drShelfLoadFailed) {
+            window.showToast('فشل تحميل رفوف المستودع — أعد فتح المودال أو أعد اختيار المستودع قبل الحفظ', 'error');
+            return;
+        }
 
         const rows = document.querySelectorAll('#dr-review-items-tbody tr');
         const items = [];
+        let allocError = false;
+        let variantMissing = false;
         rows.forEach(row => {
+            if (row.hasAttribute('data-shelf-subrow')) return;
             const itemId = row.dataset.itemId;
             const variantInput = row.querySelector('.dr-review-variant-search');
             const variantId = variantInput?.dataset.variantId || '';
@@ -560,10 +684,16 @@
             const qty = parseFloat(row.querySelector('.dr-review-qty')?.value) || 0;
             const cost = parseFloat(row.querySelector('.dr-review-cost')?.value) || 0;
 
-            if (!variantId) { window.showToast('كل صنف يجب ربطه بمنتج', 'error'); return; }
-            items.push({ id: itemId, variant_id: variantId, unit_id: unitId, client_id: clientId, confirmed_quantity: qty, unit_cost: cost });
+            if (!variantId) { variantMissing = true; return; }
+            const shelves = _drCollectShelves(row);
+            if (shelves.reduce((s, a) => s + a.quantity, 0) > qty + 1e-9) { allocError = true; return; }
+            items.push({ id: itemId, variant_id: variantId, unit_id: unitId, client_id: clientId, confirmed_quantity: qty, unit_cost: cost, shelves });
         });
 
+        // An unlinked item aborts the whole save — partial payloads would
+        // silently drop that item's edits (and any shelf rows typed on it).
+        if (variantMissing) { window.showToast('كل صنف يجب ربطه بمنتج', 'error'); return; }
+        if (allocError) { window.showToast('مجموع توزيع الرفوف يتجاوز الكمية المؤكدة في أحد الأصناف', 'error'); return; }
         if (!items.length) return;
 
         const btn = _el('dr-save-review-btn');
@@ -584,7 +714,10 @@
             _currentReceipt.supplier_id = supplierId;
             _currentReceipt.warehouse_id = warehouseId;
             _currentReceipt.supplier_invoice_ref = invoiceRef;
-            _currentReceipt.items = _currentReceipt.items.map((it, i) => ({ ...it, ...items[i] }));
+            _currentReceipt.items = _currentReceipt.items.map((it, i) => ({
+                ...it, ...items[i],
+                ...(items[i] ? { shelf_allocations: items[i].shelves } : {}),
+            }));
         } catch (err) {
             window.showToast(err.message || 'فشل حفظ المراجعة', 'error');
         } finally {

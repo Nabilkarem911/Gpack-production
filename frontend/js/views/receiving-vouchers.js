@@ -271,6 +271,9 @@
         if (window.makeSelectSearchable && !whSel.dataset.searchable) {
             window.makeSelectSearchable(whSel, '🔍 ابحث عن مستودع...');
         }
+        whSel.onchange = () => _rvLoadShelvesFor('rv-receive-warehouse');
+        _rvShelves = [];
+        if (whSel.value) _rvLoadShelvesFor('rv-receive-warehouse');
 
         // Build items table
         let html = '';
@@ -330,6 +333,15 @@
                         <input type="checkbox" data-rv-invoice ${remQty === 0 ? 'disabled' : ''}
                                class="w-4 h-4 text-amber-500 rounded" title="جاية بفاتورة">
                     </td>
+                </tr>
+                <tr data-shelf-subrow class="${remQty === 0 ? 'hidden' : ''}">
+                    <td colspan="8" class="pt-0 pb-2.5 px-3">
+                        <div data-shelf-allocs class="space-y-1.5"></div>
+                        <button type="button" onclick="window.rvAddShelfAllocRow(this)"
+                                class="mt-1 text-[11px] font-bold text-brand-600 hover:text-brand-800 transition-colors">
+                            <i class="fa-solid fa-plus ml-1"></i>توزيع على رف (اختياري — الباقي غير موزّع)
+                        </button>
+                    </td>
                 </tr>`;
                 idx++;
             }
@@ -351,6 +363,7 @@
     window.rvReceiveAll = function () {
         const rows = _el('rv-receive-items').querySelectorAll('tr');
         rows.forEach(row => {
+            if (row.hasAttribute('data-shelf-subrow')) return;
             const qtyInput = row.querySelector('input[type="number"]');
             const fullChk  = row.querySelectorAll('input[type="checkbox"]')[0];
             if (!qtyInput || qtyInput.disabled) return;
@@ -364,6 +377,7 @@
     window.rvReceiveNone = function () {
         const rows = _el('rv-receive-items').querySelectorAll('tr');
         rows.forEach(row => {
+            if (row.hasAttribute('data-shelf-subrow')) return;
             const qtyInput = row.querySelector('input[type="number"]');
             const fullChk  = row.querySelectorAll('input[type="checkbox"]')[0];
             if (!qtyInput || qtyInput.disabled) return;
@@ -418,6 +432,7 @@
         const rows = _el('rv-receive-items').querySelectorAll('tr');
         let full = 0, partial = 0, none = 0;
         rows.forEach(row => {
+            if (row.hasAttribute('data-shelf-subrow')) return;
             const input = row.querySelector('input[type="number"]');
             if (!input) return;
             if (input.disabled) { full++; return; }
@@ -437,6 +452,70 @@
         if (elPartial) elPartial.textContent = partial;
         if (elNone)    elNone.textContent    = none;
     }
+
+    // ── Shelf allocation helpers (shared by all three receive modals) ──
+    let _rvShelves = [];
+
+    async function _rvLoadShelvesFor(whSelId) {
+        const wId = _el(whSelId)?.value;
+        _rvShelves = [];
+        _rvRefreshShelfSelects();
+        if (!wId) return;
+        try {
+            const res = await window.apiFetch(`/api/inventory/shelves?warehouse_id=${wId}`);
+            _rvShelves = res?.data?.shelves || res?.data || [];
+        } catch (_e) { _rvShelves = []; }
+        _rvRefreshShelfSelects();
+    }
+
+    function _rvCollectShelves(itemRow) {
+        const subrow = itemRow?.nextElementSibling;
+        if (!subrow || !subrow.hasAttribute('data-shelf-subrow')) return [];
+        return [...subrow.querySelectorAll('[data-rv-shelf-row]')].map(r => ({
+            shelf_id:      r.querySelector('[data-rv-alloc-shelf]')?.value || '',
+            quantity:      parseFloat(r.querySelector('[data-rv-alloc-qty]')?.value),
+            occupancy_pct: r.querySelector('[data-rv-alloc-occ]')?.value
+                               ? parseInt(r.querySelector('[data-rv-alloc-occ]').value, 10) : undefined,
+        })).filter(a => a.shelf_id && a.quantity > 0);
+    }
+
+    function _rvShelfOptionsHtml() {
+        return '<option value="">— رف —</option>' +
+            _rvShelves.map(s =>
+                `<option value="${s.id}">${esc(s.code)}${parseInt(s.items_count || 0, 10) > 0 ? ' · مشغول' : ''}</option>`
+            ).join('');
+    }
+
+    function _rvRefreshShelfSelects() {
+        document.querySelectorAll('[data-rv-alloc-shelf]').forEach(sel => {
+            const keep = sel.value;
+            sel.innerHTML = _rvShelfOptionsHtml();
+            if (keep && sel.querySelector(`option[value="${keep}"]`)) sel.value = keep;
+        });
+    }
+
+    window.rvAddShelfAllocRow = function (btn) {
+        const box = btn?.closest('td')?.querySelector('[data-shelf-allocs]');
+        if (!box) return;
+        const row = document.createElement('div');
+        row.className = 'flex items-center gap-1.5 bg-brand-50/60 border border-brand-100 rounded-lg px-2 py-1.5';
+        row.setAttribute('data-rv-shelf-row', '');
+        row.innerHTML =
+            `<select data-rv-alloc-shelf class="flex-1 px-1.5 py-1 border border-slate-200 rounded-md text-xs bg-white outline-none focus:border-brand-400">${_rvShelfOptionsHtml()}</select>
+             <input type="number" data-rv-alloc-qty min="0" step="1" placeholder="كمية"
+                    class="w-16 px-1.5 py-1 border border-slate-200 rounded-md text-xs text-center font-mono outline-none focus:border-brand-400">
+             <select data-rv-alloc-occ title="تقدير الإشغال (بالعين)"
+                    class="w-[70px] px-1 py-1 border border-slate-200 rounded-md text-xs bg-white outline-none">
+                <option value="">إشغال؟</option><option value="25">25%</option><option value="50">50%</option><option value="75">75%</option><option value="100">100%</option>
+             </select>
+             <button type="button" onclick="window.rvRemoveShelfAllocRow(this)"
+                     class="text-red-400 hover:text-red-600 px-1"><i class="fa-solid fa-xmark"></i></button>`;
+        box.appendChild(row);
+    };
+
+    window.rvRemoveShelfAllocRow = function (btn) {
+        btn?.closest('[data-rv-shelf-row]')?.remove();
+    };
 
     window.rvConfirmReceiving = async function () {
         const warehouseId = _el('rv-receive-warehouse')?.value;
@@ -465,7 +544,9 @@
             if (!isClosed) moClose[moId] = false;
         });
 
+        let allocError = false;
         rows.forEach(row => {
+            if (row.hasAttribute('data-shelf-subrow')) return;
             const qtyInput = row.querySelector('input[type="number"]');
             const invCheck = row.querySelector('[data-rv-invoice]');
             const photoInput = row.querySelector('[data-rv-photo]');
@@ -484,6 +565,15 @@
             if (qty > 0 && moItemId && variantId && variantId !== 'undefined' && moId) {
                 if (!itemsByMO[moId]) { itemsByMO[moId] = []; moInvoice[moId] = false; }
                 const idx = itemsByMO[moId].length;
+
+                // Optional shelf split — the subrow after each item row may
+                // carry [data-rv-shelf-row] allocations; remainder unassigned.
+                const shelves = _rvCollectShelves(row);
+                if (shelves.reduce((s, a) => s + a.quantity, 0) > qty + 1e-9) {
+                    allocError = true;
+                    return;
+                }
+
                 itemsByMO[moId].push({
                     manufacturer_order_item_id: moItemId,
                     order_item_id: oItemId || null,
@@ -491,12 +581,20 @@
                     quantity:      qty,
                     is_final:      isFinal,
                     has_supplier_invoice: hasInvoice,
+                    shelves:       shelves.length ? shelves : undefined,
                     _idx:          idx,
                     _files:        files
                 });
                 if (hasInvoice) moInvoice[moId] = true;
             }
         });
+
+        if (allocError) {
+            window.showToast('مجموع توزيع الرفوف يتجاوز الكمية المستلمة في أحد الأصناف', 'error');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa-solid fa-check ml-1.5"></i> اعتماد الاستلام';
+            return;
+        }
 
         if (!Object.keys(itemsByMO).length) {
             window.showToast('أدخل كمية واحدة على الأقل', 'error');
@@ -1149,6 +1247,9 @@
         const whSel = _el('rv-mo-modal-warehouse');
         whSel.innerHTML = '<option value="">— اختر المستودع —</option>' +
             _warehouses.map(w => `<option value="${w.id}">${esc(w.name)} ${w.is_main ? '(رئيسي)' : ''}</option>`).join('');
+        whSel.onchange = () => _rvLoadShelvesFor('rv-mo-modal-warehouse');
+        _rvShelves = [];
+        if (whSel.value) _rvLoadShelvesFor('rv-mo-modal-warehouse');
 
         // Build items table
         let html = '';
@@ -1196,6 +1297,15 @@
                     <td class="py-2.5 px-3 text-center">
                         <input type="checkbox" id="rv-mo-inv-${idx}" data-rv-invoice class="w-4 h-4 text-amber-500 rounded" title="جاية بفاتورة">
                     </td>
+                </tr>
+                <tr data-shelf-subrow class="${remQty === 0 ? 'hidden' : ''}">
+                    <td colspan="7" class="pt-0 pb-2.5 px-3">
+                        <div data-shelf-allocs class="space-y-1.5"></div>
+                        <button type="button" onclick="window.rvAddShelfAllocRow(this)"
+                                class="mt-1 text-[11px] font-bold text-brand-600 hover:text-brand-800 transition-colors">
+                            <i class="fa-solid fa-plus ml-1"></i>توزيع على رف (اختياري — الباقي غير موزّع)
+                        </button>
+                    </td>
                 </tr>`;
                 idx++;
             }
@@ -1227,7 +1337,9 @@
         const itemsByMO = {};
         const moHasInvoice = {};
 
+        let allocError = false;
         rows.forEach((row) => {
+            if (row.hasAttribute('data-shelf-subrow')) return;
             const qtyInput = row.querySelector('input[type="number"]');
             const invCheck = row.querySelector('[data-rv-invoice]');
             const photoInput = row.querySelector('[data-rv-photo]');
@@ -1244,18 +1356,31 @@
             if (qty > 0 && moItemId && moItemId !== 'undefined' && variantId && variantId !== 'undefined' && moId) {
                 if (!itemsByMO[moId]) { itemsByMO[moId] = []; moHasInvoice[moId] = false; }
                 const idx = itemsByMO[moId].length;
+                const shelves = _rvCollectShelves(row);
+                if (shelves.reduce((s, a) => s + a.quantity, 0) > qty + 1e-9) {
+                    allocError = true;
+                    return;
+                }
                 itemsByMO[moId].push({
                     manufacturer_order_item_id: moItemId,
                     order_item_id: orderItemId || null,
                     variant_id:    variantId,
                     quantity:      qty,
                     has_supplier_invoice: hasInvoice,
+                    shelves:       shelves.length ? shelves : undefined,
                     _idx:          idx,
                     _files:        files
                 });
                 if (hasInvoice) moHasInvoice[moId] = true;
             }
         });
+
+        if (allocError) {
+            window.showToast('مجموع توزيع الرفوف يتجاوز الكمية المستلمة في أحد الأصناف', 'error');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa-solid fa-check ml-1.5"></i> اعتماد الاستلام';
+            return;
+        }
 
         if (!Object.keys(itemsByMO).length) {
             window.showToast('أدخل كمية واحدة على الأقل', 'error');
@@ -1315,6 +1440,8 @@
         const whSel = _el('rv-modal-warehouse');
         whSel.innerHTML = '<option value="">— اختر المستودع —</option>' +
             _warehouses.map(w => `<option value="${w.id}">${esc(w.name)} ${w.is_main ? '(رئيسي)' : ''}</option>`).join('');
+        whSel.onchange = () => _rvLoadShelvesFor('rv-modal-warehouse');
+        _rvShelves = [];
 
         // Reset MO dropdown (will be populated when supplier selected)
         _el('rv-modal-mo').innerHTML = '<option value="">— اختر أمر التشغيل —</option>';
@@ -1580,12 +1707,30 @@
                 </button>
             </td>`;
         _el('rv-items-tbody').appendChild(tr);
+
+        // Shelf-allocation subrow — stays right after its item row.
+        const sub = document.createElement('tr');
+        sub.setAttribute('data-shelf-subrow', '');
+        sub.innerHTML = `
+            <td colspan="6" class="pt-0 pb-2.5 px-3">
+                <div data-shelf-allocs class="space-y-1.5"></div>
+                <button type="button" onclick="window.rvAddShelfAllocRow(this)"
+                        class="mt-1 text-[11px] font-bold text-brand-600 hover:text-brand-800 transition-colors">
+                    <i class="fa-solid fa-plus ml-1"></i>توزيع على رف (اختياري — الباقي غير موزّع)
+                </button>
+            </td>`;
+        _el('rv-items-tbody').appendChild(sub);
+
         rvRecalc();
     };
 
     window.rvRemoveItem = function (idx) {
         const tr = _el(`rv-item-${idx}`);
-        if (tr) tr.remove();
+        if (tr) {
+            const sub = tr.nextElementSibling;
+            if (sub?.hasAttribute('data-shelf-subrow')) sub.remove();
+            tr.remove();
+        }
         rvRecalc();
     };
 
@@ -1685,7 +1830,14 @@
             const cost = parseFloat(_el(`rv-item-cost-${i}`)?.value || 0);
             if (qty <= 0) { window.showToast(`الصنف ${items.length + 1}: الكمية غير صحيحة`, 'error'); btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-floppy-disk ml-1.5"></i> حفظ سند الاستلام'; return; }
 
-            items.push({ variant_id, quantity: qty, unit_cost: cost });
+            const shelves = _rvCollectShelves(row);
+            if (shelves.reduce((s, a) => s + a.quantity, 0) > qty + 1e-9) {
+                window.showToast(`الصنف ${items.length + 1}: مجموع توزيع الرفوف يتجاوز الكمية`, 'error');
+                btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-floppy-disk ml-1.5"></i> حفظ سند الاستلام'; return;
+            }
+
+            items.push({ variant_id, quantity: qty, unit_cost: cost,
+                         shelves: shelves.length ? shelves : undefined });
         }
 
         if (!items.length) { window.showToast('يجب إدخال صنف واحد على الأقل', 'error'); btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-floppy-disk ml-1.5"></i> حفظ سند الاستلام'; return; }

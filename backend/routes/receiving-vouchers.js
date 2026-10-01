@@ -161,6 +161,7 @@ router.post('/', restrictWrite, validateBody(receivingVoucherCreate), async (req
         const voucherNumber = vRes.rows[0].voucher_number;
 
         // 3. Create items and add to stock
+        const shelfService = require('../services/shelf-service');
         for (const it of items) {
             const lineTotal = parseFloat(it.quantity) * parseFloat(it.unit_cost);
             const itemClientId = it.client_id || null; // optional per-item client scope
@@ -190,11 +191,39 @@ router.post('/', restrictWrite, validateBody(receivingVoucherCreate), async (req
 
             // Insert item — remember exactly which stock row was credited so
             // voiding the voucher later deducts from that row only.
-            await client.query(`
+            const rviRes = await client.query(`
                 INSERT INTO receiving_voucher_items
                     (receiving_voucher_id, variant_id, quantity, unit_cost, line_total, warehouse_stock_id)
                 VALUES ($1, $2, $3, $4, $5, $6)
+                RETURNING id
             `, [voucherId, it.variant_id, it.quantity, it.unit_cost, lineTotal, stockId]);
+
+            // Optional shelf split — remainder stays in the unassigned bucket.
+            // Strict: a failed placement rolls back the whole voucher.
+            const shelfAllocs = Array.isArray(it.shelves)
+                ? it.shelves.filter(s => s && s.shelf_id && parseFloat(s.quantity) > 0)
+                : [];
+            const allocSum = shelfAllocs.reduce((s, a) => s + (parseFloat(a.quantity) || 0), 0);
+            if (allocSum - parseFloat(it.quantity) > 1e-9) {
+                throw new Error(`مجموع توزيع الرفوف (${allocSum}) يتجاوز كمية الصنف (${it.quantity}).`);
+            }
+            const badOcc = shelfAllocs.find(a => a.occupancy_pct != null
+                && ![25, 50, 75, 100].includes(parseInt(a.occupancy_pct, 10)));
+            if (badOcc) {
+                throw new Error('نسبة الإشغال يجب أن تكون 25 أو 50 أو 75 أو 100.');
+            }
+            for (const alloc of shelfAllocs) {
+                await shelfService.placeOnShelf(client, {
+                    shelfId:  alloc.shelf_id,
+                    stockId,
+                    quantity: alloc.quantity,
+                    occupancyPct: alloc.occupancy_pct ?? null,
+                    refType:  'receiving_voucher',
+                    refId:    rviRes.rows[0].id,
+                    userId:   req.user?.id || null,
+                    notes:    `سند استلام #${voucherNumber}`,
+                });
+            }
 
             // Inventory transaction log (was missing entirely)
             await client.query(`
