@@ -1309,7 +1309,18 @@ router.delete('/:id/receipts/:sessionId', restrictReverse, async (req, res) => {
             );
 
             // ── 4. Revert each item ──────────────────────────────────────────
+            const shelfService = require('../services/shelf-service');
             for (const item of itemsRes.rows) {
+                // 4a-shelf. Remove this session item's shelf placements first —
+                // blocks the whole reversal if part of a placement was picked
+                // or moved (keeps shelf state truthful instead of clamping).
+                await shelfService.reversePlacements(client, {
+                    refType: 'mo_receipt',
+                    refId: item.id,
+                    reverseRefType: 'mo_receipt_reversal',
+                    userId: req.user?.id || null,
+                });
+
                 // 4a. Revert received_qty on manufacturer_order_items
                 await client.query(
                     `UPDATE manufacturer_order_items
@@ -1328,13 +1339,36 @@ router.delete('/:id/receipts/:sessionId', restrictReverse, async (req, res) => {
                     );
                 }
 
-                // 4c. Deduct from warehouse_stock
+                // 4c. Deduct from warehouse_stock — shelf-sync first so the
+                // deduction consumes the unassigned bucket (then flagged
+                // auto-picks) and never leaves placements > quantity.
+                const stkRes = await client.query(
+                    `SELECT id FROM warehouse_stock
+                     WHERE warehouse_id = $1 AND variant_id = $2
+                       AND (client_id = $3 OR (client_id IS NULL AND $3::uuid IS NULL))
+                     FOR UPDATE`,
+                    [session.warehouse_id, item.variant_id, mo.client_id]
+                );
+                if (stkRes.rowCount === 0) {
+                    const missing = new Error('لا يمكن التراجع عن الاستلام — سجل المخزون المرتبط بالصنف غير موجود.');
+                    missing.statusCode = 409;
+                    throw missing;
+                }
+                // Shelf-sync must succeed or the whole reversal rolls back —
+                // never warn-and-continue into an inconsistent stock update.
+                await shelfService.deductFromStock(client, {
+                    stockId: stkRes.rows[0].id,
+                    quantity: item.quantity,
+                    refType: 'mo_receipt_reversal',
+                    refId: item.id,
+                    userId: req.user?.id || null,
+                    notes: `تراجع عن استلام — أمر ${mo.mo_number} جلسة #${session.session_number}`,
+                });
                 await client.query(
                     `UPDATE warehouse_stock
                      SET quantity = GREATEST(0, quantity - $1), last_updated = NOW()
-                     WHERE warehouse_id = $2 AND variant_id = $3
-                       AND (client_id = $4 OR (client_id IS NULL AND $4::uuid IS NULL))`,
-                    [item.quantity, session.warehouse_id, item.variant_id, mo.client_id]
+                     WHERE id = $2`,
+                    [item.quantity, stkRes.rows[0].id]
                 );
 
                 // 4d. Log reversal in inventory_transactions
@@ -1530,6 +1564,15 @@ router.post('/:id/receive', restrictReceive, maybeReceiptPhotos, async (req, res
                 const lineTotal = actualQty * unitCost;
                 subtotal += lineTotal;
 
+                // Optional shelf split: item.shelves = [{shelf_id, quantity, occupancy_pct?}]
+                // Sum of allocations must not exceed the received qty — the
+                // remainder stays in the "unassigned" bucket by design.
+                const shelves = Array.isArray(item.shelves) ? item.shelves.filter(s => s && s.shelf_id && parseFloat(s.quantity) > 0) : [];
+                const allocSum = shelves.reduce((s, a) => s + parseFloat(a.quantity || 0), 0);
+                if (allocSum - actualQty > 1e-9) {
+                    throw new Error(`مجموع توزيع الرفوف (${allocSum}) يتجاوز الكمية المستلمة (${actualQty}).`);
+                }
+
                 invoiceItems.push({
                     manufacturer_order_item_id: moItem.id,
                     variant_id: item.variant_id,
@@ -1537,6 +1580,7 @@ router.post('/:id/receive', restrictReceive, maybeReceiptPhotos, async (req, res
                     unit_cost: unitCost,
                     total_cost: lineTotal,
                     is_final: item.is_final === true || item.is_final === 'true',
+                    shelves,
                 });
 
                 // 3a. Update received_qty on manufacturer_order_items
@@ -1579,6 +1623,7 @@ router.post('/:id/receive', restrictReceive, maybeReceiptPhotos, async (req, res
                         [actualQty, stockId]
                     );
                 }
+                invoiceItems[invoiceItems.length - 1].stock_id = stockId;
 
                 // 3d. Inventory transaction log
                 await client.query(
@@ -1647,6 +1692,27 @@ router.post('/:id/receive', restrictReceive, maybeReceiptPhotos, async (req, res
                      ii.quantity, ii.unit_cost, ii.total_cost, ii.is_final]
                 );
                 ii.session_item_id = siiRes.rows[0].id;
+            }
+
+            // ── 4c. Shelf placements (optional split per received item) ──────
+            // Each allocation is ledgered against its session_item so a session
+            // reversal can remove the exact placements (or block if consumed).
+            const shelfService = require('../services/shelf-service');
+            for (const ii of invoiceItems) {
+                if (!Array.isArray(ii.shelves) || !ii.shelves.length) continue;
+                if (!ii.stock_id) throw new Error('تعذر تحديد سجل المخزون لتوزيع الرفوف.');
+                for (const alloc of ii.shelves) {
+                    await shelfService.placeOnShelf(client, {
+                        shelfId:  alloc.shelf_id,
+                        stockId:  ii.stock_id,
+                        quantity: alloc.quantity,
+                        occupancyPct: alloc.occupancy_pct ?? null,
+                        refType:  'mo_receipt',
+                        refId:    ii.session_item_id,
+                        userId:   req.user?.id || null,
+                        notes:    `استلام من مورد — أمر ${mo.mo_number} جلسة #${sessionNumber}`,
+                    });
+                }
             }
 
             // ── Save receipt item photos ─────────────────────────────────────

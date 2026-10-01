@@ -268,15 +268,38 @@ const deliveryNoteCreate = z.object({
     vehicle_number: z.string().max(100).optional().nullable(),
 }).passthrough();
 
+const shelfAllocation = z.object({
+    shelf_id: z.string().uuid('Valid shelf_id is required'),
+    quantity: z.coerce.number().positive(),
+    occupancy_pct: z.coerce.number().int().optional().nullable(),
+}).passthrough();
+
 const deliveryNoteDispatch = z.object({
     items: z.array(z.object({
         variant_id: z.string().uuid().optional().nullable(),
         order_item_id: z.string().uuid().optional().nullable(),
         item_id: z.string().uuid().optional().nullable(),
         quantity: z.coerce.number().positive(),
+        shelves: z.array(shelfAllocation).optional().nullable(),
     }).passthrough()).min(1, 'At least one item is required'),
     notes: z.string().max(2000).optional().nullable(),
 }).passthrough();
+
+// =============================================================================
+// Warehouse Shelves
+// =============================================================================
+
+const shelfMove = z.object({
+    stock_id: z.string().uuid('Valid stock_id is required'),
+    from_shelf_id: z.string().uuid().optional().nullable(),   // null = unassigned bucket
+    to_shelf_id: z.string().uuid('Valid to_shelf_id is required'),
+    quantity: z.coerce.number().positive(),
+    occupancy_pct: z.coerce.number().int().optional().nullable(),
+});
+
+const shelfOccupancyUpdate = z.object({
+    occupancy_pct: z.coerce.number().int().nullable(),        // 25 | 50 | 75 | 100 | null
+});
 
 // =============================================================================
 // Manufacturer Order Schemas
@@ -891,6 +914,9 @@ module.exports = {
     pantoneColorUpdate,
     pendingPricingUpdate,
     moFinalize,
+    shelfAllocation,
+    shelfMove,
+    shelfOccupancyUpdate,
     validateBody,
     validateQuery,
 };

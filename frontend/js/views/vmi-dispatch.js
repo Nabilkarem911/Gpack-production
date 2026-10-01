@@ -15,6 +15,7 @@
     let _editSelected = {};       // new items selected in edit modal
     let _pendingSearchQuery = '';
     let _archiveNotes = [];
+    let _itemShelfAvail = {};   // dn_item_id → {placements, stocks} for dispatch picks
 
     // ── Helpers ───────────────────────────────────────────────────────────────
     const esc  = (s) => String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -196,10 +197,41 @@
             const dn  = _currentDN;
             const sub = _el('dv-modal-subtitle');
             if (sub) sub.textContent = `سند #${dn.note_number || '—'} — ${_clientDisplay(dn)} — طلب #${dn.order_number || '—'}`;
+
+            // Fetch shelf availability per item (which shelves hold this variant)
+            const availMap = {};
+            await Promise.all((dn.items || []).map(async item => {
+                if (!item.variant_id) { availMap[item.id] = { placements: [], stocks: [] }; return; }
+                try {
+                    const q = `variant_id=${item.variant_id}&client_id=${dn.client_id || ''}&warehouse_id=${dn.warehouse_id || ''}`;
+                    const r = await window.apiFetch('/api/inventory/shelf-availability?' + q);
+                    availMap[item.id] = r?.data || { placements: [], stocks: [] };
+                } catch (_) { availMap[item.id] = { placements: [], stocks: [] }; }
+            }));
+            _itemShelfAvail = availMap;
+
             const container = _el('dv-modal-items');
             if (container) {
                 container.innerHTML = (dn.items || []).map(item => {
                     const remaining = Math.max(0, (item.requested_qty || item.quantity || 0) - (item.delivered_qty || 0));
+                    const av = availMap[item.id] || { placements: [], stocks: [] };
+                    const pickRows = (av.placements || []).map(p => `
+                        <label class="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-2 py-1.5">
+                            <span class="font-mono font-bold text-xs text-brand-700 w-14">${esc(p.shelf_code)}</span>
+                            <span class="text-[11px] text-slate-400 flex-1">على الرف: ${parseFloat(p.quantity)}</span>
+                            <input type="number" min="0" max="${parseFloat(p.quantity)}" value="0" step="any"
+                                   data-pick-qty data-shelf-id="${esc(p.shelf_id)}" data-stock-id="${esc(p.stock_id)}"
+                                   class="w-16 px-1.5 py-1 border border-slate-200 rounded-md text-xs text-center font-mono outline-none focus:border-brand-400">
+                        </label>`).join('');
+                    const unassignedTotal = (av.stocks || []).reduce((s, r) => s + Math.max(0, parseFloat(r.unassigned_qty || 0)), 0);
+                    const shelfSection = `
+                        <div class="mt-2 pt-2 border-t border-slate-200" data-pick-area="${esc(item.id)}">
+                            ${pickRows
+                                ? `<p class="text-[11px] font-bold text-slate-500 mb-1.5"><i class="fa-solid fa-layer-group ml-1"></i>السحب من الرفوف (اختياري — الباقي يُسحب تلقائيًا):</p>
+                                   <div class="space-y-1.5">${pickRows}</div>
+                                   <p class="text-[10px] text-slate-400 mt-1">رصيد غير موزّع: <b class="font-mono">${unassignedTotal}</b></p>`
+                                : `<p class="text-[11px] text-slate-400"><i class="fa-solid fa-layer-group ml-1"></i>لا يوجد رصيد على رفوف — سيُصرف من غير الموزّع (${unassignedTotal})</p>`}
+                        </div>`;
                     return `
                     <div class="bg-slate-50 rounded-xl p-3 border border-slate-200">
                         <div class="flex justify-between items-start mb-2">
@@ -224,6 +256,7 @@
                                 <div>سُلِّم</div><div class="font-bold text-emerald-600">${item.delivered_qty || 0}</div>
                             </div>
                         </div>
+                        ${shelfSection}
                     </div>`;
                 }).join('') || '<p class="text-sm text-slate-400 text-center py-4">لا توجد أصناف</p>';
             }
@@ -233,7 +266,7 @@
         } catch (e) { window.showToast('خطأ في تحميل البيانات', 'error'); }
     };
 
-    window.dvCloseModal = function() { closeModalEl('dv-dispatch-modal'); _currentDN = null; };
+    window.dvCloseModal = function() { closeModalEl('dv-dispatch-modal'); _currentDN = null; _itemShelfAvail = {}; };
 
     // ── Fill all quantities with max remaining / Clear all ────────────────────
     window.dvFillAllMax = function() {
@@ -737,7 +770,27 @@
         inputs.forEach(inp => {
             const q = parseFloat(inp.value) || 0, max = parseFloat(inp.max) || Infinity;
             if (q > max) valErr = `الكمية (${q}) تتجاوز المتبقي (${max})`;
-            if (q > 0)  items.push({ item_id: inp.dataset.itemId, quantity: q, notes: '' });
+            if (q > 0) {
+                // Collect explicit shelf picks inside this item's pick area
+                const pickArea = document.querySelector(`#dv-modal-items [data-pick-area="${inp.dataset.itemId}"]`);
+                const picks = pickArea ? [...pickArea.querySelectorAll('[data-pick-qty]')].map(i => ({
+                    shelf_id: i.dataset.shelfId,
+                    stock_id: i.dataset.stockId || undefined,
+                    quantity: parseFloat(i.value) || 0,
+                    _max: parseFloat(i.max) || Infinity,
+                })) : [];
+                const badPick = picks.find(p => p.quantity > p._max + 1e-9);
+                if (badPick) valErr = 'كمية السحب من أحد الرفوف أكبر من رصيده';
+                const valid = picks.filter(p => p.quantity > 0);
+                const pickSum = valid.reduce((s, p) => s + p.quantity, 0);
+                if (pickSum > q + 1e-9) valErr = 'مجموع السحب من الرفوف أكبر من كمية البند';
+                items.push({
+                    item_id: inp.dataset.itemId,
+                    quantity: q,
+                    notes: '',
+                    shelves: valid.length ? valid.map(({ _max, ...p }) => p) : undefined,
+                });
+            }
         });
         if (valErr)        { window.showToast(valErr, 'error'); return; }
         if (!items.length) { window.showToast('أدخل كمية واحدة على الأقل', 'error'); return; }

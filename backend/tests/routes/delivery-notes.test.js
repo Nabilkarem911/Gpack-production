@@ -68,10 +68,20 @@ describe('delivery note dispatch stock lookup', () => {
                 return { rowCount: 1, rows: [{ requested_qty: 2, delivered_qty: 0 }] };
             }
             if (sql.includes('SELECT dni.order_item_id')) {
-                return { rowCount: 1, rows: [{ order_item_id: null, source_stock_id: pinnedSourceStockId, variant_id: variantId }] };
+                return { rowCount: 1, rows: [{ order_item_id: null, source_stock_id: pinnedSourceStockId, variant_id: variantId, reserved_stock_id: null }] };
             }
+            // Generic best-match pick (no pinned row)
             if (sql.includes('SELECT ws.id, ws.quantity, ws.reserved_qty')) {
                 return { rowCount: 1, rows: [{ id: stockId, quantity: 5, reserved_qty: 0 }] };
+            }
+            // Pinned-row lock + shelf-service stock lock share this shape
+            if (sql.includes('SELECT id, quantity, reserved_qty FROM warehouse_stock WHERE id = $1 FOR UPDATE')
+                || sql.includes('SELECT quantity FROM warehouse_stock WHERE id = $1 FOR UPDATE')) {
+                return { rowCount: 1, rows: [{ id: stockId, quantity: 5, reserved_qty: 0 }] };
+            }
+            // shelf placements sum — nothing placed on shelves in this suite
+            if (sql.includes('AS placed FROM stock_placements')) {
+                return { rowCount: 1, rows: [{ placed: 0 }] };
             }
             if (sql.includes('SELECT requested_qty, delivered_qty FROM delivery_note_items')) {
                 return { rowCount: 1, rows: [{ requested_qty: 2, delivered_qty: 2 }] };
@@ -94,7 +104,7 @@ describe('delivery note dispatch stock lookup', () => {
 
         const stockLookup = mockClientQuery.mock.calls.find(([sql]) => sql.includes('SELECT ws.id, ws.quantity, ws.reserved_qty'));
         expect(stockLookup).toBeDefined();
-        expect(stockLookup[1]).toEqual([variantId, null, null, clientId]);
+        expect(stockLookup[1]).toEqual([variantId, null, clientId]);
     });
 
     test('uses the pinned stock row while still matching the item variant', async () => {
@@ -105,8 +115,18 @@ describe('delivery note dispatch stock lookup', () => {
             .send({ items: [{ item_id: itemId, quantity: 2 }] });
 
         expect(response.status).toBe(200);
-        const stockLookup = mockClientQuery.mock.calls.find(([sql]) => sql.includes('SELECT ws.id, ws.quantity, ws.reserved_qty'));
-        expect(stockLookup[1]).toEqual([variantId, stockId, null, clientId]);
+        // pinned row is locked directly by id — no generic variant scan
+        const pinnedLock = mockClientQuery.mock.calls.find(([sql]) =>
+            sql.includes('SELECT id, quantity, reserved_qty FROM warehouse_stock WHERE id = $1 FOR UPDATE'));
+        expect(pinnedLock).toBeDefined();
+        expect(pinnedLock[1]).toEqual([stockId]);
+        // generic best-match query must NOT run when a row is pinned
+        const genericLookup = mockClientQuery.mock.calls.find(([sql]) => sql.includes('SELECT ws.id, ws.quantity, ws.reserved_qty'));
+        expect(genericLookup).toBeUndefined();
+        // reservation was consumed on the pinned row
+        const reservedConsume = mockClientQuery.mock.calls.find(([sql]) => sql.includes('reserved_qty = GREATEST(0, reserved_qty - $1)'));
+        expect(reservedConsume).toBeDefined();
+        expect(reservedConsume[1]).toEqual([2, stockId]);
     });
 });
 

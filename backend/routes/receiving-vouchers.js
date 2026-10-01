@@ -163,29 +163,47 @@ router.post('/', restrictWrite, validateBody(receivingVoucherCreate), async (req
         // 3. Create items and add to stock
         for (const it of items) {
             const lineTotal = parseFloat(it.quantity) * parseFloat(it.unit_cost);
-            
-            // Insert item
+            const itemClientId = it.client_id || null; // optional per-item client scope
+
+            // Add to warehouse_stock — match on client too, otherwise the
+            // quantity could be credited to another client's stock row.
+            const stockCheck = await client.query(`
+                SELECT id FROM warehouse_stock
+                WHERE variant_id = $1 AND warehouse_id = $2
+                  AND client_id IS NOT DISTINCT FROM $3
+                LIMIT 1
+            `, [it.variant_id, warehouse_id, itemClientId]);
+
+            let stockId;
+            if (stockCheck.rows.length) {
+                stockId = stockCheck.rows[0].id;
+                await client.query(`
+                    UPDATE warehouse_stock SET quantity = quantity + $1, last_updated = NOW() WHERE id = $2
+                `, [it.quantity, stockId]);
+            } else {
+                const ins = await client.query(`
+                    INSERT INTO warehouse_stock (variant_id, warehouse_id, client_id, quantity)
+                    VALUES ($1, $2, $3, $4) RETURNING id
+                `, [it.variant_id, warehouse_id, itemClientId, it.quantity]);
+                stockId = ins.rows[0].id;
+            }
+
+            // Insert item — remember exactly which stock row was credited so
+            // voiding the voucher later deducts from that row only.
             await client.query(`
                 INSERT INTO receiving_voucher_items
-                    (receiving_voucher_id, variant_id, quantity, unit_cost, line_total)
-                VALUES ($1, $2, $3, $4, $5)
-            `, [voucherId, it.variant_id, it.quantity, it.unit_cost, lineTotal]);
+                    (receiving_voucher_id, variant_id, quantity, unit_cost, line_total, warehouse_stock_id)
+                VALUES ($1, $2, $3, $4, $5, $6)
+            `, [voucherId, it.variant_id, it.quantity, it.unit_cost, lineTotal, stockId]);
 
-            // Add to warehouse_stock
-            const stockCheck = await client.query(`
-                SELECT id FROM warehouse_stock WHERE variant_id = $1 AND warehouse_id = $2 LIMIT 1
-            `, [it.variant_id, warehouse_id]);
-
-            if (stockCheck.rows.length) {
-                await client.query(`
-                    UPDATE warehouse_stock SET quantity = quantity + $1 WHERE variant_id = $2 AND warehouse_id = $3
-                `, [it.quantity, it.variant_id, warehouse_id]);
-            } else {
-                await client.query(`
-                    INSERT INTO warehouse_stock (variant_id, warehouse_id, quantity)
-                    VALUES ($1, $2, $3)
-                `, [it.variant_id, warehouse_id, it.quantity]);
-            }
+            // Inventory transaction log (was missing entirely)
+            await client.query(`
+                INSERT INTO inventory_transactions
+                    (stock_id, variant_id, transaction_type, quantity, warehouse_to, client_id,
+                     reference_type, reference_id, notes, created_by, created_at)
+                VALUES ($1, $2, 'receipt', $3, $4, $5, 'receiving_voucher', $6, $7, $8, NOW())
+            `, [stockId, it.variant_id, it.quantity, warehouse_id, itemClientId,
+                voucherId, `سند استلام #${voucherNumber}`, req.user?.id || null]);
         }
 
         // 4. Create accounting voucher if linked to purchase invoice
@@ -246,14 +264,76 @@ router.delete('/:id', restrictDelete, async (req, res) => {
         try {
             await client.query('BEGIN');
 
-            // Get items to deduct from stock
-            const items = await client.query(`SELECT variant_id, quantity FROM receiving_voucher_items WHERE receiving_voucher_id = $1`, [id]);
+            // Get items to deduct from stock — each item remembers the exact
+            // stock row it credited. Legacy rows (no warehouse_stock_id) fall
+            // back to the voucher's warehouse + NULL client row.
+            const voucherWh = await client.query(`SELECT warehouse_id FROM receiving_vouchers WHERE id = $1`, [id]);
+            const warehouseId = voucherWh.rows[0]?.warehouse_id || null;
+
+            const items = await client.query(`SELECT variant_id, quantity, warehouse_stock_id FROM receiving_voucher_items WHERE receiving_voucher_id = $1`, [id]);
 
             // Deduct from stock
+            const shelfService = require('../services/shelf-service');
             for (const it of items.rows) {
+                // Resolve the exact stock row this item credited. Pinned items
+                // are exact; legacy items (no warehouse_stock_id) are only
+                // reversible when exactly ONE candidate row exists for the
+                // variant in this voucher's warehouse — otherwise the original
+                // row cannot be determined confidently, so the void is blocked.
+                let stockRow = null;
+                if (it.warehouse_stock_id) {
+                    const pinned = await client.query(`
+                        SELECT id, quantity FROM warehouse_stock
+                        WHERE id = $1
+                        FOR UPDATE
+                    `, [it.warehouse_stock_id]);
+                    stockRow = pinned.rows[0] || null;
+                } else {
+                    const candidates = await client.query(`
+                        SELECT id, quantity FROM warehouse_stock
+                        WHERE variant_id = $1 AND warehouse_id = $2
+                        FOR UPDATE
+                    `, [it.variant_id, warehouseId]);
+                    if (candidates.rowCount === 1) {
+                        stockRow = candidates.rows[0];
+                    } else if (candidates.rowCount > 1) {
+                        const ambiguous = new Error('لا يمكن إلغاء السند — تعذّر تحديد سجل المخزون الأصلي بدقة (أكثر من سجل مرشّح لهذا الصنف في نفس المستودع). يتطلب الأمر مراجعة يدوية.');
+                        ambiguous.statusCode = 409;
+                        throw ambiguous;
+                    }
+                }
+
+                if (!stockRow) {
+                    const missing = new Error('لا يمكن إلغاء السند — سجل المخزون المرتبط بالبند غير موجود.');
+                    missing.statusCode = 409;
+                    throw missing;
+                }
+
+                // Keep shelf placements consistent BEFORE the stock update —
+                // consumes the unassigned bucket first, then flagged auto-picks.
+                // Failure aborts the whole void — never warn-and-continue.
+                await shelfService.deductFromStock(client, {
+                    stockId: stockRow.id,
+                    quantity: it.quantity,
+                    refType: 'receiving_voucher_void',
+                    refId: id,
+                    userId: req.user?.id || null,
+                    notes: 'إلغاء سند استلام',
+                });
+
                 await client.query(`
-                    UPDATE warehouse_stock SET quantity = quantity - $1 WHERE variant_id = $2
-                `, [it.quantity, it.variant_id]);
+                    UPDATE warehouse_stock
+                    SET quantity = GREATEST(0, quantity - $1), last_updated = NOW()
+                    WHERE id = $2
+                `, [it.quantity, stockRow.id]);
+
+                await client.query(`
+                    INSERT INTO inventory_transactions
+                        (stock_id, variant_id, transaction_type, quantity, warehouse_from,
+                         reference_type, reference_id, notes, created_by, created_at)
+                    VALUES ($1, $2, 'reversal', $3, $4, 'receiving_voucher', $5, $6, $7, NOW())
+                `, [stockRow.id, it.variant_id, it.quantity, warehouseId,
+                    id, `إلغاء سند استلام`, req.user?.id || null]);
             }
 
             // Reverse accounting voucher
@@ -277,7 +357,7 @@ router.delete('/:id', restrictDelete, async (req, res) => {
         }
     } catch (err) {
         console.error('[ReceivingVouchers] DELETE /:id error:', err.message);
-        return res.status(500).json({ error: 'Internal server error.' });
+        return res.status(err.statusCode || 500).json({ error: err.statusCode ? err.message : 'Internal server error.' });
     }
 });
 

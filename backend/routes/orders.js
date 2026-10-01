@@ -1664,6 +1664,7 @@ router.patch('/:id/items/:itemId', restrictEdit, validateBody(orderItemEdit), as
                         COALESCE(wh_received_qty, 0) AS wh_received_qty,
                         COALESCE(released_qty, 0)    AS released_qty,
                         COALESCE(delivered_qty, 0)   AS delivered_qty,
+                        reserved_stock_id,
                         design_id, notes
                  FROM order_items WHERE id = $1 AND order_id = $2 FOR UPDATE`,
                 [itemId, id]
@@ -1678,6 +1679,9 @@ router.patch('/:id/items/:itemId', restrictEdit, validateBody(orderItemEdit), as
                 || parseFloat(item.delivered_qty) > 0
                 || parseFloat(item.released_qty) > 0) {
                 throw blocked('لا يمكن تعديل الصنف — تم استلام أو تسليم كميات منه بالفعل.');
+            }
+            if (item.reserved_stock_id) {
+                throw blocked('لا يمكن تعديل الصنف — توجد كمية محجوزة بأمر فسح. ألغِ أمر الفسح أولاً.');
             }
 
             const moItemsRes = await client.query(
@@ -1885,10 +1889,52 @@ router.patch('/:id/status', restrictAdmin, validateBody(orderStatusUpdate), asyn
     }
 
     try {
-        const result = await db.query(
-            `UPDATE orders SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING id, status`,
-            [status, id]
-        );
+        const result = await db.withTransaction(async (client) => {
+            // Cancelling/archiving must release any stock reserved by a
+            // release order (أمر فسح) for the undelivered remainder.
+            if (['cancelled', 'archived'].includes(status)) {
+                const resItems = await client.query(
+                    `SELECT id, variant_id, quantity,
+                            COALESCE(delivered_qty, 0) AS delivered_qty,
+                            reserved_stock_id
+                     FROM order_items WHERE order_id = $1`,
+                    [id]
+                );
+                const clientIdRes = await client.query(
+                    `SELECT client_id FROM orders WHERE id = $1`, [id]
+                );
+                const orderClientId = clientIdRes.rows[0]?.client_id || null;
+
+                for (const it of resItems.rows) {
+                    const remaining = parseFloat(it.quantity || 0) - parseFloat(it.delivered_qty || 0);
+                    if (remaining <= 0) continue;
+                    // Release on the pinned row; fall back to the row still
+                    // holding a reservation for this variant+client (legacy).
+                    await client.query(
+                        `UPDATE warehouse_stock
+                         SET reserved_qty = GREATEST(0, reserved_qty - $1), last_updated = NOW()
+                         WHERE id = COALESCE(
+                             $2::uuid,
+                             (SELECT ws2.id FROM warehouse_stock ws2
+                              WHERE ws2.variant_id = $3 AND ws2.client_id = $4 AND ws2.reserved_qty > 0
+                              ORDER BY ws2.reserved_qty DESC LIMIT 1)
+                         )`,
+                        [remaining, it.reserved_stock_id || null, it.variant_id, orderClientId]
+                    );
+                    await client.query(
+                        `UPDATE order_items SET reserved_stock_id = NULL WHERE id = $1`,
+                        [it.id]
+                    );
+                }
+            }
+
+            const upd = await client.query(
+                `UPDATE orders SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING id, status`,
+                [status, id]
+            );
+            return upd;
+        });
+
         if (result.rowCount === 0) {
             return res.status(404).json({ error: 'الطلب غير موجود.' });
         }
@@ -2859,46 +2905,56 @@ router.post('/:id/release', restrictAdmin, validateBody(orderRelease), async (re
         }
         
         const items = itemsResult.rows;
-        
-        // 3. Check stock availability for each item
+
+        // 3. Check stock availability for each item and pin the exact stock
+        //    row the reservation will live on. Reserving on a single pinned row
+        //    (instead of every matching row) is what lets dispatch release the
+        //    hold later without leaking reserved_qty.
         const insufficientStock = [];
-        
+        const reservations      = [];
+
         for (const item of items) {
             const stockResult = await client.query(
                 `SELECT ws.id, ws.quantity, ws.reserved_qty, ws.available_qty
                  FROM warehouse_stock ws
-                 WHERE ws.variant_id = $1 
+                 WHERE ws.variant_id = $1
                    AND ws.client_id = $2
                    AND ($3::uuid IS NULL OR ws.warehouse_id = $3)
                  ORDER BY ws.available_qty DESC
-                 LIMIT 1`,
+                 LIMIT 1
+                 FOR UPDATE`,
                 [item.variant_id, order.client_id, warehouse_id || null]
             );
-            
+
             if (stockResult.rowCount === 0 || stockResult.rows[0].available_qty < item.quantity) {
                 insufficientStock.push({
                     product: `${item.product_name} - ${item.size_name}`,
                     required: parseFloat(item.quantity),
                     available: stockResult.rowCount > 0 ? parseFloat(stockResult.rows[0].available_qty) : 0
                 });
+            } else {
+                reservations.push({ item, stockId: stockResult.rows[0].id });
             }
         }
-        
+
         if (insufficientStock.length > 0) {
             const error = new Error('Insufficient stock for some items');
             error.details = insufficientStock;
             throw error;
         }
-        
-        // 4. Reserve stock (update reserved_qty, available_qty will auto-update)
-        for (const item of items) {
+
+        // 4. Reserve stock on the pinned row only + remember it on the item
+        //    (available_qty auto-updates via the generated column).
+        for (const r of reservations) {
             await client.query(
-                `UPDATE warehouse_stock 
-                 SET reserved_qty = reserved_qty + $1
-                 WHERE variant_id = $2 
-                   AND client_id = $3
-                   AND ($4::uuid IS NULL OR warehouse_id = $4)`,
-                [item.quantity, item.variant_id, order.client_id, warehouse_id || null]
+                `UPDATE warehouse_stock
+                 SET reserved_qty = reserved_qty + $1, last_updated = NOW()
+                 WHERE id = $2`,
+                [r.item.quantity, r.stockId]
+            );
+            await client.query(
+                `UPDATE order_items SET reserved_stock_id = $1 WHERE id = $2`,
+                [r.stockId, r.item.id]
             );
         }
         

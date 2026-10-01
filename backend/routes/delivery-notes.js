@@ -39,6 +39,198 @@ async function _autoCompleteOrderOnDelivery(client, orderId) {
     console.log(`[autoStatus] Order ${orderId}: ${currentStatus} → completed (delivery finalized)`);
 }
 
+// =============================================================================
+// _dispatchItem — shared line processor for /dispatch and /confirm.
+// Honors explicit shelf picks (item.shelves = [{shelf_id, stock_id?, quantity}])
+// and consumes the pinned reservation (dni.source_stock_id for invoice-linked
+// notes, oi.reserved_stock_id for order-release notes — fixes the reserved_qty
+// leak where order-linked dispatches never released the hold).
+//
+// Every consumed stock row gets an inventory_transaction AND a shelf ledger
+// row ('delivery_dispatch' keyed by dn_item id): explicit picks + auto-picks
+// carry the shelf id, unassigned-bucket consumption is ledgered with
+// shelf_id = NULL — so /reverse restores the exact rows and shelves.
+// =============================================================================
+async function _dispatchItem(client, dn, item, { deliveryNotes, userId, dispatchId = null }) {
+    const shelfService = require('../services/shelf-service');
+    const itemQty = parseFloat(item.quantity);
+    if (!item.item_id || !(itemQty > 0)) return;
+
+    // ── Validate against remaining qty ────────────────────────────────────────
+    const dniCheck = await client.query(
+        `SELECT requested_qty, delivered_qty FROM delivery_note_items WHERE id = $1 FOR UPDATE`,
+        [item.item_id]
+    );
+    if (dniCheck.rowCount === 0) return;
+    const { requested_qty, delivered_qty } = dniCheck.rows[0];
+    const remaining = parseFloat(requested_qty) - parseFloat(delivered_qty);
+    if (itemQty > remaining + 1e-9) {
+        throw new Error(`الكمية (${itemQty}) تتجاوز المتبقي (${remaining}).`);
+    }
+
+    // ── Resolve variant + pinned stock row ────────────────────────────────────
+    const itemResult = await client.query(
+        `SELECT dni.order_item_id, dni.source_stock_id,
+                COALESCE(dni.variant_id, oi.variant_id) AS variant_id,
+                oi.reserved_stock_id
+         FROM delivery_note_items dni
+         LEFT JOIN order_items oi ON oi.id = dni.order_item_id
+         WHERE dni.id = $1`,
+        [item.item_id]
+    );
+    if (itemResult.rowCount === 0) return;
+    const { order_item_id: orderItemId, source_stock_id: sourceStockId,
+            reserved_stock_id: reservedStockId, variant_id: variantId } = itemResult.rows[0];
+    if (!variantId) return;
+    const effectiveStockId = sourceStockId || reservedStockId || null;
+
+    // ── Shelf picks (optional, may split across shelves) ──────────────────────
+    const shelves = Array.isArray(item.shelves)
+        ? item.shelves.filter(a => a && a.shelf_id && parseFloat(a.quantity) > 0)
+        : [];
+    const allocSum = shelves.reduce((s, a) => s + parseFloat(a.quantity), 0);
+    if (allocSum > itemQty + 1e-9) {
+        throw new Error(`مجموع كميات الرفوف (${allocSum}) أكبر من كمية البند (${itemQty}).`);
+    }
+
+    const deductMap = new Map(); // stockId -> qty to deduct from warehouse_stock
+    for (const alloc of shelves) {
+        const allocQty = parseFloat(alloc.quantity);
+        const pRes = await client.query(
+            `SELECT sp.id AS placement_id, sp.stock_id, sp.quantity AS placed,
+                    ws.quantity, ws.reserved_qty, sh.code AS shelf_code
+             FROM stock_placements sp
+             JOIN warehouse_shelves sh ON sh.id = sp.shelf_id AND sh.status = 'active'
+             JOIN warehouse_stock ws ON ws.id = sp.stock_id
+             WHERE sp.shelf_id = $1
+               AND ws.variant_id = $2
+               AND ($3::uuid IS NULL OR sp.stock_id = $3)
+               AND ($4::uuid IS NULL OR ws.warehouse_id = $4)
+               AND (ws.client_id = $5
+                    OR ws.client_id IS NULL
+                    OR ws.client_id IN (SELECT parent_id FROM clients WHERE id = $5))
+             ORDER BY CASE WHEN ws.client_id = $5 THEN 0 ELSE 1 END, sp.quantity DESC
+             LIMIT 1
+             FOR UPDATE OF sp, ws`,
+            [alloc.shelf_id, variantId, alloc.stock_id || null, dn.warehouse_id || null, dn.client_id]
+        );
+        if (pRes.rowCount === 0) {
+            throw new Error('لا يوجد رصيد مطابق لهذا الصنف على الرف المحدد.');
+        }
+        const p = pRes.rows[0];
+        const pending = deductMap.get(p.stock_id) || 0;
+        const isPinned = p.stock_id === effectiveStockId;
+        const avail = isPinned && parseFloat(p.reserved_qty) >= itemQty
+            ? parseFloat(p.quantity)
+            : parseFloat(p.quantity) - parseFloat(p.reserved_qty);
+        if (allocQty + pending > avail + 1e-9) {
+            throw new Error(`الرصيد المتاح على الرف ${p.shelf_code} غير كافٍ — المتاح: ${Math.max(0, avail - pending)}، المطلوب: ${allocQty}.`);
+        }
+        await shelfService.pickFromShelf(client, {
+            shelfId: alloc.shelf_id, stockId: p.stock_id, quantity: allocQty,
+            refType: 'delivery_dispatch', refId: item.item_id, userId,
+            notes: `صرف - سند تسليم #${dn.note_number || dn.id}`,
+        });
+        deductMap.set(p.stock_id, pending + allocQty);
+    }
+
+    // ── Remainder: pinned row or best-match row, unassigned bucket first ─────
+    const remainder = itemQty - allocSum;
+    if (remainder > 1e-9) {
+        let row;
+        if (effectiveStockId) {
+            const r = await client.query(
+                `SELECT id, quantity, reserved_qty FROM warehouse_stock WHERE id = $1 FOR UPDATE`,
+                [effectiveStockId]
+            );
+            if (r.rowCount === 0) throw new Error('سجل المخزون المثبّت لهذا البند غير موجود.');
+            row = r.rows[0];
+        } else {
+            const r = await client.query(
+                `SELECT ws.id, ws.quantity, ws.reserved_qty
+                 FROM warehouse_stock ws
+                 WHERE ws.variant_id = $1
+                   AND ($2::uuid IS NULL OR ws.warehouse_id = $2)
+                   AND (ws.client_id = $3
+                        OR ws.client_id IS NULL
+                        OR ws.client_id IN (SELECT parent_id FROM clients WHERE id = $3))
+                 ORDER BY CASE WHEN ws.client_id = $3 THEN 0 ELSE 1 END, ws.quantity DESC
+                 LIMIT 1
+                 FOR UPDATE`,
+                [variantId, dn.warehouse_id || null, dn.client_id]
+            );
+            if (r.rowCount === 0) throw new Error('سجل المخزون غير موجود في المستودع المحدد.');
+            row = r.rows[0];
+        }
+        const pending = deductMap.get(row.id) || 0;
+        const avail = row.id === effectiveStockId && parseFloat(row.reserved_qty) >= itemQty
+            ? parseFloat(row.quantity)
+            : parseFloat(row.quantity) - parseFloat(row.reserved_qty);
+        if (remainder + pending > avail + 1e-9) {
+            throw new Error(`المخزون غير كافٍ — المتاح: ${Math.max(0, avail - pending)}، المطلوب: ${remainder}.`);
+        }
+        const autoPicked = await shelfService.deductFromStock(client, {
+            stockId: row.id, quantity: remainder,
+            refType: 'delivery_dispatch', refId: item.item_id, userId,
+            notes: `صرف - سند تسليم #${dn.note_number || dn.id}`,
+        });
+        const unassignedPart = remainder - autoPicked;
+        if (unassignedPart > 1e-9) {
+            await shelfService.logUnassignedPick(client, {
+                stockId: row.id, quantity: unassignedPart,
+                refType: 'delivery_dispatch', refId: item.item_id, userId,
+            });
+        }
+        deductMap.set(row.id, pending + remainder);
+    }
+
+    // ── Apply stock deductions + per-row transactions ────────────────────────
+    for (const [stockId, qty] of deductMap) {
+        await client.query(
+            `UPDATE warehouse_stock
+             SET quantity = quantity - $1, last_updated = NOW()
+             WHERE id = $2`,
+            [qty, stockId]
+        );
+        await client.query(
+            `INSERT INTO inventory_transactions (stock_id, variant_id, transaction_type, quantity, notes, reference_id, reference_type, created_by, created_at)
+             VALUES ($1, $2, 'dispense', $3, $4, $5, 'delivery_note', $6, NOW())`,
+            [stockId, variantId, qty, deliveryNotes || `تسليم - سند تسليم #${dn.note_number}`, dn.id, userId]
+        );
+    }
+
+    // ── Consume the pinned reservation (invoice source row OR release row) ───
+    if (effectiveStockId) {
+        await client.query(
+            `UPDATE warehouse_stock
+             SET reserved_qty = GREATEST(0, reserved_qty - $1), last_updated = NOW()
+             WHERE id = $2`,
+            [itemQty, effectiveStockId]
+        );
+    }
+
+    // ── Dispatch record (only for /dispatch which creates dispatch slips) ────
+    if (dispatchId) {
+        await client.query(
+            `INSERT INTO delivery_dispatch_items (dispatch_id, dn_item_id, quantity)
+             VALUES ($1, $2, $3)`,
+            [dispatchId, item.item_id, itemQty]
+        );
+    }
+
+    // ── Delivered counters ───────────────────────────────────────────────────
+    await client.query(
+        `UPDATE delivery_note_items SET delivered_qty = delivered_qty + $1 WHERE id = $2`,
+        [itemQty, item.item_id]
+    );
+    if (orderItemId) {
+        await client.query(
+            `UPDATE order_items SET delivered_qty = COALESCE(delivered_qty, 0) + $1 WHERE id = $2`,
+            [itemQty, orderItemId]
+        );
+    }
+}
+
 // View permission: 'vmi_dispatch' OR 'production_orders' view can access
 router.use((req, res, next) => {
     if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
@@ -453,106 +645,13 @@ router.post('/:id/dispatch', restrictWrite, validateBody(deliveryNoteDispatch), 
             );
             const dispatchId = dispatchRes.rows[0].id;
 
-            // Process each item
+            // Process each item (shared logic: shelf picks + reservation consume)
             for (const item of items) {
-                if (!item.item_id || !item.quantity || item.quantity <= 0) continue;
-
-                // Validate: cannot exceed remaining qty
-                const dniCheck = await client.query(
-                    `SELECT requested_qty, delivered_qty FROM delivery_note_items WHERE id = $1`,
-                    [item.item_id]
-                );
-                if (dniCheck.rowCount === 0) continue;
-
-                const { requested_qty, delivered_qty } = dniCheck.rows[0];
-                const remaining = parseFloat(requested_qty) - parseFloat(delivered_qty);
-                if (item.quantity > remaining) {
-                    throw new Error(`الكمية (${item.quantity}) تتجاوز المتبقي (${remaining}).`);
-                }
-
-                // Get variant + order item (use LEFT JOIN since standalone notes have no order_item_id)
-                const itemResult = await client.query(
-                    `SELECT dni.order_item_id, dni.source_stock_id,
-                            COALESCE(dni.variant_id, oi.variant_id) AS variant_id
-                     FROM delivery_note_items dni
-                     LEFT JOIN order_items oi ON oi.id = dni.order_item_id
-                     WHERE dni.id = $1`,
-                    [item.item_id]
-                );
-                if (itemResult.rowCount === 0) continue;
-
-                const { order_item_id: orderItemId, source_stock_id: sourceStockId, variant_id: variantId } = itemResult.rows[0];
-                if (!variantId) continue;
-
-                const stockResult = await client.query(
-                    `SELECT ws.id, ws.quantity, ws.reserved_qty
-                     FROM warehouse_stock ws
-                     WHERE ws.variant_id = $1
-                       AND (
-                           ($2::uuid IS NOT NULL AND ws.id = $2)
-                           OR (
-                               $2::uuid IS NULL
-                               AND ($3::uuid IS NULL OR ws.warehouse_id = $3)
-                               AND (
-                                   ws.client_id = $4
-                                   OR ws.client_id IS NULL
-                                   OR ws.client_id IN (SELECT parent_id FROM clients WHERE id = $4)
-                               )
-                           )
-                       )
-                     ORDER BY CASE WHEN ws.client_id = $4 THEN 0 ELSE 1 END, ws.quantity DESC
-                     LIMIT 1
-                     FOR UPDATE`,
-                    [variantId, sourceStockId || null, dn.warehouse_id || null, dn.client_id]
-                );
-                if (stockResult.rowCount === 0) throw new Error('سجل المخزون غير موجود في المستودع المحدد.');
-                const stock = stockResult.rows[0];
-                const quantity = parseFloat(stock.quantity || 0);
-                const reserved = parseFloat(stock.reserved_qty || 0);
-                const available = sourceStockId && reserved >= item.quantity ? quantity : quantity - reserved;
-                if (item.quantity > available) {
-                    throw new Error(`المخزون غير كافٍ — المتاح: ${available}، المطلوب: ${item.quantity}.`);
-                }
-
-                const stockId = stock.id;
-
-                // Record this item in the dispatch
-                await client.query(
-                    `INSERT INTO delivery_dispatch_items (dispatch_id, dn_item_id, quantity)
-                     VALUES ($1, $2, $3)`,
-                    [dispatchId, item.item_id, item.quantity]
-                );
-
-                // Update delivered_qty on delivery_note_items
-                await client.query(
-                    `UPDATE delivery_note_items SET delivered_qty = delivered_qty + $1 WHERE id = $2`,
-                    [item.quantity, item.item_id]
-                );
-
-                // Update order item delivered quantity (only if linked to an order)
-                if (orderItemId) {
-                    await client.query(
-                        `UPDATE order_items SET delivered_qty = COALESCE(delivered_qty, 0) + $1 WHERE id = $2`,
-                        [item.quantity, orderItemId]
-                    );
-                }
-
-                // Deduct from stock
-                await client.query(
-                    `UPDATE warehouse_stock
-                     SET quantity = quantity - $1,
-                         reserved_qty = CASE WHEN $3::boolean THEN GREATEST(0, reserved_qty - $1) ELSE reserved_qty END,
-                         last_updated = NOW()
-                     WHERE id = $2`,
-                    [item.quantity, stockId, Boolean(sourceStockId)]
-                );
-
-                // Create inventory transaction
-                await client.query(
-                    `INSERT INTO inventory_transactions (stock_id, variant_id, transaction_type, quantity, notes, reference_id, reference_type, created_by, created_at)
-                     VALUES ($1, $2, 'dispense', $3, $4, $5, 'delivery_note', $6, NOW())`,
-                    [stockId, variantId, item.quantity, deliveryNotes || `تسليم - سند تسليم #${dn.note_number}`, id, req.user?.id]
-                );
+                await _dispatchItem(client, dn, item, {
+                    deliveryNotes,
+                    userId: req.user?.id || null,
+                    dispatchId,
+                });
             }
 
             // Update delivery note status
@@ -725,93 +824,13 @@ router.post('/:id/confirm', restrictWrite, validateBody(deliveryNoteDispatch), a
                 throw new Error('سند التسليم مكتمل بالفعل ولا يمكن التعديل عليه.');
             }
             
-            // Process each item
+            // Process each item (shared logic: shelf picks + reservation consume)
             for (const item of items) {
-                if (!item.item_id || !item.quantity || item.quantity <= 0) continue;
-
-                // ── Validate: cannot exceed remaining qty ──────────────────────
-                const dniCheck = await client.query(
-                    `SELECT requested_qty, delivered_qty FROM delivery_note_items WHERE id = $1`,
-                    [item.item_id]
-                );
-                if (dniCheck.rowCount === 0) continue;
-
-                const { requested_qty, delivered_qty } = dniCheck.rows[0];
-                const remaining = parseFloat(requested_qty) - parseFloat(delivered_qty);
-                if (item.quantity > remaining) {
-                    throw new Error(`الكمية المُسلَّمة (${item.quantity}) تتجاوز المتبقي (${remaining}) للصنف.`);
-                }
-
-                // Get variant + order item (use LEFT JOIN since standalone notes have no order_item_id)
-                const itemResult = await client.query(
-                    `SELECT dni.order_item_id, dni.source_stock_id,
-                            COALESCE(dni.variant_id, oi.variant_id) AS variant_id
-                     FROM delivery_note_items dni
-                     LEFT JOIN order_items oi ON oi.id = dni.order_item_id
-                     WHERE dni.id = $1`,
-                    [item.item_id]
-                );
-                
-                if (itemResult.rowCount === 0) continue;
-                
-                const orderItemId = itemResult.rows[0].order_item_id;
-                const sourceStockId = itemResult.rows[0].source_stock_id;
-                const variantId = itemResult.rows[0].variant_id;
-                if (!variantId) continue;
-
-                const stockResult = await client.query(
-                    `SELECT id, quantity, reserved_qty FROM warehouse_stock
-                     WHERE variant_id = $1
-                       AND ($2::uuid IS NULL OR id = $2)
-                       AND ($3::uuid IS NULL OR warehouse_id = $3)
-                       AND (client_id = $4 OR (client_id IS NULL AND $2::uuid IS NULL) OR (client_id IN (SELECT parent_id FROM clients WHERE id = $4) AND $2::uuid IS NULL))
-                     LIMIT 1 FOR UPDATE`,
-                    [variantId, sourceStockId || null, dn.warehouse_id || null, dn.client_id]
-                );
-
-                if (stockResult.rowCount === 0) throw new Error('سجل المخزون غير موجود في المستودع المحدد.');
-                const stock = stockResult.rows[0];
-                const quantity = parseFloat(stock.quantity || 0);
-                const reserved = parseFloat(stock.reserved_qty || 0);
-                const available = sourceStockId && reserved >= item.quantity ? quantity : quantity - reserved;
-                if (item.quantity > available) {
-                    throw new Error(`المخزون غير كافٍ — المتاح: ${available}، المطلوب: ${item.quantity}.`);
-                }
-
-                const stockId = stock.id;
-
-                // Update delivered quantity
-                await client.query(
-                    `UPDATE delivery_note_items 
-                     SET delivered_qty = delivered_qty + $1
-                     WHERE id = $2`,
-                    [item.quantity, item.item_id]
-                );
-                
-                // Update order item delivered quantity (only if linked to an order)
-                if (orderItemId) {
-                    await client.query(
-                        `UPDATE order_items SET delivered_qty = COALESCE(delivered_qty, 0) + $1 WHERE id = $2`,
-                        [item.quantity, orderItemId]
-                    );
-                }
-                
-                // Deduct from stock
-                await client.query(
-                    `UPDATE warehouse_stock
-                     SET quantity = quantity - $1,
-                         reserved_qty = CASE WHEN $3::boolean THEN GREATEST(0, reserved_qty - $1) ELSE reserved_qty END,
-                         last_updated = NOW()
-                     WHERE id = $2`,
-                    [item.quantity, stockId, Boolean(sourceStockId)]
-                );
-                
-                // Create inventory transaction
-                await client.query(
-                    `INSERT INTO inventory_transactions (stock_id, variant_id, transaction_type, quantity, notes, reference_id, reference_type, created_by, created_at)
-                     VALUES ($1, $2, 'dispense', $3, $4, $5, 'delivery_note', $6, NOW())`,
-                    [stockId, variantId, item.quantity, deliveryNotes || `تسليم - ${dn.note_number}`, id, req.user?.id]
-                );
+                await _dispatchItem(client, dn, item, {
+                    deliveryNotes,
+                    userId: req.user?.id || null,
+                    dispatchId: null,
+                });
             }
             
             // Check if all items are fully delivered
@@ -884,44 +903,86 @@ router.post('/:id/reverse', restrictWrite, async (req, res) => {
 
             // Get all items with their delivered_qty and variant info
             const itemsRes = await client.query(
-                `SELECT dni.id, dni.order_item_id, dni.variant_id, dni.source_stock_id, dni.delivered_qty,
-                        oi.id AS oi_id
+                `SELECT dni.id, dni.order_item_id, dni.source_stock_id, dni.delivered_qty,
+                        COALESCE(dni.variant_id, oi.variant_id) AS variant_id,
+                        oi.reserved_stock_id
                  FROM delivery_note_items dni
                  LEFT JOIN order_items oi ON oi.id = dni.order_item_id
                  WHERE dni.delivery_note_id = $1 AND dni.delivered_qty > 0`,
                 [id]
             );
 
+            const shelfService = require('../services/shelf-service');
             for (const item of itemsRes.rows) {
                 const delQty = parseFloat(item.delivered_qty);
                 if (delQty <= 0) continue;
 
-                const stockRes = await client.query(
-                    `SELECT id, quantity FROM warehouse_stock
-                     WHERE variant_id = $1
-                       AND ($2::uuid IS NULL OR id = $2)
-                       AND ($3::uuid IS NULL OR warehouse_id = $3)
-                       AND (client_id = $4 OR (client_id IS NULL AND $2::uuid IS NULL) OR (client_id IN (SELECT parent_id FROM clients WHERE id = $4) AND $2::uuid IS NULL))
-                     LIMIT 1 FOR UPDATE`,
-                    [item.variant_id, item.source_stock_id || null, dn.warehouse_id || null, dn.client_id]
-                );
-                if (stockRes.rowCount > 0) {
+                // Ledger-driven restore: re-add stock to the exact rows that were
+                // consumed at dispatch, and re-create any shelf placements taken.
+                const { count, stockAdds } = await shelfService.restorePicks(client, {
+                    refType: 'delivery_dispatch', refId: item.id,
+                    reverseRefType: 'delivery_reversal',
+                    userId: req.user?.id || null,
+                });
+
+                if (count > 0) {
+                    for (const [stockId, qty] of stockAdds) {
+                        await client.query(
+                            `UPDATE warehouse_stock SET quantity = quantity + $1, last_updated = NOW() WHERE id = $2`,
+                            [qty, stockId]
+                        );
+                        await client.query(
+                            `INSERT INTO inventory_transactions (stock_id, variant_id, transaction_type, quantity, notes, reference_id, reference_type, created_by, created_at)
+                             VALUES ($1, $2, 'return', $3, $4, $5, 'delivery_note', $6, NOW())`,
+                            [stockId, item.variant_id, qty, `تراجع عن تسليم - سند تسليم #${dn.note_number}`, id, req.user?.id]
+                        );
+                    }
+                } else {
+                    // Legacy fallback (pre-ledger dispatches): re-pick best row.
+                    const stockRes = await client.query(
+                        `SELECT id, quantity FROM warehouse_stock
+                         WHERE variant_id = $1
+                           AND ($2::uuid IS NULL OR id = $2)
+                           AND ($3::uuid IS NULL OR warehouse_id = $3)
+                           AND (client_id = $4 OR (client_id IS NULL AND $2::uuid IS NULL) OR (client_id IN (SELECT parent_id FROM clients WHERE id = $4) AND $2::uuid IS NULL))
+                         LIMIT 1 FOR UPDATE`,
+                        [item.variant_id, item.source_stock_id || null, dn.warehouse_id || null, dn.client_id]
+                    );
+                    if (stockRes.rowCount > 0) {
+                        await client.query(
+                            `UPDATE warehouse_stock
+                             SET quantity = quantity + $1, last_updated = NOW()
+                             WHERE id = $2`,
+                            [delQty, stockRes.rows[0].id]
+                        );
+                    } else {
+                        // Re-create stock record — use parent client_id if this is a branch
+                        const parentRes = await client.query('SELECT parent_id FROM clients WHERE id = $1', [dn.client_id]);
+                        const stockClientId = parentRes.rowCount > 0 && parentRes.rows[0].parent_id ? parentRes.rows[0].parent_id : dn.client_id;
+                        await client.query(
+                            `INSERT INTO warehouse_stock (variant_id, client_id, quantity, last_updated)
+                             VALUES ($1, $2, $3, NOW())`,
+                            [item.variant_id, stockClientId, delQty]
+                        );
+                    }
+
+                    await client.query(
+                        `INSERT INTO inventory_transactions (stock_id, variant_id, transaction_type, quantity, notes, reference_id, reference_type, created_by, created_at)
+                         VALUES ($1, $2, 'return', $3, $4, $5, 'delivery_note', $6, NOW())`,
+                        [stockRes.rowCount > 0 ? stockRes.rows[0].id : null, item.variant_id, delQty, `تراجع عن تسليم - سند تسليم #${dn.note_number}`, id, req.user?.id]
+                    );
+                }
+
+                // Restore the reservation hold consumed at dispatch (invoice
+                // source row OR order-release pinned row — fixes the leak where
+                // order-linked DNs never got their reserved_qty back).
+                const effectiveStockId = item.source_stock_id || item.reserved_stock_id;
+                if (effectiveStockId) {
                     await client.query(
                         `UPDATE warehouse_stock
-                         SET quantity = quantity + $1,
-                             reserved_qty = CASE WHEN $3::boolean THEN reserved_qty + $1 ELSE reserved_qty END,
-                             last_updated = NOW()
+                         SET reserved_qty = reserved_qty + $1, last_updated = NOW()
                          WHERE id = $2`,
-                        [delQty, stockRes.rows[0].id, Boolean(item.source_stock_id)]
-                    );
-                } else {
-                    // Re-create stock record — use parent client_id if this is a branch
-                    const parentRes = await client.query('SELECT parent_id FROM clients WHERE id = $1', [dn.client_id]);
-                    const stockClientId = parentRes.rowCount > 0 && parentRes.rows[0].parent_id ? parentRes.rows[0].parent_id : dn.client_id;
-                    await client.query(
-                        `INSERT INTO warehouse_stock (variant_id, client_id, quantity, last_updated)
-                         VALUES ($1, $2, $3, NOW())`,
-                        [item.variant_id, stockClientId, delQty]
+                        [delQty, effectiveStockId]
                     );
                 }
 
@@ -937,14 +998,6 @@ router.post('/:id/reverse', restrictWrite, async (req, res) => {
                 await client.query(
                     `UPDATE delivery_note_items SET delivered_qty = 0 WHERE id = $1`,
                     [item.id]
-                );
-
-                // Create inventory transaction for reversal
-                const stockId = stockRes.rowCount > 0 ? stockRes.rows[0].id : null;
-                await client.query(
-                    `INSERT INTO inventory_transactions (stock_id, variant_id, transaction_type, quantity, notes, reference_id, reference_type, created_by, created_at)
-                     VALUES ($1, $2, 'return', $3, $4, $5, 'delivery_note', $6, NOW())`,
-                    [stockId, item.variant_id, delQty, `تراجع عن تسليم - سند تسليم #${dn.note_number}`, id, req.user?.id]
                 );
             }
 

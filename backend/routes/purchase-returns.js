@@ -165,30 +165,63 @@ router.post('/', restrictWrite, validateBody(purchaseReturnCreate), async (req, 
         for (const it of items) {
             const lineTotal = parseFloat(it.quantity) * parseFloat(it.unit_cost);
             
-            // Insert item
+            // Insert item — warehouse_id (optional) scopes the deduction and is
+            // persisted so a later void can restore confidently.
             await client.query(`
                 INSERT INTO purchase_return_items
-                    (purchase_return_id, variant_id, quantity, unit_cost, line_total)
-                VALUES ($1, $2, $3, $4, $5)
-            `, [returnId, it.variant_id, it.quantity, it.unit_cost, lineTotal]);
+                    (purchase_return_id, variant_id, quantity, unit_cost, line_total, warehouse_id)
+                VALUES ($1, $2, $3, $4, $5, $6)
+            `, [returnId, it.variant_id, it.quantity, it.unit_cost, lineTotal, it.warehouse_id || null]);
 
-            // Deduct from warehouse_stock (LIFO: deduct from any client stock)
-            // Find stock entries to deduct from (FOR UPDATE prevents race condition)
+            // Deduct from warehouse_stock (LIFO per variant — optionally scoped
+            // to a warehouse when provided). Each deduction is logged with its
+            // exact stock row so voiding restores to the SAME rows.
             const stockRes = await client.query(`
-                SELECT id, quantity FROM warehouse_stock
-                WHERE variant_id = $1 AND quantity > 0
-                ORDER BY last_updated DESC
+                SELECT ws.id, ws.quantity, ws.warehouse_id, ws.client_id FROM warehouse_stock ws
+                WHERE ws.variant_id = $1 AND ws.quantity > 0
+                  AND ($2::uuid IS NULL OR ws.warehouse_id = $2)
+                ORDER BY ws.last_updated DESC
                 FOR UPDATE
-            `, [it.variant_id]);
+            `, [it.variant_id, it.warehouse_id || null]);
 
+            const shelfService = require('../services/shelf-service');
             let remaining = it.quantity;
             for (const row of stockRes.rows) {
                 if (remaining <= 0) break;
                 const deduct = Math.min(remaining, row.quantity);
+
+                // Shelf-sync BEFORE the stock update: consumes the unassigned
+                // bucket first, then flagged auto-picks — keeps placements <= qty.
+                // Failure aborts the whole return — never warn-and-continue.
+                await shelfService.deductFromStock(client, {
+                    stockId: row.id, quantity: deduct,
+                    refType: 'purchase_return', refId: returnId,
+                    userId: req.user?.id || null,
+                    notes: `مرتجع مشتريات #${returnNumber}`,
+                });
+
                 await client.query(`
-                    UPDATE warehouse_stock SET quantity = quantity - $1 WHERE id = $2
+                    UPDATE warehouse_stock SET quantity = quantity - $1, last_updated = NOW() WHERE id = $2
                 `, [deduct, row.id]);
+
+                // Exact-row movement log (used by the void path to restore)
+                await client.query(`
+                    INSERT INTO inventory_transactions
+                        (stock_id, variant_id, transaction_type, quantity, warehouse_from, client_id,
+                         reference_type, reference_id, notes, created_by, created_at)
+                    VALUES ($1, $2, 'dispense', $3, $4, $5, 'purchase_return', $6, $7, $8, NOW())
+                `, [row.id, it.variant_id, deduct, row.warehouse_id, row.client_id,
+                    returnId, `مرتجع مشتريات #${returnNumber}`, req.user?.id || null]);
+
                 remaining -= deduct;
+            }
+
+            // Never record a return larger than the stock actually available —
+            // a partial deduction would silently falsify both stock and AP.
+            if (remaining > 1e-9) {
+                const insufficient = new Error(`الكمية المرتجعة (${it.quantity}) تتجاوز المخزون المتاح للصنف — المتاح أقل بـ ${remaining}.`);
+                insufficient.statusCode = 400;
+                throw insufficient;
             }
         }
 
@@ -244,7 +277,7 @@ router.post('/', restrictWrite, validateBody(purchaseReturnCreate), async (req, 
     } catch (err) {
         await client.query('ROLLBACK');
         console.error('[PurchaseReturns] POST / error:', err.message);
-        return res.status(500).json({ error: err.message || 'Internal server error.' });
+        return res.status(err.statusCode || 500).json({ error: err.message || 'Internal server error.' });
     } finally {
         client.release();
     }
@@ -268,25 +301,57 @@ router.delete('/:id', restrictDelete, async (req, res) => {
             await client.query('BEGIN');
 
             // Get items to restore stock
-            const items = await client.query(`SELECT variant_id, quantity FROM purchase_return_items WHERE purchase_return_id = $1`, [id]);
+            const items = await client.query(`SELECT variant_id, quantity, warehouse_id FROM purchase_return_items WHERE purchase_return_id = $1`, [id]);
 
-            // Restore stock (add back)
-            for (const it of items.rows) {
-                // Check if stock record exists
-                const stockCheck = await client.query(`
-                    SELECT id FROM warehouse_stock WHERE variant_id = $1 LIMIT 1
-                `, [it.variant_id]);
-                
-                if (stockCheck.rows.length) {
+            // Restore stock (add back) — prefer the exact rows recorded in
+            // inventory_transactions at deduction time; legacy returns without
+            // logged rows fall back to a single matching stock row.
+            const logged = await client.query(`
+                SELECT stock_id, variant_id, quantity FROM inventory_transactions
+                WHERE reference_type = 'purchase_return' AND reference_id = $1
+                  AND transaction_type = 'dispense' AND stock_id IS NOT NULL
+            `, [id]);
+
+            if (logged.rowCount > 0) {
+                for (const mv of logged.rows) {
                     await client.query(`
-                        UPDATE warehouse_stock SET quantity = quantity + $1 WHERE variant_id = $2
-                    `, [it.quantity, it.variant_id]);
-                } else {
-                    // Create new stock entry (rare case) - insert with NULL client_id
+                        UPDATE warehouse_stock SET quantity = quantity + $1, last_updated = NOW() WHERE id = $2
+                    `, [mv.quantity, mv.stock_id]);
                     await client.query(`
-                        INSERT INTO warehouse_stock (variant_id, quantity, client_id)
-                        VALUES ($1, $2, NULL)
-                    `, [it.variant_id, it.quantity]);
+                        INSERT INTO inventory_transactions
+                            (stock_id, variant_id, transaction_type, quantity,
+                             reference_type, reference_id, notes, created_by, created_at)
+                        VALUES ($1, $2, 'reversal', $3, 'purchase_return', $4, $5, $6, NOW())
+                    `, [mv.stock_id, mv.variant_id, mv.quantity, id,
+                        'إلغاء مرتجع مشتريات', req.user?.id || null]);
+                }
+            } else {
+                // Legacy return without logged movements — restore ONLY when
+                // the original stock row can be determined confidently:
+                // exactly one candidate for the variant, scoped to the item's
+                // warehouse when recorded. Otherwise the void is blocked rather
+                // than crediting a potentially wrong row.
+                for (const it of items.rows) {
+                    const stockCheck = await client.query(`
+                        SELECT id FROM warehouse_stock
+                        WHERE variant_id = $1
+                          AND ($2::uuid IS NULL OR warehouse_id = $2)
+                        FOR UPDATE
+                    `, [it.variant_id, it.warehouse_id || null]);
+
+                    if (stockCheck.rowCount !== 1) {
+                        const ambiguous = new Error(
+                            stockCheck.rowCount === 0
+                                ? 'لا يمكن إلغاء المرتجع — سجل المخزون الأصلي غير موجود.'
+                                : 'لا يمكن إلغاء المرتجع — تعذّر تحديد سجل المخزون الأصلي بدقة (أكثر من سجل مرشّح لهذا الصنف). يتطلب الأمر مراجعة يدوية.'
+                        );
+                        ambiguous.statusCode = 409;
+                        throw ambiguous;
+                    }
+
+                    await client.query(`
+                        UPDATE warehouse_stock SET quantity = quantity + $1, last_updated = NOW() WHERE id = $2
+                    `, [it.quantity, stockCheck.rows[0].id]);
                 }
             }
 
@@ -311,7 +376,7 @@ router.delete('/:id', restrictDelete, async (req, res) => {
         }
     } catch (err) {
         console.error('[PurchaseReturns] DELETE /:id error:', err.message);
-        return res.status(500).json({ error: 'Internal server error.' });
+        return res.status(err.statusCode || 500).json({ error: err.statusCode ? err.message : 'Internal server error.' });
     }
 });
 

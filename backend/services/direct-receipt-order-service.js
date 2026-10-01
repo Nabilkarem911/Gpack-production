@@ -191,6 +191,15 @@ async function revertDirectReceiptToReview(client, { receiptId, userId }) {
             throw serviceError('لا يمكن التراجع: تم صرف أو استهلاك جزء من المخزون.');
         }
 
+        // Shelf-sync BEFORE the deduction: unassigned bucket first, then
+        // flagged auto-picks — keeps sum(placements) <= quantity.
+        const shelfService = require('./shelf-service');
+        await shelfService.deductFromStock(client, {
+            stockId: stockRes.rows[0].id, quantity,
+            refType: 'direct_receipt_reversal', refId: receiptId, userId,
+            notes: `عكس استلام مؤقت #${receipt.receipt_number}`,
+        });
+
         await client.query(
             `UPDATE warehouse_stock
              SET quantity = quantity - $1, last_updated = NOW()

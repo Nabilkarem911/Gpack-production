@@ -352,6 +352,7 @@ _mountRoute('/users',               authenticate, require('./routes/users'));
 _mountRoute('/clients',             authenticate, require('./routes/clients'));
 _mountRoute('/products',            authenticate, require('./routes/products'));
 _mountRoute('/inventory',           authenticate, require('./routes/inventory'));
+_mountRoute('/inventory',           authenticate, require('./routes/shelves'));
 _mountRoute('/categories',          authenticate, require('./routes/categories'));
 _mountRoute('/units',               authenticate, require('./routes/units'));
 _mountRoute('/orders',              authenticate, require('./routes/orders'));

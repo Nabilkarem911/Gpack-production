@@ -201,11 +201,30 @@ router.post('/dispatch', restrictWrite, validateBody(vmiDispatch), async (req, r
             }
 
             // Insert delivery note item
-            await client.query(`
+            const dniRes = await client.query(`
                 INSERT INTO delivery_note_items
                     (delivery_note_id, variant_id, requested_qty, delivered_qty)
                 VALUES ($1, $2, $3, $3)
+                RETURNING id
             `, [dnId, variant_id, qty]);
+            const dnItemId = dniRes.rows[0].id;
+
+            // Shelf-sync BEFORE the stock update: unassigned bucket first, then
+            // flagged auto-picks — and ledger the unassigned part (shelf NULL)
+            // so a delivery-note reversal restores this exact stock row.
+            const shelfService = require('../services/shelf-service');
+            const autoPicked = await shelfService.deductFromStock(client, {
+                stockId: stock_id, quantity: qty,
+                refType: 'delivery_dispatch', refId: dnItemId, userId,
+                notes: `صرف VMI - سند تسليم #${dnNumber}`,
+            });
+            const unassignedPart = qty - autoPicked;
+            if (unassignedPart > 1e-9) {
+                await shelfService.logUnassignedPick(client, {
+                    stockId: stock_id, quantity: unassignedPart,
+                    refType: 'delivery_dispatch', refId: dnItemId, userId,
+                });
+            }
 
             // Deduct from warehouse_stock
             await client.query(`

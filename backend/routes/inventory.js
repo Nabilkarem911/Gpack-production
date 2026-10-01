@@ -383,77 +383,92 @@ router.post('/stock/adjust', restrictEdit, validateBody(stockAdjust), async (req
 
     // Support both single adjustment and batch items
     if (items && Array.isArray(items) && items.length > 0) {
-        // Batch adjustment from warehouses.js cart
+        // Batch adjustment from warehouses.js cart — atomic: all items or none.
         try {
-            const results = [];
-            
-            for (const item of items) {
-                const { warehouse_id, variant_id, quantity, adjustment_type, unit_cost } = item;
-                
-                if (!warehouse_id || !variant_id || !quantity) {
-                    continue;
-                }
-                
-                // Get client_id from warehouse (if warehouse is dedicated to a client)
-                let effectiveClientId = item.client_id;
-                if (!effectiveClientId) {
-                    const whResult = await db.query(
-                        `SELECT client_id FROM warehouses WHERE id = $1`,
-                        [warehouse_id]
+            const shelfService = require('../services/shelf-service');
+            const results = await db.withTransaction(async (client) => {
+                const out = [];
+                for (const item of items) {
+                    const { warehouse_id, variant_id, quantity, adjustment_type, unit_cost } = item;
+
+                    if (!warehouse_id || !variant_id || !quantity) {
+                        continue;
+                    }
+
+                    // Get client_id from warehouse (if warehouse is dedicated to a client)
+                    let effectiveClientId = item.client_id;
+                    if (!effectiveClientId) {
+                        const whResult = await client.query(
+                            `SELECT client_id FROM warehouses WHERE id = $1`,
+                            [warehouse_id]
+                        );
+                        effectiveClientId = whResult.rows[0]?.client_id || null;
+                    }
+
+                    // Check if stock record exists
+                    let stockResult = await client.query(
+                        `SELECT id FROM warehouse_stock
+                         WHERE warehouse_id = $1 AND variant_id = $2 AND (client_id = $3 OR (client_id IS NULL AND $3 IS NULL))
+                         FOR UPDATE`,
+                        [warehouse_id, variant_id, effectiveClientId]
                     );
-                    effectiveClientId = whResult.rows[0]?.client_id || null;
-                }
-                
-                // Check if stock record exists
-                let stockResult = await db.query(
-                    `SELECT id FROM warehouse_stock 
-                     WHERE warehouse_id = $1 AND variant_id = $2 AND (client_id = $3 OR (client_id IS NULL AND $3 IS NULL))`,
-                    [warehouse_id, variant_id, effectiveClientId]
-                );
-                
-                let stockId;
-                // Calculate actual quantity change (positive for increase, negative for decrease)
-                const qtyChange = (adjustment_type === 'decrease') ? -quantity : quantity;
-                
-                if (stockResult.rowCount === 0) {
-                    // Create new stock record - only use quantity column
-                    // For new records, if it's a decrease, we can't go below 0
-                    const initialQty = Math.max(0, qtyChange);
-                    const insertResult = await db.query(
-                        `INSERT INTO warehouse_stock (warehouse_id, variant_id, client_id, quantity, last_updated)
-                         VALUES ($1, $2, $3, $4, NOW())
-                         RETURNING id`,
+
+                    let stockId;
+                    // Calculate actual quantity change (positive for increase, negative for decrease)
+                    const qtyChange = (adjustment_type === 'decrease') ? -quantity : quantity;
+
+                    if (stockResult.rowCount === 0) {
+                        // Create new stock record - only use quantity column
+                        // For new records, if it's a decrease, we can't go below 0
+                        const initialQty = Math.max(0, qtyChange);
+                        const insertResult = await client.query(
+                            `INSERT INTO warehouse_stock (warehouse_id, variant_id, client_id, quantity, last_updated)
+                             VALUES ($1, $2, $3, $4, NOW())
+                             RETURNING id`,
                         [warehouse_id, variant_id, effectiveClientId, initialQty]
+                        );
+                        stockId = insertResult.rows[0].id;
+                    } else {
+                        stockId = stockResult.rows[0].id;
+                        // Shelf-sync for decreases BEFORE the stock update:
+                        // unassigned bucket first, then flagged auto-picks.
+                        // Failure aborts the whole batch — never warn-and-continue.
+                        if (qtyChange < 0) {
+                            await shelfService.deductFromStock(client, {
+                                stockId, quantity: Math.abs(qtyChange),
+                                refType: 'stock_adjust', refId: null,
+                                userId: req.user?.id || null,
+                                notes: reason || 'تسوية يدوية',
+                            });
+                        }
+                        // Update existing stock
+                        await client.query(
+                            `UPDATE warehouse_stock
+                             SET quantity = GREATEST(0, quantity + $1), last_updated = NOW()
+                             WHERE id = $2`,
+                            [qtyChange, stockId]
+                        );
+                    }
+
+                    // Create inventory transaction record
+                    // For decrease adjustments, record as 'dispense' with positive quantity
+                    const transactionType = (adjustment_type === 'decrease') ? 'dispense' : 'receipt';
+                    const itemUnitCost = parseFloat(unit_cost) || 0;
+                    await client.query(
+                        `INSERT INTO inventory_transactions (stock_id, transaction_type, quantity, unit_cost, notes, created_by, created_at)
+                         VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+                        [stockId, transactionType, quantity, itemUnitCost, reason || 'تسوية يدوية', req.user?.id]
                     );
-                    stockId = insertResult.rows[0].id;
-                } else {
-                    // Update existing stock
-                    stockId = stockResult.rows[0].id;
-                    await db.query(
-                        `UPDATE warehouse_stock 
-                         SET quantity = GREATEST(0, quantity + $1), last_updated = NOW()
-                         WHERE id = $2`,
-                        [qtyChange, stockId]
-                    );
+
+                    out.push({ stock_id: stockId, quantity });
                 }
-                
-                // Create inventory transaction record
-                // For decrease adjustments, record as 'dispense' with positive quantity
-                const transactionType = (adjustment_type === 'decrease') ? 'dispense' : 'receipt';
-                const itemUnitCost = parseFloat(unit_cost) || 0;
-                await db.query(
-                    `INSERT INTO inventory_transactions (stock_id, transaction_type, quantity, unit_cost, notes, created_by, created_at)
-                     VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-                    [stockId, transactionType, quantity, itemUnitCost, reason || 'تسوية يدوية', req.user?.id]
-                );
-                
-                results.push({ stock_id: stockId, quantity });
-            }
-            
+                return out;
+            });
+
             return res.status(200).json({ data: results, message: 'تمت التسوية بنجاح' });
         } catch (err) {
             console.error('[Inventory] POST /stock/adjust batch error:', err.message);
-            return res.status(500).json({ error: 'فشل في حفظ التسوية: ' + err.message });
+            return res.status(err.statusCode || 500).json({ error: 'فشل في حفظ التسوية: ' + err.message });
         }
     }
 
@@ -468,39 +483,60 @@ router.post('/stock/adjust', restrictEdit, validateBody(stockAdjust), async (req
     }
 
     try {
-        const result = await db.query(
-            `UPDATE warehouse_stock
-             SET quantity = quantity + $1,
-                 last_updated = NOW()
-             WHERE id = $2
-             RETURNING *`,
-            [qty, stock_id]
-        );
+        const shelfService = require('../services/shelf-service');
+        const outcome = await db.withTransaction(async (client) => {
+            // Shelf-sync for decreases BEFORE the stock update
+            if (qty < 0) {
+                const exists = await client.query(
+                    `SELECT id FROM warehouse_stock WHERE id = $1 FOR UPDATE`, [stock_id]
+                );
+                if (exists.rowCount === 0) return { notFound: true };
+                // Failure aborts the transaction — never warn-and-continue.
+                await shelfService.deductFromStock(client, {
+                    stockId: stock_id, quantity: Math.abs(qty),
+                    refType: 'stock_adjust', refId: null,
+                    userId: req.user?.id || null,
+                    notes: reason || 'تسوية',
+                });
+            }
 
-        if (result.rowCount === 0) {
-            return res.status(404).json({ error: 'سجل المخزون غير موجود.' });
-        }
-
-        if (result.rows[0].quantity < 0) {
-            // Roll back — we never allow negative stock
-            await db.query(
-                `UPDATE warehouse_stock SET quantity = quantity - $1, last_updated = NOW() WHERE id = $2`,
+            const result = await client.query(
+                `UPDATE warehouse_stock
+                 SET quantity = quantity + $1,
+                     last_updated = NOW()
+                 WHERE id = $2
+                 RETURNING *`,
                 [qty, stock_id]
             );
-            return res.status(400).json({ error: 'لا يمكن أن يكون المخزون سالباً.' });
+
+            if (result.rowCount === 0) {
+                return { notFound: true };
+            }
+
+            if (result.rows[0].quantity < 0) {
+                // Fail the whole transaction — we never allow negative stock
+                const err = new Error('لا يمكن أن يكون المخزون سالباً.');
+                err.statusCode = 400;
+                throw err;
+            }
+
+            // Create transaction record
+            await client.query(
+                `INSERT INTO inventory_transactions (stock_id, transaction_type, quantity, notes, created_by, created_at)
+                 VALUES ($1, $2, $3, $4, $5, NOW())`,
+                [stock_id, qty > 0 ? 'receipt' : 'dispense', Math.abs(qty), reason || 'تسوية', req.user?.id]
+            );
+
+            return { row: result.rows[0] };
+        });
+
+        if (outcome.notFound) {
+            return res.status(404).json({ error: 'سجل المخزون غير موجود.' });
         }
-
-        // Create transaction record
-        await db.query(
-            `INSERT INTO inventory_transactions (stock_id, transaction_type, quantity, notes, created_by, created_at)
-             VALUES ($1, $2, $3, $4, $5, NOW())`,
-            [stock_id, qty > 0 ? 'receipt' : 'dispense', Math.abs(qty), reason || 'تسوية', req.user?.id]
-        );
-
-        return res.status(200).json({ data: result.rows[0] });
+        return res.status(200).json({ data: outcome.row });
     } catch (err) {
         console.error('[Inventory] POST /stock/adjust error:', err.message);
-        return res.status(500).json({ error: 'Internal server error.' });
+        return res.status(err.statusCode || 500).json({ error: err.message || 'Internal server error.' });
     }
 });
 

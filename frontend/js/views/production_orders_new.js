@@ -2745,7 +2745,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
                     const recQty = parseFloat(item.received_qty || 0);
                     const remQty = moQty - recQty;
                     const estCost = parseFloat(item.unit_cost || 0);
-                    return `<div class="py-3 border-b border-slate-100 last:border-0">
+                    return `<div class="py-3 border-b border-slate-100 last:border-0" data-receive-block>
                         <div class="flex flex-col gap-2">
                             <div class="flex items-center justify-between">
                                 <div class="flex-1">
@@ -2773,12 +2773,17 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
                                 </div>
                                 <div class="flex flex-col">
                                     <label class="text-xs text-slate-500 mb-0.5">ملاحظات الصنف</label>
-                                    <input type="text" 
+                                    <input type="text"
                                            data-receive-item-notes
                                            placeholder="اختياري"
                                            class="px-2 py-1.5 border border-slate-200 rounded-lg text-sm text-center outline-none focus:border-slate-400 transition-all">
                                 </div>
                             </div>
+                            <div data-shelf-allocs class="space-y-1.5"></div>
+                            <button type="button" onclick="window.poView.addShelfAllocRow(this)"
+                                    class="self-start text-[11px] font-bold text-brand-600 hover:text-brand-800 transition-colors">
+                                <i class="fa-solid fa-plus ml-1"></i>توزيع على رف (اختياري — الباقي غير موزّع)
+                            </button>
                         </div>
                     </div>`;
                 }).join('');
@@ -2791,7 +2796,65 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         const hasInvoiceToggle = _el('receive-has-invoice');
         if (hasInvoiceToggle) hasInvoiceToggle.checked = false;
 
+        // Load shelves for the (re)selected warehouse
+        _receiveShelves = [];
+        if (wSel) wSel.onchange = _onReceiveWarehouseChange;
+        if (wSel && wSel.value) _onReceiveWarehouseChange();
+
         _showModal('po-receive-modal');
+    }
+
+    // ── Shelf allocation helpers (receive modal) ────────────────────────────
+    let _receiveShelves = [];
+
+    async function _onReceiveWarehouseChange() {
+        const wId = _el('receive-warehouse-select')?.value;
+        _receiveShelves = [];
+        _refreshShelfSelects();
+        if (!wId) return;
+        try {
+            const res = await window.apiFetch(`/api/inventory/shelves?warehouse_id=${wId}`);
+            _receiveShelves = res?.data?.shelves || res?.data || [];
+        } catch (_e) { _receiveShelves = []; }
+        _refreshShelfSelects();
+    }
+
+    function _shelfOptionsHtml() {
+        return '<option value="">— رف —</option>' +
+            _receiveShelves.map(s =>
+                `<option value="${s.id}">${s.code}${parseInt(s.items_count || 0, 10) > 0 ? ' · مشغول' : ''}</option>`
+            ).join('');
+    }
+
+    function _refreshShelfSelects() {
+        document.querySelectorAll('#receive-items-container [data-alloc-shelf]').forEach(sel => {
+            const keep = sel.value;
+            sel.innerHTML = _shelfOptionsHtml();
+            if (keep && sel.querySelector(`option[value="${keep}"]`)) sel.value = keep;
+        });
+    }
+
+    function _addShelfAllocRow(btn) {
+        const box = btn?.closest('[data-receive-block]')?.querySelector('[data-shelf-allocs]');
+        if (!box) return;
+        const row = document.createElement('div');
+        row.className = 'shelf-alloc-row flex items-center gap-1.5 bg-brand-50/60 border border-brand-100 rounded-lg px-2 py-1.5';
+        row.setAttribute('data-shelf-row', '');
+        row.innerHTML =
+            `<select data-alloc-shelf class="flex-1 px-1.5 py-1 border border-slate-200 rounded-md text-xs bg-white outline-none focus:border-brand-400">${_shelfOptionsHtml()}</select>
+             <input type="number" data-alloc-qty min="0" step="1" placeholder="كمية"
+                    class="w-16 px-1.5 py-1 border border-slate-200 rounded-md text-xs text-center font-mono outline-none focus:border-brand-400">
+             <select data-alloc-occ title="تقدير الإشغال (بالعين)"
+                    class="w-[70px] px-1 py-1 border border-slate-200 rounded-md text-xs bg-white outline-none">
+                <option value="">إشغال؟</option><option value="25">25%</option><option value="50">50%</option><option value="75">75%</option><option value="100">100%</option>
+             </select>
+             <button type="button" onclick="window.poView.removeShelfAllocRow(this)"
+                     class="text-red-400 hover:text-red-600 px-1"><i class="fa-solid fa-xmark"></i></button>`;
+        box.appendChild(row);
+    }
+
+    function _removeShelfAllocRow(btn) {
+        btn?.closest('[data-shelf-row]')?.remove();
     }
 
     function _onReceiveInvoiceToggle() {
@@ -2829,12 +2892,26 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
             const vid       = variantEls[i]?.getAttribute('data-receive-variant');
             const oid       = oiEls[i]?.getAttribute('data-receive-oi');
             if (qty > 0 && vid) {
+                // Collect optional shelf allocations inside this item's block
+                const block = qtyEls[i].closest('[data-receive-block]');
+                const shelves = block ? [...block.querySelectorAll('[data-shelf-row]')].map(r => ({
+                    shelf_id:      r.querySelector('[data-alloc-shelf]')?.value || '',
+                    quantity:      parseFloat(r.querySelector('[data-alloc-qty]')?.value),
+                    occupancy_pct: r.querySelector('[data-alloc-occ]')?.value
+                                       ? parseInt(r.querySelector('[data-alloc-occ]').value, 10) : undefined,
+                })).filter(a => a.shelf_id && a.quantity > 0) : [];
+                const allocSum = shelves.reduce((s, a) => s + a.quantity, 0);
+                if (allocSum > qty + 1e-9) {
+                    _toast('مجموع توزيع الرفوف يتجاوز الكمية المستلمة في أحد الأصناف', 'error');
+                    return;
+                }
                 items.push({
                     manufacturer_order_item_id: moid,
                     variant_id:   vid,
                     order_item_id: oid || undefined,
                     quantity: qty,
                     item_notes: itemNotes,
+                    shelves: shelves.length ? shelves : undefined,
                 });
             }
         }
@@ -5373,6 +5450,8 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         closeReceiveModal:  () => _hideModal('po-receive-modal'),
         saveReceive:        _saveReceive,
         _onReceiveInvoiceToggle: _onReceiveInvoiceToggle,
+        addShelfAllocRow:   _addShelfAllocRow,
+        removeShelfAllocRow: _removeShelfAllocRow,
         openAssignModal:      _openAssignModal,
         closeAssignModal:     () => _hideModal('po-assign-modal'),
         openAssignPreview:    _openAssignPreview,

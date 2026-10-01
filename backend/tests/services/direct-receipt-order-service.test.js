@@ -86,6 +86,7 @@ describe('direct receipt production order service', () => {
                 warehouse_to: warehouseId, client_id: clientId,
                 created_at: new Date('2026-01-01T00:00:00Z'),
             }] };
+            if (sql.includes('AS placed FROM stock_placements')) return { rowCount: 1, rows: [{ placed: 0 }] };
             if (sql.includes('FROM warehouse_stock')) return { rowCount: 1, rows: [{ id: 'stock-id', quantity: '10', reserved_qty: 0 }] };
             if (sql.includes('transaction_type IN')) return { rowCount: 0, rows: [] };
             return { rowCount: 1, rows: [] };
