@@ -86,7 +86,7 @@ router.get('/shelves', async (req, res) => {
         const { warehouse_id } = req.query;
         if (!warehouse_id) return res.status(400).json({ error: 'warehouse_id مطلوب.' });
 
-        const result = await db.query(
+        const shelvesSql =
             `SELECT ws.id, ws.code, ws.zone, ws.floor, ws.slot, ws.status,
                     ws.occupancy_pct, ws.occupancy_updated_at,
                     COUNT(sp.id)                       AS items_count,
@@ -95,9 +95,35 @@ router.get('/shelves', async (req, res) => {
              LEFT JOIN stock_placements sp ON sp.shelf_id = ws.id
              WHERE ws.warehouse_id = $1
              GROUP BY ws.id
-             ORDER BY ws.zone, ws.floor, ws.slot`,
-            [warehouse_id]
-        );
+             ORDER BY ws.zone, ws.floor, ws.slot`;
+
+        let result = await db.query(shelvesSql, [warehouse_id]);
+
+        // Lazy-provision: migration 098 only seeds 'main' warehouses — any other
+        // warehouse gets its 324 shelves on first read instead of staying empty.
+        if (result.rowCount === 0) {
+            await db.query(
+                `INSERT INTO warehouse_shelves (warehouse_id, code, zone, floor, slot)
+                 SELECT $1,
+                        z.zone || f.floor || '-' || LPAD(s.slot::text, 2, '0'),
+                        z.zone, f.floor, s.slot
+                 FROM (
+                        SELECT chr(ascii('A') + g) AS zone FROM generate_series(0, 8) g
+                        UNION ALL SELECT 'J' UNION ALL SELECT 'K'
+                 ) z
+                 CROSS JOIN (SELECT generate_series(1, 4) AS floor) f
+                 CROSS JOIN LATERAL (
+                        SELECT generate_series(1,
+                            CASE WHEN z.zone = 'J' THEN 4
+                                 WHEN z.zone = 'K' THEN 5
+                                 ELSE 8 END) AS slot
+                 ) s
+                 WHERE EXISTS (SELECT 1 FROM warehouses w WHERE w.id = $1)
+                 ON CONFLICT (warehouse_id, code) DO NOTHING`,
+                [warehouse_id]
+            );
+            result = await db.query(shelvesSql, [warehouse_id]);
+        }
 
         // Stock rows in this warehouse with quantity not placed on any shelf —
         // the "غير موزّع" bucket, shown separately so nothing hides.

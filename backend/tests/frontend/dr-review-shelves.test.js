@@ -74,6 +74,10 @@ describe('direct-receipts review shelf allocations', () => {
     beforeAll(async () => {
         mountDom();
         window.showToast = jest.fn();
+        window.makeSelectSearchable = jest.fn((sel) => {
+            sel.dataset.searchable = '1';
+            return { refresh() {}, destroy() {}, input: null };
+        });
         window.apiFetch = jest.fn(async (url, opts) => {
             if (String(url).includes('/shelves')) {
                 const wid = String(url).split('warehouse_id=')[1];
@@ -200,5 +204,26 @@ describe('direct-receipts review shelf allocations', () => {
         expect(window.showToast).toHaveBeenCalledWith(
             expect.stringContaining('فشل تحميل رفوف'), 'error');
         window.apiFetch = jest.fn(realImpl);
+    });
+
+    test('new alloc row auto-fills the remaining qty and gets a searchable shelf select', async () => {
+        await window.drOpenReview('r1');                 // fresh render: one stored alloc qty=6, item qty=10
+        const btn = document.querySelector('[data-shelf-subrow] button');
+        const itemQty = parseFloat(document.querySelector('.dr-review-qty').value) || 0;
+        const used = [...document.querySelectorAll('[data-dr-alloc-qty]')]
+            .reduce((s, i) => s + (parseFloat(i.value) || 0), 0);
+
+        window.makeSelectSearchable.mockClear();
+        window.drAddShelfAllocRow(btn);
+
+        const rows = document.querySelectorAll('[data-dr-shelf-row]');
+        const added = rows[rows.length - 1];
+        expect(added.querySelector('[data-dr-alloc-qty]').value)
+            .toBe(String(Math.max(0, itemQty - used)));
+        expect(window.makeSelectSearchable).toHaveBeenCalledWith(
+            added.querySelector('[data-dr-alloc-shelf]'),
+            expect.objectContaining({ wrapClass: 'flex-1 min-w-0' }));
+        // clean up the extra row so later tests see the stored state only
+        added.remove();
     });
 });

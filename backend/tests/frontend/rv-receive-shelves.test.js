@@ -64,6 +64,10 @@ describe('receiving-vouchers shelf allocations', () => {
     beforeAll(() => {
         mountDom();
         window.showToast = jest.fn();
+        window.makeSelectSearchable = jest.fn((sel) => {
+            sel.dataset.searchable = '1';
+            return { refresh() {}, destroy() {}, input: null };
+        });
         window.apiFetch = jest.fn(async (url) => {
             if (String(url).includes('/shelves')) return { data: { shelves: [] } };
             return { data: [] };
@@ -142,6 +146,26 @@ describe('receiving-vouchers shelf allocations', () => {
         expect(document.querySelectorAll('[data-rv-shelf-row]')).toHaveLength(1);
     });
 
+    test('new alloc row auto-fills the remaining qty and gets a searchable shelf select', () => {
+        document.querySelectorAll('[data-rv-shelf-row]').forEach(r => r.remove());
+        const btn = document.querySelector('[data-shelf-subrow] button');
+        // item row qty = 10; no existing allocs → remaining should be 10
+        window.makeSelectSearchable.mockClear();
+        window.rvAddShelfAllocRow(btn);
+        const row = document.querySelector('[data-rv-shelf-row]');
+        expect(row.querySelector('[data-rv-alloc-qty]').value).toBe('10');
+        expect(window.makeSelectSearchable).toHaveBeenCalledWith(
+            row.querySelector('[data-rv-alloc-shelf]'),
+            expect.objectContaining({ wrapClass: 'flex-1 min-w-0' }));
+
+        // a second row sees qty already used → remaining 0 → left empty
+        row.querySelector('[data-rv-alloc-qty]').value = '6';
+        window.rvAddShelfAllocRow(btn);
+        const rows = document.querySelectorAll('[data-rv-shelf-row]');
+        expect(rows[1].querySelector('[data-rv-alloc-qty]').value).toBe('4');
+        document.querySelectorAll('[data-rv-shelf-row]').forEach(r => r.remove());
+    });
+
     test('warehouse change refreshes shelf selects in ALL modals, not just #rv-receive-items', async () => {
         window.apiFetch = jest.fn(async (url) => {
             if (String(url).includes('/manufacturer-orders?')) return { data: [{
@@ -151,7 +175,7 @@ describe('receiving-vouchers shelf allocations', () => {
                           mo_quantity: 10, received_qty: 0, variant_id: 'v1' }],
             }] };
             if (String(url).includes('/inventory/warehouses')) return { data: [
-                { id: 'w1', name: 'Main' }, { id: 'w2', name: 'Second' },
+                { id: 'w1', name: 'Main', is_main: true }, { id: 'w2', name: 'Second' },
             ] };
             if (String(url).includes('/shelves')) {
                 const wid = String(url).split('warehouse_id=')[1];
@@ -164,6 +188,13 @@ describe('receiving-vouchers shelf allocations', () => {
         document.body.insertAdjacentHTML('beforeend', '<span id="rv-receive-subtitle"></span>');
         await window.rvInit();
         window.rvOpenReceiveModal('o1');
+        await new Promise(r => setTimeout(r, 20));
+
+        // main warehouse is preselected → its shelves load without a manual pick
+        const whSelAuto = document.getElementById('rv-receive-warehouse');
+        expect(whSelAuto.value).toBe('w1');
+        expect(window.apiFetch.mock.calls.some(([u]) =>
+            String(u).includes('/shelves') && String(u).includes('warehouse_id=w1'))).toBe(true);
 
         // a shelf select living in ANOTHER modal (e.g. the manual voucher modal)
         const other = document.createElement('div');

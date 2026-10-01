@@ -41,7 +41,7 @@
 
         var parent = selectEl.parentElement;
         var wrap = document.createElement('div');
-        wrap.className = 'searchable-wrap relative w-full';
+        wrap.className = 'searchable-wrap relative ' + (opts.wrapClass || 'w-full');
 
         var input = document.createElement('input');
         input.type = 'text';

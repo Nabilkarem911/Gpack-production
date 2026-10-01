@@ -447,6 +447,12 @@
                         </td>
                     </tr>`;
                 }).join('');
+                tbody.querySelectorAll('[data-dr-alloc-shelf]').forEach(sel => {
+                    window.makeSelectSearchable?.(sel, {
+                        placeholder: '🔍 ابحث عن رف…',
+                        wrapClass: 'flex-1 min-w-0',
+                    });
+                });
             }
 
             _showModal('dr-review-modal');
@@ -607,7 +613,7 @@
         const occ = alloc?.occupancy_pct;
         return `<div data-dr-shelf-row class="flex items-center gap-1.5 bg-brand-50/60 border border-brand-100 rounded-lg px-2 py-1.5">
             <select data-dr-alloc-shelf class="flex-1 px-1.5 py-1 border border-slate-200 rounded-md text-xs bg-white outline-none focus:border-brand-400">${_drShelfOptionsHtml(alloc?.shelf_id)}</select>
-            <input type="number" data-dr-alloc-qty min="0" step="1" placeholder="كمية" value="${alloc?.quantity ?? ''}"
+            <input type="number" data-dr-alloc-qty min="0" step="1" placeholder="كمية الرف" title="الكمية على هذا الرف" value="${alloc?.quantity ?? ''}"
                    class="w-16 px-1.5 py-1 border border-slate-200 rounded-md text-xs text-center font-mono outline-none focus:border-brand-400">
             <select data-dr-alloc-occ title="تقدير الإشغال (بالعين)"
                     class="w-[70px] px-1 py-1 border border-slate-200 rounded-md text-xs bg-white outline-none">
@@ -638,7 +644,29 @@
     window.drAddShelfAllocRow = function (btn) {
         const box = btn?.closest('td')?.querySelector('[data-shelf-allocs]');
         if (!box) return;
-        box.insertAdjacentHTML('beforeend', _drShelfRowHtml(null));
+
+        const whSel = _el('dr-review-warehouse');
+        if (whSel && !whSel.value) {
+            window.showToast?.('اختر المستودع أولاً لتظهر الرفوف', 'error');
+        }
+
+        // Auto-fill remaining unallocated qty so the keeper types the item qty
+        // once; still editable for uneven multi-shelf splits.
+        const itemRow   = btn.closest('tr')?.previousElementSibling;
+        const itemQty   = parseFloat(itemRow?.querySelector('.dr-review-qty')?.value) || 0;
+        const used      = [...box.querySelectorAll('[data-dr-alloc-qty]')]
+                              .reduce((s, i) => s + (parseFloat(i.value) || 0), 0);
+        const remaining = Math.max(0, itemQty - used);
+
+        box.insertAdjacentHTML('beforeend', _drShelfRowHtml(remaining > 0 ? { quantity: remaining } : null));
+
+        const sel = box.lastElementChild?.querySelector('[data-dr-alloc-shelf]');
+        if (sel && window.makeSelectSearchable) {
+            window.makeSelectSearchable(sel, {
+                placeholder: '🔍 ابحث عن رف…',
+                wrapClass: 'flex-1 min-w-0',
+            });
+        }
     };
 
     window.drRemoveShelfAllocRow = function (btn) {

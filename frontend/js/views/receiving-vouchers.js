@@ -267,9 +267,12 @@
         // Populate warehouse dropdown
         const whSel = _el('rv-receive-warehouse');
         whSel.innerHTML = '<option value="">— اختر المستودع —</option>' +
-            _warehouses.map(w => `<option value="${w.id}">${esc(w.name)}</option>`).join('');
-        if (window.makeSelectSearchable && !whSel.dataset.searchable) {
-            window.makeSelectSearchable(whSel, '🔍 ابحث عن مستودع...');
+            _warehouses.map(w => `<option value="${w.id}">${esc(w.name)}${w.is_main ? ' (رئيسي)' : ''}</option>`).join('');
+        const mainWh = _warehouses.find(w => w.is_main);
+        if (mainWh && !whSel.value) whSel.value = mainWh.id;
+        if (window.makeSelectSearchable) {
+            whSel._ss = whSel._ss || window.makeSelectSearchable(whSel, '🔍 ابحث عن مستودع...');
+            whSel._ss?.refresh();
         }
         whSel.onchange = () => _rvLoadShelvesFor('rv-receive-warehouse');
         _rvShelves = [];
@@ -464,7 +467,10 @@
         try {
             const res = await window.apiFetch(`/api/inventory/shelves?warehouse_id=${wId}`);
             _rvShelves = res?.data?.shelves || res?.data || [];
-        } catch (_e) { _rvShelves = []; }
+        } catch (_e) {
+            _rvShelves = [];
+            window.showToast?.('تعذّر تحميل رفوف المستودع', 'error');
+        }
         _rvRefreshShelfSelects();
     }
 
@@ -497,12 +503,27 @@
     window.rvAddShelfAllocRow = function (btn) {
         const box = btn?.closest('td')?.querySelector('[data-shelf-allocs]');
         if (!box) return;
+
+        const whSel = btn.closest('[id$="-modal"]')?.querySelector('select[id$="warehouse"]');
+        if (whSel && !whSel.value) {
+            window.showToast?.('اختر المستودع أولاً لتظهر الرفوف', 'error');
+        }
+
+        // Auto-fill the remaining unallocated qty so the keeper only types the
+        // receive qty once; still editable for uneven multi-shelf splits.
+        const itemRow    = btn.closest('tr')?.previousElementSibling;
+        const itemQty    = parseFloat(itemRow?.querySelector('input[type="number"]')?.value) || 0;
+        const used       = [...box.querySelectorAll('[data-rv-alloc-qty]')]
+                               .reduce((s, i) => s + (parseFloat(i.value) || 0), 0);
+        const remaining  = Math.max(0, itemQty - used);
+
         const row = document.createElement('div');
         row.className = 'flex items-center gap-1.5 bg-brand-50/60 border border-brand-100 rounded-lg px-2 py-1.5';
         row.setAttribute('data-rv-shelf-row', '');
         row.innerHTML =
             `<select data-rv-alloc-shelf class="flex-1 px-1.5 py-1 border border-slate-200 rounded-md text-xs bg-white outline-none focus:border-brand-400">${_rvShelfOptionsHtml()}</select>
-             <input type="number" data-rv-alloc-qty min="0" step="1" placeholder="كمية"
+             <input type="number" data-rv-alloc-qty min="0" step="1" placeholder="كمية الرف" title="الكمية على هذا الرف — تُملأ بالمتبقي تلقائيًا"
+                    value="${remaining || ''}"
                     class="w-16 px-1.5 py-1 border border-slate-200 rounded-md text-xs text-center font-mono outline-none focus:border-brand-400">
              <select data-rv-alloc-occ title="تقدير الإشغال (بالعين)"
                     class="w-[70px] px-1 py-1 border border-slate-200 rounded-md text-xs bg-white outline-none">
@@ -511,6 +532,14 @@
              <button type="button" onclick="window.rvRemoveShelfAllocRow(this)"
                      class="text-red-400 hover:text-red-600 px-1"><i class="fa-solid fa-xmark"></i></button>`;
         box.appendChild(row);
+
+        const sel = row.querySelector('[data-rv-alloc-shelf]');
+        if (sel && window.makeSelectSearchable) {
+            window.makeSelectSearchable(sel, {
+                placeholder: '🔍 ابحث عن رف…',
+                wrapClass: 'flex-1 min-w-0',
+            });
+        }
     };
 
     window.rvRemoveShelfAllocRow = function (btn) {
@@ -1247,6 +1276,8 @@
         const whSel = _el('rv-mo-modal-warehouse');
         whSel.innerHTML = '<option value="">— اختر المستودع —</option>' +
             _warehouses.map(w => `<option value="${w.id}">${esc(w.name)} ${w.is_main ? '(رئيسي)' : ''}</option>`).join('');
+        const mainWh = _warehouses.find(w => w.is_main);
+        if (mainWh && !whSel.value) whSel.value = mainWh.id;
         whSel.onchange = () => _rvLoadShelvesFor('rv-mo-modal-warehouse');
         _rvShelves = [];
         if (whSel.value) _rvLoadShelvesFor('rv-mo-modal-warehouse');
@@ -1449,7 +1480,9 @@
         // Reset fields
         _el('rv-modal-date').value = new Date().toISOString().split('T')[0];
         _el('rv-modal-supplier').value = '';
-        _el('rv-modal-warehouse').value = '';
+        const mainWh = _warehouses.find(w => w.is_main);
+        _el('rv-modal-warehouse').value = mainWh ? mainWh.id : '';
+        if (mainWh) _rvLoadShelvesFor('rv-modal-warehouse');
         _el('rv-modal-mo').value = '';
         _el('rv-modal-notes').value = '';
         _el('rv-total-amount').textContent = '0.00';

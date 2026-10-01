@@ -2835,14 +2835,28 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
     }
 
     function _addShelfAllocRow(btn) {
-        const box = btn?.closest('[data-receive-block]')?.querySelector('[data-shelf-allocs]');
+        const block = btn?.closest('[data-receive-block]');
+        const box = block?.querySelector('[data-shelf-allocs]');
         if (!box) return;
+
+        const whSel = _el('receive-warehouse-select');
+        if (whSel && !whSel.value) {
+            _toast('اختر المستودع أولاً لتظهر الرفوف', 'error');
+        }
+
+        // Auto-fill remaining unallocated qty; editable for uneven splits.
+        const itemQty   = parseFloat(block.querySelector('[data-receive-qty]')?.value) || 0;
+        const used      = [...box.querySelectorAll('[data-alloc-qty]')]
+                              .reduce((s, i) => s + (parseFloat(i.value) || 0), 0);
+        const remaining = Math.max(0, itemQty - used);
+
         const row = document.createElement('div');
         row.className = 'shelf-alloc-row flex items-center gap-1.5 bg-brand-50/60 border border-brand-100 rounded-lg px-2 py-1.5';
         row.setAttribute('data-shelf-row', '');
         row.innerHTML =
             `<select data-alloc-shelf class="flex-1 px-1.5 py-1 border border-slate-200 rounded-md text-xs bg-white outline-none focus:border-brand-400">${_shelfOptionsHtml()}</select>
-             <input type="number" data-alloc-qty min="0" step="1" placeholder="كمية"
+             <input type="number" data-alloc-qty min="0" step="1" placeholder="كمية الرف" title="الكمية على هذا الرف"
+                    value="${remaining || ''}"
                     class="w-16 px-1.5 py-1 border border-slate-200 rounded-md text-xs text-center font-mono outline-none focus:border-brand-400">
              <select data-alloc-occ title="تقدير الإشغال (بالعين)"
                     class="w-[70px] px-1 py-1 border border-slate-200 rounded-md text-xs bg-white outline-none">
@@ -2851,6 +2865,14 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
              <button type="button" onclick="window.poView.removeShelfAllocRow(this)"
                      class="text-red-400 hover:text-red-600 px-1"><i class="fa-solid fa-xmark"></i></button>`;
         box.appendChild(row);
+
+        const sel = row.querySelector('[data-alloc-shelf]');
+        if (sel && window.makeSelectSearchable) {
+            window.makeSelectSearchable(sel, {
+                placeholder: '🔍 ابحث عن رف…',
+                wrapClass: 'flex-1 min-w-0',
+            });
+        }
     }
 
     function _removeShelfAllocRow(btn) {
