@@ -17,6 +17,17 @@
     let _readyOrders = [];
     let _orderItems = [];
     let _siIdemKey = null; // per-modal-session idempotency key (network-retry safe)
+
+    // randomUUID needs a secure context (HTTPS); getRandomValues works on
+    // plain HTTP too, with a Date.now tail as last-resort fallback.
+    function _newSiIdemKey() {
+        if (window.crypto?.randomUUID) return window.crypto.randomUUID();
+        if (window.crypto?.getRandomValues) {
+            const b = new Uint8Array(16); window.crypto.getRandomValues(b);
+            return 'si-' + Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+        }
+        return `si-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    }
     let _warehouseStock = [];
     let _warehouseSelectedStockIds = new Set();
     let _warehouseClientSearchable = null;
@@ -288,7 +299,7 @@
     // ── Create Invoice Modal ─────────────────────────────────────────────────
     window.siCreateInvoice = async function() {
         _resetModal();
-        _siIdemKey = (window.crypto?.randomUUID?.() || `si-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+        _siIdemKey = _newSiIdemKey();
         _el('si-modal-overlay')?.classList.remove('hidden');
         _el('si-modal')?.classList.remove('hidden');
 

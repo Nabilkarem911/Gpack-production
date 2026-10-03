@@ -22,6 +22,18 @@
     let _existingActiveInvoice = null; // set when the order already has an issued/overdue invoice
     let _invoiceSaving = false;        // double-click / duplicate-submit lock
     let _invoiceIdemKey = null;        // per-modal-session idempotency key (network-retry safe)
+
+    // randomUUID needs a secure context (HTTPS); getRandomValues works on
+    // plain HTTP too, and the Date.now tail is the last-resort fallback so an
+    // issuance can never crash on key generation.
+    function _newIdemKey(prefix) {
+        if (window.crypto?.randomUUID) return window.crypto.randomUUID();
+        if (window.crypto?.getRandomValues) {
+            const b = new Uint8Array(16); window.crypto.getRandomValues(b);
+            return `${prefix}-` + Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+        }
+        return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    }
     let _proformaExtras  = [];   // extra lines carried from the draft proforma into the final invoice
     let _bulkSelected = {}; // { [itemId]: { id, name, qty, assigned, designId, designName, designThumb, designStatus, variantId } }
     let _bulkDesignTargetId = null;
@@ -3606,7 +3618,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
     async function _openInvoiceModal() {
         _invoiceExtras  = [];
         _proformaExtras = [];
-        _invoiceIdemKey = (window.crypto?.randomUUID?.() || `inv-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+        _invoiceIdemKey = _newIdemKey('inv');
         _setVal('invoice-notes', '');
         _setVal('invoice-extra-expenses', '');
         _setVal('invoice-extra-desc', '');
