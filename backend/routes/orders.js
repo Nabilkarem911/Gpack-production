@@ -2685,7 +2685,7 @@ router.post('/:id/invoice', restrictAdmin, validateBody(orderInvoice), async (re
 
 router.post('/:id/payment', restrictAdmin, validateBody(orderPayment), async (req, res) => {
     const { id } = req.params;
-    const { amount, payment_method = 'cash', notes = '', discount_amount = 0, cash_box, bank_account, bank_ref, pos_terminal, pos_ref } = req.validatedBody;
+    const { amount, payment_method = 'cash', payment_date = null, notes = '', discount_amount = 0, cash_box, bank_account, bank_ref, pos_terminal, pos_ref } = req.validatedBody;
 
     const payAmt = parseFloat(amount);
     if (!payAmt || payAmt <= 0) {
@@ -2711,6 +2711,66 @@ router.post('/:id/payment', restrictAdmin, validateBody(orderPayment), async (re
             if (discountAmt > 0 && discountAmt > remaining) {
                 throw new Error(`الخصم (${discountAmt}) أكبر من المتبقي (${remaining}).`);
             }
+            if (payAmt + discountAmt > remaining) {
+                throw new Error(`الدفعة (${payAmt + discountAmt}) تتجاوز المتبقي على الطلب (${remaining}).`);
+            }
+
+            // ── Resolve the cash/bank account for the receipt voucher ──────
+            const arRes = await client.query(
+                `SELECT id FROM accounts WHERE code = '1300' LIMIT 1`
+            );
+            if (arRes.rowCount === 0) {
+                throw new Error('حساب المدينون (1300) غير موجود في دليل الحسابات.');
+            }
+            const arAccountId = arRes.rows[0].id;
+
+            let glAccountId = null;
+            if (payment_method === 'cash' && cash_box) {
+                const accRes = await client.query(
+                    `SELECT id FROM accounts WHERE code = $1 AND account_type = 'asset' LIMIT 1`,
+                    [cash_box]
+                );
+                if (accRes.rowCount === 0) {
+                    throw new Error(`حساب الصندوق "${cash_box}" غير موجود في دليل الحسابات.`);
+                }
+                glAccountId = accRes.rows[0].id;
+            } else if (payment_method === 'bank_transfer' && bank_account) {
+                const accRes = await client.query(
+                    `SELECT id FROM accounts WHERE code = $1 AND account_type = 'asset' LIMIT 1`,
+                    [bank_account]
+                );
+                if (accRes.rowCount === 0) {
+                    throw new Error(`حساب البنك "${bank_account}" غير موجود في دليل الحسابات.`);
+                }
+                glAccountId = accRes.rows[0].id;
+            } else if (payment_method === 'pos' && pos_terminal) {
+                const posRes = await client.query(
+                    `SELECT t.account_id, a.id AS fallback_id
+                     FROM pos_terminals t
+                     LEFT JOIN accounts a ON a.code = '1200'
+                     WHERE t.code = $1 LIMIT 1`,
+                    [pos_terminal]
+                );
+                if (posRes.rowCount === 0) {
+                    throw new Error(`جهاز نقاط البيع "${pos_terminal}" غير موجود.`);
+                }
+                glAccountId = posRes.rows[0].account_id || posRes.rows[0].fallback_id;
+            }
+            if (!glAccountId) {
+                throw new Error('يجب اختيار حساب الصندوق/البنك المستلم للدفعة.');
+            }
+
+            // Discounts balance the voucher on a dedicated contra account
+            let discountAccountId = null;
+            if (discountAmt > 0) {
+                const discRes2 = await client.query(
+                    `SELECT id FROM accounts WHERE code = '4300' LIMIT 1`
+                );
+                if (discRes2.rowCount === 0) {
+                    throw new Error('حساب الخصومات المسموحة (4300) غير موجود في دليل الحسابات.');
+                }
+                discountAccountId = discRes2.rows[0].id;
+            }
 
             const newPaid = Math.round((parseFloat(order.paid_amount || 0) + payAmt + discountAmt) * 100) / 100;
 
@@ -2732,13 +2792,53 @@ router.post('/:id/payment', restrictAdmin, validateBody(orderPayment), async (re
                 if (pos_ref) description = `[رقم العملية: ${pos_ref}] ${description}`;
             }
 
-            // Insert client_transaction for payment
+            // ── Receipt voucher: DR cash + DR discount / CR AR (client) ────
+            const voucherRes = await client.query(
+                `INSERT INTO accounting_vouchers
+                    (voucher_type, voucher_date, description, total_amount,
+                     status, reference_type, reference_id, created_by)
+                 VALUES ('receipt', COALESCE($5::date, CURRENT_DATE), $1, $2, 'posted', 'order', $3, $4)
+                 RETURNING id, voucher_number`,
+                [
+                    `دفعة — طلب #${order.order_number} — ${description || ''}`,
+                    payAmt + discountAmt,
+                    id,
+                    req.user?.id || null,
+                    payment_date || null,
+                ]
+            );
+            const voucherId = voucherRes.rows[0].id;
+
+            await client.query(
+                `INSERT INTO accounting_voucher_lines
+                    (voucher_id, account_id, debit, credit, description)
+                 VALUES ($1, $2, $3, 0, $4)`,
+                [voucherId, glAccountId, payAmt, `تحصيل دفعة — طلب #${order.order_number}`]
+            );
+            if (discountAmt > 0) {
+                await client.query(
+                    `INSERT INTO accounting_voucher_lines
+                        (voucher_id, account_id, debit, credit, description)
+                     VALUES ($1, $2, $3, 0, $4)`,
+                    [voucherId, discountAccountId, discountAmt, `خصم مسموح — طلب #${order.order_number}`]
+                );
+            }
+            await client.query(
+                `INSERT INTO accounting_voucher_lines
+                    (voucher_id, account_id, debit, credit,
+                     sub_account_type, sub_account_id, description)
+                 VALUES ($1, $2, 0, $3, 'client', $4, $5)`,
+                [voucherId, arAccountId, payAmt + discountAmt, order.client_id,
+                 `تسوية ذمة العميل — طلب #${order.order_number}`]
+            );
+
+            // Insert client_transaction for payment (linked to the voucher)
             const txRes = await client.query(
                 `INSERT INTO client_transactions
-                 (client_id, order_id, type, amount, payment_method, description)
-                 VALUES ($1, $2, 'payment', $3, $4, $5)
+                 (client_id, order_id, type, amount, payment_method, description, linked_voucher_id, created_at)
+                 VALUES ($1, $2, 'payment', $3, $4, $5, $6, COALESCE($7::timestamptz, NOW()))
                  RETURNING id, document_number`,
-                [order.client_id, id, payAmt, payment_method, description || null]
+                [order.client_id, id, payAmt, payment_method, description || null, voucherId, payment_date || null]
             );
 
             // Insert client_transaction for discount (if any)
@@ -2746,10 +2846,10 @@ router.post('/:id/payment', restrictAdmin, validateBody(orderPayment), async (re
             if (discountAmt > 0) {
                 const discRes = await client.query(
                     `INSERT INTO client_transactions
-                     (client_id, order_id, type, amount, payment_method, description)
-                     VALUES ($1, $2, 'discount', $3, 'adjustment', $4)
+                     (client_id, order_id, type, amount, payment_method, description, linked_voucher_id)
+                     VALUES ($1, $2, 'discount', $3, 'adjustment', $4, $5)
                      RETURNING id`,
-                    [order.client_id, id, discountAmt, 'خصم / تنازل عن الفرق']
+                    [order.client_id, id, discountAmt, 'خصم / تنازل عن الفرق', voucherId]
                 );
                 discountTxId = discRes.rows[0].id;
             }

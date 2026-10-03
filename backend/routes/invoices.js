@@ -376,7 +376,10 @@ router.post('/:id/release', restrictEdit, async (req, res) => {
 router.post('/:id/payment', restrictEdit, validateBody(receiptVoucherCreate), async (req, res) => {
     const client = await db.pool.connect();
     try {
-        const { amount, payment_method = 'cash', description = null, reference_number = null, client_id } = req.validatedBody;
+        const { amount, payment_method = 'cash', description = null, reference_number = null, client_id, cash_account_id = null, voucher_date = null } = req.validatedBody;
+        if (!cash_account_id) {
+            return res.status(400).json({ error: 'يجب اختيار حساب الصندوق/البنك المستلم للدفعة.' });
+        }
         await client.query('BEGIN');
         const invRes = await client.query(
             `SELECT id, invoice_number, client_id, grand_total, status
@@ -388,6 +391,18 @@ router.post('/:id/payment', restrictEdit, validateBody(receiptVoucherCreate), as
         if (client_id !== invoice.client_id) throw new Error('العميل لا يطابق الفاتورة.');
         if (['cancelled', 'archived'].includes(invoice.status)) throw new Error('لا يمكن تسجيل دفعة على فاتورة ملغية أو مؤرشفة.');
 
+        const cashAccRes = await client.query(
+            `SELECT id FROM accounts
+             WHERE id = $1 AND is_active = true
+               AND (code IN ('1100','1200') OR parent_id IN (SELECT id FROM accounts WHERE code IN ('1100','1200')))`,
+            [cash_account_id]
+        );
+        if (!cashAccRes.rowCount) throw new Error('حساب الصندوق/البنك المختار غير صالح.');
+
+        const arRes = await client.query(`SELECT id FROM accounts WHERE code = '1300' LIMIT 1`);
+        if (!arRes.rowCount) throw new Error('حساب المدينون (1300) غير موجود في دليل الحسابات.');
+        const arAccountId = arRes.rows[0].id;
+
         const paidRes = await client.query(
             `SELECT COALESCE(SUM(amount), 0) AS paid
              FROM client_transactions WHERE invoice_id = $1 AND type IN ('payment', 'receipt')`,
@@ -397,11 +412,38 @@ router.post('/:id/payment', restrictEdit, validateBody(receiptVoucherCreate), as
         const remaining = Math.max(0, parseFloat(invoice.grand_total || 0) - paid);
         if (parseFloat(amount) > remaining) throw new Error(`الدفعة تتجاوز المتبقي (${remaining.toFixed(2)}).`);
 
+        const voucherRes = await client.query(
+            `INSERT INTO accounting_vouchers
+                (voucher_type, voucher_date, description, total_amount, status, reference_type, reference_id, created_by)
+             VALUES ('receipt', COALESCE($4::date, CURRENT_DATE), $1, $2, 'posted', 'invoice', $3, $5)
+             RETURNING id, voucher_number`,
+            [
+                description || `دفعة فاتورة رقم ${invoice.invoice_number}`,
+                amount,
+                invoice.id,
+                voucher_date || null,
+                req.user?.id || null,
+            ]
+        );
+        const voucherId = voucherRes.rows[0].id;
+
+        await client.query(
+            `INSERT INTO accounting_voucher_lines (voucher_id, account_id, debit, credit, description)
+             VALUES ($1, $2, $3, 0, $4)`,
+            [voucherId, cash_account_id, amount, `تحصيل دفعة — فاتورة #${invoice.invoice_number}`]
+        );
+        await client.query(
+            `INSERT INTO accounting_voucher_lines
+                (voucher_id, account_id, debit, credit, sub_account_type, sub_account_id, description)
+             VALUES ($1, $2, 0, $3, 'client', $4, $5)`,
+            [voucherId, arAccountId, amount, invoice.client_id, `تسوية ذمة العميل — فاتورة #${invoice.invoice_number}`]
+        );
+
         await client.query(
             `INSERT INTO client_transactions
-                (client_id, invoice_id, type, amount, payment_method, document_number, description, created_at)
-             VALUES ($1, $2, 'receipt', $3, $4, $5, $6, NOW())`,
-            [invoice.client_id, invoice.id, amount, payment_method, reference_number || null, description || `دفعة فاتورة رقم ${invoice.invoice_number}`]
+                (client_id, invoice_id, type, amount, payment_method, document_number, description, linked_voucher_id, created_at)
+             VALUES ($1, $2, 'receipt', $3, $4, $5, $6, $7, COALESCE($8::timestamptz, NOW()))`,
+            [invoice.client_id, invoice.id, amount, payment_method, reference_number || null, description || `دفعة فاتورة رقم ${invoice.invoice_number}`, voucherId, voucher_date || null]
         );
         const newPaid = paid + parseFloat(amount);
         if (newPaid >= parseFloat(invoice.grand_total || 0)) {
@@ -1005,13 +1047,68 @@ router.patch('/:id/status', restrictEdit, validateBody(invoiceStatusUpdate), asy
 
         // If marking as paid, create receipt transaction if not already paid
         if (status === 'paid' && invoice.status !== 'paid') {
-            await client.query(`
-                INSERT INTO client_transactions (client_id, invoice_id, type, amount, description, created_at)
-                VALUES ($1, $2, 'receipt', $3, $4, NOW())
-            `, [
-                invoice.client_id, id, invoice.grand_total,
-                `دفعة فاتورة رقم ${invoice.invoice_number}`,
-            ]);
+            // Marking paid must record an actual collection for the remaining
+            // balance only — never the full amount, never without a voucher.
+            const paidRes = await client.query(
+                `SELECT COALESCE(SUM(amount), 0) AS paid
+                 FROM client_transactions WHERE invoice_id = $1 AND type IN ('payment', 'receipt')`,
+                [id]
+            );
+            const alreadyPaid = parseFloat(paidRes.rows[0].paid || 0);
+            const remaining = Math.round((parseFloat(invoice.grand_total || 0) - alreadyPaid) * 100) / 100;
+
+            if (remaining > 0) {
+                const { payment_method = 'cash', cash_account_id, payment_date, reference_number } = req.validatedBody;
+                if (!cash_account_id) {
+                    throw new Error(`الفاتورة عليها متبقٍ (${remaining.toFixed(2)}) — حدد حساب الصندوق/البنك لتسجيل تحصيله أولاً أو سجّل دفعة صريحة.`);
+                }
+
+                const cashAccRes = await client.query(
+                    `SELECT id FROM accounts
+                     WHERE id = $1 AND is_active = true
+                       AND (code IN ('1100','1200') OR parent_id IN (SELECT id FROM accounts WHERE code IN ('1100','1200')))`,
+                    [cash_account_id]
+                );
+                if (!cashAccRes.rowCount) throw new Error('حساب الصندوق/البنك المختار غير صالح.');
+
+                const arRes = await client.query(`SELECT id FROM accounts WHERE code = '1300' LIMIT 1`);
+                if (!arRes.rowCount) throw new Error('حساب المدينون (1300) غير موجود في دليل الحسابات.');
+
+                const voucherRes = await client.query(
+                    `INSERT INTO accounting_vouchers
+                        (voucher_type, voucher_date, description, total_amount, status, reference_type, reference_id, created_by)
+                     VALUES ('receipt', COALESCE($4::date, CURRENT_DATE), $1, $2, 'posted', 'invoice', $3, $5)
+                     RETURNING id, voucher_number`,
+                    [
+                        `تحصيل متبقي — فاتورة رقم ${invoice.invoice_number}`,
+                        remaining,
+                        id,
+                        payment_date || null,
+                        req.user?.id || null,
+                    ]
+                );
+                const voucherId = voucherRes.rows[0].id;
+
+                await client.query(
+                    `INSERT INTO accounting_voucher_lines (voucher_id, account_id, debit, credit, description)
+                     VALUES ($1, $2, $3, 0, $4)`,
+                    [voucherId, cash_account_id, remaining, `تحصيل متبقي — فاتورة #${invoice.invoice_number}`]
+                );
+                await client.query(
+                    `INSERT INTO accounting_voucher_lines
+                        (voucher_id, account_id, debit, credit, sub_account_type, sub_account_id, description)
+                     VALUES ($1, $2, 0, $3, 'client', $4, $5)`,
+                    [voucherId, arRes.rows[0].id, remaining, invoice.client_id, `تسوية ذمة العميل — فاتورة #${invoice.invoice_number}`]
+                );
+
+                await client.query(`
+                    INSERT INTO client_transactions (client_id, invoice_id, type, amount, payment_method, document_number, description, linked_voucher_id, created_at)
+                    VALUES ($1, $2, 'receipt', $3, $4, $5, $6, $7, COALESCE($8::timestamptz, NOW()))
+                `, [
+                    invoice.client_id, id, remaining, payment_method, reference_number || null,
+                    `دفعة فاتورة رقم ${invoice.invoice_number}`, voucherId, payment_date || null,
+                ]);
+            }
         }
 
         // If cancelling, add note to description
@@ -1029,7 +1126,7 @@ router.patch('/:id/status', restrictEdit, validateBody(invoiceStatusUpdate), asy
     } catch (err) {
         await client.query('ROLLBACK');
         console.error('[Invoices] PATCH /:id/status error:', err.message);
-        res.status(500).json({ error: 'Internal server error.' });
+        res.status(400).json({ error: err.message });
     } finally {
         client.release();
     }

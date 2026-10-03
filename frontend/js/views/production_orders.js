@@ -1110,6 +1110,8 @@
         _onPaymentMethodChange('cash');
         const notesEl = document.getElementById('payment-notes');
         if (notesEl) notesEl.value = '';
+        const payDateEl = document.getElementById('payment-date');
+        if (payDateEl) payDateEl.value = new Date().toISOString().slice(0, 10);
 
         await _loadPaymentLookups();
         _populatePaymentSelects();
@@ -1139,22 +1141,27 @@
         const notes   = (document.getElementById('payment-notes')             ||{}).value || '';
 
         if (!amount || amount <= 0) { _toast('أدخل مبلغاً صحيحاً', 'error'); return; }
+        const payDate = (document.getElementById('payment-date') || {}).value || '';
+        if (!payDate) { _toast('حدد تاريخ الدفعة', 'error'); return; }
 
         let extra = {};
         if (method === 'cash') {
-            extra.cash_box = (document.getElementById('payment-cash-box') || {}).value || 'main';
+            extra.cash_box = (document.getElementById('payment-cash-box') || {}).value || '';
+            if (!extra.cash_box) { _toast('اختر الصندوق', 'error'); return; }
         } else if (method === 'bank_transfer') {
             extra.bank_account = (document.getElementById('payment-bank-account') || {}).value || '';
             extra.bank_ref = (document.getElementById('payment-bank-ref') || {}).value || '';
+            if (!extra.bank_account) { _toast('اختر الحساب البنكي', 'error'); return; }
         } else if (method === 'pos') {
             extra.pos_terminal = (document.getElementById('payment-pos-terminal') || {}).value || '';
             extra.pos_ref = (document.getElementById('payment-pos-ref') || {}).value || '';
+            if (!extra.pos_terminal) { _toast('اختر جهاز نقاط البيع', 'error'); return; }
         }
 
         try {
             const res = await window.apiFetch(`/api/orders/${_hubOrderId}/payment`, {
                 method: 'POST',
-                body: { amount, payment_method: method, notes, ...extra },
+                body: { amount, payment_method: method, payment_date: payDate, notes, ...extra },
             });
             _toast('تم تسجيل الدفعة بنجاح');
             _hideModal('po-payment-modal');

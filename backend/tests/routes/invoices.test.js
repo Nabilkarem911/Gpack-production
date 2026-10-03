@@ -244,3 +244,90 @@ describe('closed_without_invoice flag clearing on order-linked invoices', () => 
         expect(mockClientQuery.mock.calls.some(([sql]) => sql.includes('UPDATE orders'))).toBe(false);
     });
 });
+
+describe('invoice payment voucher integration', () => {
+    const cashAcc = '99999999-9999-4999-8999-999999999999';
+
+    function mockInvoice(status = 'issued', grandTotal = '1000', paid = '0') {
+        mockClientQuery.mockImplementation(async (sql, params) => {
+            if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') return {};
+            if (sql.includes('FROM invoices WHERE')) {
+                return { rowCount: 1, rows: [{
+                    id: 'invoice-id', invoice_number: 9001, grand_total: grandTotal,
+                    status, client_id: 'c0ffee00-c0ff-4c0f-8c0f-fec0ffee0000', order_id: null,
+                }] };
+            }
+            if (sql.includes('FROM client_transactions')) return { rowCount: 1, rows: [{ paid }] };
+            if (sql.includes('FROM accounts') && sql.includes('1100')) return { rowCount: 1, rows: [{ id: cashAcc }] };
+            if (sql.includes("code = '1300'")) return { rowCount: 1, rows: [{ id: 'ar-1' }] };
+            if (sql.includes('INSERT INTO accounting_vouchers')) return { rowCount: 1, rows: [{ id: 'v-1', voucher_number: 10 }] };
+            return { rowCount: 1, rows: [] };
+        });
+    }
+
+    beforeEach(() => {
+        mockQuery.mockReset();
+        mockClientQuery.mockReset();
+        mockClient.release.mockReset();
+    });
+
+    test('POST /:id/payment rejects when no cash account is selected', async () => {
+        mockInvoice();
+        const res = await request(buildApp())
+            .post('/api/invoices/invoice-id/payment')
+            .send({ client_id: 'c0ffee00-c0ff-4c0f-8c0f-fec0ffee0000', amount: 100, payment_method: 'cash' });
+        expect(res.status).toBe(400);
+        expect(res.body.error).toMatch(/حساب الصندوق\/البنك/);
+    });
+
+    test('POST /:id/payment posts a receipt voucher linked to the ledger row', async () => {
+        mockInvoice('issued', '1000', '0');
+        const res = await request(buildApp())
+            .post('/api/invoices/invoice-id/payment')
+            .send({ client_id: 'c0ffee00-c0ff-4c0f-8c0f-fec0ffee0000', amount: 300, payment_method: 'cash', cash_account_id: cashAcc, voucher_date: '2026-09-10' });
+        expect(res.status).toBe(201);
+
+        const v = mockClientQuery.mock.calls.find(([sql]) => sql.includes('INSERT INTO accounting_vouchers'));
+        expect(v[0]).toContain("'receipt'");
+        expect(v[0]).toContain("'invoice'");
+        expect(v[1][3]).toBe('2026-09-10'); // voucher_date param
+
+        const ct = mockClientQuery.mock.calls.find(([sql]) => sql.includes('INSERT INTO client_transactions'));
+        expect(ct[0]).toContain('linked_voucher_id');
+        expect(ct[1]).toContain('v-1');
+    });
+
+    test('PATCH status→paid with a partial payment vouchers only the remaining balance', async () => {
+        mockInvoice('issued', '1000', '300');
+        const res = await request(buildApp())
+            .patch('/api/invoices/invoice-id/status')
+            .send({ status: 'paid', cash_account_id: cashAcc, payment_method: 'cash' });
+        expect(res.status).toBe(200);
+
+        const v = mockClientQuery.mock.calls.find(([sql]) => sql.includes('INSERT INTO accounting_vouchers'));
+        expect(v[1][1]).toBe(700); // remaining, not full 1000
+        const ct = mockClientQuery.mock.calls.find(([sql]) => sql.includes('INSERT INTO client_transactions'));
+        expect(ct[1][2]).toBe(700);
+    });
+
+    test('PATCH status→paid with no remaining balance inserts nothing', async () => {
+        mockInvoice('issued', '1000', '1000');
+        const res = await request(buildApp())
+            .patch('/api/invoices/invoice-id/status')
+            .send({ status: 'paid' });
+        expect(res.status).toBe(200);
+        expect(mockClientQuery.mock.calls.some(([sql]) => sql.includes('INSERT INTO accounting_vouchers'))).toBe(false);
+        expect(mockClientQuery.mock.calls.some(([sql]) => sql.includes('INSERT INTO client_transactions'))).toBe(false);
+    });
+
+    test('PATCH status→paid with remaining balance but no account is refused', async () => {
+        mockInvoice('issued', '1000', '300');
+        const res = await request(buildApp())
+            .patch('/api/invoices/invoice-id/status')
+            .send({ status: 'paid' });
+        expect(res.status).toBe(400);
+        expect(res.body.error).toMatch(/متبقٍ/);
+        // rolled back — status update must not commit without the collection
+        expect(mockClientQuery.mock.calls.some(([sql]) => sql.includes('ROLLBACK'))).toBe(true);
+    });
+});

@@ -77,16 +77,20 @@ describe('warehouse sales invoice release workflow', () => {
                 return { rowCount: 1, rows: [{ id: invoiceId, invoice_number: 1001, client_id: clientId, grand_total: 100, status: 'issued' }] };
             }
             if (sql.includes('SELECT COALESCE(SUM(amount)')) return { rowCount: 1, rows: [{ paid: 0 }] };
+            if (sql.includes('FROM accounts') && sql.includes('1100')) return { rowCount: 1, rows: [{ id: 'cash-acc-1' }] };
+            if (sql.includes("code = '1300'")) return { rowCount: 1, rows: [{ id: 'ar-1' }] };
+            if (sql.includes('INSERT INTO accounting_vouchers')) return { rowCount: 1, rows: [{ id: 'v-1', voucher_number: 5 }] };
             return { rowCount: 1, rows: [] };
         });
 
         const response = await request(buildApp())
             .post(`/api/invoices/${invoiceId}/payment`)
-            .send({ client_id: clientId, amount: 100, payment_method: 'cash' });
+            .send({ client_id: clientId, amount: 100, payment_method: 'cash', cash_account_id: '99999999-9999-4999-8999-999999999999' });
 
         expect(response.status).toBe(201);
         expect(response.body.data).toMatchObject({ invoice_id: invoiceId, paid: 100, remaining: 0, status: 'paid' });
         expect(mockClientQuery.mock.calls.some(([sql]) => sql.includes("INSERT INTO client_transactions") && sql.includes("'receipt'"))).toBe(true);
+        expect(mockClientQuery.mock.calls.some(([sql]) => sql.includes('INSERT INTO accounting_vouchers'))).toBe(true);
     });
 
     test('deletes an unreleased invoice and returns its reserved stock', async () => {

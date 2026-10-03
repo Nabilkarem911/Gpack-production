@@ -265,7 +265,7 @@ const AI_ACTIONS = [
         type: 'add_payment',
         description: 'تسجيل دفعة لطلب موجود',
         async propose(args, user) {
-            const { order_number, amount, payment_method } = args;
+            const { order_number, amount, payment_method, cash_account_id } = args;
 
             if (!order_number) {
                 return { valid: false, error: 'رقم الطلب مطلوب' };
@@ -273,6 +273,18 @@ const AI_ACTIONS = [
             const payAmt = parseFloat(amount);
             if (!payAmt || payAmt <= 0) {
                 return { valid: false, error: 'المبلغ يجب أن يكون أكبر من صفر' };
+            }
+            if (!cash_account_id) {
+                return { valid: false, error: 'حساب الصندوق/البنك المستلم للدفعة مطلوب (cash_account_id)' };
+            }
+            const accRes = await db.query(
+                `SELECT id, name FROM accounts
+                 WHERE id = $1 AND is_active = true
+                   AND (code IN ('1100','1200') OR parent_id IN (SELECT id FROM accounts WHERE code IN ('1100','1200')))`,
+                [cash_account_id]
+            );
+            if (!accRes.rows.length) {
+                return { valid: false, error: 'حساب الصندوق/البنك المحدد غير صالح' };
             }
 
             const orderRes = await db.query(
@@ -307,6 +319,7 @@ const AI_ACTIONS = [
                     client_name: order.client_name,
                     amount: payAmt,
                     payment_method: payment_method || 'cash',
+                    cash_account_id,
                     remaining_before: remaining,
                     remaining_after: Math.round((remaining - payAmt) * 100) / 100,
                 },
@@ -314,8 +327,9 @@ const AI_ACTIONS = [
         },
 
         async execute(proposal, user) {
-            const { order_id, amount, payment_method } = proposal;
+            const { order_id, amount, payment_method, cash_account_id } = proposal;
             const payAmt = parseFloat(amount);
+            if (!cash_account_id) throw new Error('حساب الصندوق/البنك المستلم للدفعة مطلوب (cash_account_id)');
 
             const result = await db.withTransaction(async (client) => {
                 const orderRes = await client.query(
@@ -326,6 +340,9 @@ const AI_ACTIONS = [
                 if (orderRes.rows.length === 0) throw new Error('الطلب غير موجود');
                 const order = orderRes.rows[0];
 
+                const arRes = await client.query(`SELECT id FROM accounts WHERE code = '1300' LIMIT 1`);
+                if (!arRes.rows.length) throw new Error('حساب المدينون (1300) غير موجود في دليل الحسابات');
+
                 const newPaid = Math.round((parseFloat(order.paid_amount || 0) + payAmt) * 100) / 100;
 
                 await client.query(
@@ -333,13 +350,34 @@ const AI_ACTIONS = [
                     [newPaid, order_id]
                 );
 
+                const voucherRes = await client.query(
+                    `INSERT INTO accounting_vouchers
+                        (voucher_type, voucher_date, description, total_amount, status, reference_type, reference_id, created_by)
+                     VALUES ('receipt', CURRENT_DATE, $1, $2, 'posted', 'order', $3, $4)
+                     RETURNING id, voucher_number`,
+                    [`دفعة — طلب #${order.order_number} — المساعد الذكي`, payAmt, order_id, user?.id || null]
+                );
+                const voucherId = voucherRes.rows[0].id;
+
+                await client.query(
+                    `INSERT INTO accounting_voucher_lines (voucher_id, account_id, debit, credit, description)
+                     VALUES ($1, $2, $3, 0, $4)`,
+                    [voucherId, cash_account_id, payAmt, `تحصيل دفعة — طلب #${order.order_number}`]
+                );
+                await client.query(
+                    `INSERT INTO accounting_voucher_lines
+                        (voucher_id, account_id, debit, credit, sub_account_type, sub_account_id, description)
+                     VALUES ($1, $2, 0, $3, 'client', $4, $5)`,
+                    [voucherId, arRes.rows[0].id, payAmt, order.client_id, `تسوية ذمة العميل — طلب #${order.order_number}`]
+                );
+
                 const txRes = await client.query(
                     `INSERT INTO client_transactions
-                        (client_id, order_id, type, amount, payment_method, description)
-                     VALUES ($1, $2, 'payment', $3, $4, $5)
+                        (client_id, order_id, type, amount, payment_method, description, linked_voucher_id)
+                     VALUES ($1, $2, 'payment', $3, $4, $5, $6)
                      RETURNING id, document_number`,
                     [order.client_id, order_id, payAmt, payment_method || 'cash',
-                     'دفعة مسجلة بواسطة المساعد الذكي']
+                     'دفعة مسجلة بواسطة المساعد الذكي', voucherId]
                 );
 
                 return {

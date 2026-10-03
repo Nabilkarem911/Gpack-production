@@ -562,3 +562,89 @@ describe('Orders Routes — Zod Validation', () => {
         expect(orderUpdate).toBeDefined();
     });
 });
+
+describe('Orders — POST /:id/payment receipt voucher', () => {
+    let app;
+
+    beforeEach(() => {
+        app = express();
+        app.use(express.json());
+        app.use((req, res, next) => {
+            req.user = { id: 1, role: 'admin', permissions: {} };
+            next();
+        });
+        app.use('/api/orders', orderRoutes);
+        mockQuery.mockClear();
+    });
+
+    function mockOrder(paid = '0', total = '1000') {
+        mockQuery.mockImplementation(async (sql) => {
+            if (sql.includes('FROM orders') && sql.includes('FOR UPDATE')) {
+                return { rowCount: 1, rows: [{
+                    id: 'o-1', order_number: 55, client_id: 'client-1',
+                    grand_total: total, paid_amount: paid, status: 'production',
+                }] };
+            }
+            if (sql.includes("code = '1300'")) return { rowCount: 1, rows: [{ id: 'ar-1' }] };
+            if (sql.includes("code = '4300'")) return { rowCount: 1, rows: [{ id: 'disc-1' }] };
+            if (sql.includes('FROM accounts WHERE code = $1')) return { rowCount: 1, rows: [{ id: 'cash-1' }] };
+            if (sql.includes('INSERT INTO accounting_vouchers')) return { rowCount: 1, rows: [{ id: 'v-9', voucher_number: 77 }] };
+            if (sql.includes('INSERT INTO client_transactions')) return { rowCount: 1, rows: [{ id: 'ct-1', document_number: 'D-1' }] };
+            return { rowCount: 1, rows: [] };
+        });
+    }
+
+    test('records a posted receipt voucher: DR cash / CR AR(client), ct linked', async () => {
+        mockOrder('0', '1000');
+        const res = await request(app)
+            .post('/api/orders/o-1/payment')
+            .send({ amount: 400, payment_method: 'cash', cash_box: '1110', payment_date: '2026-09-12' });
+        expect(res.status).toBe(201);
+
+        const v = mockQuery.mock.calls.find(([sql]) => sql.includes('INSERT INTO accounting_vouchers'));
+        expect(v[0]).toContain("'receipt'");
+        expect(v[0]).toContain('COALESCE($5::date, CURRENT_DATE)');
+        expect(v[1][1]).toBe(400);          // total_amount
+        expect(v[1][4]).toBe('2026-09-12'); // voucher_date
+
+        const lines = mockQuery.mock.calls.filter(([sql]) => sql.includes('INSERT INTO accounting_voucher_lines'));
+        expect(lines.length).toBe(2); // DR cash 400 / CR AR 400 (no discount line)
+        expect(lines.some(([, p]) => p[1] === 'cash-1' && p[2] === 400)).toBe(true);
+        expect(lines.some(([, p]) => p[1] === 'ar-1' && p[2] === 400 && p[3] === 'client-1')).toBe(true);
+
+        const ct = mockQuery.mock.calls.find(([sql]) => sql.includes('INSERT INTO client_transactions'));
+        expect(ct[0]).toContain('linked_voucher_id');
+        expect(ct[1]).toContain('v-9');
+        expect(ct[1][6]).toBe('2026-09-12'); // created_at param
+    });
+
+    test('payment + discount posts a balanced 3-line voucher on 4300', async () => {
+        mockOrder('600', '1000');
+        const res = await request(app)
+            .post('/api/orders/o-1/payment')
+            .send({ amount: 350, discount_amount: 50, payment_method: 'cash', cash_box: '1110' });
+        expect(res.status).toBe(201);
+
+        const lines = mockQuery.mock.calls.filter(([sql]) => sql.includes('INSERT INTO accounting_voucher_lines'));
+        expect(lines.length).toBe(3);
+        expect(lines.some(([, p]) => p[1] === 'disc-1' && p[2] === 50)).toBe(true);
+    });
+
+    test('rejects payment exceeding the remaining balance', async () => {
+        mockOrder('600', '1000'); // remaining 400
+        const res = await request(app)
+            .post('/api/orders/o-1/payment')
+            .send({ amount: 401, payment_method: 'cash', cash_box: '1110' });
+        expect(res.status).toBe(400);
+        expect(res.body.error).toMatch(/تتجاوز المتبقي/);
+    });
+
+    test('rejects payment without a resolvable receiving account', async () => {
+        mockOrder('0', '1000');
+        const res = await request(app)
+            .post('/api/orders/o-1/payment')
+            .send({ amount: 100, payment_method: 'cash' }); // no cash_box
+        expect(res.status).toBe(400);
+        expect(res.body.error).toMatch(/حساب الصندوق\/البنك/);
+    });
+});

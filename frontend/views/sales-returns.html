@@ -80,9 +80,15 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                     <label class="block text-xs font-bold text-slate-500 mb-1.5">طريقة الأثر المالي</label>
-                    <select id="sr-action" class="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-brand-500">
+                    <select id="sr-action" onchange="window.srActionChanged?.(this.value)" class="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-brand-500">
                         <option value="credit_note">إشعار دائن للعميل</option>
                         <option value="cash_refund">رد نقدي للعميل</option>
+                    </select>
+                </div>
+                <div id="sr-refund-account-wrap" class="hidden">
+                    <label class="block text-xs font-bold text-slate-500 mb-1.5">حساب الصرف <span class="text-red-500">*</span></label>
+                    <select id="sr-refund-account" class="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-brand-500">
+                        <option value="">— اختر حساب الصندوق/البنك —</option>
                     </select>
                 </div>
                 <div>

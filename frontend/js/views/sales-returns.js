@@ -174,13 +174,19 @@
         if (items.includes('over')) return window.showToast?.('الكمية المرتجعة تتجاوز المتاح', 'error');
         const validItems = items.filter(Boolean).filter(i => i.quantity > 0);
         if (!validItems.length) return window.showToast?.('أدخل كمية مرتجعة واحدة على الأقل', 'error');
+        const returnAction = el('sr-action').value;
+        const refundAccountId = el('sr-refund-account')?.value || '';
+        if (returnAction === 'cash_refund' && !refundAccountId) {
+            return window.showToast?.('اختر حساب الصندوق/البنك الذي سيخرج منه الرد النقدي', 'error');
+        }
         const button = el('sr-save');
         button.disabled = true;
         try {
             await window.apiFetch('/api/sales-returns', { method: 'POST', body: {
                 invoice_id: _currentInvoice.invoice.id,
                 destination_warehouse_id: warehouseId,
-                return_action: el('sr-action').value,
+                return_action: returnAction,
+                refund_account_id: returnAction === 'cash_refund' ? refundAccountId : null,
                 return_date: new Date().toISOString().slice(0, 10),
                 notes: el('sr-notes').value || null,
                 items: validItems,
@@ -191,6 +197,26 @@
         } catch (err) { window.showToast?.(err.message || 'فشل اعتماد المرتجع', 'error'); }
         finally { button.disabled = false; }
     }
+
+    let _refundAccountsLoaded = false;
+    window.srActionChanged = async function(action) {
+        const wrap = el('sr-refund-account-wrap');
+        if (wrap) wrap.classList.toggle('hidden', action !== 'cash_refund');
+        if (action !== 'cash_refund' || _refundAccountsLoaded) return;
+        try {
+            const [cashRes, bankRes] = await Promise.all([
+                window.apiFetch('/api/orders/lookup/cash-accounts'),
+                window.apiFetch('/api/orders/lookup/bank-accounts'),
+            ]);
+            const accounts = [...(cashRes?.data || []), ...(bankRes?.data || [])];
+            const sel = el('sr-refund-account');
+            if (sel) {
+                sel.innerHTML = '<option value="">— اختر حساب الصندوق/البنك —</option>' +
+                    accounts.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
+            }
+            _refundAccountsLoaded = true;
+        } catch { /* lookup failure — server will still validate */ }
+    };
 
     window.srLoadReturns = srLoadReturns;
     window.srOpenForm = srOpenForm;

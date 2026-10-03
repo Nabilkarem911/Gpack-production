@@ -108,6 +108,7 @@ const salesReturnCreate = z.object({
     return_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     destination_warehouse_id: z.string().uuid(),
     return_action: z.enum(['credit_note', 'cash_refund']).default('credit_note'),
+    refund_account_id: z.string().uuid().optional().nullable(),
     notes: z.string().max(2000).optional().nullable(),
     items: z.array(z.object({
         invoice_item_id: z.string().uuid(),
@@ -651,6 +652,7 @@ const orderInvoice = z.object({
 const orderPayment = z.object({
     amount: z.coerce.number().positive('Amount must be positive'),
     payment_method: z.string().max(50).optional().default('cash'),
+    payment_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
     notes: z.string().max(2000).optional().default(''),
     discount_amount: z.coerce.number().min(0).optional().default(0),
     cash_box: z.string().max(100).optional().nullable(),
@@ -785,6 +787,10 @@ const invoiceShare = z.object({
 
 const invoiceStatusUpdate = z.object({
     status: z.enum(['issued', 'paid', 'overdue', 'cancelled', 'archived']),
+    payment_method: z.string().max(50).optional().nullable(),
+    cash_account_id: z.string().uuid().optional().nullable(),
+    payment_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+    reference_number: z.string().max(100).optional().nullable(),
 }).passthrough();
 
 const invoiceMarkIssued = z.object({

@@ -3922,6 +3922,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         _setVal('payment-amount', '');
         _setVal('payment-discount', '');
         _setVal('payment-notes',  '');
+        _setVal('payment-date', new Date().toISOString().slice(0, 10));
 
         // Reset to cash
         _setVal('payment-method', 'cash');
@@ -3989,7 +3990,10 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
 
         if (!amount || amount <= 0) { _toast('أدخل مبلغاً صحيحاً', 'error'); return; }
 
-        const body = { amount, payment_method: method, notes, discount_amount: discount };
+        const paymentDate = _el('payment-date')?.value || '';
+        if (!paymentDate) { _toast('حدد تاريخ الدفعة', 'error'); return; }
+
+        const body = { amount, payment_method: method, payment_date: paymentDate, notes, discount_amount: discount };
 
         if (method === 'cash') {
             const cashBox = _el('payment-cash-box')?.value || '';

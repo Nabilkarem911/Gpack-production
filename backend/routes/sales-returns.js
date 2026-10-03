@@ -181,12 +181,12 @@ router.get('/by-invoice/:invoiceId', async (req, res) => {
 });
 
 router.post('/', restrictWrite, validateBody(salesReturnCreate), async (req, res) => {
-    const { invoice_id, return_date, destination_warehouse_id, return_action, notes, items } = req.validatedBody;
+    const { invoice_id, return_date, destination_warehouse_id, return_action, refund_account_id, notes, items } = req.validatedBody;
     const client = await db.pool.connect();
     try {
         await client.query('BEGIN');
         const invoiceRes = await client.query(`
-            SELECT id, client_id, delivery_status, delivery_note_id, order_id, source, status, tax_rate
+            SELECT id, invoice_number, client_id, delivery_status, delivery_note_id, order_id, source, status, tax_rate
             FROM invoices WHERE id = $1 FOR UPDATE
         `, [invoice_id]);
         if (!invoiceRes.rowCount) throw new Error('الفاتورة غير موجودة.');
@@ -258,6 +258,31 @@ router.post('/', restrictWrite, validateBody(salesReturnCreate), async (req, res
         if (!normalized.length) throw new Error('أدخل صنفًا واحدًا على الأقل.');
         const totalAmount = Math.round((subtotal * (1 + parseFloat(invoice.tax_rate || 0))) * 100) / 100;
 
+        // Cash refunds need a real cash/bank account and cannot exceed what
+        // the client actually paid on this invoice.
+        if (return_action === 'cash_refund') {
+            if (!refund_account_id) {
+                throw new Error('مرتجع «رد نقدي» يتطلب اختيار حساب الصندوق/البنك الذي خرجت منه الفلوس.');
+            }
+            const cashAccRes = await client.query(
+                `SELECT id FROM accounts
+                 WHERE id = $1 AND is_active = true
+                   AND (code IN ('1100','1200') OR parent_id IN (SELECT id FROM accounts WHERE code IN ('1100','1200')))`,
+                [refund_account_id]
+            );
+            if (!cashAccRes.rowCount) throw new Error('حساب الصندوق/البنك المختار للرد النقدي غير صالح.');
+
+            const paidRes = await client.query(
+                `SELECT COALESCE(SUM(amount), 0) AS paid
+                 FROM client_transactions WHERE invoice_id = $1 AND type IN ('payment', 'receipt')`,
+                [invoice.id]
+            );
+            const invoicePaid = parseFloat(paidRes.rows[0].paid || 0);
+            if (invoicePaid < totalAmount) {
+                throw new Error(`لا يمكن رد ${totalAmount.toFixed(2)} نقدًا — المدفوع على الفاتورة ${invoicePaid.toFixed(2)} فقط. استخدم «إشعار دائن» بدلًا منه.`);
+            }
+        }
+
         const returnRes = await client.query(`
             INSERT INTO sales_returns
                 (return_date, client_id, invoice_id, destination_warehouse_id, total_amount, return_action, notes, created_by)
@@ -298,10 +323,44 @@ router.post('/', restrictWrite, validateBody(salesReturnCreate), async (req, res
                 `مرتجع مبيعات #${returnRes.rows[0].return_number}`, req.user?.id || null]);
         }
 
+        // Cash refund: payment voucher out of the chosen cash/bank account,
+        // referenced to this return so it can never be duplicated silently.
+        let refundVoucherId = null;
+        if (return_action === 'cash_refund') {
+            const arRes = await client.query(`SELECT id FROM accounts WHERE code = '1300' LIMIT 1`);
+            if (!arRes.rowCount) throw new Error('حساب المدينون (1300) غير موجود في دليل الحسابات.');
+
+            const voucherRes = await client.query(`
+                INSERT INTO accounting_vouchers
+                    (voucher_type, voucher_date, description, total_amount, status, reference_type, reference_id, created_by)
+                VALUES ('payment', $1, $2, $3, 'posted', 'sales_return', $4, $5)
+                RETURNING id, voucher_number
+            `, [
+                return_date || new Date().toISOString().slice(0, 10),
+                `رد نقدي — مرتجع مبيعات #${returnRes.rows[0].return_number} — فاتورة #${invoice.invoice_number || invoice.id}`,
+                totalAmount,
+                returnId,
+                req.user?.id || null,
+            ]);
+            refundVoucherId = voucherRes.rows[0].id;
+
+            await client.query(`
+                INSERT INTO accounting_voucher_lines (voucher_id, account_id, debit, credit, sub_account_type, sub_account_id, description)
+                VALUES ($1, $2, $3, 0, 'client', $4, $5)
+            `, [refundVoucherId, arRes.rows[0].id, totalAmount, invoice.client_id,
+                `رد نقدي للعميل — مرتجع #${returnRes.rows[0].return_number}`]);
+
+            await client.query(`
+                INSERT INTO accounting_voucher_lines (voucher_id, account_id, debit, credit, description)
+                VALUES ($1, $2, 0, $3, $4)
+            `, [refundVoucherId, refund_account_id, totalAmount,
+                `صرف رد نقدي — مرتجع #${returnRes.rows[0].return_number}`]);
+        }
+
         await client.query(`
-            INSERT INTO client_transactions (client_id, invoice_id, type, amount, description, created_at)
-            VALUES ($1, $2, 'sales_return', $3, $4, NOW())
-        `, [invoice.client_id, invoice.id, totalAmount, `${return_action === 'cash_refund' ? 'رد نقدي' : 'إشعار دائن'} — مرتجع مبيعات #${returnRes.rows[0].return_number}`]);
+            INSERT INTO client_transactions (client_id, invoice_id, type, amount, description, linked_voucher_id, created_at)
+            VALUES ($1, $2, 'sales_return', $3, $4, $5, NOW())
+        `, [invoice.client_id, invoice.id, totalAmount, `${return_action === 'cash_refund' ? 'رد نقدي' : 'إشعار دائن'} — مرتجع مبيعات #${returnRes.rows[0].return_number}`, refundVoucherId]);
 
         await client.query('COMMIT');
         return res.status(201).json({ data: { id: returnId, return_number: returnRes.rows[0].return_number, total_amount: totalAmount }, message: 'تم اعتماد مرتجع المبيعات وإضافة البضاعة للمخزون.' });

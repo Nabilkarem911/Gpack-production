@@ -685,12 +685,33 @@
             if (!value || value <= 0) return alert('أدخل قيمة دفعة صحيحة.');
             const method = prompt('طريقة الدفع (cash / bank_transfer / check / credit_card):', 'cash');
             if (!method) return;
+
+            // Cash/bank receiving account is required — the payment posts a
+            // receipt voucher and the account must be explicit.
+            const [cashRes, bankRes] = await Promise.all([
+                window.apiFetch('/api/orders/lookup/cash-accounts').catch(() => ({ data: [] })),
+                window.apiFetch('/api/orders/lookup/bank-accounts').catch(() => ({ data: [] })),
+            ]);
+            const accounts = [...(cashRes?.data || []), ...(bankRes?.data || [])];
+            if (!accounts.length) return alert('لا توجد حسابات صندوق/بنك متاحة — راجع دليل الحسابات.');
+            const menu = accounts.map((a, i) => `${i + 1}) ${a.name}`).join('\n');
+            const pick = prompt(`حساب استلام الدفعة:\n${menu}`, '1');
+            if (pick === null) return;
+            const acc = accounts[parseInt(pick, 10) - 1];
+            if (!acc) return alert('اختر رقم حساب صحيح من القائمة.');
+
+            const payDate = prompt('تاريخ الدفعة (YYYY-MM-DD):', new Date().toISOString().slice(0, 10));
+            if (payDate === null) return;
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(payDate)) return alert('صيغة التاريخ غير صحيحة — استخدم YYYY-MM-DD.');
+
             await window.apiFetch(`/api/invoices/${invoiceId}/payment`, {
                 method: 'POST',
                 body: {
                     client_id: invoice.client_id,
                     amount: value,
                     payment_method: method,
+                    cash_account_id: acc.id,
+                    voucher_date: payDate,
                     description: `دفعة فاتورة رقم ${invoice.invoice_number}`,
                 },
             });
