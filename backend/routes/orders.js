@@ -2613,6 +2613,25 @@ router.post('/:id/invoice', restrictAdmin, validateBody(orderInvoice), async (re
             );
             const invoice = invRes.rows[0];
 
+            // The order now has exactly one active invoice — seal any
+            // order-linked payments (e.g. advances taken before issuance)
+            // onto it. Same 1:1 rule as migration 101.
+            if (type === 'final') {
+                await client.query(
+                    `UPDATE client_transactions ct
+                     SET invoice_id = i.id
+                     FROM invoices i
+                     WHERE ct.invoice_id IS NULL
+                       AND ct.order_id = i.order_id
+                       AND i.order_id = $1
+                       AND i.status IN ('issued','overdue')
+                       AND (SELECT count(*) FROM invoices x
+                             WHERE x.order_id = i.order_id
+                               AND x.status IN ('issued','overdue')) = 1`,
+                    [id]
+                );
+            }
+
             // Insert invoice items (extra lines are free-text: variant_id NULL)
             for (const item of items) {
                 const lineQty = parseFloat(item.qty ?? item.quantity ?? 0);

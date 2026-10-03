@@ -827,12 +827,27 @@ router.patch('/:id/mark-issued', restrictEdit, validateBody(invoiceMarkIssued), 
         `, [external_invoice_number || null, id]);
 
         // Invoice is now issued and order-linked: it counts as the order's
-        // final invoice — clear the manual closed-without-invoice flag.
+        // final invoice — clear the manual closed-without-invoice flag, and
+        // seal the order's unlinked payments onto it (same 1:1 rule as
+        // migration 101).
         if (inv.order_id) {
             await client.query(
                 `UPDATE orders
                  SET closed_without_invoice = FALSE, closed_at = NULL, closed_by = NULL, updated_at = NOW()
                  WHERE id = $1 AND closed_without_invoice = TRUE`,
+                [inv.order_id]
+            );
+            await client.query(
+                `UPDATE client_transactions ct
+                 SET invoice_id = i.id
+                 FROM invoices i
+                 WHERE ct.invoice_id IS NULL
+                   AND ct.order_id = i.order_id
+                   AND i.order_id = $1
+                   AND i.status IN ('issued','overdue')
+                   AND (SELECT count(*) FROM invoices x
+                         WHERE x.order_id = i.order_id
+                           AND x.status IN ('issued','overdue')) = 1`,
                 [inv.order_id]
             );
         }
@@ -1104,13 +1119,28 @@ router.patch('/:id/status', restrictEdit, validateBody(invoiceStatusUpdate), asy
         `, [status, id]);
 
         // An order-linked invoice reaching 'issued' counts as the order's
-        // final invoice — clear the manual closed-without-invoice flag.
+        // final invoice — clear the manual closed-without-invoice flag,
+        // and seal the order's unlinked payments onto the invoice (same
+        // 1:1 rule as migration 101).
         if (status === 'issued' && invoice.order_id) {
             await client.query(`
                 UPDATE orders
                 SET closed_without_invoice = FALSE, closed_at = NULL, closed_by = NULL, updated_at = NOW()
                 WHERE id = $1 AND closed_without_invoice = TRUE
             `, [invoice.order_id]);
+            await client.query(
+                `UPDATE client_transactions ct
+                 SET invoice_id = i.id
+                 FROM invoices i
+                 WHERE ct.invoice_id IS NULL
+                   AND ct.order_id = i.order_id
+                   AND i.order_id = $1
+                   AND i.status IN ('issued','overdue')
+                   AND (SELECT count(*) FROM invoices x
+                         WHERE x.order_id = i.order_id
+                           AND x.status IN ('issued','overdue')) = 1`,
+                [invoice.order_id]
+            );
         }
 
         // If marking as paid, create receipt transaction if not already paid
