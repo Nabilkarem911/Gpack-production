@@ -654,8 +654,10 @@ router.post('/', restrictWrite, validateBody(invoiceCreate), async (req, res) =>
 
         // One order → at most one active invoice + one draft. Blocks the
         // duplicate-invoice path that produced repeated issued invoices on
-        // the same order.
+        // the same order. The FOR UPDATE lock serializes concurrent creates
+        // on the same order so two requests cannot both pass the check.
         if (order_id) {
+            await client.query(`SELECT id FROM orders WHERE id = $1 FOR UPDATE`, [order_id]);
             const dupStatuses = isWarehouseInvoice ? ['issued', 'overdue'] : ['draft'];
             const dupRes = await client.query(
                 `SELECT invoice_number, status FROM invoices
@@ -800,6 +802,19 @@ router.patch('/:id/mark-issued', restrictEdit, validateBody(invoiceMarkIssued), 
         const inv = invRes.rows[0];
         if (inv.source !== 'sales_invoices') {
             throw new Error('لا يمكن اعتماد فاتورة أمر التشغيل من هنا.');
+        }
+
+        // Issuing a draft on an order that already has an active invoice
+        // would create a second one — the duplicate-invoice bug seen in prod.
+        if (inv.order_id) {
+            const dupRes = await client.query(
+                `SELECT invoice_number FROM invoices
+                 WHERE order_id = $1 AND id <> $2 AND status IN ('issued','overdue') LIMIT 1`,
+                [inv.order_id, id]
+            );
+            if (dupRes.rowCount) {
+                throw new Error(`يوجد بالفعل فاتورة نشطة لهذا الطلب (رقم ${dupRes.rows[0].invoice_number}). لا يمكن اعتماد فاتورة ثانية.`);
+            }
         }
 
         const updated = await client.query(`

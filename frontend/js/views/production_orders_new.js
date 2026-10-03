@@ -19,6 +19,8 @@
     let _activeHubTab = 'items';
     let _invoicePrevPaid = 0;
     let _invoiceExtras   = [];   // user-added extra lines (proforma only): {name, qty, price}
+    let _existingActiveInvoice = null; // set when the order already has an issued/overdue invoice
+    let _invoiceSaving = false;        // double-click / duplicate-submit lock
     let _proformaExtras  = [];   // extra lines carried from the draft proforma into the final invoice
     let _bulkSelected = {}; // { [itemId]: { id, name, qty, assigned, designId, designName, designThumb, designStatus, variantId } }
     let _bulkDesignTargetId = null;
@@ -3619,6 +3621,19 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         _invoicePrevPaid = totalPaid;
         _setText('invoice-prev-paid', `${_fmt(totalPaid)} ر.س`);
 
+        // If the order already has an active invoice, show it and block a
+        // second issuance — never let the user hit the backend 400 blind.
+        _existingActiveInvoice = (fin?.data?.invoices || []).find(i => ['issued', 'overdue'].includes(i.status)) || null;
+        const noticeEl = _el('invoice-existing-notice');
+        const saveBtn  = _el('po-invoice-save-btn');
+        if (noticeEl) {
+            noticeEl.textContent = _existingActiveInvoice
+                ? `الطلب ده اتصدرت له فاتورة رقم ${_existingActiveInvoice.invoice_number} — مفيش فاتورة تانية.`
+                : '';
+            noticeEl.classList.toggle('hidden', !_existingActiveInvoice);
+        }
+        if (saveBtn) saveBtn.disabled = !!_existingActiveInvoice;
+
         // Pre-fill expenses & discount from existing proforma (if any)
         const proformaData = proforma?.data;
         if (proformaData) {
@@ -3841,6 +3856,11 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
     }
 
     async function _saveInvoice() {
+        if (_invoiceSaving) return; // already submitting — swallow extra clicks
+        if (_existingActiveInvoice) {
+            _toast(`الطلب ده اتصدرت له فاتورة رقم ${_existingActiveInvoice.invoice_number} — مفيش فاتورة تانية.`, 'error');
+            return;
+        }
         const type      = _el('invoice-type')?.value || 'proforma';
         const extra     = parseFloat(_el('invoice-extra-expenses')?.value) || 0;
         const extraDesc = (_el('invoice-extra-desc')?.value || '').trim();
@@ -3891,6 +3911,9 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
             inp.classList.remove('border-red-400');
         }
 
+        const saveBtn = _el('po-invoice-save-btn');
+        _invoiceSaving = true;
+        if (saveBtn) saveBtn.disabled = true;
         try {
             await window.apiFetch(`/api/orders/${_hubOrderId}/invoice`, {
                 method: 'POST',
@@ -3910,6 +3933,9 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
             await _renderHubFinancial();
         } catch (err) {
             _toast(err.message || 'فشل إصدار الفاتورة', 'error');
+        } finally {
+            _invoiceSaving = false;
+            if (saveBtn) saveBtn.disabled = !!_existingActiveInvoice;
         }
     }
 

@@ -345,6 +345,18 @@ const AI_ACTIONS = [
 
                 const newPaid = Math.round((parseFloat(order.paid_amount || 0) + payAmt) * 100) / 100;
 
+                // Same rule as POST /orders/:id/payment — link to the order's
+                // single active invoice; refuse to guess when ambiguous.
+                const invLink = await client.query(
+                    `SELECT id FROM invoices
+                     WHERE order_id = $1 AND status IN ('issued','overdue')`,
+                    [order_id]
+                );
+                if (invLink.rowCount > 1) {
+                    throw new Error('الطلب له أكثر من فاتورة نشطة — راجع الفواتير المكررة قبل تسجيل الدفعة.');
+                }
+                const linkedInvoiceId = invLink.rowCount === 1 ? invLink.rows[0].id : null;
+
                 await client.query(
                     `UPDATE orders SET paid_amount = $1, updated_at = NOW() WHERE id = $2`,
                     [newPaid, order_id]
@@ -373,10 +385,10 @@ const AI_ACTIONS = [
 
                 const txRes = await client.query(
                     `INSERT INTO client_transactions
-                        (client_id, order_id, type, amount, payment_method, description, linked_voucher_id)
-                     VALUES ($1, $2, 'payment', $3, $4, $5, $6)
+                        (client_id, order_id, invoice_id, type, amount, payment_method, description, linked_voucher_id)
+                     VALUES ($1, $2, $3, 'payment', $4, $5, $6, $7)
                      RETURNING id, document_number`,
-                    [order.client_id, order_id, payAmt, payment_method || 'cash',
+                    [order.client_id, order_id, linkedInvoiceId, payAmt, payment_method || 'cash',
                      'دفعة مسجلة بواسطة المساعد الذكي', voucherId]
                 );
 

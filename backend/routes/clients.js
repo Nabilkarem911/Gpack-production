@@ -205,7 +205,10 @@ router.get('/:id/profile', async (req, res) => {
         const actualOrders = ordersRes.rows.filter(order => order.status !== 'quote');
         const quoteOrders = ordersRes.rows.filter(order => order.status === 'quote');
 
-        // 4. Invoices (only production-order invoices that affect the account statement)
+        // 4. Invoices — internal final sales invoices only. source='sales_invoices'
+        //    rows are Onyx-tracked (issued in the external system) and are
+        //    excluded by design so they never double-count in the client
+        //    statement (same filter as account-statement.js, commit 5cc8c44).
         const invoicesRes = await db.query(
             `SELECT i.id, i.invoice_number, i.grand_total, i.status, i.created_at,
                     o.order_number

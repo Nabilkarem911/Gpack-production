@@ -155,6 +155,7 @@ describe('Orders Routes — Zod Validation', () => {
             if (sql.includes('SELECT name FROM clients')) {
                 return { rowCount: 1, rows: [{ name: 'عميل الاختبار' }] };
             }
+            if (sql.includes('FROM invoices')) return { rowCount: 0, rows: [] };
             if (sql.includes("FROM accounts WHERE code = '1300'")) {
                 return { rowCount: 1, rows: [{ id: 'ar-1' }] };
             }
@@ -189,7 +190,9 @@ describe('Orders Routes — Zod Validation', () => {
         const txInsert = mockQuery.mock.calls.find(([sql]) =>
             sql.includes('INSERT INTO client_transactions'));
         expect(txInsert).toBeDefined();
-        expect(txInsert[1][6]).toBe('2026-09-15');
+        expect(txInsert[0]).toContain('invoice_id');
+        expect(txInsert[1][2]).toBeNull();      // no active invoice → order-only advance
+        expect(txInsert[1][7]).toBe('2026-09-15');
     });
 
     test('converting a quotation without payment_date falls back to CURRENT_DATE', async () => {
@@ -203,6 +206,7 @@ describe('Orders Routes — Zod Validation', () => {
             if (sql.includes('SELECT name FROM clients')) {
                 return { rowCount: 1, rows: [{ name: 'عميل الاختبار' }] };
             }
+            if (sql.includes('FROM invoices')) return { rowCount: 0, rows: [] };
             if (sql.includes("FROM accounts WHERE code = '1300'")) {
                 return { rowCount: 1, rows: [{ id: 'ar-1' }] };
             }
@@ -585,6 +589,7 @@ describe('Orders — POST /:id/payment receipt voucher', () => {
                     grand_total: total, paid_amount: paid, status: 'production',
                 }] };
             }
+            if (sql.includes('FROM invoices')) return { rowCount: 0, rows: [] };
             if (sql.includes("code = '1300'")) return { rowCount: 1, rows: [{ id: 'ar-1' }] };
             if (sql.includes("code = '4300'")) return { rowCount: 1, rows: [{ id: 'disc-1' }] };
             if (sql.includes('FROM accounts WHERE code = $1')) return { rowCount: 1, rows: [{ id: 'cash-1' }] };
@@ -614,8 +619,10 @@ describe('Orders — POST /:id/payment receipt voucher', () => {
 
         const ct = mockQuery.mock.calls.find(([sql]) => sql.includes('INSERT INTO client_transactions'));
         expect(ct[0]).toContain('linked_voucher_id');
+        expect(ct[0]).toContain('invoice_id');
         expect(ct[1]).toContain('v-9');
-        expect(ct[1][6]).toBe('2026-09-12'); // created_at param
+        expect(ct[1][2]).toBeNull();        // invoice_id — no active invoice on the order
+        expect(ct[1][7]).toBe('2026-09-12'); // created_at param
     });
 
     test('payment + discount posts a balanced 3-line voucher on 4300', async () => {

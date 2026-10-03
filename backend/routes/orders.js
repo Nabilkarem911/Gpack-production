@@ -2134,6 +2134,18 @@ router.post('/:id/convert-to-production', restrictAdmin, validateBody(orderConve
                     throw new Error('يجب اختيار حساب الصندوق/البنك عند تسجيل دفعة مقدمة.');
                 }
 
+                // Link to the order's single active invoice before any write —
+                // ambiguous orders are rejected with nothing written.
+                const invLink = await client.query(
+                    `SELECT id FROM invoices
+                     WHERE order_id = $1 AND status IN ('issued','overdue')`,
+                    [id]
+                );
+                if (invLink.rowCount > 1) {
+                    throw new Error('الطلب له أكثر من فاتورة نشطة — راجع الفواتير المكررة قبل تسجيل الدفعة.');
+                }
+                const linkedInvoiceId = invLink.rowCount === 1 ? invLink.rows[0].id : null;
+
                 // 3b. Create Receipt Voucher
                 const voucherRes = await client.query(
                     `INSERT INTO accounting_vouchers
@@ -2196,13 +2208,14 @@ router.post('/:id/convert-to-production', restrictAdmin, validateBody(orderConve
                 // 3d. Client Transaction
                 await client.query(
                     `INSERT INTO client_transactions
-                        (client_id, order_id, type, amount, payment_method,
+                        (client_id, order_id, invoice_id, type, amount, payment_method,
                          description, linked_voucher_id, created_at)
-                     VALUES ($1, $2, 'payment', $3, $4, $5, $6,
-                             COALESCE($7::timestamptz, NOW()))`,
+                     VALUES ($1, $2, $3, 'payment', $4, $5, $6, $7,
+                             COALESCE($8::timestamptz, NOW()))`,
                     [
                         order.client_id,
                         id,
+                        linkedInvoiceId,
                         paymentAmt,
                         payment_method || null,
                         description,
@@ -2478,11 +2491,11 @@ router.post('/:id/invoice', restrictAdmin, validateBody(orderInvoice), async (re
             }
 
             // ── Prevent duplicate final invoices ──
-            // Only ONE final (issued) invoice per order is allowed.
+            // Only ONE active (issued/overdue) invoice per order is allowed.
             if (type === 'final') {
                 const existingFinal = await client.query(
                     `SELECT id, invoice_number FROM invoices
-                     WHERE order_id = $1 AND status = 'issued'
+                     WHERE order_id = $1 AND status IN ('issued','overdue')
                      LIMIT 1`,
                     [id]
                 );
@@ -2774,6 +2787,20 @@ router.post('/:id/payment', restrictAdmin, validateBody(orderPayment), async (re
 
             const newPaid = Math.round((parseFloat(order.paid_amount || 0) + payAmt + discountAmt) * 100) / 100;
 
+            // Resolve the order's single active invoice BEFORE any write so an
+            // ambiguous order (multiple issued/overdue invoices) is rejected
+            // without leaving a voucher or transaction behind. Draft/paid are
+            // not active — an order with issued+draft still links cleanly.
+            const invLink = await client.query(
+                `SELECT id FROM invoices
+                 WHERE order_id = $1 AND status IN ('issued','overdue')`,
+                [id]
+            );
+            if (invLink.rowCount > 1) {
+                throw new Error('الطلب له أكثر من فاتورة نشطة — راجع الفواتير المكررة قبل تسجيل الدفعة.');
+            }
+            const linkedInvoiceId = invLink.rowCount === 1 ? invLink.rows[0].id : null;
+
             // Update paid_amount on order (includes discount to zero out balance)
             await client.query(
                 `UPDATE orders SET paid_amount = $1, updated_at = now() WHERE id = $2`,
@@ -2832,13 +2859,14 @@ router.post('/:id/payment', restrictAdmin, validateBody(orderPayment), async (re
                  `تسوية ذمة العميل — طلب #${order.order_number}`]
             );
 
-            // Insert client_transaction for payment (linked to the voucher)
+            // Insert client_transaction for payment (linked to the voucher,
+            // and to the order's active invoice when one exists)
             const txRes = await client.query(
                 `INSERT INTO client_transactions
-                 (client_id, order_id, type, amount, payment_method, description, linked_voucher_id, created_at)
-                 VALUES ($1, $2, 'payment', $3, $4, $5, $6, COALESCE($7::timestamptz, NOW()))
+                 (client_id, order_id, invoice_id, type, amount, payment_method, description, linked_voucher_id, created_at)
+                 VALUES ($1, $2, $3, 'payment', $4, $5, $6, $7, COALESCE($8::timestamptz, NOW()))
                  RETURNING id, document_number`,
-                [order.client_id, id, payAmt, payment_method, description || null, voucherId, payment_date || null]
+                [order.client_id, id, linkedInvoiceId, payAmt, payment_method, description || null, voucherId, payment_date || null]
             );
 
             // Insert client_transaction for discount (if any)
@@ -2846,10 +2874,10 @@ router.post('/:id/payment', restrictAdmin, validateBody(orderPayment), async (re
             if (discountAmt > 0) {
                 const discRes = await client.query(
                     `INSERT INTO client_transactions
-                     (client_id, order_id, type, amount, payment_method, description, linked_voucher_id)
-                     VALUES ($1, $2, 'discount', $3, 'adjustment', $4, $5)
+                     (client_id, order_id, invoice_id, type, amount, payment_method, description, linked_voucher_id)
+                     VALUES ($1, $2, $3, 'discount', $4, 'adjustment', $5, $6)
                      RETURNING id`,
-                    [order.client_id, id, discountAmt, 'خصم / تنازل عن الفرق', voucherId]
+                    [order.client_id, id, linkedInvoiceId, discountAmt, 'خصم / تنازل عن الفرق', voucherId]
                 );
                 discountTxId = discRes.rows[0].id;
             }

@@ -444,7 +444,7 @@ router.put('/:id/replace', restrictEdit, async (req, res) => {
             }
 
             const linkedTxRes = await client.query(
-                `SELECT id, client_id, order_id, payment_method FROM client_transactions
+                `SELECT id, client_id, order_id, invoice_id, payment_method FROM client_transactions
                  WHERE linked_voucher_id = $1 AND type = 'payment'`,
                 [id]
             );
@@ -455,9 +455,9 @@ router.put('/:id/replace', restrictEdit, async (req, res) => {
                 );
                 await client.query(
                     `INSERT INTO client_transactions
-                        (client_id, order_id, type, amount, payment_method, description, linked_voucher_id)
-                     VALUES ($1, $2, 'payment', $3, $4, $5, $6)`,
-                    [tx.client_id, tx.order_id, parsedAmount, tx.payment_method,
+                        (client_id, order_id, invoice_id, type, amount, payment_method, description, linked_voucher_id)
+                     VALUES ($1, $2, $3, 'payment', $4, $5, $6, $7)`,
+                    [tx.client_id, tx.order_id, tx.invoice_id, parsedAmount, tx.payment_method,
                      description || original.description || 'تعديل سند قبض', newId]
                 );
             }

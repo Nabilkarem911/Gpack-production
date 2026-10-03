@@ -990,6 +990,7 @@
             </button>
         </div>
         <div class="p-5 space-y-4">
+            <div id="invoice-existing-notice" class="hidden bg-amber-50 border border-amber-200 text-amber-800 rounded-xl px-4 py-3 text-sm font-bold"></div>
             <div>
                 <label class="block text-sm font-bold text-slate-700 mb-1.5">نوع الفاتورة</label>
                 <select id="invoice-type"
@@ -1054,7 +1055,7 @@
             <button onclick="window.poView.closeInvoiceModal()"
                     class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold rounded-xl transition-colors">إلغاء</button>
             <button id="po-invoice-save-btn" onclick="window.poView.saveInvoice()"
-                    class="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl shadow transition-all active:scale-[0.98]">
+                    class="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-bold rounded-xl shadow transition-all active:scale-[0.98]">
                 <i class="fa-solid fa-check ml-1"></i> إصدار الفاتورة
             </button>
         </div>
