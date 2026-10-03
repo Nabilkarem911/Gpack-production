@@ -144,6 +144,103 @@ describe('Orders Routes — Zod Validation', () => {
         }), expect.anything());
     });
 
+    test('converting a quotation records the down payment voucher on the chosen payment_date', async () => {
+        mockQuery.mockImplementation(async (sql) => {
+            if (sql.includes('FROM orders') && sql.includes('FOR UPDATE')) {
+                return { rowCount: 1, rows: [{
+                    id: 'order-1', order_number: 123, status: 'quote', client_id: 'client-1',
+                    grand_total: '1000', paid_amount: '0', created_by: 1,
+                }] };
+            }
+            if (sql.includes('SELECT name FROM clients')) {
+                return { rowCount: 1, rows: [{ name: 'عميل الاختبار' }] };
+            }
+            if (sql.includes("FROM accounts WHERE code = '1300'")) {
+                return { rowCount: 1, rows: [{ id: 'ar-1' }] };
+            }
+            if (sql.includes('FROM accounts WHERE code = $1')) {
+                return { rowCount: 1, rows: [{ id: 'bank-acc-1' }] };
+            }
+            if (sql.includes('INSERT INTO accounting_vouchers')) {
+                return { rowCount: 1, rows: [{ id: 'v-1', voucher_number: 900 }] };
+            }
+            if (sql.includes('FROM notification_settings')) return { rows: [] };
+            return { rowCount: 1, rows: [] };
+        });
+
+        const res = await request(app)
+            .post('/api/orders/order-1/convert-to-production')
+            .send({
+                down_payment_amount: 500,
+                payment_method: 'bank_transfer',
+                bank_account: 'snb',
+                bank_ref: 'TRF-1',
+                payment_date: '2026-09-15',
+            });
+
+        expect(res.status).toBe(200);
+
+        const voucherInsert = mockQuery.mock.calls.find(([sql]) =>
+            sql.includes('INSERT INTO accounting_vouchers'));
+        expect(voucherInsert).toBeDefined();
+        expect(voucherInsert[0]).toContain('COALESCE($5::date, CURRENT_DATE)');
+        expect(voucherInsert[1][4]).toBe('2026-09-15');
+
+        const txInsert = mockQuery.mock.calls.find(([sql]) =>
+            sql.includes('INSERT INTO client_transactions'));
+        expect(txInsert).toBeDefined();
+        expect(txInsert[1][6]).toBe('2026-09-15');
+    });
+
+    test('converting a quotation without payment_date falls back to CURRENT_DATE', async () => {
+        mockQuery.mockImplementation(async (sql) => {
+            if (sql.includes('FROM orders') && sql.includes('FOR UPDATE')) {
+                return { rowCount: 1, rows: [{
+                    id: 'order-1', order_number: 123, status: 'quote', client_id: 'client-1',
+                    grand_total: '1000', paid_amount: '0', created_by: 1,
+                }] };
+            }
+            if (sql.includes('SELECT name FROM clients')) {
+                return { rowCount: 1, rows: [{ name: 'عميل الاختبار' }] };
+            }
+            if (sql.includes("FROM accounts WHERE code = '1300'")) {
+                return { rowCount: 1, rows: [{ id: 'ar-1' }] };
+            }
+            if (sql.includes('FROM accounts WHERE code = $1')) {
+                return { rowCount: 1, rows: [{ id: 'cash-acc-1' }] };
+            }
+            if (sql.includes('INSERT INTO accounting_vouchers')) {
+                return { rowCount: 1, rows: [{ id: 'v-1', voucher_number: 901 }] };
+            }
+            if (sql.includes('FROM notification_settings')) return { rows: [] };
+            return { rowCount: 1, rows: [] };
+        });
+
+        const res = await request(app)
+            .post('/api/orders/order-1/convert-to-production')
+            .send({ down_payment_amount: 100, payment_method: 'cash', cash_box: 'main' });
+
+        expect(res.status).toBe(200);
+        const voucherInsert = mockQuery.mock.calls.find(([sql]) =>
+            sql.includes('INSERT INTO accounting_vouchers'));
+        expect(voucherInsert[1][4]).toBeNull();
+    });
+
+    test('converting a quotation rejects an invalid payment_date format', async () => {
+        const res = await request(app)
+            .post('/api/orders/order-1/convert-to-production')
+            .send({
+                down_payment_amount: 100,
+                payment_method: 'cash',
+                cash_box: 'main',
+                payment_date: '15-09-2026',
+            });
+
+        expect(res.status).toBe(400);
+        expect(res.body.error).toBe('Validation failed');
+        expect(res.body.field).toMatch(/payment_date/);
+    });
+
     test('GET / exposes has_final_invoice derived from valid final invoice statuses', async () => {
         mockQuery.mockResolvedValueOnce({ rows: [
             { id: 'o1', status: 'completed', has_final_invoice: true,  total_count: 2 },

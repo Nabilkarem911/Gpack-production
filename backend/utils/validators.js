@@ -623,6 +623,7 @@ const orderItemEdit = z.object({
 const orderConvertToProduction = z.object({
     down_payment_amount: z.coerce.number().min(0).optional().default(0),
     payment_method: z.string().max(50).optional().nullable(),
+    payment_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
     cash_box: z.string().max(100).optional().nullable(),
     bank_account: z.string().max(100).optional().nullable(),
     bank_ref: z.string().max(100).optional().nullable(),

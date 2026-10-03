@@ -1852,6 +1852,10 @@
         if (bankRef) bankRef.value = '';
         if (posRef) posRef.value = '';
 
+        // Payment date defaults to today (editable for earlier transfers)
+        const payDate = document.getElementById('convert-payment-date');
+        if (payDate) payDate.value = _today();
+
         // Find order data from cached list
         const order = _allQuotes.find(q => q.id === orderId);
         const clientNameEl  = document.getElementById('convert-client-name');
@@ -1907,9 +1911,16 @@
             }
         }
 
+        const payDate = document.getElementById('convert-payment-date')?.value || '';
+        if (dpAmount > 0 && !payDate) {
+            _showConvertError('يرجى تحديد تاريخ الدفعة.');
+            return;
+        }
+
         const payload = {
             down_payment_amount:  dpAmount,
             payment_method:       pmMethod || null,
+            payment_date:         payDate || null,
         };
 
         // Add payment method details to payload
