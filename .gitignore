@@ -24,6 +24,11 @@ Thumbs.db
 fix-all.ps1
 backend/scripts/run-migration.js
 
+# Ad-hoc dev/verification harnesses (connect to the local erp_test DB, contain
+# DELETE/INSERT cleanup SQL — must never land in the image or the repo)
+backend/verify-*.js
+backend/dev-*.js
+
 
 #Ignore vscode AI rules
 .github\instructions\codacy.instructions.md
