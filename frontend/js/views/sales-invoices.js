@@ -16,6 +16,7 @@
     let _clients = [];
     let _readyOrders = [];
     let _orderItems = [];
+    let _siIdemKey = null; // per-modal-session idempotency key (network-retry safe)
     let _warehouseStock = [];
     let _warehouseSelectedStockIds = new Set();
     let _warehouseClientSearchable = null;
@@ -287,6 +288,7 @@
     // ── Create Invoice Modal ─────────────────────────────────────────────────
     window.siCreateInvoice = async function() {
         _resetModal();
+        _siIdemKey = (window.crypto?.randomUUID?.() || `si-${Date.now()}-${Math.random().toString(36).slice(2)}`);
         _el('si-modal-overlay')?.classList.remove('hidden');
         _el('si-modal')?.classList.remove('hidden');
 
@@ -916,6 +918,7 @@
                 discount_amount: parseFloat(_el('si-m-discount')?.value || 0),
                 notes: _el('si-m-notes')?.value || '',
                 items: items,
+                idempotency_key: _siIdemKey,
             };
 
             const res = await window.apiFetch('/api/invoices', {

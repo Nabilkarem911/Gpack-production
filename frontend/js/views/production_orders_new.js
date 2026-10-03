@@ -21,6 +21,7 @@
     let _invoiceExtras   = [];   // user-added extra lines (proforma only): {name, qty, price}
     let _existingActiveInvoice = null; // set when the order already has an issued/overdue invoice
     let _invoiceSaving = false;        // double-click / duplicate-submit lock
+    let _invoiceIdemKey = null;        // per-modal-session idempotency key (network-retry safe)
     let _proformaExtras  = [];   // extra lines carried from the draft proforma into the final invoice
     let _bulkSelected = {}; // { [itemId]: { id, name, qty, assigned, designId, designName, designThumb, designStatus, variantId } }
     let _bulkDesignTargetId = null;
@@ -3605,6 +3606,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
     async function _openInvoiceModal() {
         _invoiceExtras  = [];
         _proformaExtras = [];
+        _invoiceIdemKey = (window.crypto?.randomUUID?.() || `inv-${Date.now()}-${Math.random().toString(36).slice(2)}`);
         _setVal('invoice-notes', '');
         _setVal('invoice-extra-expenses', '');
         _setVal('invoice-extra-desc', '');
@@ -3917,7 +3919,7 @@ ${dn.notes ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-rad
         try {
             await window.apiFetch(`/api/orders/${_hubOrderId}/invoice`, {
                 method: 'POST',
-                body: { type, items, additional_expenses: extra, additional_expense_label: extraDesc, discount_amount: discount, notes },
+                body: { type, items, additional_expenses: extra, additional_expense_label: extraDesc, discount_amount: discount, notes, idempotency_key: _invoiceIdemKey },
             });
             _toast('تم إصدار الفاتورة بنجاح');
             _hideModal('po-invoice-modal');

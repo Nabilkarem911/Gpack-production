@@ -12,6 +12,7 @@ const crypto  = require('crypto');
 const router  = express.Router();
 const db      = require('../db');
 const { success, created } = require('../utils/response');
+const idempotency = require('../utils/idempotency');
 const { authenticate } = require('../middleware/authMiddleware');
 const authorize = require('../middleware/authorize');
 const { getVatRate } = require('../utils/settings');
@@ -634,6 +635,17 @@ router.post('/', restrictWrite, validateBody(invoiceCreate), async (req, res) =>
 
         await client.query('BEGIN');
 
+        // Durable idempotency: a retried create (network retry, double-click
+        // that beat the button lock) replays the stored response instead of
+        // creating a second invoice. Optional — requests without a key keep
+        // working exactly as before.
+        const idemKey = req.get('Idempotency-Key') || req.validatedBody?.idempotency_key || req.body?.idempotency_key || null;
+        const idem = await idempotency.claim(client, idemKey, 'POST /api/invoices', userId);
+        if (idem.mode === 'replay') {
+            await client.query('COMMIT');
+            return res.status(idem.status).json(idem.body);
+        }
+
         // Calculate totals
         let subtotal = 0;
         for (const item of items) {
@@ -770,9 +782,15 @@ router.post('/', restrictWrite, validateBody(invoiceCreate), async (req, res) =>
             ]);
         }
 
+        const responseBody = {
+            success: true,
+            data: { id: invoiceId, invoice_number: invoiceNumber, delivery_note_id: deliveryNoteId },
+            message: 'تم إنشاء الفاتورة بنجاح',
+        };
+        await idempotency.store(client, idemKey, 201, responseBody);
         await client.query('COMMIT');
 
-        return created(res, { id: invoiceId, invoice_number: invoiceNumber, delivery_note_id: deliveryNoteId }, 'تم إنشاء الفاتورة بنجاح');
+        return res.status(201).json(responseBody);
 
     } catch (err) {
         await client.query('ROLLBACK');

@@ -8,6 +8,7 @@ const { decryptShareToken } = require('../utils/crypto');
 const { orderCreate, orderUpdate, orderStatusUpdate, orderClosure, orderItemEdit, orderConvertToProduction, orderInvoice, orderPayment, orderNote, orderRelease, validateBody } = require('../utils/validators');
 const authorize = require('../middleware/authorize');
 const eventBus = require('../utils/event-bus');
+const idempotency = require('../utils/idempotency');
 
 const router = express.Router();
 
@@ -2477,8 +2478,15 @@ router.post('/:id/invoice', restrictAdmin, validateBody(orderInvoice), async (re
         return res.status(400).json({ error: 'يجب إدراج أصناف في الفاتورة.' });
     }
 
+    const idemKey = req.get('Idempotency-Key') || req.validatedBody?.idempotency_key || req.body?.idempotency_key || null;
+
     try {
         const result = await db.withTransaction(async (client) => {
+            // Durable idempotency — a retried issuance replays the stored
+            // response instead of creating a second invoice on this order.
+            const idem = await idempotency.claim(client, idemKey, 'POST /api/orders/:id/invoice', req.user?.id);
+            if (idem.mode === 'replay') return { __idempotentReplay: idem };
+
             const orderRes = await client.query(
                 `SELECT o.id, o.order_number, o.client_id, o.status, o.grand_total
                  FROM orders o WHERE o.id = $1 FOR UPDATE`,
@@ -2687,8 +2695,14 @@ router.post('/:id/invoice', restrictAdmin, validateBody(orderInvoice), async (re
                 );
             }
 
-            return { invoice_id: invoice.id, invoice_number: invoice.invoice_number, grand_total: grandTotal };
+            const invoiceResult = { invoice_id: invoice.id, invoice_number: invoice.invoice_number, grand_total: grandTotal };
+            await idempotency.store(client, idemKey, 201, { success: true, data: invoiceResult, message: 'Resource created successfully' });
+            return invoiceResult;
         });
+
+        if (result?.__idempotentReplay) {
+            return res.status(result.__idempotentReplay.status).json(result.__idempotentReplay.body);
+        }
 
         // Emit business event
         eventBus.emit({

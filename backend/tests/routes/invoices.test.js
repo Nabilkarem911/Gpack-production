@@ -431,4 +431,28 @@ describe('invoice payment voucher integration', () => {
         expect(res.body.error).toMatch(/فاتورة.*الطلب|نفس الطلب/);
         expect(mockClientQuery.mock.calls.some(([sql]) => sql.includes('INSERT INTO invoices'))).toBe(false);
     });
+
+    test('POST / replays the stored response for a repeated idempotency key — no second invoice', async () => {
+        mockClientQuery.mockImplementation(async (sql) => {
+            if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') return {};
+            if (sql.includes('INSERT INTO idempotency_keys')) return { rowCount: 0, rows: [] }; // key already taken
+            if (sql.includes('FROM idempotency_keys')) {
+                return { rowCount: 1, rows: [{
+                    status_code: 201,
+                    response_body: { success: true, data: { id: 'inv-first', invoice_number: 9007 }, message: 'تم إنشاء الفاتورة بنجاح' },
+                }] };
+            }
+            return { rowCount: 1, rows: [] };
+        });
+        const res = await request(buildApp())
+            .post('/api/invoices')
+            .send({
+                client_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+                items: [{ variant_id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', quantity: 1, unit_price: 10 }],
+                idempotency_key: 'retry-key-1',
+            });
+        expect(res.status).toBe(201);
+        expect(res.body.data.invoice_number).toBe(9007);
+        expect(mockClientQuery.mock.calls.some(([sql]) => sql.includes('INSERT INTO invoices'))).toBe(false);
+    });
 });
