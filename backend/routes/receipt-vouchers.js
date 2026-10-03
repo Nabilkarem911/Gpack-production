@@ -497,6 +497,15 @@ router.post('/:id/cancel', restrictDelete, validateBody(voucherCancel), async (r
             // Mark original as cancelled
             await txClient.query("UPDATE accounting_vouchers SET status = 'cancelled' WHERE id = $1", [id]);
 
+            // Ledger rows linked to the dead voucher must stop counting as
+            // live payments — same semantics as the replace path above
+            // (otherwise reports keep counting a reversed collection).
+            await txClient.query(
+                `UPDATE client_transactions SET type = 'payment_reversal', description = COALESCE(description, '') || ' — عكس بسبب إلغاء سند القبض'
+                 WHERE linked_voucher_id = $1 AND type = 'payment'`,
+                [id]
+            );
+
             // Create reversal voucher
             const reversalRes = await txClient.query(`
                 INSERT INTO accounting_vouchers
