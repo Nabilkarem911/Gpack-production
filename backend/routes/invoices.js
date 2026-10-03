@@ -645,6 +645,10 @@ router.post('/', restrictWrite, validateBody(invoiceCreate), async (req, res) =>
             await client.query('COMMIT');
             return res.status(idem.status).json(idem.body);
         }
+        if (idem.mode === 'conflict') {
+            await client.query('ROLLBACK');
+            return res.status(idem.status).json(idem.body);
+        }
 
         // Calculate totals
         let subtotal = 0;

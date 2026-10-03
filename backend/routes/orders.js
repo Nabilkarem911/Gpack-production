@@ -2485,7 +2485,8 @@ router.post('/:id/invoice', restrictAdmin, validateBody(orderInvoice), async (re
             // Durable idempotency — a retried issuance replays the stored
             // response instead of creating a second invoice on this order.
             const idem = await idempotency.claim(client, idemKey, 'POST /api/orders/:id/invoice', req.user?.id);
-            if (idem.mode === 'replay') return { __idempotentReplay: idem };
+            if (idem.mode === 'replay')   return { __idempotentReplay: idem };
+            if (idem.mode === 'conflict') return { __idempotentReplay: { status: idem.status, body: idem.body } };
 
             const orderRes = await client.query(
                 `SELECT o.id, o.order_number, o.client_id, o.status, o.grand_total

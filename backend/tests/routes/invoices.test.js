@@ -438,6 +438,7 @@ describe('invoice payment voucher integration', () => {
             if (sql.includes('INSERT INTO idempotency_keys')) return { rowCount: 0, rows: [] }; // key already taken
             if (sql.includes('FROM idempotency_keys')) {
                 return { rowCount: 1, rows: [{
+                    endpoint: 'POST /api/invoices',
                     status_code: 201,
                     response_body: { success: true, data: { id: 'inv-first', invoice_number: 9007 }, message: 'تم إنشاء الفاتورة بنجاح' },
                 }] };
