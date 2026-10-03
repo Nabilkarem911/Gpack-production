@@ -181,6 +181,7 @@ describe('closed_without_invoice flag clearing on order-linked invoices', () => 
     test('PATCH status → issued on an order-linked invoice clears the order closure flag', async () => {
         mockClientQuery.mockImplementation(async (sql) => {
             if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') return {};
+            if (sql.includes('id <> $2')) return { rowCount: 0, rows: [] }; // no sibling active invoice
             if (sql.includes('FROM invoices WHERE id = $1')) {
                 return { rowCount: 1, rows: [{
                     id: 'invoice-id', invoice_number: 9001, grand_total: '100',
@@ -203,6 +204,7 @@ describe('closed_without_invoice flag clearing on order-linked invoices', () => 
     test('POST / warehouse invoice linked to an order is issued immediately and clears the closure flag', async () => {
         mockClientQuery.mockImplementation(async (sql) => {
             if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') return {};
+            if (sql.includes('status = ANY')) return { rowCount: 0, rows: [] }; // no duplicate invoice on the order
             if (sql.includes('FROM warehouses')) return { rowCount: 1, rows: [{ id: 'wh-1' }] };
             if (sql.includes('FROM warehouse_stock')) return { rowCount: 1, rows: [{ id: 'stock-1', quantity: '10', reserved_qty: '0' }] };
             if (sql.includes('INSERT INTO invoices')) return { rowCount: 1, rows: [{ id: 'inv-x', invoice_number: 700 }] };
@@ -228,6 +230,7 @@ describe('closed_without_invoice flag clearing on order-linked invoices', () => 
     test('POST / sales_invoices draft linked to an order does NOT clear the flag until issued', async () => {
         mockClientQuery.mockImplementation(async (sql) => {
             if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') return {};
+            if (sql.includes('status = ANY')) return { rowCount: 0, rows: [] };
             if (sql.includes('INSERT INTO invoices')) return { rowCount: 1, rows: [{ id: 'inv-y', invoice_number: 701 }] };
             return { rowCount: 1, rows: [] };
         });
@@ -329,5 +332,103 @@ describe('invoice payment voucher integration', () => {
         expect(res.body.error).toMatch(/متبقٍ/);
         // rolled back — status update must not commit without the collection
         expect(mockClientQuery.mock.calls.some(([sql]) => sql.includes('ROLLBACK'))).toBe(true);
+    });
+
+    // ── order-linked payments count toward the invoice (1:1 orders) ──────
+    function mockOrderLinkedInvoice({ paid, hasSiblings = false, status = 'issued', grandTotal = '1000' }) {
+        mockClientQuery.mockImplementation(async (sql) => {
+            if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') return {};
+            if (sql.includes('has_order_pay')) {
+                return { rowCount: 1, rows: [{ has_order_pay: true, has_siblings: hasSiblings }] };
+            }
+            if (sql.includes('FROM invoices WHERE')) {
+                return { rowCount: 1, rows: [{
+                    id: 'invoice-id', invoice_number: 9001, grand_total: grandTotal,
+                    status, client_id: 'c0ffee00-c0ff-4c0f-8c0f-fec0ffee0000', order_id: 'order-1',
+                }] };
+            }
+            if (sql.includes('FROM client_transactions')) return { rowCount: 1, rows: [{ paid }] };
+            if (sql.includes('FROM accounts') && sql.includes('1100')) return { rowCount: 1, rows: [{ id: cashAcc }] };
+            if (sql.includes("code = '1300'")) return { rowCount: 1, rows: [{ id: 'ar-1' }] };
+            if (sql.includes('INSERT INTO accounting_vouchers')) return { rowCount: 1, rows: [{ id: 'v-1', voucher_number: 10 }] };
+            return { rowCount: 1, rows: [] };
+        });
+    }
+
+    test('POST /:id/payment counts order-linked payments — overpayment rejected', async () => {
+        mockOrderLinkedInvoice({ paid: '700' }); // 700 collected via the order screen
+        const res = await request(buildApp())
+            .post('/api/invoices/invoice-id/payment')
+            .send({ client_id: 'c0ffee00-c0ff-4c0f-8c0f-fec0ffee0000', amount: 400, payment_method: 'cash', cash_account_id: cashAcc });
+        expect(res.status).toBe(400);
+        expect(res.body.error).toMatch(/المتبقي/);
+    });
+
+    test('POST /:id/payment accepts the true remaining on an order-paid invoice', async () => {
+        mockOrderLinkedInvoice({ paid: '700' });
+        const res = await request(buildApp())
+            .post('/api/invoices/invoice-id/payment')
+            .send({ client_id: 'c0ffee00-c0ff-4c0f-8c0f-fec0ffee0000', amount: 300, payment_method: 'cash', cash_account_id: cashAcc });
+        expect(res.status).toBe(201);
+    });
+
+    test('POST /:id/payment refuses ambiguous multi-invoice orders with payments', async () => {
+        mockOrderLinkedInvoice({ paid: '0', hasSiblings: true });
+        const res = await request(buildApp())
+            .post('/api/invoices/invoice-id/payment')
+            .send({ client_id: 'c0ffee00-c0ff-4c0f-8c0f-fec0ffee0000', amount: 100, payment_method: 'cash', cash_account_id: cashAcc });
+        expect(res.status).toBe(400);
+        expect(res.body.error).toMatch(/فاتورة نشطة|المكررة|فواتير/);
+        expect(mockClientQuery.mock.calls.some(([sql]) => sql.includes('INSERT INTO accounting_vouchers'))).toBe(false);
+    });
+
+    test('PATCH status→paid on an order-paid invoice vouchers only the true remaining', async () => {
+        mockOrderLinkedInvoice({ paid: '700', status: 'issued' });
+        const res = await request(buildApp())
+            .patch('/api/invoices/invoice-id/status')
+            .send({ status: 'paid', cash_account_id: cashAcc, payment_method: 'cash' });
+        expect(res.status).toBe(200);
+        const v = mockClientQuery.mock.calls.find(([sql]) => sql.includes('INSERT INTO accounting_vouchers'));
+        expect(v[1][1]).toBe(300); // 1000 − 700 paid on the order
+    });
+
+    test('PATCH status→issued is refused when the order already has an active invoice', async () => {
+        mockClientQuery.mockImplementation(async (sql) => {
+            if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') return {};
+            if (sql.includes('id <> $2')) return { rowCount: 1, rows: [{ invoice_number: 5555 }] }; // sibling issued exists
+            if (sql.includes('FROM invoices WHERE id = $1')) {
+                return { rowCount: 1, rows: [{
+                    id: 'invoice-id', invoice_number: 9002, grand_total: '100',
+                    status: 'draft', client_id: 'client-id', order_id: 'order-1',
+                }] };
+            }
+            return { rowCount: 1, rows: [] };
+        });
+        const res = await request(buildApp())
+            .patch('/api/invoices/invoice-id/status')
+            .send({ status: 'issued' });
+        expect(res.status).toBe(400);
+        expect(res.body.error).toMatch(/فاتورة نشطة/);
+    });
+
+    test('POST / refuses a second issued invoice on the same order', async () => {
+        mockClientQuery.mockImplementation(async (sql) => {
+            if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') return {};
+            if (sql.includes('status = ANY')) return { rowCount: 1, rows: [{ invoice_number: 88, status: 'issued' }] };
+            if (sql.includes('FROM warehouses')) return { rowCount: 1, rows: [{ id: 'wh-1' }] };
+            return { rowCount: 1, rows: [] };
+        });
+        const res = await request(buildApp())
+            .post('/api/invoices')
+            .send({
+                client_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+                order_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+                warehouse_id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+                source: 'warehouse',
+                items: [{ variant_id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', quantity: 1, unit_price: 10 }],
+            });
+        expect(res.status).toBe(400);
+        expect(res.body.error).toMatch(/فاتورة.*الطلب|نفس الطلب/);
+        expect(mockClientQuery.mock.calls.some(([sql]) => sql.includes('INSERT INTO invoices'))).toBe(false);
     });
 });

@@ -382,7 +382,7 @@ router.post('/:id/payment', restrictEdit, validateBody(receiptVoucherCreate), as
         }
         await client.query('BEGIN');
         const invRes = await client.query(
-            `SELECT id, invoice_number, client_id, grand_total, status
+            `SELECT id, invoice_number, client_id, order_id, grand_total, status
              FROM invoices WHERE id = $1 FOR UPDATE`,
             [req.params.id]
         );
@@ -403,10 +403,33 @@ router.post('/:id/payment', restrictEdit, validateBody(receiptVoucherCreate), as
         if (!arRes.rowCount) throw new Error('حساب المدينون (1300) غير موجود في دليل الحسابات.');
         const arAccountId = arRes.rows[0].id;
 
+        // Payments recorded on the parent order count toward this invoice —
+        // but only when the order maps to a single active invoice. Orders
+        // with sibling active invoices are ambiguous: refuse rather than guess.
+        if (invoice.order_id) {
+            const ambRes = await client.query(
+                `SELECT EXISTS(SELECT 1 FROM client_transactions
+                               WHERE order_id = $2 AND type IN ('payment','receipt')) AS has_order_pay,
+                        EXISTS(SELECT 1 FROM invoices s
+                               WHERE s.order_id = $2 AND s.id <> $1
+                                 AND s.status IN ('issued','overdue')) AS has_siblings`,
+                [invoice.id, invoice.order_id]
+            );
+            if (ambRes.rows[0].has_order_pay && ambRes.rows[0].has_siblings) {
+                throw new Error('الطلب مرتبط بأكثر من فاتورة نشطة وله دفعات مسجلة — راجع الفواتير المكررة لهذا الطلب قبل تسجيل تحصيل.');
+            }
+        }
         const paidRes = await client.query(
             `SELECT COALESCE(SUM(amount), 0) AS paid
-             FROM client_transactions WHERE invoice_id = $1 AND type IN ('payment', 'receipt')`,
-            [invoice.id]
+             FROM client_transactions
+             WHERE type IN ('payment', 'receipt')
+               AND (invoice_id = $1
+                    OR (order_id = $2
+                        AND NOT EXISTS (
+                            SELECT 1 FROM invoices s
+                            WHERE s.order_id = $2 AND s.id <> $1
+                              AND s.status IN ('issued','overdue'))))`,
+            [invoice.id, invoice.order_id]
         );
         const paid = parseFloat(paidRes.rows[0].paid || 0);
         const remaining = Math.max(0, parseFloat(invoice.grand_total || 0) - paid);
@@ -629,6 +652,22 @@ router.post('/', restrictWrite, validateBody(invoiceCreate), async (req, res) =>
         const invoiceSource = isWarehouseInvoice ? 'warehouse' : 'sales_invoices';
         const status = isWarehouseInvoice ? 'issued' : 'draft';
 
+        // One order → at most one active invoice + one draft. Blocks the
+        // duplicate-invoice path that produced repeated issued invoices on
+        // the same order.
+        if (order_id) {
+            const dupStatuses = isWarehouseInvoice ? ['issued', 'overdue'] : ['draft'];
+            const dupRes = await client.query(
+                `SELECT invoice_number, status FROM invoices
+                 WHERE order_id = $1 AND status = ANY($2::text[]) LIMIT 1`,
+                [order_id, dupStatuses]
+            );
+            if (dupRes.rowCount) {
+                const d = dupRes.rows[0];
+                throw new Error(`يوجد بالفعل فاتورة ${d.status === 'draft' ? 'أولية' : 'نهائية'} لهذا الطلب (رقم ${d.invoice_number}). لا يمكن إصدار فاتورة ثانية على نفس الطلب.`);
+            }
+        }
+
         if (isWarehouseInvoice) {
             if (!warehouse_id) throw new Error('يجب اختيار المستودع.');
             const warehouseRes = await client.query(
@@ -736,7 +775,7 @@ router.post('/', restrictWrite, validateBody(invoiceCreate), async (req, res) =>
     } catch (err) {
         await client.query('ROLLBACK');
         console.error('[Invoices] POST / error:', err.message);
-        res.status(500).json({ error: 'Internal server error.' });
+        res.status(400).json({ error: err.message });
     } finally {
         client.release();
     }
@@ -1029,6 +1068,20 @@ router.patch('/:id/status', restrictEdit, validateBody(invoiceStatusUpdate), asy
 
         await client.query('BEGIN');
 
+        // An order may have at most one active (issued-family) invoice —
+        // refuse to activate a second one (multi-invoice duplicate guard).
+        if (status === 'issued' && invoice.status !== 'issued' && invoice.order_id) {
+            const dupRes = await client.query(
+                `SELECT invoice_number FROM invoices
+                 WHERE order_id = $1 AND id <> $2
+                   AND status IN ('issued','overdue') LIMIT 1`,
+                [invoice.order_id, id]
+            );
+            if (dupRes.rowCount) {
+                throw new Error(`لا يمكن إصدار الفاتورة — الطلب له فاتورة نشطة بالفعل (رقم ${dupRes.rows[0].invoice_number}).`);
+            }
+        }
+
         // Update status
         await client.query(`
             UPDATE invoices SET status = $1
@@ -1049,10 +1102,33 @@ router.patch('/:id/status', restrictEdit, validateBody(invoiceStatusUpdate), asy
         if (status === 'paid' && invoice.status !== 'paid') {
             // Marking paid must record an actual collection for the remaining
             // balance only — never the full amount, never without a voucher.
+            // Payments recorded on the parent order count toward this invoice
+            // only when the order has no sibling active invoice — otherwise
+            // the mapping is ambiguous and we refuse rather than guess.
+            if (invoice.order_id) {
+                const ambRes = await client.query(
+                    `SELECT EXISTS(SELECT 1 FROM client_transactions
+                                   WHERE order_id = $2 AND type IN ('payment','receipt')) AS has_order_pay,
+                            EXISTS(SELECT 1 FROM invoices s
+                                   WHERE s.order_id = $2 AND s.id <> $1
+                                     AND s.status IN ('issued','overdue')) AS has_siblings`,
+                    [id, invoice.order_id]
+                );
+                if (ambRes.rows[0].has_order_pay && ambRes.rows[0].has_siblings) {
+                    throw new Error('الطلب مرتبط بأكثر من فاتورة نشطة وله دفعات مسجلة — راجع الفواتير المكررة لهذا الطلب قبل تسجيل تحصيل.');
+                }
+            }
             const paidRes = await client.query(
                 `SELECT COALESCE(SUM(amount), 0) AS paid
-                 FROM client_transactions WHERE invoice_id = $1 AND type IN ('payment', 'receipt')`,
-                [id]
+                 FROM client_transactions
+                 WHERE type IN ('payment', 'receipt')
+                   AND (invoice_id = $1
+                        OR (order_id = $2
+                            AND NOT EXISTS (
+                                SELECT 1 FROM invoices s
+                                WHERE s.order_id = $2 AND s.id <> $1
+                                  AND s.status IN ('issued','overdue'))))`,
+                [id, invoice.order_id]
             );
             const alreadyPaid = parseFloat(paidRes.rows[0].paid || 0);
             const remaining = Math.round((parseFloat(invoice.grand_total || 0) - alreadyPaid) * 100) / 100;

@@ -73,8 +73,8 @@ describe('warehouse sales invoice release workflow', () => {
     test('registers a payment against the invoice and marks it paid when settled', async () => {
         mockClientQuery.mockImplementation(async (sql) => {
             if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') return {};
-            if (sql.includes('SELECT id, invoice_number, client_id, grand_total, status')) {
-                return { rowCount: 1, rows: [{ id: invoiceId, invoice_number: 1001, client_id: clientId, grand_total: 100, status: 'issued' }] };
+            if (sql.includes('SELECT id, invoice_number, client_id, order_id, grand_total, status')) {
+                return { rowCount: 1, rows: [{ id: invoiceId, invoice_number: 1001, client_id: clientId, order_id: null, grand_total: 100, status: 'issued' }] };
             }
             if (sql.includes('SELECT COALESCE(SUM(amount)')) return { rowCount: 1, rows: [{ paid: 0 }] };
             if (sql.includes('FROM accounts') && sql.includes('1100')) return { rowCount: 1, rows: [{ id: 'cash-acc-1' }] };

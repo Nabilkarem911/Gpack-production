@@ -274,8 +274,15 @@ router.post('/', restrictWrite, validateBody(salesReturnCreate), async (req, res
 
             const paidRes = await client.query(
                 `SELECT COALESCE(SUM(amount), 0) AS paid
-                 FROM client_transactions WHERE invoice_id = $1 AND type IN ('payment', 'receipt')`,
-                [invoice.id]
+                 FROM client_transactions
+                 WHERE type IN ('payment', 'receipt')
+                   AND (invoice_id = $1
+                        OR (order_id = $2
+                            AND NOT EXISTS (
+                                SELECT 1 FROM invoices s
+                                WHERE s.order_id = $2 AND s.id <> $1
+                                  AND s.status IN ('issued','overdue'))))`,
+                [invoice.id, invoice.order_id]
             );
             const invoicePaid = parseFloat(paidRes.rows[0].paid || 0);
             if (invoicePaid < totalAmount) {
