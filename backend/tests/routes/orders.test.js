@@ -144,6 +144,102 @@ describe('Orders Routes — Zod Validation', () => {
         }), expect.anything());
     });
 
+    test('converting a quotation dates the down-payment voucher and ledger row to the chosen payment_date', async () => {
+        mockQuery.mockImplementation(async (sql) => {
+            if (sql.includes('FROM orders') && sql.includes('FOR UPDATE')) {
+                return { rowCount: 1, rows: [{
+                    id: 'order-1', order_number: 123, status: 'quote', client_id: 'client-1',
+                    grand_total: '1000', paid_amount: '0', created_by: 1,
+                }] };
+            }
+            if (sql.includes('SELECT name FROM clients')) {
+                return { rowCount: 1, rows: [{ name: 'عميل الاختبار' }] };
+            }
+            if (sql.includes("code = '1300'")) {
+                return { rowCount: 1, rows: [{ id: 'ar-account-1' }] };
+            }
+            if (sql.includes("account_type = 'asset'")) {
+                return { rowCount: 1, rows: [{ id: 'bank-account-1' }] };
+            }
+            if (sql.includes('INSERT INTO accounting_vouchers')) {
+                return { rowCount: 1, rows: [{ id: 'voucher-1', voucher_number: 55 }] };
+            }
+            return { rowCount: 1, rows: [] };
+        });
+
+        const res = await request(app)
+            .post('/api/orders/order-1/convert-to-production')
+            .send({
+                down_payment_amount: 500,
+                payment_method: 'bank_transfer',
+                bank_account: 'BANK1',
+                bank_ref: 'TRF-001',
+                payment_date: '2026-09-15',
+            });
+
+        expect(res.status).toBe(200);
+        expect(res.body.data.voucher_id).toBe('voucher-1');
+
+        const voucherInsert = mockQuery.mock.calls.find(([sql]) =>
+            sql.includes('INSERT INTO accounting_vouchers'));
+        expect(voucherInsert[0]).toContain('COALESCE($5::date, CURRENT_DATE)');
+        expect(voucherInsert[1][4]).toBe('2026-09-15');
+
+        const ledgerInsert = mockQuery.mock.calls.find(([sql]) =>
+            sql.includes('INSERT INTO client_transactions'));
+        expect(ledgerInsert[0]).toContain('created_at');
+        expect(ledgerInsert[0]).toContain('COALESCE($7::timestamptz, NOW())');
+        expect(ledgerInsert[1][6]).toBe('2026-09-15');
+    });
+
+    test('converting a quotation without payment_date falls back to CURRENT_DATE/NOW()', async () => {
+        mockQuery.mockImplementation(async (sql) => {
+            if (sql.includes('FROM orders') && sql.includes('FOR UPDATE')) {
+                return { rowCount: 1, rows: [{
+                    id: 'order-1', order_number: 123, status: 'quote', client_id: 'client-1',
+                    grand_total: '1000', paid_amount: '0', created_by: 1,
+                }] };
+            }
+            if (sql.includes('SELECT name FROM clients')) {
+                return { rowCount: 1, rows: [{ name: 'عميل الاختبار' }] };
+            }
+            if (sql.includes("code = '1300'")) {
+                return { rowCount: 1, rows: [{ id: 'ar-account-1' }] };
+            }
+            if (sql.includes("account_type = 'asset'")) {
+                return { rowCount: 1, rows: [{ id: 'cash-account-1' }] };
+            }
+            if (sql.includes('INSERT INTO accounting_vouchers')) {
+                return { rowCount: 1, rows: [{ id: 'voucher-1', voucher_number: 55 }] };
+            }
+            return { rowCount: 1, rows: [] };
+        });
+
+        const res = await request(app)
+            .post('/api/orders/order-1/convert-to-production')
+            .send({ down_payment_amount: 200, payment_method: 'cash', cash_box: 'main' });
+
+        expect(res.status).toBe(200);
+
+        const voucherInsert = mockQuery.mock.calls.find(([sql]) =>
+            sql.includes('INSERT INTO accounting_vouchers'));
+        expect(voucherInsert[1][4]).toBeNull();
+
+        const ledgerInsert = mockQuery.mock.calls.find(([sql]) =>
+            sql.includes('INSERT INTO client_transactions'));
+        expect(ledgerInsert[1][6]).toBeNull();
+    });
+
+    test('POST /:id/convert-to-production rejects a malformed payment_date (Zod)', async () => {
+        const res = await request(app)
+            .post('/api/orders/order-1/convert-to-production')
+            .send({ down_payment_amount: 100, payment_method: 'cash', cash_box: 'main', payment_date: '15-09-2026' });
+
+        expect(res.status).toBe(400);
+        expect(res.body.error).toBe('Validation failed');
+        expect(res.body.field).toMatch(/payment_date/);
+    });
+
     test('GET / exposes has_final_invoice derived from valid final invoice statuses', async () => {
         mockQuery.mockResolvedValueOnce({ rows: [
             { id: 'o1', status: 'completed', has_final_invoice: true,  total_count: 2 },

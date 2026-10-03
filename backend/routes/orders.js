@@ -2023,6 +2023,7 @@ router.post('/:id/convert-to-production', restrictAdmin, validateBody(orderConve
         bank_ref,
         pos_terminal,
         pos_ref,
+        payment_date,
     } = req.validatedBody;
 
     const paymentAmt = parseFloat(down_payment_amount) || 0;
@@ -2134,17 +2135,20 @@ router.post('/:id/convert-to-production', restrictAdmin, validateBody(orderConve
                 }
 
                 // 3b. Create Receipt Voucher
+                // voucher_date: the operator-chosen payment/transfer date when
+                // provided (statement shows it), else today.
                 const voucherRes = await client.query(
                     `INSERT INTO accounting_vouchers
                         (voucher_type, voucher_date, description, total_amount,
                          status, reference_type, reference_id, created_by)
-                     VALUES ('receipt', CURRENT_DATE, $1, $2, 'posted', 'order', $3, $4)
+                     VALUES ('receipt', COALESCE($5::date, CURRENT_DATE), $1, $2, 'posted', 'order', $3, $4)
                      RETURNING id, voucher_number`,
                     [
                         `دفعة مقدمة — طلب #${order.order_number} — ${order.client_name || ''}`,
                         paymentAmt,
                         id,
                         req.user.id,
+                        payment_date || null,
                     ]
                 );
                 voucherId = voucherRes.rows[0].id;
@@ -2192,11 +2196,14 @@ router.post('/:id/convert-to-production', restrictAdmin, validateBody(orderConve
                 }
 
                 // 3d. Client Transaction
+                // created_at doubles as the ledger display date (client profile,
+                // portal, order financials) — backdate it to the chosen payment
+                // date so it matches the voucher and the account statement.
                 await client.query(
                     `INSERT INTO client_transactions
                         (client_id, order_id, type, amount, payment_method,
-                         description, linked_voucher_id)
-                     VALUES ($1, $2, 'payment', $3, $4, $5, $6)`,
+                         description, linked_voucher_id, created_at)
+                     VALUES ($1, $2, 'payment', $3, $4, $5, $6, COALESCE($7::timestamptz, NOW()))`,
                     [
                         order.client_id,
                         id,
@@ -2204,6 +2211,7 @@ router.post('/:id/convert-to-production', restrictAdmin, validateBody(orderConve
                         payment_method || null,
                         description,
                         voucherId,
+                        payment_date || null,
                     ]
                 );
             }

@@ -628,6 +628,9 @@ const orderConvertToProduction = z.object({
     bank_ref: z.string().max(100).optional().nullable(),
     pos_terminal: z.string().max(100).optional().nullable(),
     pos_ref: z.string().max(100).optional().nullable(),
+    // Optional transfer/payment date (YYYY-MM-DD) — when provided the receipt
+    // voucher and client ledger entry are dated with it instead of entry date.
+    payment_date: z.string().date('Invalid payment date — expected YYYY-MM-DD').optional().nullable(),
 }).passthrough();
 
 const orderInvoice = z.object({
